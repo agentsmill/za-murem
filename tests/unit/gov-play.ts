@@ -120,6 +120,9 @@ export interface PlayOpts {
   /** zarząd i mieszkańcy siedziby z generatora mieszkańców (opcja `mieszkancy` createSim; flaga --mieszkancy botów);
       bez niej sim powstaje jak przed krokiem 5 */
   mieszkancy?: SimOpts['mieszkancy'];
+  /** obcy (handlarz, wędrowcy, ekipy, goście z klocków) jak w grze w przeglądarce, gdzie `obcy` jest domyślnie włączone;
+      bez opcji sim powstaje bez nich, jak w botach */
+  obcy?: boolean;
   /** mapa miasta (flaga --miasto botów): zarząd z `wlaczMiasto`, okolicą w wejściu i graczem wypraw dziennych; bez
       opcji zarząd nie ma stanu miasta i gra na TARGETS jak przed mapą miasta */
   miasto?: MiastoOpts;
@@ -128,8 +131,6 @@ export interface PlayOpts {
   zwyciestwo?: ZwyciestwoOpts;
   /** tryb gry symulacji i zarządu (`createSim` i `newGov`); bez opcji zwykły */
   mode?: GameMode;
-  /** wędrowcy, handlarz i obce ekipy (opcja `obcy` createSim, jak w grze); bez opcji ich nie ma */
-  obcy?: boolean;
   /** jedyne polecenie gracza to samouczek (zaznaczenie i ścięcie suchego drzewa); bez drzew na opał, gdy drewna zostaje
       mało, więc zapasy drewna zależą tylko od tego, co zarząd robi sam (tools/bot-praca.ts) */
   tylkoSamouczek?: boolean;

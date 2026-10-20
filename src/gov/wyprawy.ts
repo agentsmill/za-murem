@@ -25,7 +25,12 @@
    kategoria (także `mieszkania`, które jest celem z 0.3, nie punktem z OSM) liczy się jak `POICAT.sklep`.
 
    Wyprawy dzienne w drodze (`GovState.wyprawy`, src/gov/dzienne.ts) czyta stąd `wDrodze`, żeby karta nocy (noc.ts)
-   i wysyłka widziały je bez cyklu importów. */
+   i wysyłka widziały je bez cyklu importów.
+
+   Wskazówki (`GovState.wskazowki`, wiadomość od gościa, src/gov/wizyta.ts): klucz miejsca z okolicy albo id celu
+   z TARGETS (`Cel.klucz`) → dzień gry. Następna wyprawa do tego miejsca ma ryzyko razy `WSKAZOWKA_RYZYKO` (karta nocy
+   i podgląd wyprawy dziennej pokazują już zmniejszone, `maWskazowke` tylko czyta) i łup razy `WSKAZOWKA_LUP`;
+   rozliczenie (`rozliczWyprawe`) zużywa ją przez `wskazowka`, więc każda wskazówka działa na jedną wyprawę. */
 
 import { POICAT, type Res } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
@@ -195,6 +200,22 @@ export function celZTarget(t: ExpTarget, p: GovPlace): Cel {
     nowej grze i przy wczytaniu starego zapisu. `newGov` bez opcji tego nie robi. */
 export function wlaczMiasto(st: GovState): void {
   st.miasto ??= { zabrano: {}, wizyty: {}, ostatnia: {} };
+}
+
+/** wyprawa z wskazówką od gościa: ryzyko razy tyle, łup razy tyle */
+export const WSKAZOWKA_RYZYKO = 0.5;
+export const WSKAZOWKA_LUP = 1.5;
+
+/** Czy zarząd ma wskazówkę na miejsce (klucz z okolicy albo id celu z TARGETS); nic nie zużywa. */
+export const maWskazowke = (st: Pick<GovState, 'wskazowki'>, klucz: string | undefined): boolean =>
+  klucz !== undefined && !!st.wskazowki?.[klucz];
+
+/** Zużywa wskazówkę na miejsce: true, gdy była (wtedy wyprawa ma ryzyko ×0,5 i łup ×1,5, co liczy wywołujący), false,
+    gdy jej nie było. Po zużyciu pole `wskazowki` zostaje, ale bez tego klucza. */
+export function wskazowka(st: Pick<GovState, 'wskazowki'>, klucz: string): boolean {
+  if (!maWskazowke(st, klucz)) return false;
+  delete st.wskazowki![klucz];
+  return true;
 }
 
 /** Czy osoba jest w którejś wyprawie dziennej w drodze (`GovState.wyprawy`). Sama flaga `away` z wejścia nie wystarcza:

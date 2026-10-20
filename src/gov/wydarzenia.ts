@@ -34,7 +34,18 @@
    naraz to kilka kart co kilkanaście sekund. Licznik `GovState.pogrzebN` (zgony, które przeszły przez pogrzeb) rośnie
    przy pokazaniu karty albo pominięciu zgonu, więc zgon ma najwyżej jedną kartę; zgon starszy niż `POGRZEB_DO` minut
    gry nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było. W trybie zombie karta czeka, dopóki zwłoki leżą
-   i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała. */
+   i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała.
+   Goście z klocków (src/gov/wizyta.ts, karty `gosc` i `zlapany` dołączone do `M1_EVENTS`): wydarzenie `gosc` z puli nie
+   otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc) i od razu losuje jeszcze raz wśród reszty (plan nie
+   zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
+   kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
+   kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`.
+   Karty z 0.3 z gościem (`GEventDef.gosc` z nakładek w warianty.ts: `uchodzcy`, `influencer`, `aktywisci`, `dzieci`,
+   `krypto`, w domu `fachowiec`) idą tą samą drogą: gdy wypadną z puli, `planujKarte` wystawia ich grupę zamiast karty, a
+   karta (z `gid` w danych) otwiera się w `goscTick`, gdy grupa stoi pod bramą. W odróżnieniu od gościa z klocków taka wizyta
+   zajmuje miejsce karty (to stare karty z puli, nie dodatkowe): po planie nie losuje się drugiej, odstęp do następnej
+   liczy się od tego losowania, więc liczba kart na dobę zostaje jak przed wizytami. `gdzie` takiej karty to kafelek grupy
+   (przycisk „Pokaż”). */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -57,6 +68,7 @@ import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Pu
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
+import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte } from './wizyta.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
@@ -143,6 +155,9 @@ export const M1_EVENTS: GEventDef[] = [
       gap: o.gap,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
+      // karta z gościem: kogo wystawić (nakładka) i gdzie stoi grupa, gdy karta jest otwarta (dane z `gid`)
+      gosc: o.gosc,
+      gdzie: o.gosc ? (h, x) => (x?.gid ? (h.gosc(x.gid)?.wpis?.gdzie ?? null) : null) : undefined,
       title: (h, x) => {
         const pl = title(h, x);
         return tx(pl, en()?.title(h, x) ?? pl);
@@ -171,6 +186,7 @@ export const M1_EVENTS: GEventDef[] = [
   }),
   ...NEW_EVENTS,
   ...STREET_EVENTS,
+  ...GOSC_EVENTS,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
@@ -436,6 +452,7 @@ export function makeHost(
       return s === null ? null : s === 'bloki' ? 'from the block next door' : 'from over the fence';
     },
     neighbours: () => sasiedzi(placeIn(i)),
+    ...goscHost(st, i, fx),
   };
   return h;
 }
@@ -532,7 +549,14 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
   if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
   const quiet = calm(st, i);
+  // gość: wizyta idzie co sekundę, także gdy coś czeka (karta, której gość odszedł, znika); karta gościa pod bramą
+  // przychodzi, gdy nic innego nie czeka na decyzję
+  const gosc = goscTick(st, i, fx, busy);
   if (st.ev.active || busy) return;
+  if (gosc) {
+    show(st, i, fx, gosc);
+    return;
+  }
   const h = makeHost(st, i, fx);
   if (dymWaits(st, h)) {
     const def = byId.get('dym');
@@ -554,7 +578,20 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   }
   if (i.screen < st.ev.next) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
-  const ev = pickGovEvent(st, h, pora, firstNight(i));
+  let ev = pickGovEvent(st, h, pora, firstNight(i));
+  // gość z klocków: wypadnięcie planuje wizytę (pionki idą do bramy), a karta przychodzi dopiero pod bramą. Plan nie jest
+  // kartą, więc nie zjada odstępu: losujemy jeszcze raz wśród reszty (gosc ma już odstęp i wagę 0), a gdy nic nie pasuje,
+  // następna próba za RETRY sekund, jak po pustym losowaniu
+  if (ev?.id === 'gosc') {
+    planujGoscia(st, i, fx, pora);
+    ev = pickGovEvent(st, h, pora, firstNight(i));
+  } else if (ev) {
+    // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
+    // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
+    // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
+    const def = byId.get(ev.id);
+    if (def?.gosc && planujKarte(st, i, fx, def, h, ev.d)) return;
+  }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
     st.ev.next = i.screen + RETRY;
@@ -604,9 +641,11 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
   const h = makeHost(st, i, fx, def, { d: ev.d, k });
   const c = def.choices(h, ev.d)[k];
   if (!c?.ok) return false;
-  st.ev.active = null;
+  // wybór z `zostaje` (np. „Obejrzeć ręce”) nie zamyka okna: karta czeka dalej, bez decyzji i bez odstępu
+  st.ev.active = c.zostaje ? ev : null;
   logGov(st, i, txCat(def.title(h, ev.d), ': ', c.label, '.'), false, fx);
   c.run();
+  if (c.zostaje) return true;
   decision(st, i, 'wydarzenie');
   // odstęp liczy się od decyzji, żeby wydarzenia nie przychodziły jedno za drugim
   st.ev.next = Math.max(st.ev.next, i.screen + nextGap(st, i.screen));

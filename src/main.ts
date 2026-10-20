@@ -2669,6 +2669,9 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   stale: ['', ''],
   zasiatke: ['', ''],
   prog: ['', ''],
+  // goście z klocków: polecenia idą od zarządu, nie z menu
+  gosc: ['', ''],
+  goscrozkaz: ['', ''],
   // badania: wybór z tablicy bez komunikatu, zarząd do stołu pracowni
   research: ['', ''],
   tablica: ['', ''],
@@ -2733,6 +2736,8 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   stale: ['', ''],
   zasiatke: ['', ''],
   prog: ['', ''],
+  gosc: ['', ''],
+  goscrozkaz: ['', ''],
   research: ['', ''],
   tablica: ['', ''],
   study: ['Off to do some research.', 'Off to do some research.'],

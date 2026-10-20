@@ -11,13 +11,18 @@
    `h.shuffle`, `h.makePerson`) ani nic nie zmieniają, bo gra woła je obok polskich w tej samej chwili. Napisy wyborów
    idą w kolejności wyborów z gry; gdyby polska nakładka miała ich inną liczbę, wracają polskie napisy, żeby żaden
    napis nie trafił do cudzego wyboru. Wydarzenie bez wpisu tutaj pokazuje się po angielsku z polskim tekstem, a test
-   pokrycia (tests/unit/wydarzenia03-en.test.ts) to łapie. Słowa: docs/SLOWNICZEK-EN.md. */
+   pokrycia (tests/unit/wydarzenia03-en.test.ts) to łapie. Słowa: docs/SLOWNICZEK-EN.md.
+
+   Karty z gościem pod bramą (uchodzcy, w domu fachowiec, dzieci w trybie zombie): liczbę ludzi, fachowca i to, czy w domu
+   stoi rodzina czy grupa, liczą te same pomocniki co polska nakładka (`uchodzcyN`, `uchodzcySpec`, `uchodzcyGrupa`
+   z warianty.ts, czytają tylko hosta), żeby obie strony nie rozjechały się; stąd import z warianty.ts. */
 
 import { zawodEn } from '../content/data.en.ts';
 import type { Cost } from '../content/data.ts';
 import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
 import { nazwaBudynkuEn } from '../world/classify.en.ts';
 import type { GovHost } from './tresc.ts';
+import { uchodzcyGrupa, uchodzcyN, uchodzcySpec } from './warianty.ts';
 import { bookEn, costEn, costPlEn, dziedzinaEn, fromEn, TOWER_EN } from './warianty-dane.en.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzeń z 0.3 mają różne kształty
@@ -90,6 +95,9 @@ function wpisy(zdania: Readonly<Record<string, string>>, wzorce: readonly Wzorze
   };
 }
 
+/** zdanie o dzieciakach w trybie zombie (polskie: `DZIECI_ZOMBIE` w warianty.ts) */
+const DZIECI_ZOMBIE_EN = 'The trolley rattles on the cobbles, and the kids keep glancing back at the street.';
+
 /** gdzie spadł dron: z 0.3 za garażami, w domu bez garaży według sąsiadów (log w nakładce) */
 const DRON_GDZIE: Readonly<Record<string, string>> = {
   'za garażami': 'behind the garages',
@@ -115,10 +123,12 @@ const WYDARZENIA: Record<string, EventEn> = {
 
   dzieci: {
     title: () => 'Kids with scrap',
-    text: (h) =>
-      domyObok(h)
+    text: (h) => {
+      const baza = domyObok(h)
         ? 'Kids from the houses nearby have wheeled round a barrow of sheet metal and pipes from a shed they took apart. They want something to eat.'
-        : 'Kids from the blocks next door have dragged over a trolley of sheet metal and pipes from the shopping pavilion they’ve been taking apart. They want something to eat.',
+        : 'Kids from the blocks next door have dragged over a trolley of sheet metal and pipes from the shopping pavilion they’ve been taking apart. They want something to eat.';
+      return h.tryb() === 'zombie' ? `${baza} ${DZIECI_ZOMBIE_EN}` : baza;
+    },
     labels: () => ['Scrap 6 for Food 1', 'Scrap 10 for Food 2', 'Not now'],
   },
 
@@ -217,6 +227,8 @@ const WYDARZENIA: Record<string, EventEn> = {
     log: wpisy({
       'Aktywiści grzali się przy kozie do rana i poszli protestować gdzie indziej.':
         'The activists warmed up by the stove until morning, then went off to protest somewhere else.',
+      'Aktywiści weszli do ciepła. Rano pójdą protestować gdzie indziej.':
+        'The activists came in to get warm. In the morning they’ll go off to protest somewhere else.',
     }),
   },
 
@@ -233,23 +245,34 @@ const WYDARZENIA: Record<string, EventEn> = {
   },
 
   uchodzcy: {
-    title: (h) => (dom(h) ? 'A family at the garden gate' : 'People at the gate'),
+    title: (h, d) =>
+      dom(h)
+        ? uchodzcyGrupa(h, d)
+          ? 'People at the garden gate'
+          : 'A family at the garden gate'
+        : 'People at the gate',
+    // liczba ludzi i fachowiec jak w nakładce: z grupy pod bramą (karta z `gid`) albo z danych karty
     text: (h, d) => {
       const free = h.free();
+      const n = uchodzcyN(h, d);
+      const sp = uchodzcySpec(h, d);
       const from = fromEn(d.from);
-      const spec = d.spec ? ` Among them: ${d.spec.name}, ${zawod(d.spec.prof)}.` : '';
+      const spec = sp ? ` Among them: ${sp.name}, ${zawod(sp.prof)}.` : '';
       if (dom(h))
-        return `A family of ${slownie(d.n)} is standing at the garden gate. They’ve come ${from} and are asking to be let in. ${free ? `Free beds in the house: ${free}.` : 'There are no free beds in the house, so they would sleep on the kitchen floor.'}${spec}`;
-      return `At the gate, ${ludzie(d.n)} ${d.n === 1 ? 'is' : 'are'} asking to be let in. They’ve come ${from}. Free beds in the block: ${free}.${spec}`;
+        return `${uchodzcyGrupa(h, d) ? 'A group' : 'A family'} of ${slownie(n)} is standing at the garden gate. They’ve come ${from} and are asking to be let in. ${free ? `Free beds in the house: ${free}.` : 'There are no free beds in the house, so they would sleep on the kitchen floor.'}${spec}`;
+      return `At the gate, ${ludzie(n)} ${n === 1 ? 'is' : 'are'} asking to be let in. They’ve come ${from}. Free beds in the block: ${free}.${spec}`;
     },
-    // te same warunki co wybory w nakładce: wszyscy albo tylu, ilu się zmieści, jedzenie, wszyscy na podłogę, odprawa
+    // te same warunki co wybory w nakładce: wszyscy albo tylu, ilu się zmieści (bez grupy pod bramą; grupę przyjmuje się
+    // w całości), jedzenie, wszyscy na podłogę, odprawa
     labels: (h, d) => {
       const free = h.free();
+      const n = uchodzcyN(h, d);
+      const grupa = typeof d.gid === 'string';
       const out: string[] = [];
-      if (free >= d.n) out.push('Take everyone in');
-      else if (free > 0) out.push(`Take in as many as fit (${free})`);
+      if (free >= n) out.push('Take everyone in');
+      else if (free > 0 && !grupa) out.push(`Take in as many as fit (${free})`);
       out.push('Give them food for the road (Food 3)');
-      if (free < d.n) out.push(`Take everyone in (${ludzie(d.n - free)} on the floor)`);
+      if (free < n) out.push(`Take everyone in (${ludzie(n - free)} on the floor)`);
       out.push('Send them away');
       return out;
     },
@@ -272,6 +295,9 @@ const WYDARZENIA: Record<string, EventEn> = {
         : d.lok
           ? `${p.name} from your stairwell`
           : `${p.name} from ${budynek(d.b)}`;
+      // sąsiad z furtki (karta z gościem pod bramą) podchodzi i przyznaje się tam, a nie przy kozie
+      if (dom(h) && typeof d.gid === 'string')
+        return `${who} came up to ${h.wordsEn().brama} and let it slip that ${z.on} used to be ${zPrzedimkiem(zawod(p.prof))}. ${wielka(z.on)} kept quiet until now in case someone put ${z.go} to work.`;
       return `${who} let it slip by ${ogien(h)} that ${z.on} used to be ${zPrzedimkiem(zawod(p.prof))}. ${wielka(z.on)} kept quiet until now in case someone put ${z.go} to work.`;
     },
     labels: (_h, d) => {

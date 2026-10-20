@@ -5,6 +5,7 @@ import {
   fenceStateFn,
   GAME_KINDS,
   gameLights,
+  goscMaxHp,
   HEAPS,
   onTables,
   STRANGERS,
@@ -13,6 +14,7 @@ import {
 } from '../../src/render/game.ts';
 import { IN, specOf, type ThingLike, WRECK_LOOKS } from '../../src/render/section.ts';
 import { mockWrecks } from '../../src/render/yard.ts';
+import { GOSC_HP } from '../../src/sim/gosc.ts';
 import type { Heap } from '../../src/world/heaps.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { T } from '../../src/world/terrain.ts';
@@ -132,6 +134,30 @@ describe('obcy w nocy', () => {
     expect(strangerVisibility(1, 0, 'szabrownik')).toBe(0);
     expect(strangerVisibility(0, 0, 'zombie')).toBe(1);
     expect(strangerVisibility(1, 0.8, 'zombie')).toBe(1);
+  });
+
+  it('gościa z klocków widać o każdej porze: w ciemności jako ciemny zarys, w świetle i w dzień normalnie', () => {
+    for (const darkness of [0, 0.5, 1]) {
+      expect(strangerVisibility(darkness, 0, 'gosc')).toBeGreaterThanOrEqual(0.25);
+      expect(strangerVisibility(darkness, 0, 'gosc')).toBeGreaterThanOrEqual(
+        strangerVisibility(darkness, 0, 'szabrownik'),
+      );
+    }
+    expect(strangerVisibility(1, 0, 'gosc')).toBeLessThan(0.5);
+    expect(strangerVisibility(1, 0, 'gosc')).toBe(strangerVisibility(1, 0, 'zombie'));
+    expect(strangerVisibility(0, 0, 'gosc')).toBe(1);
+    expect(strangerVisibility(1, 0.8, 'gosc')).toBe(1);
+    // reszta obcych bez zmian: w ciemności nic
+    for (const k of ['obcy', 'szabrownik', 'wedrowiec', 'handlarz', 'zbir'])
+      expect(strangerVisibility(1, 0, k)).toBe(0);
+    expect(STRANGERS.has('gosc')).toBe(true);
+  });
+
+  it('pasek życia gościa: do 60 z życia pionka, a z potrzebami (przyjęty, ugryziony) do 100 ze zdrowia', () => {
+    expect(goscMaxHp({})).toBe(GOSC_HP);
+    expect(goscMaxHp({ needs: undefined })).toBe(GOSC_HP);
+    expect(goscMaxHp({ needs: { health: 80 } })).toBe(100);
+    expect(GOSC_HP).toBeLessThan(100);
   });
 
   it('rzeczy gry: meble, zapasy, trzepak i siatka są z gry, podgląd tych rodzajów się pomija', () => {

@@ -5,8 +5,8 @@
    karta zwykłego trybu, `slady_z` jej wariant zombie (łata albo warta z dzidą, bez „udawać”, które podbijałoby napad
    szabrowników), a `szwendacz` karta tylko trybu zombie o prawdziwym szwendaczu przy siatce (`GovHost.przy` z
    GovInput.horde.przy; „Dobić dzidą” wysyła atak osoby z dzidą przez `GovHost.atakuj`). `wedrowiec` ma wagę 0 w obu
-   trybach: opisuje człowieka pod bramą, a nikogo tam nie ma. Karta z miejscem na mapie ma `gdzie`, z którego okno
-   wydarzenia robi przycisk „Pokaż”.
+   trybach: opisuje człowieka pod bramą, a nikogo tam nie ma; jego rolę przejął `gosc` (src/gov/wizyta.ts). Karta
+   z miejscem na mapie ma `gdzie`, z którego okno wydarzenia robi przycisk „Pokaż”.
    Karty z ludźmi: mieszkańcy siedziby z osobą z generatora (`GovHost.lokatorzy()`, `lokator(id)`; bez generatora lista
    jest pusta, a karty grają po staremu) dają bohaterów kartom `dym`, `latarka` (najstarsza mieszkanka po imieniu, bez
    pięter) i, w nakładkach z warianty.ts, `fachowiec` (awans), `kradziez` (sprawca z najniższym nastrojem, nie jedzenie)
@@ -16,6 +16,10 @@
    `halas` dla
    „Sprawdzić” osobę z `doSprawdzenia()` (czuwającą, a gdy takiej nie ma, śpiącą, ale nie z warty) i kafelek
    z `kafelekPrzySiatce()` (`sprawdz`).
+   `gosc` i `zlapany` (src/gov/wizyta.ts, dołączone w wydarzenia.ts) to karty z prawdziwym gościem pod bramą; host dostaje
+   od nich metody `GoscHost`. Karty z 0.3, w których ktoś przychodzi pod bramę (`uchodzcy`, `influencer`, `aktywisci`,
+   `dzieci`, `krypto`, w domu `fachowiec`; nakładki w warianty.ts), mają `GEventDef.gosc` (kogo wystawić, `GoscKarty`):
+   wypadnięcie planuje wizytę jak dla gościa z klocków, a karta czeka na grupę pod bramą w tym samym `goscTick`.
    `pogrzeb` to karta z sytuacji jak `dym` (waga 0, wyzwalacz w eventTick z GovInput.dead, licznik GovState.pogrzebN): po
    zgonie kogoś z imieniem (zarząd albo mieszkaniec z osobą; dane karty `{ id, name, f, cause, cialo? }`) w trzech
    wyborach: pochować pod trzepakiem (w domu w ogrodzie; wszystkim nastrój „Pożegnaliśmy: Imię” +2 na dobę, kopie
@@ -25,13 +29,15 @@
 import { przyczynaEn } from '../content/data.en.ts';
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
-import { g } from '../content/people.ts';
+import { g, type Person } from '../content/people.ts';
 import { type Tx, tx, txOf } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
+import type { KtoId, Strona } from './goscie.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
 import type { Cialo, GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
 import { najstarszaMieszkanka, type OsobaKarty, osobaKarty } from './warianty.ts';
+import type { GoscHost } from './wizyta.ts';
 
 // ---------------------------------------------------------------- uchwały
 
@@ -251,7 +257,7 @@ export function poraOf(hour: number): Pora | null {
 }
 
 /** EventHost z 0.3 rozszerzony o to, czego potrzebują wydarzenia przy siatce */
-export interface GovHost extends EventHost {
+export interface GovHost extends EventHost, GoscHost {
   hour(): number;
   /** dziury w siatce i nazwa najsłabszego miejsca (w obu językach) */
   holes(): number;
@@ -355,10 +361,24 @@ export interface GEventDef<D = any> {
   make: (h: GovHost) => D | null;
   /** miejsce wydarzenia na mapie w kafelkach (przycisk „Pokaż” w oknie); brak funkcji albo null: karta bez miejsca */
   gdzie?: (h: GovHost, d: D) => Punkt | null;
+  /** Karta, w której ktoś przychodzi pod bramę: kogo wystawić (dane z `make`). Gdy wypadnie, zarząd nie pokazuje karty,
+      tylko planuje wizytę (`planujKarte` w wizyta.ts, jak dla gościa z klocków), a karta otwiera się dopiero wtedy, gdy
+      grupa stoi pod bramą; jej dane dostają wtedy `gid` (id wizyty), po którym tekst i wybory czytają grupę (`GovHost.grupa`)
+      i sterują jej pionkami (`przyjmijGosci` i spółka). null: tym razem bez gościa, karta gra po staremu (jak z zapisu). */
+  gosc?: (h: GovHost, d: D) => GoscKarty | null;
   /** tytuł, tekst i napisy wyborów w obu językach (angielskie z tych samych danych, bez losowania) */
   title: (h: GovHost, d: D) => Tx;
   text: (h: GovHost, d: D) => Tx;
   choices: (h: GovHost, d: D) => GChoice[];
+}
+
+/** Kogo wystawia karta z gościem (`GEventDef.gosc`): osoby grupy (mówiąca pierwsza; mogą to być osoby z danych karty, jak
+    influencerka), kim są (archetyp z klocków gościa albo rola karty) i, gdy karta woli, z której strony przychodzą (bez
+    strony losuje ją zarząd). Nie nazywa się `PlanGoscia`, bo tak jest plan dla symulacji (`GovEffects.gosc`). */
+export interface GoscKarty {
+  osoby: Person[];
+  kto: KtoId | 'sasiad' | 'aktywisci' | 'influencer' | 'dzieci';
+  strona?: Strona;
 }
 
 /** wybór wydarzenia w grze: jak EventChoice z 0.3, ale z napisem w obu językach */
@@ -366,6 +386,9 @@ export interface GChoice {
   label: Tx;
   ok: boolean;
   ai?: boolean;
+  /** wybór nie zamyka okna: skutek się dzieje (zaufanie, wpis w kronice), a karta czeka dalej na decyzję, np. „Obejrzeć
+      ręce” przy gościu (po wyborze karta pokazuje, co zobaczono, i nie ma już tego wyboru) */
+  zostaje?: boolean;
   run: () => void;
 }
 

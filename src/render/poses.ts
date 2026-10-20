@@ -7,9 +7,9 @@
    i zajmowanie mieszkania młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę,
    naprawę i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
    wyważanie zamachem, deski i pukanie młotkiem, zamek na kolanach, pomieszczenie sąsiada przeszukuje
-   na kolanach. Klatki liczone z czasu gry, bez
-   stanu w symulacji. Dokładanie do kozy trwa w symulacji
-   jeden tick, więc widok pamięta je chwilę (FeedWatch). Czyste funkcje bez PixiJS. */
+   na kolanach. Gość wpuszczony na noc (praca 'gosc', what 'spi') śpi na ziemi przy ognisku jak śpiący na podłodze.
+   Klatki liczone z czasu gry, bez stanu w symulacji. Dokładanie do kozy trwa w symulacji jeden tick, więc widok pamięta je
+   chwilę (FeedWatch). Czyste funkcje bez PixiJS. */
 
 import { type WeaponId, weaponOf } from '../sim/bron.ts';
 import { BITE_CD } from '../sim/zombie.ts';
@@ -185,6 +185,19 @@ export function poseOf(
       case 'campfire':
         return { pose: 'crouch', dir, frame: 0 };
     }
+  // śpiący na ziemi bez łóżka (na podłodze) albo gość wpuszczony na noc, który kładzie się przy ognisku
+  const floor = (): PoseView => {
+    const o = FLOOR_O[dir];
+    const [hx, hy] = lieHead(o);
+    return {
+      pose: 'walk',
+      dir,
+      frame: 0,
+      lie: { kind: 'floor', o, x: p.x * TILE + hx - 24, y: p.y * TILE + hy - 26 },
+      z: p.y,
+    };
+  };
+  if (!moving && j?.t === 'gosc' && j.what === 'spi') return floor();
   if (!moving && j?.t === 'guard' && j.phase === 4) return { pose: 'doze', dir, frame: 0 };
   if (!moving && j && j.phase === 1)
     switch (j.t) {
@@ -256,15 +269,7 @@ export function poseOf(
           const h = bedHead(bed);
           return { pose: 'walk', dir, frame: 0, lie: { kind: 'bed', ...h }, z: bed.y + bed.h + 0.02 };
         }
-        const o = FLOOR_O[dir];
-        const [hx, hy] = lieHead(o);
-        return {
-          pose: 'walk',
-          dir,
-          frame: 0,
-          lie: { kind: 'floor', o, x: p.x * TILE + hx - 24, y: p.y * TILE + hy - 26 },
-          z: p.y,
-        };
+        return floor();
       }
     }
   if (p.carry > 0) return { pose: 'carry', dir, frame: step };

@@ -185,10 +185,14 @@ describe('fachowiec z klatki', () => {
     expect(polskieSlowa(e.title(h, d).en)).toEqual([]);
   });
 
-  it('w domu bez zmian: sąsiad zza płotu, dołączenie przez joinPerson', () => {
+  it('w domu: sąsiad zza płotu (z obcymi pod bramą, bez nich waga 0); karta bez wizyty, jak z zapisu, dołącza przez joinPerson', () => {
     const zielonki = { ...setup().h.place(), kind: 'dom' as const, near: 'domy' as const, houses: 6, blocks: 0 };
     const { h } = setup({ place: zielonki, residents: 0, lokatorzy: undefined });
-    expect(def('fachowiec').w(h)).toBeGreaterThan(0);
+    // zadanie 11: w domu fachowiec to sąsiad, który podchodzi do furtki, więc potrzebuje gry z obcymi (GovInput.goscie)
+    expect(def('fachowiec').w(h)).toBe(0);
+    expect(
+      def('fachowiec').w(setup({ place: zielonki, residents: 0, lokatorzy: undefined, goscie: [] }).h),
+    ).toBeGreaterThan(0);
     const d = def('fachowiec').make(h) as { lok?: string };
     expect(d.lok).toBeUndefined();
     const { fx } = wybierz('fachowiec', d, 0, { place: zielonki, residents: 0, lokatorzy: undefined });

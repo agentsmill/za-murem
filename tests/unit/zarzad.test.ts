@@ -10,6 +10,7 @@ import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.
 import type { GovEffects, GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
 import { STREET_EVENTS } from '../../src/gov/ulica.ts';
+import { GOSC_EVENTS } from '../../src/gov/wizyta.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { confirmNight, govUpdate, loadGov, newGov, pending, saveGov, setNight, signLaw } from '../../src/gov/zarzad.ts';
@@ -297,7 +298,7 @@ describe('wydarzenia', () => {
   });
 
   it('wydarzenia z 0.3 i nowe działają na hoście zarządu, skutki trafiają do zapasów', () => {
-    expect(M1_EVENTS.length).toBe(OLD_EVENTS.length + NEW_EVENTS.length + STREET_EVENTS.length);
+    expect(M1_EVENTS.length).toBe(OLD_EVENTS.length + NEW_EVENTS.length + STREET_EVENTS.length + GOSC_EVENTS.length);
     for (const def of M1_EVENTS) {
       for (let k = 0; k < 4; k++) {
         const gov = newGov(20 + k);

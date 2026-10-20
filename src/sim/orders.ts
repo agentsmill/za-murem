@@ -885,6 +885,17 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       );
     case 'zemsta':
       return tr(HANDEL.zemstaPraca[Math.min(3, j.phase)]);
+    case 'gosc': {
+      // gość z klocków: what mówi, co robi (src/sim/gosc.ts, JobKind 'gosc')
+      const idzie = p.pi < p.path.length;
+      if (j.what === 'spi') return L('Śpi przy ogniu.', 'Asleep by the fire.');
+      if (j.what === 'lup')
+        return idzie ? L('Skrada się po jedzenie.', 'Sneaking off for food.') : L('Rozgląda się.', 'Looking around.');
+      if (j.what === 'rdzen')
+        return idzie ? L('Idzie do ognia.', 'Heading for the fire.') : L('Siedzi przy ogniu.', 'Sitting by the fire.');
+      if (j.what === 'stoi') return L('Stoi i czeka na decyzję.', 'Standing there, waiting for a decision.');
+      return idzie ? L('Idzie do bramy.', 'Walking to the gate.') : L('Czeka pod bramą.', 'Waiting at the gate.');
+    }
     case 'wander':
       return tr(OBCY.wander[Math.min(3, j.phase)]);
     case 'scavenge':
