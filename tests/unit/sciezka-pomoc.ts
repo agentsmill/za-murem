@@ -14,6 +14,7 @@ import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandFor } from '../../src/sim/orders.ts';
+import { NOWE } from '../../src/sim/praca.ts';
 import { Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
@@ -23,6 +24,7 @@ import {
   nowyStanSciezki,
   type OdczytCelow,
   type StanSciezki,
+  stanZZapisu,
   type WidokSciezki,
   widokSciezki,
 } from '../../src/ui/sciezka.ts';
@@ -42,6 +44,8 @@ export interface Gra {
   sim: Sim;
   gov: GovState;
   sciezka: StanSciezki;
+  /** gra bez automatu pracy ludzi (`bezAutomatu`): osoby zarządu, którym nowe rodzaje pracy już wyłączono */
+  wylaczeni?: number[];
 }
 
 /** nowa gra: 4 osoby zarządu, godzina 15:00 pierwszego dnia, ścieżka na starcie (pierwszy dzień) */
@@ -57,6 +61,41 @@ export function klon(g: Gra): Gra {
     sim: new Sim(g.sim.w, structuredClone(g.sim.st)),
     gov: structuredClone(g.gov),
     sciezka: structuredClone(g.sciezka),
+    ...(g.wylaczeni ? { wylaczeni: [...g.wylaczeni] } : {}),
+  };
+}
+
+/** Wyłącza automat pracy ludzi każdemu z zarządu, kto jeszcze go nie ma wyłączonego (nowe rodzaje pracy na 0 jak
+    `wylaczAutomat` w tests/unit/praca-pomoc.ts, ale także dla osób, które dopiero co dołączyły w wydarzeniu). Bez
+    automatu nikt sam nie przeszukuje, nie łata i nie zbiera drewna, więc to, co zrobione, i zapas drewna zależą tylko
+    od testu; z automatem zarząd do wieczora ma 30–50 sztuk drewna i przeszukuje dom sam. */
+function pilnujAutomatu(g: Gra): void {
+  if (!g.wylaczeni) return;
+  for (const p of g.sim.st.pawns) {
+    if (p.kind !== 'core' || g.wylaczeni.includes(p.person)) continue;
+    for (const r of NOWE) g.sim.push({ t: 'prio', ids: [], osoba: p.person, rodzaj: r, prio: 0 });
+    g.wylaczeni.push(p.person);
+  }
+}
+
+/** ta sama gra bez automatu pracy ludzi, także dla tych, którzy dołączą później (zmiana działa od następnego kroku) */
+export function bezAutomatu(g: Gra): Gra {
+  g.wylaczeni = [];
+  pilnujAutomatu(g);
+  g.sim.step();
+  return g;
+}
+
+/** Ta sama gra po zapisie i wczytaniu: stan symulacji, zarządu i ścieżki przechodzi przez JSON jak w przeglądarce
+    (`stanZZapisu` czyta stan ścieżki tak jak `enter` w src/main.ts). */
+export function przezZapis(g: Gra): Gra {
+  const st: SimState = JSON.parse(JSON.stringify(g.sim.st));
+  const gov: GovState = JSON.parse(JSON.stringify(g.gov));
+  return {
+    ...g,
+    sim: new Sim(g.sim.w, st),
+    gov,
+    sciezka: stanZZapisu(JSON.parse(JSON.stringify(g.sciezka)), st, gov),
   };
 }
 
@@ -116,6 +155,8 @@ export interface Odpowiedzi {
   karta?: (g: Gra, card: NightCard) => void;
   /** okna, na których gra staje (zwraca je zamiast odpowiadać); krok ścieżki widzi je otwarte */
   stoj?: readonly Prompt['k'][];
+  /** bez kroku ścieżki: gra jak bez okienka celów (do sprawdzenia, że ścieżka niczego w grze nie zmienia) */
+  bezKroku?: boolean;
 }
 
 /** odpowiedź na jedno okno zarządu, jak `answer` w tests/unit/gov-play.ts (skutki idą do symulacji) */
@@ -145,6 +186,7 @@ export function odpowiedz(g: Gra, p: Prompt, odp: Odpowiedzi = {}): void {
 
 /** dwadzieścia kroków symulacji (sekunda przy ekranie przy tempie 1×) */
 export function krokiSymulacji(g: Gra): void {
+  pilnujAutomatu(g);
   for (let k = 0; k < TICKS_PER_SECOND; k++) g.sim.step();
 }
 
@@ -152,15 +194,18 @@ export function krokiSymulacji(g: Gra): void {
     Zwraca okno z `odp.stoj`, jeśli się pojawiło; wtedy jest nadal otwarte. */
 export function krokZarzadu(g: Gra, odp: Odpowiedzi = {}): Prompt | null {
   const { st, w } = g.sim;
+  const krokSciezkiGry = () => {
+    if (!odp.bezKroku) krok(g);
+  };
   applyGov(st, w, govUpdate(g.gov, wejscie(g)));
   for (let k = 0; k < 6; k++) {
     const p = pending(g.gov, wejscie(g));
     if (!p) break;
-    krok(g);
+    krokSciezkiGry();
     if (odp.stoj?.includes(p.k)) return p;
     odpowiedz(g, p, odp);
   }
-  krok(g);
+  krokSciezkiGry();
   return null;
 }
 
