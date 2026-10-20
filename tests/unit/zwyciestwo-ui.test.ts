@@ -7,14 +7,17 @@
    Droga technologii: wejście z atrapy nie ma odczytu badań, więc jej wiersz ma w większości testów dawne „Wkrótce” i sześć
    szarych kamieni; wiersz z odczytem (złoty pierwszy kamień ze zdaniem o pracowni, od drugiego kamienia „Wkrótce” o prądzie)
    ma własne scenariusze w „ekranie dróg”, a epilog fabryki w obu trybach i językach sprawdza zwyciestwo-technologia.test.ts.
-   Na końcu przegląd źródeł: każda para `L('…', '…')` i `tx('…', '…')` w module, także z gałęzi, których żaden scenariusz
-   nie dotyka. */
+   Teren bez sąsiada do otoczenia (`GovInput.teren.mozliwe` równe 0, np. Przymorze, gdzie każdy sąsiad stoi za jezdnią) ma
+   w wierszu „Wkrótce: wspólny płot przez jezdnię.” zamiast zdania o płocie, a pracownia w domu jednorodzinnym stoi
+   w „waszym domu”. Na końcu przegląd źródeł: każda para `L('…', '…')` i `tx('…', '…')` w module, także z gałęzi, których
+   żaden scenariusz nie dotyka. */
 
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LawPath } from '../../src/content/data.ts';
 import { tx, ustawJezyk } from '../../src/core/jezyk.ts';
-import type { GameMode, GovInput, GovState } from '../../src/gov/typy.ts';
+import { BLOK } from '../../src/gov/miejsce.ts';
+import type { GameMode, GovInput, GovPlace, GovState } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { DROGI, type Droga, krokZwyciestwa, nazwaDrogi, ocenDrogi, wlaczZwyciestwo } from '../../src/gov/zwyciestwo.ts';
@@ -260,6 +263,61 @@ describe('ekran dróg (drogiSheet)', () => {
       expect(wszystko(ekran)).not.toMatch(POLSKIE);
       expect(polskieSlowa(wszystko(ekran))).toEqual([]);
     }
+  });
+
+  it('teren na mapie bez sąsiada do otoczenia: „Wkrótce” o płocie przez jezdnię zamiast „co dalej”, kamienie szare', () => {
+    const s = drogi(stan(), wej({ teren: { przylaczone: 0, mozliwe: 0 } }));
+    const w = wiersz(s, 'teren');
+    expect(w).toContain('<p class="zw-wkrotce">Wkrótce: wspólny płot przez jezdnię.</p>');
+    // droga z „Wkrótce” nie ma czego zdobyć już teraz: żadnego złotego następnego, dopisku „Następny:” ani zdania
+    expect(klasyKamieni(w)).toEqual(Array(5).fill('zw-dalszy'));
+    expect(w).not.toContain('Następny');
+    expect(w).not.toContain('zw-dalej');
+    expect(w).not.toContain('Otoczcie');
+    // ludność na tej samej mapie dalej ma złoty następny kamień ze zdaniem
+    expect(klasyKamieni(wiersz(s, 'ludnosc'))[0]).toBe('zw-nastepny');
+    // mapa z sąsiadem do otoczenia pokazuje płot jak dotąd
+    const zSasiadem = wiersz(drogi(stan(), wej({ teren: { przylaczone: 0, mozliwe: 4 } })), 'teren');
+    expect(zSasiadem).toContain('class="zw-dalej">Otoczcie wspólnym płotem pierwszy sąsiedni budynek.<');
+    expect(zSasiadem).not.toContain('Wkrótce');
+    // po pierwszym kamieniu to samo „Wkrótce” co wszędzie
+    const po = drogi(stan({ teren: 1 }), wej({ teren: { przylaczone: 1, mozliwe: 0 } }));
+    expect(wiersz(po, 'teren')).toContain('<p class="zw-wkrotce">Wkrótce: sąsiednie kwadraty i mur.</p>');
+  });
+
+  it('po angielsku teren bez sąsiada do otoczenia: “Coming soon: a shared fence across the road.”', () => {
+    ustawJezyk('en');
+    const s = drogi(stan(), wej({ teren: { przylaczone: 0, mozliwe: 0 } }));
+    const w = wiersz(s, 'teren');
+    expect(w).toContain('<p class="zw-wkrotce">Coming soon: a shared fence across the road.</p>');
+    expect(klasyKamieni(w)).toEqual(Array(5).fill('zw-dalszy'));
+    expect(w).not.toContain('Next: ');
+    expect(w).not.toContain('zw-dalej');
+    expect(wszystko(s)).not.toMatch(POLSKIE);
+    expect(polskieSlowa(wszystko(s))).toEqual([]);
+    expect(wszystko(s)).not.toContain('Wkrótce');
+  });
+
+  it('pracownia w „waszym domu” w domu jednorodzinnym, w „waszym mieszkaniu” w bloku, po polsku i po angielsku', () => {
+    const odczyt = { pracownia: false, zbadane: 0, era: 0, koncowa: false, siecWlaczona: false };
+    const dom: GovPlace = { ...BLOK, kind: 'dom', near: 'domy' };
+    const zdanie = (place: GovPlace | undefined) =>
+      wiersz(drogi(stan(), wej({ badania: odczyt, place })), 'technologia');
+    for (const place of [undefined, BLOK])
+      expect(zdanie(place)).toContain(
+        'Pracownia postawiona</span><span class="zw-dalej">Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).</span>',
+      );
+    const wDomu = zdanie(dom);
+    expect(wDomu).toContain(
+      'Pracownia postawiona</span><span class="zw-dalej">Postawcie pracownię w pokoju waszego domu (Budowa, zakładka Dom).</span>',
+    );
+    expect(wDomu).not.toContain('mieszkani');
+    ustawJezyk('en');
+    expect(zdanie(BLOK)).toContain('class="zw-dalej">Build a research room in a room of your flat (Build, Home tab).<');
+    const wDomuEn = zdanie(dom);
+    expect(wDomuEn).toContain('class="zw-dalej">Build a research room in a room of your house (Build, Home tab).<');
+    expect(wDomuEn).not.toMatch(POLSKIE);
+    expect(polskieSlowa(wDomuEn.replace(/<[^>]*>/g, ' '))).toEqual([]);
   });
 
   it('pod następnym kamieniem stoi zdanie „co dalej”: próg ludności, siedem poranków z licznikiem, płot dla terenu', () => {

@@ -3,7 +3,8 @@
    lokatorzy zapasowi bez tabel generatora, zamiar i nastrój, wybory spotkania i ich skutki. Etap 2: piętra (łup,
    lokatorzy z góry, szwendacz), nocni goście o 2:00, szabrownicy, którzy zostają, ukryci ugryzieni. Etap 3: wspólny
    płot dla budynku (plotDla z kształtem z wspolnyPlot, kosztPlotu w trzech wariantach materiału, wariantyPlotu do
-   menu, procentPlotu), a łup w otoczonym budynku jest nasz (uSasiada).
+   menu, procentPlotu), a łup w otoczonym budynku jest nasz (uSasiada). doOtoczenia liczy raz na świat, ile budynków
+   w okolicy da się w ogóle otoczyć (odczyt `GovInput.teren.mozliwe` dla dróg do zwycięstwa).
    Gra sieciowa: kafelki i pomieszczenia za drzwiami klatek innych drużyn (zaDrzwiami, kafelkiZajete, pokojeZajete).
    Czyste funkcje świata i stanu: symulacja, menu poleceń, rysowanie i interfejs liczą z nich to samo.
 
@@ -20,7 +21,7 @@ import { makePerson, type Person } from '../content/people.ts';
 import { clamp, mulberry, type Rng } from '../core/rng.ts';
 import { type AptState, type AptWhy, type DamageKind, settleAptsOf } from '../world/apts.ts';
 import { buildInterior, IN, type Interior, type RoomKind } from '../world/interior.ts';
-import { type PlotWynik, wspolnyPlot } from '../world/plot.ts';
+import { type PlotWorld, type PlotWynik, wspolnyPlot } from '../world/plot.ts';
 import type { World } from '../world/world.ts';
 import { type Mat, naObwodzie } from './budowle.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
@@ -1268,6 +1269,73 @@ export function plotDla(st: StanPlotu, w: World, bid: number): PlotWynik | null 
   const zasieki = new Set(st.things.filter((t) => naObwodzie(t.kind)).map((t) => t.y * size + t.x));
   const drzwi = drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
   return wspolnyPlot(w, w.fence, drzwi, zasieki);
+}
+
+/** do ilu metrów od pierwszych drzwi siedziby liczą się budynki, które da się otoczyć (`doOtoczenia`) */
+const DO_OTOCZENIA_M = 150;
+
+const otoczeniaMemo = new WeakMap<object, number>();
+
+/** `blocked` świata z pierwotną siatką: gdy wspólny płot zmienił siatkę świata (`ustawSiatke` w sim.ts), to odwraca tę
+    zmianę na kopii (kafelki bieżącej siatki wolne, pierwotnej zajęte poza jej dziurami); bez wspólnego płotu to sam
+    `blocked` świata, bez kopiowania. */
+function blockedPierwotne(w: Pick<World, 'blocked' | 'fence' | 'fenceBaza'>): Uint8Array {
+  const baza = w.fenceBaza;
+  if (!baza) return w.blocked;
+  const b = w.blocked.slice();
+  for (const t of w.fence.tiles) b[t] = 0;
+  for (const t of baza.tiles) b[t] = 1;
+  for (const t of baza.hole) b[t] = 0;
+  return b;
+}
+
+/** Ile budynków w okolicy da się otoczyć wspólnym płotem: tych z drzwiami na zewnątrz (`drzwiBudynku`), najwyżej
+    `DO_OTOCZENIA_M` metrów od pierwszych drzwi siedziby (do najbliższych jego drzwi, na kwadratach kafelków, bez
+    Math.hypot), dla których `wspolnyPlot` z pierwotnej siatki świata (bez zasieków) znajduje kształt. Zero to mapa, na
+    której płot nie dosięga żadnego sąsiada, np. Przymorze, gdzie każdy stoi za jezdnią; z tego zarząd bierze „Wkrótce”
+    drogi terenu (`GovInput.teren.mozliwe`).
+    To cecha świata, a nie stanu gry: otwartość drzwi, budynek już otoczony i zasieki na siatce nie zmieniają liczby.
+    Wspólny płot, który zmienił siatkę świata (`fenceBaza`), też jej nie zmienia: liczy się z pierwotnej siatki i jej
+    `blocked`, więc wynik jest ten sam w nowej grze i po wczytaniu zapisu (z bieżącego `blocked` po płocie wokół jednego
+    budynku wychodziło o jeden więcej: jego kafelki liczyły się jak gotowy mur i płot do następnego sąsiada mieścił się
+    w limicie długości `PLOT_MAX`). Liczone raz na świat (`WeakMap`, poza stanem, więc skrót symulacji go nie widzi),
+    bez losowania i bez zmian w świecie; świat bez siedziby albo bez siatki (atrapy w testach) daje 0.
+    Drzwi budynku to jego wnętrze (`drzwiBudynku` buduje `wnetrze`, a to około 0,4 MB, które zostaje w pamięci świata na
+    zawsze), więc kandydaci odpadają najpierw po ramce budynku: wnętrza budują się tylko budynkom w zasięgu. */
+export function doOtoczenia(w: World): number {
+  let ile = otoczeniaMemo.get(w);
+  if (ile === undefined) {
+    ile = policzOtoczenie(w);
+    otoczeniaMemo.set(w, ile);
+  }
+  return ile;
+}
+
+function policzOtoczenie(w: World): number {
+  const size = w.size;
+  const wejscie = w.buildings[w.hq]?.entrances[0]?.out ?? -1;
+  const baza = w.fenceBaza ?? w.fence;
+  if (wejscie < 0 || !baza?.tiles.length) return 0;
+  const hx = wejscie % size;
+  const hy = Math.floor(wejscie / size);
+  const lim = DO_OTOCZENIA_M * DO_OTOCZENIA_M;
+  // ramka budynku z zapasem 2 kafelków: drzwi stoją na kafelku budynku (w jego ramce), a kafelek przed nimi jest jego
+  // sąsiadem, więc leży najwyżej o 1 od ramki; budynek, którego ramka jest dalej niż zasięg + 2, nie ma drzwi w zasięgu
+  const limRamki = (DO_OTOCZENIA_M + 2) ** 2;
+  const swiat: PlotWorld = { size, terr: w.terr, bid: w.bid, blocked: blockedPierwotne(w) };
+  let ile = 0;
+  for (let bid = 0; bid < w.buildings.length; bid++) {
+    if (bid === w.hq) continue;
+    // najpierw ramka (tania), dopiero potem drzwi, które budują wnętrze budynku i trzymają je w pamięci świata
+    const b = w.buildings[bid];
+    const dx = Math.max(b.x0 - hx, 0, hx - b.x1);
+    const dy = Math.max(b.y0 - hy, 0, hy - b.y1);
+    if (dx * dx + dy * dy > limRamki) continue;
+    const drzwi = drzwiBudynku(w, bid).zewn.map((d) => ({ tile: d.tile, out: d.out }));
+    const blisko = drzwi.some((d) => ((d.out % size) - hx) ** 2 + (Math.floor(d.out / size) - hy) ** 2 <= lim);
+    if (blisko && wspolnyPlot(swiat, baza, drzwi, new Set()).ok) ile++;
+  }
+  return ile;
 }
 
 /** postęp planu płotu w procentach (praca zrobiona z całej), najwyżej 99: to samo w opisie pracy, na karcie budynku

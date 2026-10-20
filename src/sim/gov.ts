@@ -6,9 +6,12 @@
    (`fx.join`) i przyjęci mieszkańcy (`fx.residents`) czekają za bramą i dochodzą do siedziby w pracy 'arrive'.
 
    Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to `populacja(st).razem`
-   z odczytu symulacji (zarząd, także na wyprawie, i mieszkańcy siedziby; bez sąsiadów i gości), a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
-   odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
-   gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts).
+   z odczytu symulacji (zarząd, także na wyprawie, i mieszkańcy siedziby; bez sąsiadów i gości), a `teren.przylaczone`
+   to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu; obok niego `teren.mozliwe` mówi, ile
+   budynków w okolicy da się w ogóle otoczyć (`doOtoczenia` w src/sim/sasiedzi.ts, raz na świat; zero na Przymorzu, gdzie
+   każdy sąsiad stoi za jezdnią). Trzeci odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest
+   z tabel mieszkańców, a nie ze stanu gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane
+   w src/main.ts).
 
    Mieszkańcy siedziby z osobą z generatora mieszkańców (pionki `resident`, bez sąsiadów) wchodzą jako `lokatorzy`,
    w kolejności pionków, z tymi polami osoby, które zarząd czyta (`GovLokator`); bez generatora pola nie ma.
@@ -67,6 +70,7 @@ import { dayOf, minutesAt, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { frontTile, houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
+import { doOtoczenia } from './sasiedzi.ts';
 import {
   addCore,
   addResidents,
@@ -310,9 +314,11 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     dead: zmarli(st, zombie),
     // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
     // sama liczba, którą czyta EventHost.pop(); kto wychodzi bramą, już się nie liczy), a przyłączone budynki to te, które
-    // wspólny płot już dołączył do obwodu (plan w toku się nie liczy). Pole `ludnosc2021` dokłada gra (main.ts)
+    // wspólny płot już dołączył do obwodu (plan w toku się nie liczy). `mozliwe` to ile budynków w okolicy da się w ogóle
+    // otoczyć (cecha świata, liczona raz na świat poza stanem gry, więc skrót symulacji jej nie widzi). Pole
+    // `ludnosc2021` dokłada gra (main.ts)
     ludnosc: populacja(st).razem,
-    teren: { przylaczone: st.plot?.bids.length ?? 0 },
+    teren: { przylaczone: st.plot?.bids.length ?? 0, mozliwe: doOtoczenia(w) },
     // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
     badania: {
       pracownia: st.things.some((t) => t.kind === 'pracownia'),

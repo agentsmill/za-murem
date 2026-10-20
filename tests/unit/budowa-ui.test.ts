@@ -678,9 +678,14 @@ describe('cele drugiego dnia', () => {
     let g = goalsDay2(st, gov, o);
     expect(g.map((x) => x.key)).toEqual(['przeszukaj', 'budowla', 'obwod', 'drewno2']);
     expect(g.every((x) => !x.done)).toBe(true);
-    // podpowiedź wskazuje dwie budowle, które biorą najmniej materiału
-    const cheap = (Object.keys(BUILDS) as BuildKind[]).sort((a, b) => total(a) - total(b)).slice(0, 2);
+    // podpowiedź wskazuje dwie budowle, które biorą najmniej materiału spośród tych do postawienia: pieczarkarnia i koza
+    // z beczki są tańsze, ale menu budowy ukrywa je do badania, więc podpowiedź ich nie poleca
+    const cheap = (Object.keys(BUILDS) as BuildKind[])
+      .filter((k) => !BUILDS[k].tech)
+      .sort((a, b) => total(a) - total(b))
+      .slice(0, 2);
     for (const k of cheap) expect(g[1].how).toContain(`${BUILDS[k].name.toLowerCase()} (${costText(BUILDS[k].cost)})`);
+    for (const k of Object.keys(TECH0) as BuildKind[]) expect(g[1].how).not.toContain(BUILDS[k].name.toLowerCase());
     expect(g[2].how).toContain(`Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)})`);
     expect(g[2].how).toContain('Otwartych dziur: 2.');
     expect(g[3].how).toBe(

@@ -230,13 +230,18 @@ export interface Words {
       menu poleceń, ze stanem lokum małą literą („mieszkanie 3, puste od 2034, wyjazd”; w domu sam stan). */
   lokal: { M: string; d: string; w: string; nr: (n: number) => string; menu: (n: number, stan: string) => string };
   /** Co przeszukiwać: w bloku puste mieszkania, w domu pomieszczenia domu komitetu (decyzja Mateusza 18.10.2026).
-      b: cel („Przeszukajcie puste mieszkanie.”), d: „przeszukiwanie pustych mieszkań”, jak: podpowiedź do celu drugiego
-      dnia, karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
+      b: cel („Przeszukajcie puste mieszkanie.”), d: „przeszukiwanie pustych mieszkań”, w: gdzie leży mebel do spalenia,
+      kiedy drzewa stoją wśród szwendaczy („w pustym mieszkaniu” | „w domu”), jak: podpowiedź do celu drugiego dnia
+      (najpierw zaznaczyć osobę, potem polecenie „Przeszukać …” w pomieszczeniu, karta jako sposób na znalezienie pustego),
+      obok: dopisek do podpowiedzi pierwszej budowli o sąsiednich domach jako drugim źródle desek i złomu (w bloku null),
+      karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
       w wersji 0.4, zrodla: skąd deski, złom i części („Deski daje …”, „Dają je …”). */
   szukanie: {
     b: string;
     d: string;
+    w: string;
     jak: { mysz: string; dotyk: string };
+    obok: { mysz: string; dotyk: string } | null;
     karta: { mysz: string; dotyk: string };
     pomoc: { mysz: string; dotyk: string };
     naglowek: string;
@@ -277,11 +282,15 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
   szukanie: {
     b: 'puste mieszkanie',
     d: 'pustych mieszkań',
+    w: 'w pustym mieszkaniu',
+    // lewy klik w puste miejsce zdejmuje zaznaczenie, a prawy przycisk bez zaznaczonej osoby nic nie daje: najpierw
+    // osoba, potem polecenie; karta mieszkania (klik bez zaznaczenia) mówi tylko, które jest puste
     jak: {
-      mysz: 'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
+      mysz: 'Zaznaczcie kogoś z zarządu i prawy przycisk w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: klik w mieszkanie, kiedy nikt nie jest zaznaczony.',
       dotyk:
-        'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
+        'Stuknijcie kogoś z zarządu i przytrzymajcie palec w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: stuknięcie w mieszkanie, kiedy nikt nie jest zaznaczony.',
     },
+    obok: null,
     karta: {
       mysz: 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
       dotyk: 'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
@@ -331,9 +340,16 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
   szukanie: {
     b: 'dom',
     d: 'domu',
+    w: 'w domu',
     jak: {
-      mysz: 'Kliknijcie dom: karta pokaże, co w nim już przeszukane. Potem prawy przycisk w domu: „Przeszukać”.',
-      dotyk: 'Stuknijcie dom: karta pokaże, co w nim już przeszukane. Potem przytrzymajcie palec w domu: „Przeszukać”.',
+      mysz: 'Zaznaczcie kogoś z komitetu i prawy przycisk w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: klik w dom, kiedy nikt nie jest zaznaczony.',
+      dotyk:
+        'Stuknijcie kogoś z komitetu i przytrzymajcie palec w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: stuknięcie w dom, kiedy nikt nie jest zaznaczony.',
+    },
+    // dom komitetu przeszukuje się w godzinę, więc materiału brakuje wcześniej niż w bloku: pomagają sąsiednie domy
+    obok: {
+      mysz: 'Deski i złom mają też sąsiednie domy: prawy przycisk na ich drzwiach.',
+      dotyk: 'Deski i złom mają też sąsiednie domy: przytrzymajcie palec na ich drzwiach.',
     },
     karta: {
       mysz: 'Prawy przycisk w domu: Przeszukać.',
@@ -410,7 +426,11 @@ export interface WordsEn {
     b: string;
     /** „searching empty flats” | „searching the house” */
     d: string;
+    /** gdzie leży mebel do spalenia: „in an empty flat” | „in the house” */
+    w: string;
     jak: { mysz: string; dotyk: string };
+    /** dopisek o sąsiednich domach jako drugim źródle desek i złomu (w bloku null) */
+    obok: { mysz: string; dotyk: string } | null;
     karta: { mysz: string; dotyk: string };
     pomoc: { mysz: string; dotyk: string };
     naglowek: string;
@@ -448,11 +468,13 @@ const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
   szukanie: {
     b: 'an empty flat',
     d: 'empty flats',
+    w: 'in an empty flat',
     jak: {
-      mysz: 'Click a flat at HQ: its card shows whether it is empty and what is left in it. Then right-click inside it: “Search”.',
+      mysz: 'Select someone from the board and right-click inside an empty flat: “Search the …”. To see which flats are empty, click a flat while nobody is selected and read its card.',
       dotyk:
-        'Tap a flat at HQ: its card shows whether it is empty and what is left in it. Then press and hold inside it: “Search”.',
+        'Tap someone from the board and press and hold inside an empty flat: “Search the …”. To see which flats are empty, tap a flat while nobody is selected and read its card.',
     },
+    obok: null,
     karta: {
       mysz: 'Right-click inside the flat: Search, Take apart, Fix, Claim the flat.',
       dotyk: 'Press and hold inside the flat: Search, Take apart, Fix, Claim the flat.',
@@ -499,10 +521,15 @@ const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
   szukanie: {
     b: 'the house',
     d: 'the house',
+    w: 'in the house',
     jak: {
-      mysz: 'Click the house: its card shows what has already been searched. Then right-click inside the house: “Search”.',
+      mysz: 'Select someone from the committee and right-click inside a room of the house: “Search the …”. To see what has been searched, click the house while nobody is selected and read its card.',
       dotyk:
-        'Tap the house: its card shows what has already been searched. Then press and hold inside the house: “Search”.',
+        'Tap someone from the committee and press and hold inside a room of the house: “Search the …”. To see what has been searched, tap the house while nobody is selected and read its card.',
+    },
+    obok: {
+      mysz: 'The houses next door have planks and scrap too: right-click their door.',
+      dotyk: 'The houses next door have planks and scrap too: press and hold on their door.',
     },
     karta: {
       mysz: 'Right-click inside the house: Search.',

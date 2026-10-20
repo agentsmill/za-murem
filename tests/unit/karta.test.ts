@@ -147,7 +147,7 @@ describe('personCard: mieszkaniec tylko do odczytu', () => {
     expect(html).not.toContain('data-card="amputate"');
     expect(html).not.toContain('Broń:');
     // że jest ugryziony, gracz widzi dalej (bez przycisku)
-    expect(html).toContain('Ugryziona');
+    expect(html).toContain('Ugryziona w rękę albo nogę');
     expect(html).toContain('Gorączka zabije');
   });
   it('potrzeby, nastroje i to, co robi, zostają; historia zwija się i rozwija jak na karcie zarządu', () => {

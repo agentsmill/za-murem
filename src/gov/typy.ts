@@ -220,8 +220,12 @@ export interface GovInput {
       na kształt siatki; strony, których świat nie ma, nie występują, a bez pola karta bierze największą dziurę (albo
       nie pozwala sprawdzić). `koza`: wolny kafelek przed kozą zarządu we wnętrzu jego mieszkania, bez kozy brak */
   strony?: { garaze?: number; blok?: number; koza?: number };
-  /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
-  teren?: { przylaczone: number };
+  /** teren: `przylaczone` to ile budynków wspólny płot dołączył do naszego obwodu (bez pola droga terenu nie ma jak liczyć
+      kamieni). `mozliwe` to ile budynków w okolicy (z drzwiami na zewnątrz, do 150 m od drzwi siedziby) da się w ogóle
+      otoczyć wspólnym płotem z pierwotnej siatki, liczone raz na świat (`doOtoczenia` w src/sim/sasiedzi.ts) i takie samo
+      przed płotem i po nim. Zero znaczy, że na tej mapie płot nie dosięga żadnego sąsiada (np. każdy stoi za jezdnią):
+      droga terenu mówi wtedy „Wkrótce” zamiast „co dalej”. Bez pola `mozliwe` zarząd zakłada, że się da. */
+  teren?: { przylaczone: number; mozliwe?: number };
   /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza
       drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy zbadana jest technologia końcowa, czyli fabryka
       bieżącego trybu (`koncowa`), i czy sieć jest już włączona (polecenie `siec` w pracowni); `fabryka`: fabryka

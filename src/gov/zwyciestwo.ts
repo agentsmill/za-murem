@@ -11,13 +11,20 @@
    których stoją, więc ekran dróg pokazuje przy nich „Wkrótce: …” (`PostepDrogi.wkrotce`), dopóki droga nie jest przebyta
    do końca. Treść dróg (`DROGI`) jest w obu językach (Tx); nazwa drogi leku zależy od trybu gry (`nazwaDrogi`).
 
-   Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu, dwa
-   pierwsze kamienie technologii przy odczycie badań), mówi jednym zdaniem, co zrobić, żeby zaliczyć jej następny kamień:
-   ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy ostatnim kamieniu
-   „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym płotem pierwszy
-   sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię …”, a przy jednym kamieniu „Posadźcie kogoś przy stole
-   pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają zdania (`null`), więc „Wkrótce” i „co dalej” nigdy
-   nie występują razem. Licznik poranków jest też liczbami w `PostepDrogi.seria` (`{ dni, z }`, tylko ludność).
+   Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu tam, gdzie
+   da się otoczyć sąsiada, dwa pierwsze kamienie technologii przy odczycie badań), mówi jednym zdaniem, co zrobić, żeby
+   zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy
+   ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
+   płotem pierwszy sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię w pokoju waszego mieszkania …” (słowo
+   lokum idzie ze słownika miejsca, `placeIn(i)`: w domu jednorodzinnym „waszego domu”), a przy jednym kamieniu „Posadźcie
+   kogoś przy stole pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają zdania (`null`), więc „Wkrótce”
+   i „co dalej” nigdy nie występują razem. Licznik poranków jest też liczbami w `PostepDrogi.seria` (`{ dni, z }`, tylko
+   ludność).
+
+   Teren na mapie bez sąsiada do otoczenia. Gdy odczyt mówi wprost, że wspólny płot nie dosięga żadnego budynku w okolicy
+   (`GovInput.teren.mozliwe` równe 0, np. na Przymorzu każdy stoi za jezdnią), teren przed pierwszym kamieniem ma zamiast
+   zdania o płocie „Wkrótce: wspólny płot przez jezdnię.” (zdanie „co dalej” kazałoby robić rzecz niemożliwą). Po pierwszym
+   kamieniu i bez pola `mozliwe` (atrapy, stare wejścia) nic się nie zmienia; sam kamień liczy się dalej z `przylaczone`.
 
    Stan (`GovState.zwyciestwo`, `StanZwyciestwa`) powstaje dopiero po `wlaczZwyciestwo`, tak jak `miasto` po `wlaczMiasto`
    (src/gov/wyprawy.ts): `newGov` go nie ma, `krokZwyciestwa` bez niego nie robi nic, więc skróty zarządu w botach i testach
@@ -30,7 +37,7 @@
    zostaje) i dostaje jeden wpis w kronice (`big`): „Droga „{nazwa}”: {kamień}.”. Kamień zalicza się po kolei, a odczyt
    spełnia zawsze początek listy (`spelnione`). `ocenDrogi` czyta zapisane kamienie, więc ekran dróg zgadza się z kroniką.
    - ludność: progi 10, 25 i 50 osób, potem połowa celu (`Math.ceil(cel / 2)`); piąty kamień to licznik 7 poranków;
-   - teren: pierwszy kamień, gdy wspólny płot dołączył do naszego obwodu choć jeden budynek (`GovInput.teren`);
+   - teren: pierwszy kamień, gdy wspólny płot dołączył do naszego obwodu choć jeden budynek (`GovInput.teren.przylaczone`);
    - technologia: sześć kamieni z odczytu badań (`GovInput.badania` i `GovInput.techDone`, `spelnioneTechnologia`):
      pracownia stoi albo coś już zbadano, pierwsze badanie, era 3, włączona sieć, generator fuzji (`t_fuzja` w `techDone`;
      w etapie 2 zamiast tego postawiony) i fabryka uruchomiona (`badania.fabryka`, etap 2: dziś nikt go nie ustawia, więc
@@ -80,7 +87,8 @@
    napisy od razu po polsku i angielsku. */
 
 import { mnogaPl, type Tx, tx } from '../core/jezyk.ts';
-import type { GameMode, GovEffects, GovInput, GovState } from './typy.ts';
+import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
+import type { GameMode, GovEffects, GovInput, GovPlace, GovState } from './typy.ts';
 import { logGov } from './wspolne.ts';
 
 export type Droga = 'technologia' | 'teren' | 'lek' | 'ludnosc' | 'cuda';
@@ -111,13 +119,15 @@ export interface PostepDrogi {
   kamienie: Tx[];
   /** ile kamieni zapisano w stanie zarządu (0, gdy drogi nie włączono) */
   zaliczone: number;
-  /** zdanie „Wkrótce: …” dla drogi, której podstawa jeszcze nie powstała; null: droga działa i nie ma nic do dodania albo
-      jest już przebyta do końca (okno pokazuje to, co tu dostanie) */
+  /** zdanie „Wkrótce: …” dla drogi, której podstawa jeszcze nie powstała (teren przed pierwszym kamieniem: gdy płot nie
+      dosięga żadnego sąsiada); null: droga działa i nie ma nic do dodania albo jest już przebyta do końca (okno pokazuje
+      to, co tu dostanie) */
   wkrotce: Tx | null;
   /** jedno zdanie „co dalej” do następnego otwartego kamienia drogi, którą da się grać już teraz (ludność w całości,
-      pierwszy kamień terenu, dwa pierwsze kamienie technologii przy odczycie badań); null: droga ma „Wkrótce” (lek, cuda,
-      teren po pierwszym kamieniu, technologia bez odczytu badań albo od drugiego kamienia) albo jest przebyta do końca.
-      Okno pokazuje je pod następnym kamieniem, więc „Wkrótce” i „co dalej” nie występują razem */
+      pierwszy kamień terenu tam, gdzie da się otoczyć sąsiada, dwa pierwsze kamienie technologii przy odczycie badań);
+      null: droga ma „Wkrótce” (lek, cuda, teren po pierwszym kamieniu albo na mapie bez sąsiada do otoczenia, technologia
+      bez odczytu badań albo od drugiego kamienia) albo jest przebyta do końca. Okno pokazuje je pod następnym kamieniem,
+      więc „Wkrótce” i „co dalej” nie występują razem */
   dalej: Tx | null;
   /** liczby do paska („{ile} z {cel}”) dla drogi, która ma co liczyć; null: bez liczb */
   postep: { ile: number; cel: number } | null;
@@ -185,8 +195,9 @@ export const DROGI: Readonly<Record<Droga, DefDrogi>> = {
 };
 
 /** „Wkrótce: …” dla dróg bez podstawy; ludność działa w całości i go nie ma, teren pokazuje go dopiero po pierwszym
-    kamieniu, technologia z odczytem badań dopiero od drugiego zaliczonego kamienia (wtedy `WKROTCE_PRAD`, a to zdanie
-    zostaje dla gry bez odczytu), a droga przebyta do końca nigdy (`wkrotceDrogi`). */
+    kamieniu (przed nim tylko tam, gdzie płot nie dosięga żadnego sąsiada: `WKROTCE_PLOT`), technologia z odczytem badań
+    dopiero od drugiego zaliczonego kamienia (wtedy `WKROTCE_PRAD`, a to zdanie zostaje dla gry bez odczytu), a droga
+    przebyta do końca nigdy (`wkrotceDrogi`). */
 const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
   technologia: tx('Wkrótce: badania w pracowni i sieć bez miedzi.', 'Coming soon: research and a copper-free grid.'),
   teren: tx('Wkrótce: sąsiednie kwadraty i mur.', 'Coming soon: neighbouring squares and the wall.'),
@@ -199,24 +210,38 @@ const WKROTCE: Readonly<Record<Exclude<Droga, 'ludnosc'>, Tx>> = {
     że ery czekają na prąd. Bez odczytu badań zostaje dawne `WKROTCE.technologia`. */
 const WKROTCE_PRAD = tx('Wkrótce: ery 3–6 czekają na prąd.', 'Coming soon: eras 3–6 are waiting for power.');
 
-/** „Co dalej” przy pierwszym kamieniu terenu (reszta terenu to „Wkrótce”, `wkrotceDrogi`) */
+/** „Wkrótce” terenu przed pierwszym kamieniem na mapie, gdzie wspólny płot nie dosięga żadnego sąsiada
+    (`GovInput.teren.mozliwe` równe 0, np. na Przymorzu każdy budynek w okolicy stoi za jezdnią): zdanie „co dalej” kazałoby
+    robić rzecz niemożliwą. Po pierwszym kamieniu terenu obowiązuje zwykłe `WKROTCE.teren` (`wkrotceDrogi`). */
+const WKROTCE_PLOT = tx('Wkrótce: wspólny płot przez jezdnię.', 'Coming soon: a shared fence across the road.');
+
+/** „Co dalej” przy pierwszym kamieniu terenu tam, gdzie da się otoczyć choć jednego sąsiada (inaczej `WKROTCE_PLOT`;
+    reszta terenu to „Wkrótce”, `wkrotceDrogi`) */
 const DALEJ_TEREN = tx(
   'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
   'Put a shared fence round the first building next door.',
 );
 
-/** „Co dalej” technologii przy odczycie badań: numer to liczba zaliczonych kamieni (0: postawić pracownię, 1: posadzić
-    kogoś przy stole i wybrać kartkę). Od drugiego zaliczonego kamienia jest już „Wkrótce” (`wkrotceDrogi`), więc zdań
-    jest tyle, ile kamieni do zdobycia już teraz. */
-const DALEJ_TECHNOLOGIA: readonly Tx[] = [
-  tx(
-    'Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).',
-    'Build a research room in a room of your flat (Build, Home tab).',
-  ),
-  tx(
-    'Posadźcie kogoś przy stole pracowni i wybierzcie kartkę na tablicy badań.',
-    'Sit someone at the research table and pick a card on the research board.',
-  ),
+/** Lokum zarządu w dopełniaczu, w drugiej osobie: „waszego mieszkania” w bloku, „waszego domu” w domu jednorodzinnym.
+    Słownik miejsca (`Words.lokal.d`) mówi „naszego …”, a zdania „co dalej” zwracają się do zarządu. */
+const waszeLokum = (place: GovPlace): string => wordsOf(place).lokal.d.replace(/^naszego /, 'waszego ');
+
+/** „Co dalej” technologii przy odczycie badań: numer to liczba zaliczonych kamieni (0: postawić pracownię w pokoju lokum
+    zarządu, 1: posadzić kogoś przy stole i wybrać kartkę). Od drugiego zaliczonego kamienia jest już „Wkrótce”
+    (`wkrotceDrogi`), więc zdań jest tyle, ile kamieni do zdobycia już teraz. Pierwsze zdanie mówi słowami miejsca
+    (`waszeLokum`, `WordsEn.lokal.w`): w bloku „w pokoju waszego mieszkania”, w domu jednorodzinnym „w pokoju waszego
+    domu”; zakładka budowy „Dom” (“Home”) jest taka sama w obu. */
+const DALEJ_TECHNOLOGIA: readonly ((place: GovPlace) => Tx)[] = [
+  (place) =>
+    tx(
+      `Postawcie pracownię w pokoju ${waszeLokum(place)} (Budowa, zakładka Dom).`,
+      `Build a research room in a room of ${wordsEn(place).lokal.w} (Build, Home tab).`,
+    ),
+  () =>
+    tx(
+      'Posadźcie kogoś przy stole pracowni i wybierzcie kartkę na tablicy badań.',
+      'Sit someone at the research table and pick a card on the research board.',
+    ),
 ];
 
 /** drogi w kolejności ekranu */
@@ -336,28 +361,35 @@ function spelnione(droga: Droga, i: GovInput, cel: number): number {
   return n;
 }
 
+/** Czy na tej mapie wspólny płot nie dosięga żadnego sąsiada: odczyt mówi wprost, że budynków do otoczenia jest zero
+    (`GovInput.teren.mozliwe`). Bez pola (atrapy, stare wejścia) zarząd zakłada, że się da. */
+const bezPlotu = (i: GovInput): boolean => typeof i.teren?.mozliwe === 'number' && i.teren.mozliwe <= 0;
+
 /** „Wkrótce” drogi przy `zaliczone` kamieniach: ludność go nie ma, droga przebyta do końca też nie, teren dopiero po
-    pierwszym kamieniu (wcześniej pierwszy kamień jest do zdobycia od razu), technologia z odczytem badań (`maBadania`)
-    dopiero od drugiego zaliczonego kamienia, i to z innym zdaniem (`WKROTCE_PRAD`: ery 3–6 czekają na prąd), a bez
-    odczytu zawsze ze starym; reszta zawsze. To jedyne miejsce tej reguły: okno pokazuje to, co dostanie w
-    `PostepDrogi.wkrotce`. */
-function wkrotceDrogi(droga: Droga, zaliczone: number, maBadania: boolean): Tx | null {
+    pierwszym kamieniu (wcześniej pierwszy kamień jest do zdobycia od razu, chyba że płot nie dosięga żadnego sąsiada:
+    wtedy `WKROTCE_PLOT`), technologia z odczytem badań dopiero od drugiego zaliczonego kamienia, i to z innym zdaniem
+    (`WKROTCE_PRAD`: ery 3–6 czekają na prąd), a bez odczytu zawsze ze starym; reszta zawsze. To jedyne miejsce tej
+    reguły: okno pokazuje to, co dostanie w `PostepDrogi.wkrotce`. */
+function wkrotceDrogi(droga: Droga, zaliczone: number, i: GovInput): Tx | null {
   if (droga === 'ludnosc' || zaliczone >= DROGI[droga].kamienie.length) return null;
-  if (droga === 'teren' && zaliczone < 1) return null;
-  // z odczytem badań „Wkrótce” zaczyna się tam, gdzie kończą się zdania „co dalej” (po dwóch pierwszych kamieniach)
-  if (droga === 'technologia' && maBadania) return zaliczone < DALEJ_TECHNOLOGIA.length ? null : WKROTCE_PRAD;
+  if (droga === 'teren' && zaliczone < 1) return bezPlotu(i) ? WKROTCE_PLOT : null;
+  // z odczytem badań (gra bez badań go nie ma i zostaje przy dawnym „Wkrótce”) „Wkrótce” zaczyna się tam, gdzie kończą się
+  // zdania „co dalej” (po dwóch pierwszych kamieniach)
+  if (droga === 'technologia' && i.badania !== undefined)
+    return zaliczone < DALEJ_TECHNOLOGIA.length ? null : WKROTCE_PRAD;
   return WKROTCE[droga];
 }
 
 /** „Co dalej” drogi przy `zaliczone` kamieniach: jedno zdanie do następnego otwartego kamienia, ale tylko tam, gdzie da się
     go zdobyć już teraz, czyli gdzie nie ma „Wkrótce” (`wkrotceDrogi` rozstrzyga o tym jako jedyne): ludność w całości
     (zebrać próg kamienia, a przy ostatnim utrzymać cel przez siedem poranków z licznikiem `dniCelu`), pierwszy kamień
-    terenu (wspólny płot) i dwa pierwsze kamienie technologii przy odczycie badań (postawić pracownię, posadzić kogoś przy
-    stole). Droga przebyta do końca i droga z „Wkrótce” nie mają zdania. */
-function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: number, maBadania: boolean): Tx | null {
-  if (zaliczone >= DROGI[droga].kamienie.length || wkrotceDrogi(droga, zaliczone, maBadania)) return null;
+    terenu (wspólny płot, tam gdzie da się otoczyć sąsiada) i dwa pierwsze kamienie technologii przy odczycie badań
+    (postawić pracownię w pokoju lokum zarządu, posadzić kogoś przy stole). Droga przebyta do końca i droga z „Wkrótce”
+    nie mają zdania. */
+function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: number, i: GovInput): Tx | null {
+  if (zaliczone >= DROGI[droga].kamienie.length || wkrotceDrogi(droga, zaliczone, i)) return null;
   if (droga === 'teren') return DALEJ_TEREN;
-  if (droga === 'technologia') return DALEJ_TECHNOLOGIA[zaliczone] ?? null;
+  if (droga === 'technologia') return DALEJ_TECHNOLOGIA[zaliczone]?.(placeIn(i)) ?? null;
   if (droga !== 'ludnosc') return null;
   const progi = progiLudnosci(cel);
   return zaliczone < progi.length ? dalejOsoby(progi[zaliczone]) : dalejSeria(dniCelu);
@@ -372,8 +404,6 @@ export function ocenDrogi(st: GovState, i: GovInput): PostepDrogi[] {
   const mode = st.mode ?? 'zwykly';
   const cel = celGry(st, i);
   const dniCelu = st.zwyciestwo?.dniCelu ?? 0;
-  // bez odczytu badań (gra bez badań) technologia ma dawne „Wkrótce” i nie mówi „co dalej”
-  const maBadania = i.badania !== undefined;
   return KOLEJNOSC.map((droga) => {
     const def = DROGI[droga];
     const zaliczone = Math.min(st.zwyciestwo?.kamienie[droga] ?? 0, def.kamienie.length);
@@ -382,8 +412,8 @@ export function ocenDrogi(st: GovState, i: GovInput): PostepDrogi[] {
       nazwa: nazwaDrogi(droga, mode),
       kamienie: [...def.kamienie],
       zaliczone,
-      wkrotce: wkrotceDrogi(droga, zaliczone, maBadania),
-      dalej: dalejDrogi(droga, zaliczone, cel, dniCelu, maBadania),
+      wkrotce: wkrotceDrogi(droga, zaliczone, i),
+      dalej: dalejDrogi(droga, zaliczone, cel, dniCelu, i),
       postep: droga === 'ludnosc' ? { ile: ludnoscOf(i), cel } : null,
       seria: droga === 'ludnosc' ? { dni: dniCelu, z: DNI_CELU } : null,
     };

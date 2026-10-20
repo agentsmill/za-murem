@@ -471,7 +471,7 @@ describe('okno mapy miasta po angielsku', () => {
         expect(polskieSlowa(czesc, [NAZWA, ...imiona(i)]), czesc).toEqual([]);
       expect(s.kicker).toBe('Supply run');
       expect(s.foot).toContain('Back to the map');
-      expect(s.foot).toContain('Send the supply run');
+      expect(s.foot).toContain('Send a supply run');
       expect(s.body).toContain('from the estate. Who goes?');
       expect(s.body).not.toMatch(ZAKAZANE);
       if (hour === 18) {

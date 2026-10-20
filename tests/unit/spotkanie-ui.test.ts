@@ -310,6 +310,8 @@ describe('cel drugiego dnia: przeszukanie u sąsiadów też się liczy', () => {
       const o = { touch: false, wood: 0, woodReady: false, holes: 0, words: wordsOfWorld(w) };
       const goal = () => goalsDay2(sim.st, gov, o).find((g) => g.key === 'przeszukaj')!;
       expect(goal().done).toBe(false);
+      // podpowiedź zaczyna od zaznaczenia osoby: bez niej prawy przycisk w pomieszczeniu niczego nie daje
+      expect(goal().how, key).toMatch(/^Zaznaczcie kogoś z (zarządu|komitetu) i prawy przycisk w .*„Przeszukać …”/);
       const { bid } = doorWhere(w, 'zwykly', () => true, key === 'zielonki' ? ['dom'] : ['blok']);
       sim.st.sasiedzi = { budynki: [nowyBudynek(w, 'zwykly', bid, null)], spotkanie: null, nr: 0, napis: null, n: 0 };
       sim.st.sasiedzi.budynki[0].przeszukane.push(0);
