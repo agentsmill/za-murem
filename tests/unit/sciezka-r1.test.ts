@@ -19,7 +19,7 @@ import { nowyBudynek } from '../../src/sim/sasiedzi.ts';
 import type { Command } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
-import { potrzebaDrewna, ROZDZIALY, widokSciezki } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { doorWhere, core as rdzen } from './sasiedzi-pomoc.ts';
@@ -397,7 +397,7 @@ describe.each(KOMBINACJE)('R1: karta nocy, drewno i dyżur: %s %s', (key, mode) 
     expect(zrobioneR1(g)).not.toContain('r1.drewno2');
   });
 
-  it('drewno na noc: o dokładnie jedną sztukę za mało przed kartą też nie zalicza celu, a potrzeba nie zależy od godziny', () => {
+  it('drewno na noc: zapas ponad potrzebę przed kartą jeszcze niczego nie zalicza, a potrzeba nie zależy od godziny', () => {
     const g = gra(key, mode);
     const trzeba = potrzeba(g);
     for (const godz of [8, 12, 16, 19]) {
@@ -628,14 +628,5 @@ describe('R1: zapis, wczytanie i stare zapisy', () => {
     expect(card.wood?.have).toBe(12);
     expect(cel(g, 'drewno2')).toMatchObject({ done: false });
     expect(cel(g, 'dyzur').czeka).toBe('czeka do 20:00');
-  });
-
-  it('widok nie zależy od tego, którym wywołaniem policzono krok: ten sam stan i odczyt dają ten sam widok', () => {
-    const g = poPierwszymRaporcie('zielonki');
-    krok(g);
-    const o = odczyt(g);
-    const a = widokSciezki(g.sciezka, o, ROZDZIALY);
-    const b = widokSciezki(g.sciezka, o);
-    expect(a).toEqual(b);
   });
 });

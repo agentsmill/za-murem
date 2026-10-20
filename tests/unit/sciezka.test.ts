@@ -504,18 +504,18 @@ describe('R0: pierwszy dzień to goalsOf w rozdziale', () => {
     expect(zaliczony(g.sciezka, 'r0.zaznacz')).toBe(true);
   });
 
-  it('kroki samouczka zaliczają się razem z symulacją, a po samouczku bieżący cel to drewno na wieczór', () => {
+  it('kroki samouczka zaliczają się razem z symulacją po jednym i nie cofają się, a po samouczku bieżący cel to drewno na wieczór', () => {
     const g = nowaGra('przymorze');
     zacznijSamouczek(g);
-    const widziane: number[] = [];
+    const zrobione: number[] = [];
     graj(g, (x) => {
-      const zrobione = cele(x).filter((c) => c.done).length;
-      if (widziane[widziane.length - 1] !== zrobione) widziane.push(zrobione);
+      zrobione.push(cele(x).filter((c) => c.done).length);
       return x.sim.st.tut.step >= TUT_STEPS.length;
     });
-    // liczba zrobionych celów rosła po jednym kroku samouczka (z zaznaczeniem na samym początku)
-    expect(widziane[0]).toBeGreaterThanOrEqual(0);
-    expect(widziane[widziane.length - 1]).toBeLessThanOrEqual(TUT_STEPS.length);
+    // liczba zrobionych celów rośnie, nigdy nie maleje, i przechodzi przez co najmniej trzy różne wartości
+    for (let k = 1; k < zrobione.length; k++)
+      expect(zrobione[k], `sekunda ${k}`).toBeGreaterThanOrEqual(zrobione[k - 1]);
+    expect(new Set(zrobione).size).toBeGreaterThanOrEqual(3);
     const c = cele(g);
     expect(c.slice(0, TUT_STEPS.length).every((x) => x.done)).toBe(true);
     expect(widok(g).rozdzial!.biezacy?.key).toBe('drewno');
@@ -676,7 +676,7 @@ describe('przejście z R0 do R1', () => {
 
   it('samouczek pominięty: po zamknięciu raportu i tak drugi dzień, a pierwszy znika z okienka', () => {
     const g = nowaGra('przymorze');
-    // nikt nie zaznacza ani nie rąbie: samouczek stoi w miejscu przez całą pierwszą dobę
+    // nikt nie rąbie suchego drzewa: samouczek nie dochodzi do końca przez całą pierwszą dobę
     const p = graj(g, () => false, { stoj: ['raport'] });
     expect(p?.k).toBe('raport');
     expect(g.sim.st.tut.step).toBeLessThan(TUT_STEPS.length);
