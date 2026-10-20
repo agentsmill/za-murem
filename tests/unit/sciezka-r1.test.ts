@@ -167,17 +167,18 @@ describe.each(KOMBINACJE)('R1 po pierwszym raporcie: %s %s', (key, mode) => {
     expect(g.sciezka.zrobione).toHaveProperty(['r1.przeszukaj']);
   });
 
-  it('przeszukaj: pomieszczenie przeszukane u sąsiadów też zalicza cel', () => {
-    if (key === 'przymorze') return;
-    const g = poPierwszymRaporcie(key, mode);
-    const { w } = g.sim;
-    expect(cel(g, 'przeszukaj').done).toBe(false);
-    const { bid } = doorWhere(w, mode, () => true, wDomu(key) ? ['dom'] : ['blok']);
-    g.sim.st.sasiedzi = { budynki: [nowyBudynek(w, mode, bid, null)], spotkanie: null, nr: 0, napis: null, n: 0 };
-    expect(cel(g, 'przeszukaj').done, 'budynek sąsiada otwarty w stanie, ale nic nieprzeszukane').toBe(false);
-    g.sim.st.sasiedzi.budynki[0].przeszukane.push(0);
-    expect(cel(g, 'przeszukaj').done).toBe(true);
-  });
+  // Przymorze nie ma sąsiedniego budynku z drzwiami, które spełniają warunek (jak w dawnym teście ze spotkanie-ui)
+  if (key !== 'przymorze')
+    it('przeszukaj: pomieszczenie przeszukane u sąsiadów też zalicza cel', () => {
+      const g = poPierwszymRaporcie(key, mode);
+      const { w } = g.sim;
+      expect(cel(g, 'przeszukaj').done).toBe(false);
+      const { bid } = doorWhere(w, mode, () => true, wDomu(key) ? ['dom'] : ['blok']);
+      g.sim.st.sasiedzi = { budynki: [nowyBudynek(w, mode, bid, null)], spotkanie: null, nr: 0, napis: null, n: 0 };
+      expect(cel(g, 'przeszukaj').done, 'budynek sąsiada otwarty w stanie, ale nic nieprzeszukane').toBe(false);
+      g.sim.st.sasiedzi.budynki[0].przeszukane.push(0);
+      expect(cel(g, 'przeszukaj').done).toBe(true);
+    });
 
   it('budowla: fałsz przed gotową budowlą (plan nie wystarcza), prawda po gotowych zasiekach', () => {
     const g = poPierwszymRaporcie(key, mode);
