@@ -39,7 +39,8 @@ const WOOD_GOAL = tx('Przygotujcie drewno na wieczór.', 'Get wood in for the ev
 const WOOD_GOAL_2 = tx('Przygotujcie drewno na noc.', 'Get wood in for the night.');
 
 /** tryb zombie ze stanu symulacji albo zarządu (w grze oba się zgadzają, atrapy w testach mają czasem tylko jedno) */
-const zombieMode = (st: SimState, gov: GovState | null): boolean => modeOf(st) === 'zombie' || gov?.mode === 'zombie';
+export const zombieMode = (st: SimState, gov: GovState | null): boolean =>
+  modeOf(st) === 'zombie' || gov?.mode === 'zombie';
 
 /** Czy w obrębie siatki stoi jeszcze drzewo do ścięcia: nieścięte, nie krzak i nie suche drzewo, dopóki trwa samouczek
     (należy do jego kroków), a jego pień leży na kafelku podwórka siatki albo tuż obok niego (pień na linii obwodu jest
