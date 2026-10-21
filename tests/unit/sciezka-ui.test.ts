@@ -10,6 +10,8 @@
    gdy bieżący cel jest inny (karta nocy z za małym zapasem drewna pokazuje dyżur przy kozie); cel zrobiony, przepadły
    albo czekający go nie daje. Linia „Cel: …” w oknie (`Sheet.cel` w `sheetHtml`) i w nagłówku tablicy badań. */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
@@ -28,7 +30,7 @@ import {
   potrzebaDrewna,
   type WidokSciezki,
 } from '../../src/ui/sciezka.ts';
-import { esc } from '../../src/ui/tekst.ts';
+import { esc, liniaCelu } from '../../src/ui/tekst.ts';
 import { FORBIDDEN_DOM, demoWorld as swiat } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import {
@@ -514,6 +516,53 @@ describe('tablica badań: linia celu w nagłówku', () => {
     ustawJezyk('en');
     const z = tablicaHtml(odczytTablicy(), { wybrana: null, mode: 'zwykly', cel: 'Pick the <first> research.' });
     expect(z).toContain('<small class="tb-linia-celu"><b>Goal:</b> Pick the &lt;first&gt; research.</small>');
+  });
+});
+
+/* ---------- style.css ---------- */
+
+describe('style.css: reguły dla klas, które rysują celeHtml, sheetHtml i tablicaHtml', () => {
+  const css = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/style.css'), 'utf8');
+  /** wszystkie klasy z kawałka HTML */
+  const klasy = (html: string): string[] => [
+    ...new Set([...html.matchAll(/class="([^"]+)"/g)].flatMap((m) => m[1].split(/\s+/).filter(Boolean))),
+  ];
+
+  it('każda klasa z okienka (rozdział z okazją we wszystkich stanach celu i widok dróg) i z linii celu ma regułę', () => {
+    const wszystkie = [
+      celeHtml(widokZ({ okazja: HANDLARZ, rozdzial: R1_RECZNIE }), OTWARTE),
+      celeHtml(widokZ({ drogi: [{ nazwa: 'A', dalej: 'B', postep: '1 z 2' }] }), OTWARTE),
+      sheetHtml({ kicker: 'k', title: 't', body: 'b', foot: 'f', tone: 'noc', cel: 'Cel.' }),
+      liniaCelu('Cel.', 'tb-linia-celu', 'small'),
+    ].join('');
+    const znalezione = klasy(wszystkie);
+    // sprawdzenie sprawdza samo siebie: klasy, o które chodzi, naprawdę wystąpiły w HTML
+    for (const k of [
+      'goals-head',
+      'goals-n',
+      'goal-list',
+      'goal',
+      'now',
+      'done',
+      'missed',
+      'czeka',
+      'goal-how',
+      'goal-czeka',
+      'goal-postep',
+      'goals-okazja',
+      'sheet-cel',
+      'tb-linia-celu',
+    ])
+      expect(znalezione, k).toContain(k);
+    // klasa jest podmiotem jakiejś reguły (kończy selektor, ewentualnie z pseudoelementem), a nie tylko stoi w środku cudzego
+    for (const k of znalezione)
+      expect(css, `.${k}`).toMatch(new RegExp(`\\.${k}(?:::?[\\w-]+|\\[[^\\]]*\\])*\\s*[,{]`));
+  });
+
+  it('zwijanie jest w HTML: strzałka nagłówka idzie za aria-expanded, a CSS nie chowa celów po klasie .open', () => {
+    expect(css).toContain('.goals-head[aria-expanded="false"]::after');
+    expect(css).not.toMatch(/\.goals:not\(\.open\)/);
+    expect(css).not.toMatch(/\.goals\.open/);
   });
 });
 
