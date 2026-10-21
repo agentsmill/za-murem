@@ -15,7 +15,12 @@
 
    Cała pamięć silnika siedzi w `GraAi.pamiec`, zwykłym JSON z zapisem gry: decydenci nie mają stanu w zamknięciach ani na
    poziomie modułu, więc wczytana gra decyduje tak samo jak bez przerwy, a dwie gry w jednym procesie się nie mieszają.
-   Silnik czyta tylko stan swojej gry i działa tylko rękami; bez losowania, zegara, DOM i modułów Node. */
+   Silnik czyta tylko stan swojej gry i działa tylko rękami; bez losowania, zegara, DOM i modułów Node.
+
+   Moduły gra.ts i silnik.ts importują się nawzajem (gra.ts bierze stąd `nowaPamiec`, silnik.ts z gra.ts `odpowiedzDomyslna`,
+   a warstwy z kolejnych zadań także `wejscie`). Cykl jest bezpieczny, bo obie strony używają importów tylko w ciele funkcji;
+   warstwy dopisywane do `silnik` mają więc być deklaracjami funkcji, a nie stałymi liczonymi przy ładowaniu modułu z
+   cudzych importów. */
 
 import type { Prompt } from '../gov/typy.ts';
 import { hourOf, TICKS_PER_SECOND } from '../sim/clock.ts';
