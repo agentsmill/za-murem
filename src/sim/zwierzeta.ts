@@ -7,7 +7,8 @@
    Pies. Pojawia się za siatką, przy kafelku na zewnątrz bramy (`outsideOf(gateTiles)[0]`, tak jak goście), i wchodzi
    bramą: zamknięta albo na kłódkę go nie zatrzymuje (przeciska się pod nią, więc ma warstwę zarządu, a reszta siatki,
    także dziury, jest dla niego zamknięta). Za dnia snuje się po podwórku najwyżej PIES_OBSZAR m od środka bramy, nocą
-   (22:00–6:00, jak ludzie i goście) leży przy bramie od środka. Gdy wróg (szabrownik, szwendacz, wrogi człowiek; nie
+   (22:00–6:00, jak ludzie i goście) leży przy bramie od środka, dwa kroki od niej (obok stoi warta, a skrzydło bramy
+   zasłaniałoby go). Gdy wróg (szabrownik, szwendacz, wrogi człowiek; nie
    gość i nie wędrowiec) jest w promieniu SZCZEK_ZASIEG m, szczeka co najwyżej raz na SZCZEK_CD ticków (5 s): napis nad
    psem widać SZCZEK_NAPIS ticków (`SimState.szczek.tick` to tick ostatniego szczeknięcia), a w trybie zombie szczekanie
    to też hałas SZCZEK_HALAS m (`addNoise`: szwendacze w tym promieniu idą na dźwięk). Pies jest ofiarą szwendaczy jak

@@ -2264,6 +2264,9 @@ export class Sim {
   /** kafelki podwórka, po których za dnia snuje się pies: najwyżej PIES_OBSZAR m od środka bramy, wolne ze świata; liczone
       razem z `gateStand`, ze świata, nie ze stanu */
   private psiObszar: number[] = [];
+  /** legowisko psa nocą: kafelek podwórka dwa kroki od bramy, najbliższy jej środka (−1: świat bez bramy); jeden krok od
+      bramy stoi warta i sięga skrzydło bramy, które zasłoniłoby leżącego psa */
+  private psiLegowiskoTile = -1;
   /** kafelek za bramą, na którym znika i pojawia się wyprawa (−1: świat bez siatki) */
   exitTile = -1;
   /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
@@ -2388,6 +2391,10 @@ export class Sim {
       .filter((i) => !still[i] && gate.some((g) => cheb(g, i) <= 1))
       .sort((a, b) => dg(a) - dg(b) || a - b);
     this.psiObszar = (shape?.yard ?? []).filter((i) => !still[i] && dg(i) <= PIES_OBSZAR * PIES_OBSZAR);
+    this.psiLegowiskoTile =
+      (shape?.yard ?? [])
+        .filter((i) => !still[i] && gate.some((g) => cheb(g, i) === 2) && !gate.some((g) => cheb(g, i) < 2))
+        .sort((a, b) => dg(a) - dg(b) || a - b)[0] ?? -1;
     this.exitTile = exitOf(w);
     this.fenceMask = new Uint8Array(size * size);
     for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
@@ -6581,9 +6588,10 @@ export class Sim {
     } else p.wait = tick + 3 * THINK_EVERY;
   }
 
-  /** legowisko psa: kafelek podwórka przy bramie (drugi od środka, pierwszy zajmuje warta), −1 bez takich */
+  /** legowisko psa: kafelek podwórka dwa kroki od bramy (obok stoi warta, a skrzydło bramy zasłaniałoby psa); bez takiego
+      pierwszy kafelek przy bramie, −1 bez bramy */
   private psiLegowisko(): number {
-    return this.gateStand[Math.min(1, this.gateStand.length - 1)] ?? -1;
+    return this.psiLegowiskoTile >= 0 ? this.psiLegowiskoTile : (this.gateStand[0] ?? -1);
   }
 
   /** cel spaceru psa: losowy wolny kafelek podwórka do PIES_OBSZAR m od bramy, −1 bez takich */
@@ -6591,18 +6599,30 @@ export class Sim {
     return this.losowyWolny(this.psiObszar);
   }
 
-  /** legowisko kota: kafelek przed kozą zarządu, a bez kozy pierwszy wolny kafelek mieszkania zarządu; −1 bez mieszkania */
+  /** Legowisko kota: wolny kafelek (bez mebli i sterty zapasów, drewna itp.) tuż obok kozy zarządu (najbliżej kafelka przed
+      nią, bez niego, bo tam klęczy zarząd i zasłoniłby kota; bez takiego sam kafelek przed kozą), w tym samym pomieszczeniu; bez kozy pierwszy kafelek mieszkania
+      zarządu; −1 bez mieszkania. */
   private kotLegowisko(): number {
     const h = this.house;
     if (!h) return -1;
     const size = this.w.size;
     const koza = this.koza();
-    if (koza) {
-      const front = frontTile(koza, size);
-      if (front >= 0 && front < size * size && !this.coreBlocked[front]) return front;
-      return nearestFree(this.coreBlocked, size, koza.y * size + koza.x);
-    }
-    return this.kotMieszkanie()[0] ?? -1;
+    if (!koza) return this.kotMieszkanie()[0] ?? -1;
+    const front = frontTile(koza, size);
+    const ok = front >= 0 && front < size * size && !this.coreBlocked[front];
+    const dFront = (i: number) =>
+      ((i % size) - (front % size)) ** 2 + (Math.floor(i / size) - Math.floor(front / size)) ** 2;
+    let best: number = -1;
+    if (ok)
+      for (let y: number = koza.y - 1; y <= koza.y + koza.h; y++)
+        for (let x: number = koza.x - 1; x <= koza.x + koza.w; x++) {
+          const i: number = y * size + x;
+          if (x < 0 || y < 0 || x >= size || y >= size || i === front || this.coreBlocked[i]) continue;
+          if (this.roomOf[i] !== this.roomOf[front] || this.thingAt(x, y)) continue;
+          if (best < 0 || dFront(i) < dFront(best) || (dFront(i) === dFront(best) && i < best)) best = i;
+        }
+    if (best >= 0) return best;
+    return ok ? front : nearestFree(this.coreBlocked, size, koza.y * size + koza.x);
   }
 
   /** cel spaceru kota: losowy wolny kafelek mieszkania zarządu, −1 bez takich */

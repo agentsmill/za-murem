@@ -352,6 +352,10 @@ describe('kot', () => {
       const koza = sim.st.things.find((t) => t.kind === 'koza' && inHomeApt(h, t.y * swiat.size + t.x))!;
       expect(koza, 'koza w mieszkaniu zarządu').toBeDefined();
       const przed = frontTile(koza, swiat.size);
+      // kot leży tuż obok kozy, nie na kafelku przed nią (tam klęczy zarząd i zasłoniłby go)
+      const przyKozie = (t: number) =>
+        Math.abs((t % swiat.size) - koza.x - (koza.w - 1) / 2) <= (koza.w + 1) / 2 + 0.01 &&
+        Math.abs(Math.floor(t / swiat.size) - koza.y - (koza.h - 1) / 2) <= (koza.h + 1) / 2 + 0.01;
       wyslij(sim, { zwierze: ['kot'] }, swiat);
       sim.step();
       const k = kot(sim.st);
@@ -362,13 +366,15 @@ describe('kot', () => {
       const tile = (p: Pawn) => Math.floor(p.y) * swiat.size + Math.floor(p.x);
       // wystawiony od razu przy kozie, we wnętrzu mieszkania zarządu
       expect(inHomeApt(h, tile(k))).toBe(true);
-      expect(tile(k)).toBe(przed);
+      expect(przyKozie(tile(k))).toBe(true);
+      expect(tile(k)).not.toBe(przed);
+      const legowisko = tile(k);
       run(sim, () => k.job?.what === 'lezy', 4000);
       expect(k.job?.what).toBe('lezy');
-      expect(tile(k)).toBe(przed);
+      expect(tile(k)).toBe(legowisko);
       // do rana leży tam, gdzie leżał
       run(sim, () => sim.st.tick >= tickAt(3, 5), 12 * TICKS_PER_HOUR);
-      expect(tile(k)).toBe(przed);
+      expect(tile(k)).toBe(legowisko);
       // za dnia chodzi, ale tylko po mieszkaniu zarządu
       run(sim, () => sim.st.tick >= tickAt(3, 8), 12 * TICKS_PER_HOUR);
       const byl = new Set<number>();
