@@ -34,6 +34,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  type Decydent,
   type GraAi,
   grajDo,
   nowaGraAi,
@@ -240,18 +241,25 @@ export async function przygotujGre(demoKlucz: string, ziarno: number, prosto: bo
   return nowaGraAi(world, ziarno, opts);
 }
 
-/** Jedna gra silnika: `dni` dób od 15:00 dnia 1 albo do końca gry. Poranki o 6:00 od dnia 2 (przebieg, który kończy się
-    w ciągu dnia, ma ostatni poranek poprzedniego dnia; koniec o 6:00 ma poranek z chwili końca). */
-export async function zagraj(demoKlucz: string, ziarno: number, dni: number, prosto: boolean): Promise<WynikGry> {
+/** Jedna gra decydenta (domyślnie `silnik`): `dni` dób od 15:00 dnia 1 albo do końca gry. Poranki o 6:00 od dnia 2
+    (przebieg, który kończy się w ciągu dnia, ma ostatni poranek poprzedniego dnia; koniec o 6:00 ma poranek z chwili
+    końca). Inny decydent niż `silnik` służy testom (znany silnik podstawowy, decydent kończący grę). */
+export async function zagraj(
+  demoKlucz: string,
+  ziarno: number,
+  dni: number,
+  prosto: boolean,
+  decydent: Decydent = silnik,
+): Promise<WynikGry> {
   const t0 = performance.now();
   const g = await przygotujGre(demoKlucz, ziarno, prosto);
   const koniecTick = dni * TICKS_PER_DAY;
   const poranki: DzienPrzebiegu[] = [];
   for (let dzien = 2; poranekTick(dzien) <= koniecTick && !g.gov.over; dzien++) {
-    grajDo(g, silnik, poranekTick(dzien));
+    grajDo(g, decydent, poranekTick(dzien));
     if (g.sim.st.tick === poranekTick(dzien)) poranki.push(poranek(g));
   }
-  if (!g.gov.over) grajDo(g, silnik, koniecTick);
+  if (!g.gov.over) grajDo(g, decydent, koniecTick);
   return {
     przebieg: {
       demo: demoKlucz,

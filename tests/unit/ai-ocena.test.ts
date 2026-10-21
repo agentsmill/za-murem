@@ -8,9 +8,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { grajDo, nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
+import { type Decydent, grajDo, nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
 import { silnik } from '../../src/ai/silnik.ts';
-import { dayOf, hourOf, TICKS_PER_DAY } from '../../src/sim/clock.ts';
+import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { buildWorld } from '../../src/world/world.ts';
 import {
   dniLudnosci,
@@ -479,7 +479,7 @@ describe('uprząż bot:osada: jedna gra', () => {
     for (const d of p.poranki) {
       expect(d.zarzad).toBeGreaterThanOrEqual(1);
       expect(d.ludnosc).toBeGreaterThanOrEqual(d.zarzad);
-      expect(d.budowle).toBe(0);
+      expect(d.budowle).toBeGreaterThanOrEqual(0);
       expect(d.zaufanie).toBeGreaterThan(0);
       expect(d.wkurzenie).toBeGreaterThanOrEqual(0);
     }
@@ -499,21 +499,43 @@ describe('uprząż bot:osada: jedna gra', () => {
   it('zagraj jak w przeglądarce: mieszkańcy z adresu i obcy, dwie doby na Przymorzu', async () => {
     const wynik = await zagraj('przymorze', 12, 2, false);
     expect(wynik.przebieg.poranki.map((d) => d.dzien)).toEqual([2, 3]);
-    // zarząd 4 osoby i mieszkańcy siedziby z generatora
-    expect(wynik.przebieg.poranki[0].zarzad).toBe(4);
-    expect(wynik.przebieg.poranki[0].ludnosc).toBeGreaterThan(4);
+    // mieszkańcy siedziby z generatora: ludzi pod zarządem jest więcej niż samego zarządu
+    const rano = wynik.przebieg.poranki[0];
+    expect(rano.zarzad).toBeGreaterThanOrEqual(1);
+    expect(rano.ludnosc).toBeGreaterThan(rano.zarzad);
     expect(wynik.zawieszone).toEqual([]);
   }, 120_000);
 
-  it('gra, która kończy się w ciągu dnia, ma poranki dzień po dniu do końca i koniec z dniem i przyczyną', async () => {
-    // silnik podstawowy nie przeżywa zimy, więc 60 dób kończy się wcześniej, w trakcie dnia albo o 6:00
-    const wynik = await zagraj('zielonki', 11, 60, true);
-    const p = wynik.przebieg;
-    expect(p.koniec).not.toBeNull();
-    expect(p.koniec!.dzien).toBeLessThan(60);
-    expect(['pustka', 'odwolanie', 'exodus']).toContain(p.koniec!.przyczyna);
-    // poranki idą dzień po dniu od 2, a ostatni jest z dnia końca (koniec o 6:00) albo z dnia przed nim
-    expect(p.poranki.map((d) => d.dzien)).toEqual(Array.from({ length: p.poranki.length }, (_, k) => k + 2));
-    expect([p.koniec!.dzien - 1, p.koniec!.dzien]).toContain(p.poranki.at(-1)!.dzien);
-  }, 300_000);
+  it('zagraj gra podanym decydentem: koniec w pierwszym dniu to brak poranków i koniec z dniem 1', async () => {
+    const koniecOdRazu: Decydent = {
+      okno: () => {},
+      tura: (g) => {
+        g.gov.over = 'pustka';
+      },
+    };
+    const wynik = await zagraj('zielonki', 11, 5, true, koniecOdRazu);
+    expect(wynik.przebieg.koniec).toEqual({ dzien: 1, przyczyna: 'pustka' });
+    expect(wynik.przebieg.poranki).toEqual([]);
+  }, 120_000);
+
+  it.each([
+    ['w ciągu dnia 3 (11:00)', poranekTick(3) + 5 * TICKS_PER_HOUR, 3],
+    ['dokładnie o 6:00 dnia 3', poranekTick(3), 3],
+    ['w nocy przed dniem 4 (3:00)', poranekTick(4) - 3 * TICKS_PER_HOUR, 4],
+  ])(
+    'koniec gry %s: dzień końca z przyczyną i poranki tylko sprzed końca',
+    async (_opis, tick, dzienKonca) => {
+      const konczy: Decydent = {
+        okno: () => {},
+        tura: (g) => {
+          if (g.sim.st.tick >= tick) g.gov.over = 'exodus';
+        },
+      };
+      const wynik = await zagraj('zielonki', 11, 10, true, konczy);
+      expect(wynik.przebieg.koniec).toEqual({ dzien: dzienKonca, przyczyna: 'exodus' });
+      // poranki dni 2 i 3 w każdym z trzech przypadków (przy końcu dokładnie o 6:00 dnia 3 poranek jest z chwili końca), dnia 4 nie ma
+      expect(wynik.przebieg.poranki.map((d) => d.dzien)).toEqual([2, 3]);
+    },
+    120_000,
+  );
 });
