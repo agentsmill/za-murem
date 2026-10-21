@@ -2,9 +2,28 @@
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 2). Funkcje oceny są czyste, więc testy składają
    syntetyczne przebiegi (`przebiegi`) i sprawdzają werdykt: przeżycie 45 dni w co najmniej 4 z 5 ziaren, pierwszy kamień
    ludności (10 osób) w paśmie dni, co najmniej jedna budowla na trzy dni, każde w co najmniej 4 z 5 przebiegów na demie.
-   Samą uprząż (tools/bot-osada.ts, procesy z prawdziwą grą) sprawdza się ręcznie: `npm run bot:osada`. */
+   Uprząż (tools/bot-osada.ts) ma testy argumentów, tabeli i jednej gry (`zagraj`, kilka dób na prawdziwej symulacji);
+   procesy równoległe i pełny pomiar to ręczne `npm run bot:osada`. */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { grajDo, nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
+import { silnik } from '../../src/ai/silnik.ts';
+import { dayOf, hourOf, TICKS_PER_DAY } from '../../src/sim/clock.ts';
+import { buildWorld } from '../../src/world/world.ts';
+import {
+  dniLudnosci,
+  naglowekTabeli,
+  opisZawieszonych,
+  ostatniePoranki,
+  parsujArgumenty,
+  parsujZiarna,
+  poranekTick,
+  streszczenieBledu,
+  wierszPrzebiegu,
+  zagraj,
+} from '../../tools/bot-osada.ts';
 import {
   budowleNaKoniec,
   type DzienPrzebiegu,
@@ -240,4 +259,233 @@ describe('odczyty przebiegu', () => {
     expect(budowleNaKoniec(p)).toBe(16);
     expect(budowleNaKoniec({ ...p, poranki: [] })).toBe(0);
   });
+});
+
+describe('uprząż bot:osada: argumenty', () => {
+  it('bez argumentów: ziarna 11–15, 45 dni, trzy dema, gra jak w przeglądarce, z progiem', () => {
+    const o = parsujArgumenty([]);
+    expect(o.ziarna).toEqual([11, 12, 13, 14, 15]);
+    expect(o.dni).toBe(45);
+    expect(o.dema).toEqual(['przymorze', 'lanciego', 'zielonki']);
+    expect(o.prosto).toBe(false);
+    expect(o.bezProgu).toBe(false);
+    expect(o.jedna).toBeNull();
+    // procesów tyle, ile rdzeni bez jednego, ale co najmniej jeden
+    expect(o.procesy).toBeGreaterThanOrEqual(1);
+  });
+
+  it('parsujZiarna: zakres, jedno ziarno i lista z zakresami, bez powtórzeń', () => {
+    expect(parsujZiarna('11-15')).toEqual([11, 12, 13, 14, 15]);
+    expect(parsujZiarna('7')).toEqual([7]);
+    expect(parsujZiarna('11,13,15-16')).toEqual([11, 13, 15, 16]);
+    expect(parsujZiarna('3,3-4')).toEqual([3, 4]);
+  });
+
+  it('zła lista ziaren i odwrócony zakres rzucają', () => {
+    for (const zle of ['', 'abc', '15-11', '11-', '-5', '1.5', '11;12']) expect(() => parsujZiarna(zle), zle).toThrow();
+    expect(() => parsujArgumenty(['--ziarna=15-11'])).toThrow(/ziaren/);
+  });
+
+  it('flagi i liczby: --dni, --demo, --prosto, --bez-progu, --procesy, --limit', () => {
+    const o = parsujArgumenty([
+      '--ziarna=1-3',
+      '--dni=25',
+      '--demo=zielonki,przymorze',
+      '--prosto',
+      '--bez-progu',
+      '--procesy=2',
+      '--limit=5',
+    ]);
+    expect(o).toMatchObject({
+      ziarna: [1, 2, 3],
+      dni: 25,
+      dema: ['zielonki', 'przymorze'],
+      prosto: true,
+      bezProgu: true,
+      procesy: 2,
+      limitMin: 5,
+    });
+  });
+
+  it('nieznane demo, zła liczba, nieznany i pozycyjny argument rzucają z nazwą', () => {
+    expect(() => parsujArgumenty(['--demo=sopot'])).toThrow(/sopot/);
+    expect(() => parsujArgumenty(['--dni=0'])).toThrow(/--dni/);
+    expect(() => parsujArgumenty(['--dni=abc'])).toThrow(/--dni/);
+    expect(() => parsujArgumenty(['--procesy=-1'])).toThrow(/--procesy/);
+    expect(() => parsujArgumenty(['--ziarna'])).toThrow(/--ziarna/);
+    expect(() => parsujArgumenty(['--prostoo'])).toThrow(/--prostoo/);
+    expect(() => parsujArgumenty(['--bez-progu=1'])).toThrow(/--bez-progu/);
+    expect(() => parsujArgumenty(['45'])).toThrow(/45/);
+  });
+
+  it('ukryty --jedna=demo:ziarno wybiera jedną grę', () => {
+    expect(parsujArgumenty(['--jedna=lanciego:12']).jedna).toEqual({ demo: 'lanciego', ziarno: 12 });
+    expect(() => parsujArgumenty(['--jedna=sopot:12'])).toThrow(/--jedna/);
+    expect(() => parsujArgumenty(['--jedna=lanciego'])).toThrow(/--jedna/);
+  });
+});
+
+describe('uprząż bot:osada: tabela', () => {
+  it('dniLudnosci: dni 10, 20, 30 i 45 przed końcem przebiegu i zawsze ostatni dzień', () => {
+    expect(dniLudnosci(45)).toEqual([10, 20, 30, 45]);
+    expect(dniLudnosci(25)).toEqual([10, 20, 25]);
+    expect(dniLudnosci(60)).toEqual([10, 20, 30, 45, 60]);
+    expect(dniLudnosci(5)).toEqual([5]);
+  });
+
+  it('wiersz przebiegu, który dożył: żyje, bez przyczyny, ludność we wszystkich dniach, kamień, budowle, czas', () => {
+    const [p] = przebiegi({ kamien: 12, budowle: 16, ile: 1 });
+    const wiersz = wierszPrzebiegu(p, 12_340);
+    expect(wiersz.split(/\s+/)).toEqual(['11', 'żyje', '-', '8', '12', '12', '12', '12', '16', '12.3', 's']);
+    expect(naglowekTabeli(45).split(/\s+/)).toEqual([
+      'ziarno',
+      'koniec',
+      'przyczyna',
+      'lud10',
+      'lud20',
+      'lud30',
+      'lud45',
+      'kamień',
+      'budowle',
+      'czas',
+    ]);
+  });
+
+  it('wiersz przebiegu, który padł: dzień końca i przyczyna, ludność tylko do dnia końca, reszta kreski', () => {
+    const [, pada] = przebiegi({ dozyly: 0, kamien: 12, budowle: 5, ile: 2 });
+    const wiersz = wierszPrzebiegu(pada, 4_000);
+    // koniec w dniu 20: ludność w dniu 10 jest (8), w dniach 30 i 45 już nie
+    expect(wiersz.split(/\s+/)).toEqual(['12', 'dzień', '20', 'odwolanie', '8', '12', '-', '-', '12', '5', '4.0', 's']);
+  });
+
+  it('wiersz bez kamienia ma kreskę w kolumnie kamienia', () => {
+    const [p] = przebiegi({ kamien: null, ile: 1 });
+    expect(wierszPrzebiegu(p, 1000).split(/\s+/).slice(-4, -2)).toEqual(['-', '16']);
+  });
+
+  it('ostatnie poranki: nagłówek z nazwami kolumn i pięć ostatnich dni', () => {
+    const [pada] = przebiegi({ dozyly: 0, ile: 1 });
+    const linie = ostatniePoranki(pada);
+    expect(linie).toHaveLength(6);
+    expect(linie[0].trim().split(/\s+/)).toEqual([
+      'dzień',
+      'ludn.',
+      'zarząd',
+      'budowle',
+      'badania',
+      'jedzenie',
+      'drewno',
+      'zimni',
+      'głodni',
+      'zaufanie',
+      'wkurzenie',
+    ]);
+    // przebieg padł w dniu 20, więc ostatnie pięć poranków to dni 16–20
+    expect(linie.slice(1).map((l) => l.trim().split(/\s+/)[0])).toEqual(['16', '17', '18', '19', '20']);
+    expect(ostatniePoranki(pada, 2)).toHaveLength(3);
+  });
+
+  it('opis zawieszonych: rodzaj okna, ile razy i kiedy pierwszy raz (dzień i godzina gry)', () => {
+    expect(opisZawieszonych([])).toEqual([]);
+    // sekunda 3 to tick 60, czyli 4,5 minuty po starcie: dzień 1, 15:04
+    const opis = opisZawieszonych([
+      { k: 'nowe_okno', s: 3 },
+      { k: 'nowe_okno', s: 4 },
+      { k: 'inne', s: 9 },
+    ]);
+    expect(opis).toHaveLength(2);
+    expect(opis[0]).toContain('nowe_okno');
+    expect(opis[0]).toContain('2 razy');
+    expect(opis[0]).toContain('dniu 1');
+    expect(opis[0]).toContain('15:04');
+    expect(opis[1]).toContain('inne');
+    expect(opis[1]).toContain('1 raz ');
+  });
+});
+
+describe('uprząż bot:osada: błąd procesu potomnego', () => {
+  it('streszczenieBledu: linia błędu z dwiema następnymi, bez źródła i reszty stosu', () => {
+    const stderr = [
+      'file:///x/tools/bot-osada.ts:12',
+      'throw new Error("sztuczny");',
+      '^',
+      '',
+      'Error: sztuczny błąd',
+      '    at zagraj (file:///x/tools/bot-osada.ts:12:9)',
+      '    at async main (file:///x/tools/bot-osada.ts:40:3)',
+      '    at inne',
+      '',
+      'Node.js v25.2.1',
+    ].join('\n');
+    expect(streszczenieBledu(stderr)).toBe(
+      'Error: sztuczny błąd | at zagraj (file:///x/tools/bot-osada.ts:12:9) | at async main (file:///x/tools/bot-osada.ts:40:3)',
+    );
+    // błąd innego rodzaju (TypeError, RangeError…) też
+    expect(streszczenieBledu('coś\nTypeError: x is not a function\n  at a')).toBe(
+      'TypeError: x is not a function | at a',
+    );
+  });
+
+  it('streszczenieBledu: bez linii błędu ostatnie trzy linie, pusty tekst to pusty napis', () => {
+    expect(streszczenieBledu('a\nb\nc\nd\n')).toBe('b | c | d');
+    expect(streszczenieBledu('')).toBe('');
+  });
+});
+
+describe('uprząż bot:osada: jedna gra', () => {
+  it('poranekTick: dzień 2 o 6:00 to tick 12000, kolejne co dobę', () => {
+    expect(poranekTick(2)).toBe(12000);
+    expect(poranekTick(3)).toBe(12000 + TICKS_PER_DAY);
+    for (const d of [2, 3, 10, 46]) {
+      expect(hourOf(poranekTick(d))).toBe(6);
+      expect(dayOf(poranekTick(d))).toBe(d);
+      expect(hourOf(poranekTick(d) - 1)).toBe(5);
+    }
+  });
+
+  it('zagraj prosto: trzy doby dają poranki dni 2–4 o 6:00, a przebieg gry jest ten sam co bez przerw na poranki', async () => {
+    const wynik = await zagraj('przymorze', 11, 3, true);
+    const p = wynik.przebieg;
+    expect([p.demo, p.ziarno, p.dni, p.koniec]).toEqual(['przymorze', 11, 3, null]);
+    expect(p.poranki.map((d) => d.dzien)).toEqual([2, 3, 4]);
+    for (const d of p.poranki) {
+      expect(d.zarzad).toBeGreaterThanOrEqual(1);
+      expect(d.ludnosc).toBeGreaterThanOrEqual(d.zarzad);
+      expect(d.budowle).toBe(0);
+      expect(d.zaufanie).toBeGreaterThan(0);
+      expect(d.wkurzenie).toBeGreaterThanOrEqual(0);
+    }
+    expect(wynik.zawieszone).toEqual([]);
+    expect(wynik.czasMs).toBeGreaterThan(0);
+    // ta sama gra bez zatrzymań na poranki kończy w tym samym stanie
+    const demo = JSON.parse(
+      fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'),
+    );
+    const g = nowaGraAi(buildWorld(demo.geo, { seed: 11, street: demo.street }), 11, { tempoPrzegladarki: true });
+    grajDo(g, silnik, 3 * TICKS_PER_DAY);
+    expect(wynik.skrot).toBe(skrotGry(g));
+    // i jest deterministyczna
+    expect((await zagraj('przymorze', 11, 3, true)).skrot).toBe(wynik.skrot);
+  }, 120_000);
+
+  it('zagraj jak w przeglądarce: mieszkańcy z adresu i obcy, dwie doby na Przymorzu', async () => {
+    const wynik = await zagraj('przymorze', 12, 2, false);
+    expect(wynik.przebieg.poranki.map((d) => d.dzien)).toEqual([2, 3]);
+    // zarząd 4 osoby i mieszkańcy siedziby z generatora
+    expect(wynik.przebieg.poranki[0].zarzad).toBe(4);
+    expect(wynik.przebieg.poranki[0].ludnosc).toBeGreaterThan(4);
+    expect(wynik.zawieszone).toEqual([]);
+  }, 120_000);
+
+  it('gra, która kończy się w ciągu dnia, ma poranki dzień po dniu do końca i koniec z dniem i przyczyną', async () => {
+    // silnik podstawowy nie przeżywa zimy, więc 60 dób kończy się wcześniej, w trakcie dnia albo o 6:00
+    const wynik = await zagraj('zielonki', 11, 60, true);
+    const p = wynik.przebieg;
+    expect(p.koniec).not.toBeNull();
+    expect(p.koniec!.dzien).toBeLessThan(60);
+    expect(['pustka', 'odwolanie', 'exodus']).toContain(p.koniec!.przyczyna);
+    // poranki idą dzień po dniu od 2, a ostatni jest z dnia końca (koniec o 6:00) albo z dnia przed nim
+    expect(p.poranki.map((d) => d.dzien)).toEqual(Array.from({ length: p.poranki.length }, (_, k) => k + 2));
+    expect([p.koniec!.dzien - 1, p.koniec!.dzien]).toContain(p.poranki.at(-1)!.dzien);
+  }, 300_000);
 });
