@@ -8,7 +8,10 @@
    z postępem; teksty i atrybuty idą przez ucieczkę HTML; po angielsku bez polskich liter, bez myślników.
    `celWOknie(widok, okno)`: tekst celu, który dotyczy okna (karta nocy, uchwała, tablica badań, spotkanie), także wtedy,
    gdy bieżący cel jest inny (karta nocy z za małym zapasem drewna pokazuje dyżur przy kozie); cel zrobiony, przepadły
-   albo czekający go nie daje. Linia „Cel: …” w oknie (`Sheet.cel` w `sheetHtml`) i w nagłówku tablicy badań. */
+   albo czekający go nie daje. Linia „Cel: …” w oknie (`Sheet.cel` w `sheetHtml`) i w nagłówku tablicy badań. Do tego
+   pilnowanie, że każda klasa z tego HTML ma regułę w src/style.css (wygląd ocenia się w Chromium, `npm run shots`), a
+   zwijanie okienka jest w HTML, nie w CSS. Na prawdziwej symulacji: widok R1 na trzech demach w obu trybach i karta
+   nocy z za małym zapasem drewna, która pokazuje dyżur przy kozie. */
 
 import fs from 'node:fs';
 import path from 'node:path';
