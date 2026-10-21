@@ -23,6 +23,9 @@
    1 gdy werdykt nie przechodzi (bez `--bez-progu`) albo któryś przebieg jest błędny (proces padł, przekroczył limit czasu
    albo zostawił okno zarządu zawieszone: silnik nie umie odpowiedzieć na taki rodzaj okna); 2 przy złych argumentach.
 
+   Moduł da się zaimportować (testy): `przygotujGre` składa grę z konfiguracji uprzęży, `zagraj` gra ją do końca przebiegu,
+   a reszta eksportów to czyste funkcje argumentów i tabeli. Uprząż rusza tylko wtedy, gdy skrypt uruchomiono wprost.
+
    Uruchomienie: npm run bot:osada [-- --ziarna=11-15] [--dni=45] [--demo=przymorze,lanciego,zielonki] [--prosto]
                  [--bez-progu] [--procesy=N] [--limit=MIN] */
 
@@ -215,10 +218,11 @@ async function wczytajBotMieszkancy(): Promise<typeof import('./bot-mieszkancy.t
   }
 }
 
-/** Jedna gra silnika: `dni` dób od 15:00 dnia 1 albo do końca gry. Poranki o 6:00 od dnia 2 (przebieg, który kończy się
-    w ciągu dnia, ma ostatni poranek poprzedniego dnia; koniec o 6:00 ma poranek z chwili końca). */
-export async function zagraj(demoKlucz: string, ziarno: number, dni: number, prosto: boolean): Promise<WynikGry> {
-  const t0 = performance.now();
+/** Gra tak, jak ją zakłada uprząż, na demie `demoKlucz` z ziarnem `ziarno`: jak w przeglądarce (obcy, mieszkańcy siedziby
+    z generatora, okolica miasta z geo dema, ludność kwadratu domu z 2021 roku, tempo przeglądarki) albo `prosto` (tylko tempo
+    przeglądarki, na świecie bez generatora mieszkańców). Eksportowana, żeby testy warstw silnika grały na tej samej
+    konfiguracji co pomiar. */
+export async function przygotujGre(demoKlucz: string, ziarno: number, prosto: boolean): Promise<GraAi> {
   const demo = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'demo', `${demoKlucz}.json`), 'utf8'));
   const opts: OpcjeGryAi = { core: CORE, tempoPrzegladarki: true };
   let world: World;
@@ -233,7 +237,14 @@ export async function zagraj(demoKlucz: string, ziarno: number, dni: number, pro
     opts.okolica = okolicaZGeo(demo.geo);
     if (ludnosc.ludnosc2021 !== undefined) opts.ludnosc2021 = ludnosc.ludnosc2021;
   }
-  const g = nowaGraAi(world, ziarno, opts);
+  return nowaGraAi(world, ziarno, opts);
+}
+
+/** Jedna gra silnika: `dni` dób od 15:00 dnia 1 albo do końca gry. Poranki o 6:00 od dnia 2 (przebieg, który kończy się
+    w ciągu dnia, ma ostatni poranek poprzedniego dnia; koniec o 6:00 ma poranek z chwili końca). */
+export async function zagraj(demoKlucz: string, ziarno: number, dni: number, prosto: boolean): Promise<WynikGry> {
+  const t0 = performance.now();
+  const g = await przygotujGre(demoKlucz, ziarno, prosto);
   const koniecTick = dni * TICKS_PER_DAY;
   const poranki: DzienPrzebiegu[] = [];
   for (let dzien = 2; poranekTick(dzien) <= koniecTick && !g.gov.over; dzien++) {

@@ -20,6 +20,7 @@ import {
   parsujArgumenty,
   parsujZiarna,
   poranekTick,
+  przygotujGre,
   streszczenieBledu,
   wierszPrzebiegu,
   zagraj,
@@ -442,6 +443,33 @@ describe('uprząż bot:osada: jedna gra', () => {
       expect(hourOf(poranekTick(d) - 1)).toBe(5);
     }
   });
+
+  it('przygotujGre: domyślnie gra jak w przeglądarce (obcy, mieszkańcy z adresu, okolica, ludność 2021, tempo)', async () => {
+    for (const demo of ['przymorze', 'lanciego', 'zielonki']) {
+      const g = await przygotujGre(demo, 11, false);
+      expect(g.seed, demo).toBe(11);
+      expect(g.opts, demo).toMatchObject({ core: 4, obcy: true, tempoPrzegladarki: true });
+      expect(g.opts.mieszkancy, demo).toBeDefined();
+      expect(g.opts.okolica!.length, demo).toBeGreaterThan(0);
+      expect(g.opts.ludnosc2021, demo).toBeGreaterThan(0);
+      // opcje dochodzą do gry: obcy w symulacji, mapa miasta i drogi do zwycięstwa w zarządzie, zarząd z 4 osób
+      expect(g.sim.st.obcy, demo).toBeDefined();
+      expect(g.gov.miasto, demo).toBeDefined();
+      expect(g.gov.zwyciestwo, demo).toBeDefined();
+      expect(
+        g.sim.st.pawns.filter((p) => p.kind === 'core'),
+        demo,
+      ).toHaveLength(4);
+    }
+  }, 120_000);
+
+  it('przygotujGre prosto: bez obcych, mieszkańców z adresu, okolicy i ludności 2021, ale z tempem przeglądarki', async () => {
+    const g = await przygotujGre('lanciego', 12, true);
+    expect(g.opts).toEqual({ core: 4, tempoPrzegladarki: true });
+    expect(g.sim.st.obcy).toBeUndefined();
+    expect(g.gov.miasto).toBeUndefined();
+    expect(g.gov.zwyciestwo).toBeUndefined();
+  }, 120_000);
 
   it('zagraj prosto: trzy doby dają poranki dni 2–4 o 6:00, a przebieg gry jest ten sam co bez przerw na poranki', async () => {
     const wynik = await zagraj('przymorze', 11, 3, true);
