@@ -1,5 +1,5 @@
 /* Pies i kot rysowani kodem (grafika zapasowa, bez zamówienia w PixelLab): burek w szaro-brązowych kłakach i rudy kot.
-   Jeden atlas, rysowany samymi prostokątami (działa też z atrapą płótna w Node), kształtem jak atlas szwendaczy
+   Jeden atlas, rysowany prostokątami i elipsą cienia pod stopami (działa też z atrapą płótna w Node), kształtem jak atlas szwendaczy
    (`makeZombieAtlas` w people.ts): wiersz = rodzaj zwierzęcia, kolumny = poza × kierunek × klatka.
    Pozy: chód (4 klatki, widać zad, bok i przód), leżenie (2 klatki oddechu; zawsze z boku, zwinięty kot), szczekanie psa
    z głową w górę i otwartym pyskiem (2 klatki; kot dostaje tu czujne stanie, żeby atlas miał ten sam układ).

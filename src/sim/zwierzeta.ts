@@ -11,11 +11,13 @@
    zasłaniałoby go). Gdy wróg (szabrownik, szwendacz, wrogi człowiek; nie
    gość i nie wędrowiec) jest w promieniu SZCZEK_ZASIEG m, szczeka co najwyżej raz na SZCZEK_CD ticków (5 s): napis nad
    psem widać SZCZEK_NAPIS ticków (`SimState.szczek.tick` to tick ostatniego szczeknięcia), a w trybie zombie szczekanie
-   to też hałas SZCZEK_HALAS m (`addNoise`: szwendacze w tym promieniu idą na dźwięk). Pies jest ofiarą szwendaczy jak
+   to też hałas SZCZEK_HALAS m (`addNoise`: szwendacze w tym promieniu idą na dźwięk), ale tylko gdy szczeknięcie zaczyna
+   nowy alarm (przy poprzednim sprawdzeniu nie było wroga w zasięgu) albo od ostatniego hałasu minęło SZCZEK_ALARM
+   (godzina gry); stan alarmu (`wrog`, `halas`) siedzi w `SimState.szczek`, więc przeżywa zapis. Pies jest ofiarą szwendaczy jak
    człowiek (`isPrey`) i ma PIES_HP życia; po śmierci nie zostaje po nim nic poza wpisem `zginal` (bez zwłok, bez
    wstawania, bez wpisu zmarłych i bez żałoby osiedla).
 
-   Kot. Pojawia się przed kozą zarządu, tam śpi nocą, za dnia chodzi po mieszkaniu zarządu. Nie jest ofiarą szwendaczy
+   Kot. Pojawia się tuż obok kozy zarządu, tam śpi nocą, za dnia chodzi po mieszkaniu zarządu. Nie jest ofiarą szwendaczy
    i nie ginie.
 
    Oba nie mają potrzeb (`needs` null), nie biorą poleceń i nie są nigdzie liczone jako ludzie: nie ma ich w mieszkańcach,
@@ -23,7 +25,7 @@
    ma `tile` −1, żeby nie rezerwowała kafelków innym. Losowanie tylko ze `st.rng`, bez trygonometrii i `Math.hypot`. */
 
 import { tx } from '../core/jezyk.ts';
-import { TICKS_PER_SECOND } from './clock.ts';
+import { TICKS_PER_HOUR, TICKS_PER_SECOND } from './clock.ts';
 
 export type { ZwierzetaStan } from '../gov/typy.ts';
 
@@ -50,10 +52,13 @@ export const PIES_OBSZAR = 10;
 export const PIES_TEMPO = 1.3;
 export const KOT_TEMPO = 0.8;
 
+/** hałas szczekania (tryb zombie) tylko przy nowym alarmie: gdy przy poprzednim sprawdzeniu nie było wroga w zasięgu albo od
+    ostatniego hałasu minęła godzina gry (800 ticków); inaczej pies przy bramie, pod którą stale stoją szwendacze, byłby
+    stałym magnesem na stado */
+export const SZCZEK_ALARM = TICKS_PER_HOUR;
+
 /** napis nad szczekającym psem */
 export const NAPIS_SZCZEKU = tx('Hau!', 'Woof!');
-/** imię psa z karty „Pies przy siatce” (w kronice zarządu i w teksty zgonu) */
-export const PIES_IMIE = tx('Abonament', 'Subscription');
 
 /** czy napis szczekania jeszcze widać: ostatnie szczeknięcie w `szczek.tick` było nie dawniej niż SZCZEK_NAPIS temu */
 export const napisSzczekuWidac = (szczek: { tick: number } | undefined, tick: number): boolean =>

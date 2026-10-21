@@ -334,6 +334,7 @@ import {
   PIES_OBSZAR,
   PIES_TEMPO,
   type RodzajZwierzecia,
+  SZCZEK_ALARM,
   SZCZEK_CD,
   SZCZEK_HALAS,
   SZCZEK_ZASIEG,
@@ -1035,9 +1036,11 @@ export interface SimState {
       (polecenie 'zwierze'), więc gra bez przygarniętych zwierząt nie ma pola i ma ten sam skrót stanu. Zarząd czyta je w
       `GovInput.zwierzeta` i na tej podstawie prosi o wystawienie (`GovEffects.zwierze`). */
   zwierzeta?: ZwierzetaStan;
-  /** ostatnie szczeknięcie psa (tick); napis nad psem widać krótko (SZCZEK_NAPIS), przerwa SZCZEK_CD. Pola nie ma, dopóki
-      pies nie szczeknął. */
-  szczek?: { tick: number };
+  /** szczekanie psa: `tick` ostatniego szczeknięcia (napis nad psem widać krótko, SZCZEK_NAPIS, przerwa SZCZEK_CD), `wrog`:
+      przy ostatnim szczeknięciu był wróg w zasięgu, a przy późniejszym sprawdzeniu bez wroga alarm się kończy (false),
+      `halas`: tick ostatniego hałasu w trybie zombie (nowy hałas przy nowym alarmie albo po SZCZEK_ALARM). Pola nie ma,
+      dopóki pies nie szczeknął. */
+  szczek?: { tick: number; wrog?: boolean; halas?: number };
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
@@ -2264,9 +2267,10 @@ export class Sim {
   /** kafelki podwórka, po których za dnia snuje się pies: najwyżej PIES_OBSZAR m od środka bramy, wolne ze świata; liczone
       razem z `gateStand`, ze świata, nie ze stanu */
   private psiObszar: number[] = [];
-  /** legowisko psa nocą: kafelek podwórka dwa kroki od bramy, najbliższy jej środka (−1: świat bez bramy); jeden krok od
-      bramy stoi warta i sięga skrzydło bramy, które zasłoniłoby leżącego psa */
-  private psiLegowiskoTile = -1;
+  /** kandydaci na legowisko psa nocą: kafelki podwórka co najmniej dwa kroki od bramy, od najbliższych jej środka (jeden krok
+      od bramy stoi warta i sięga skrzydło bramy, które zasłoniłoby leżącego psa); `psiLegowisko` bierze pierwszy, który
+      teraz nie jest zablokowany */
+  private psiLegowiska: number[] = [];
   /** kafelek za bramą, na którym znika i pojawia się wyprawa (−1: świat bez siatki) */
   exitTile = -1;
   /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
@@ -2391,10 +2395,10 @@ export class Sim {
       .filter((i) => !still[i] && gate.some((g) => cheb(g, i) <= 1))
       .sort((a, b) => dg(a) - dg(b) || a - b);
     this.psiObszar = (shape?.yard ?? []).filter((i) => !still[i] && dg(i) <= PIES_OBSZAR * PIES_OBSZAR);
-    this.psiLegowiskoTile =
-      (shape?.yard ?? [])
-        .filter((i) => !still[i] && gate.some((g) => cheb(g, i) === 2) && !gate.some((g) => cheb(g, i) < 2))
-        .sort((a, b) => dg(a) - dg(b) || a - b)[0] ?? -1;
+    this.psiLegowiska = (shape?.yard ?? [])
+      .filter((i) => !still[i] && !gate.some((g) => cheb(g, i) < 2))
+      .sort((a, b) => dg(a) - dg(b) || a - b)
+      .slice(0, 48);
     this.exitTile = exitOf(w);
     this.fenceMask = new Uint8Array(size * size);
     for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
@@ -6543,7 +6547,7 @@ export class Sim {
     st.pawns.push(p);
   }
 
-  /** Krok psa albo kota (nie rusza `st.rng` poza losowaniem celu spaceru): idzie swoją drogą; po dojściu stoi (spacer) albo
+  /** Krok psa albo kota (`st.rng` tylko do losowania celu spaceru i długości postoju): idzie swoją drogą; po dojściu stoi (spacer) albo
       leży (legowisko); gdy postój minie, decyduje od nowa: noc to legowisko, dzień spacer po swoim terenie (pies: podwórko
       do PIES_OBSZAR m od bramy, kot: mieszkanie zarządu). Co sekundę pies sprawdza, czy ma na kogo szczekać. */
   private zwierzeTick(p: Pawn): void {
@@ -6567,7 +6571,7 @@ export class Sim {
     }
     if (tick < p.wait) return;
     if (this.night()) {
-      const spot = pies ? this.psiLegowisko() : this.kotLegowisko();
+      const spot = pies ? this.psiLegowisko(tu) : this.kotLegowisko();
       if (spot >= 0 && tu !== spot) {
         if (this.go(p, spot)) {
           j.what = 'idzie';
@@ -6588,10 +6592,20 @@ export class Sim {
     } else p.wait = tick + 3 * THINK_EVERY;
   }
 
-  /** legowisko psa: kafelek podwórka dwa kroki od bramy (obok stoi warta, a skrzydło bramy zasłaniałoby psa); bez takiego
-      pierwszy kafelek przy bramie, −1 bez bramy */
-  private psiLegowisko(): number {
-    return this.psiLegowiskoTile >= 0 ? this.psiLegowiskoTile : (this.gateStand[0] ?? -1);
+  /** Legowisko psa, sprawdzane przy każdej decyzji (po ognisku, łacie albo zasiekach na kafelku pies nie tkwi w miejscu, bo
+      `go()` do zablokowanego kafelka zawodzi): pies leżący na kandydacie, który nadal jest wolny, zostaje; inaczej pierwszy
+      wolny kandydat bez rzeczy na kafelku (zapasy, drewno), a gdy wszystkie zajęte pierwszy nieblokujący, na końcu
+      pierwszy wolny kafelek przy bramie (−1: świat bez bramy). */
+  private psiLegowisko(tu: number): number {
+    if (this.psiLegowiska.includes(tu) && !this.coreBlocked[tu]) return tu;
+    const size = this.w.size;
+    let zajety = -1;
+    for (const i of this.psiLegowiska) {
+      if (this.coreBlocked[i]) continue;
+      if (!this.thingAt(i % size, Math.floor(i / size))) return i;
+      if (zajety < 0) zajety = i;
+    }
+    return zajety >= 0 ? zajety : (this.gateStand.find((i) => !this.coreBlocked[i]) ?? -1);
   }
 
   /** cel spaceru psa: losowy wolny kafelek podwórka do PIES_OBSZAR m od bramy, −1 bez takich */
@@ -6650,22 +6664,36 @@ export class Sim {
   }
 
   /** Pies szczeka na wroga (szabrownik, szwendacz, wrogi człowiek; nie gość ani wędrowiec) w promieniu SZCZEK_ZASIEG m, nie
-      częściej niż co SZCZEK_CD ticków: `st.szczek` (napis nad psem), pies patrzy na wroga, a w trybie zombie szczekanie to
-      hałas SZCZEK_HALAS m, na który idą szwendacze. Liczone na kwadratach odległości, bez Math.hypot. */
+      częściej niż co SZCZEK_CD ticków: `st.szczek` (napis nad psem), pies patrzy na wroga. W trybie zombie szczekanie jest
+      też hałasem SZCZEK_HALAS m, na który idą szwendacze, ale tylko gdy zaczyna nowy alarm: przy poprzednim sprawdzeniu
+      (poprzednim szczeknięciu albo sprawdzeniu bez wroga) nie było wroga w zasięgu, albo od ostatniego hałasu minęło
+      SZCZEK_ALARM; szwendacze stale stojący pod siatką przy bramie nie robią z psa stałego magnesu na stado. Liczone na
+      kwadratach odległości, bez Math.hypot. */
   private psiSzczek(p: Pawn): void {
     const st = this.st;
     if (st.szczek && st.tick < st.szczek.tick + SZCZEK_CD) return;
     const r2 = SZCZEK_ZASIEG * SZCZEK_ZASIEG;
+    let wrog: Pawn | undefined;
     for (const q of st.pawns) {
       if (!isEnemy(q) || q.away || this.graveyard.has(q.id)) continue;
       const dx = q.x - p.x;
       const dy = q.y - p.y;
-      if (dx * dx + dy * dy > r2) continue;
-      st.szczek = { tick: st.tick };
-      this.face(p, q.x, q.y);
-      if (modeOf(st) === 'zombie') this.addNoise(p.x, p.y, SZCZEK_HALAS);
+      if (dx * dx + dy * dy <= r2) {
+        wrog = q;
+        break;
+      }
+    }
+    if (!wrog) {
+      // sprawdzenie bez wroga kończy alarm: następny wróg w zasięgu zacznie nowy
+      if (st.szczek?.wrog) st.szczek.wrog = false;
       return;
     }
+    const przed = st.szczek;
+    const nowy = !przed?.wrog || st.tick >= (przed.halas ?? Number.NEGATIVE_INFINITY) + SZCZEK_ALARM;
+    const halas = nowy && modeOf(st) === 'zombie' ? st.tick : przed?.halas;
+    st.szczek = { tick: st.tick, wrog: true, ...(halas !== undefined ? { halas } : {}) };
+    this.face(p, wrog.x, wrog.y);
+    if (nowy && modeOf(st) === 'zombie') this.addNoise(p.x, p.y, SZCZEK_HALAS);
   }
 
   /* ---------- goście z klocków (src/sim/gosc.ts) ---------- */
@@ -8134,7 +8162,8 @@ export class Sim {
     this.addFx('ugryzienie', t.x, t.y, p.x, p.y);
     const facing = t.job?.t === 'fight' || (t.job?.t === 'guard' && t.job.phase === 1);
     if (nextRandom(st.rng) >= (facing ? BITE_HIT_FIGHTING : BITE_HIT)) return;
-    st.tally!.bites++;
+    // ugryzienia psa nie wchodzą do liczników ludzi (raport i boty trybu zombie liczą tylko ludzi)
+    if (t.kind !== 'pies') st.tally!.bites++;
     this.hurt(t, BITE_DMG, p);
     if (this.graveyard.has(t.id) || modeOf(st) !== 'zombie') return;
     if (nextRandom(st.rng) < BITE_INFECT) infect(st, t, nextRandom(st.rng) < LIMB);

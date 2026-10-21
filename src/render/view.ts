@@ -789,7 +789,6 @@ export class GameView {
     this.builds.setPlacement(p);
   }
 
-  /** uszkodzenia, plany i łóżka piętrowe z dwojgiem śpiących do póz prac M2 i snu (co klatkę) */
   /** Pies albo kot: klatka z atlasu zwierząt, pozycja i kolejność jak pionka, widoczność jak innych pionków (pod dachem
       tylko w przekroju) i nocą pies jako ciemny zarys (strangerVisibility). Nad szczekającym psem napis „Hau!”. */
   private rysujZwierze(
@@ -843,6 +842,7 @@ export class GameView {
     return tex;
   }
 
+  /** uszkodzenia, plany i łóżka piętrowe z dwojgiem śpiących do póz prac M2 i snu (co klatkę) */
   private poseCtx(st: SimState): PoseCtx {
     let sleepers: Map<number, number> | null = null;
     for (const p of st.pawns)

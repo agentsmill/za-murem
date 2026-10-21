@@ -44,7 +44,7 @@ const cheb = (a: number, b: number) =>
 function gra(
   day: number,
   hour: number,
-  opt: { zombie?: boolean; obcy?: boolean; seed?: number; world?: typeof w } = {},
+  opt: { zombie?: boolean; obcy?: boolean; seed?: number; world?: typeof w; ogniska?: readonly number[] } = {},
 ): Sim {
   const world = opt.world ?? w;
   const st = createSim(world, opt.seed ?? 3, {
@@ -52,6 +52,21 @@ function gra(
     ...(opt.obcy ? { obcy: true } : {}),
     ...(opt.zombie ? { mode: 'zombie' as const } : {}),
   });
+  // ogniska stoją przed startem symulacji, więc od pierwszego kroku blokują przejście
+  for (const tile of opt.ogniska ?? [])
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'ognisko',
+      x: tile % world.size,
+      y: Math.floor(tile / world.size),
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 100 * TICKS_PER_HOUR,
+      by: -1,
+      owner: -1,
+    });
   const sim = new Sim(world, st);
   st.tick = tickAt(day, hour);
   if (st.obcy) {
@@ -73,7 +88,8 @@ function przygotuj(st: SimState, zostaw: readonly Pawn[]): void {
       p.needs.warm = 100;
       p.needs.rest = 100;
     }
-  if (st.mode === 'zombie') st.pawns = st.pawns.filter((p) => p.kind !== 'zombie' || zostaw.includes(p));
+  // zostają tylko wskazani szwendacze, po numerze (kopia stanu po zapisie ma inne obiekty o tych samych numerach)
+  if (st.mode === 'zombie') st.pawns = st.pawns.filter((p) => p.kind !== 'zombie' || zostaw.some((z) => z.id === p.id));
 }
 
 function run(sim: Sim, ok: () => boolean, max = 30000, zostaw: readonly Pawn[] = []): number {
@@ -172,18 +188,63 @@ describe('pies: wejście, dzień i noc', () => {
   });
 });
 
+describe('pies: legowisko zablokowane', () => {
+  it('ognisko na legowisku: pies i tak kładzie się nocą przy bramie, na najbliższym wolnym kafelku', () => {
+    const a = gra(2, 23);
+    wyslij(a, { zwierze: ['pies'] });
+    a.step();
+    run(a, () => pies(a.st).job?.what === 'lezy', 4000);
+    const legowisko = tileOf(pies(a.st));
+    expect(pies(a.st).job?.what).toBe('lezy');
+    // ta sama gra, ale z ogniskiem dokładnie na legowisku (blokuje kafelek od pierwszego kroku)
+    const b = gra(2, 23, { ogniska: [legowisko] });
+    wyslij(b, { zwierze: ['pies'] });
+    b.step();
+    const p = pies(b.st);
+    run(b, () => p.job?.what === 'lezy', 6000);
+    expect(p.job?.what, 'pies kładzie się mimo zajętego legowiska').toBe('lezy');
+    expect(tileOf(p)).not.toBe(legowisko);
+    expect(yard.has(tileOf(p))).toBe(true);
+    expect(Math.min(...gate.map((g) => cheb(g, tileOf(p)))), 'przy bramie').toBeLessThanOrEqual(4);
+    // i leży do rana
+    const gdzie = tileOf(p);
+    run(b, () => false, 3 * TICKS_PER_HOUR);
+    expect(tileOf(p)).toBe(gdzie);
+    expect(p.job?.what).toBe('lezy');
+  });
+});
+
 describe('pies: szczekanie', () => {
   /** pies na podwórku (dzień, tryb zwykły albo zombie), szwendacz dalej za siatką */
-  function zSzwendaczem(zombie: boolean, daleko = 11) {
-    const sim = gra(2, 12, { zombie });
+  function zSzwendaczem(zombie: boolean, daleko = 11, godzina = 12) {
+    const sim = gra(2, godzina, { zombie });
     wyslij(sim, { zwierze: ['pies'] });
     sim.step();
     const p = pies(sim.st);
-    run(sim, () => yard.has(tileOf(p)), 3000);
+    // nocą pies najpierw kładzie się na legowisku, więc szwendacz staje dopiero, gdy pies się nie rusza
+    if (godzina >= 22 || godzina < 6) run(sim, () => p.job?.what === 'lezy', 4000);
+    else run(sim, () => yard.has(tileOf(p)), 3000);
     const tile = ulicaWOdleglosci(p.x, p.y, daleko - 1, daleko);
     const z = spawnZombie(sim.st, w, tile, 0);
     return { sim, p, z };
   }
+
+  /** hałasy psa (st.noise o promieniu SZCZEK_HALAS) wpisane w jednym kroku: tick, w którym się pojawiły */
+  function halasyPsa(st: SimState, widziane: Set<number>, ticki: number[]): void {
+    for (const n of st.noise!)
+      if (n.r === SZCZEK_HALAS && !widziane.has(n.until)) {
+        widziane.add(n.until);
+        ticki.push(st.tick);
+      }
+  }
+
+  /** szwendacz stoi w miejscu (nie podchodzi, nie ucieka): wróg jest w zasięgu psa, dopóki test tego chce */
+  const przypnij = (z: Pawn, tile: number) => {
+    z.x = (tile % size) + 0.5;
+    z.y = Math.floor(tile / size) + 0.5;
+    z.path = [];
+    z.pi = 0;
+  };
 
   it('szwendacz w 15 m: pies szczeka, w trybie zombie st.noise dostaje hałas 12 m', () => {
     const { sim, p, z } = zSzwendaczem(true);
@@ -221,22 +282,66 @@ describe('pies: szczekanie', () => {
     expect(SZCZEK_NAPIS).toBeLessThan(SZCZEK_CD);
   });
 
-  it('w trybie zombie hałas nie dochodzi co krok: najwyżej jeden na przerwę', () => {
-    const { sim, z } = zSzwendaczem(true);
-    const dlugo = 30 * TICKS_PER_SECOND;
-    let wpisy = 0;
-    let poprzedni = -1;
-    for (let k = 0; k < dlugo; k++) {
+  it('szwendacze stale w zasięgu: hałas tylko przy nowym alarmie i nie częściej niż co godzinę gry, napis co 5 s', () => {
+    const { sim, z } = zSzwendaczem(true, 11, 22);
+    const miejsce = tileOf(z);
+    const widziane = new Set<number>();
+    const halasy: number[] = [];
+    const szczeki: number[] = [];
+    let ostatni = -1;
+    let start = -1;
+    for (let k = 0; k < 600 + 2 * TICKS_PER_HOUR && !(start >= 0 && sim.st.tick >= start + 2 * TICKS_PER_HOUR); k++) {
       przygotuj(sim.st, [z]);
+      przypnij(z, miejsce);
       sim.step();
-      for (const n of sim.st.noise!)
-        if (n.r === SZCZEK_HALAS && n.until !== poprzedni) {
-          wpisy++;
-          poprzedni = n.until;
-        }
+      halasyPsa(sim.st, widziane, halasy);
+      if (start < 0 && halasy.length) start = halasy[0];
+      const t = sim.st.szczek?.tick;
+      if (t !== undefined && t !== ostatni) {
+        szczeki.push(t);
+        ostatni = t;
+      }
     }
-    expect(wpisy).toBeGreaterThanOrEqual(2);
-    expect(wpisy).toBeLessThanOrEqual(Math.ceil(dlugo / SZCZEK_CD) + 1);
+    // dwie godziny gry od pierwszego hałasu (bez ticku, w którym zaczyna się trzecia godzina): pierwszy alarm i jedno
+    // przypomnienie po godzinie, nic poza tym; hałasy co najmniej godzinę od siebie
+    const wOknie = halasy.filter((t) => t < start + 2 * TICKS_PER_HOUR);
+    expect(wOknie, `hałasy w tickach ${halasy.join(', ')}`).toHaveLength(2);
+    expect(wOknie[1] - wOknie[0]).toBeGreaterThanOrEqual(TICKS_PER_HOUR);
+    expect(wOknie[1] - wOknie[0]).toBeLessThan(TICKS_PER_HOUR + 2 * SZCZEK_CD);
+    for (let k = 1; k < halasy.length; k++) expect(halasy[k] - halasy[k - 1]).toBeGreaterThanOrEqual(TICKS_PER_HOUR);
+    // napis „Hau!” zostaje co SZCZEK_CD (dwie godziny gry to 1600 ticków, czyli około 16 szczeknięć)
+    expect(szczeki.length).toBeGreaterThanOrEqual(15);
+    for (let k = 1; k < szczeki.length; k++) expect(szczeki[k] - szczeki[k - 1]).toBeGreaterThanOrEqual(SZCZEK_CD);
+  });
+
+  it('wróg odchodzi i przychodzi nowy: nowy alarm, nowy hałas od razu, bez czekania godziny', () => {
+    const { sim, p, z } = zSzwendaczem(true, 11, 22);
+    const blisko = tileOf(z);
+    const daleko = ulicaWOdleglosci(p.x, p.y, 34, 40);
+    const widziane = new Set<number>();
+    const halasy: number[] = [];
+    const krok = (miejsce: number, n: number) => {
+      for (let k = 0; k < n; k++) {
+        przygotuj(sim.st, [z]);
+        przypnij(z, miejsce);
+        sim.step();
+        halasyPsa(sim.st, widziane, halasy);
+      }
+    };
+    krok(blisko, 8 * TICKS_PER_SECOND);
+    expect(halasy).toHaveLength(1);
+    // wróg w zasięgu dalej: nic nowego
+    krok(blisko, 12 * TICKS_PER_SECOND);
+    expect(halasy).toHaveLength(1);
+    // odszedł (nikogo w 15 m przez 10 s), potem wraca: nowy alarm
+    krok(daleko, 10 * TICKS_PER_SECOND);
+    expect(halasy).toHaveLength(1);
+    const powrot = sim.st.tick;
+    krok(blisko, 8 * TICKS_PER_SECOND);
+    expect(halasy, `hałasy w tickach ${halasy.join(', ')}`).toHaveLength(2);
+    // nowy hałas zaraz po powrocie wroga (w pierwszym sprawdzeniu), a nie dopiero po godzinie od poprzedniego
+    expect(halasy[1] - powrot).toBeLessThanOrEqual(2 * TICKS_PER_SECOND);
+    expect(halasy[1] - halasy[0]).toBeLessThan(TICKS_PER_HOUR);
   });
 
   it('wróg dalej niż 15 m go nie rusza', () => {
@@ -295,6 +400,8 @@ describe('pies: ginie od szwendacza', () => {
     expect(st.dead ?? []).toHaveLength(0);
     expect(st.tally?.deaths ?? 0).toBe(0);
     expect(st.tally?.killed ?? 0).toBe(0);
+    // ugryzienia psa nie wchodzą do liczników ludzi (statystyki trybu zombie liczą tylko ludzi)
+    expect(st.tally?.bites ?? 0).toBe(0);
     for (const p of st.pawns) expect(p.moods.some((m) => m.why.startsWith('Śmierć'))).toBe(false);
     const i = govInput(st, w, 1000);
     expect(i.dead).toEqual([]);
@@ -502,47 +609,135 @@ describe('zarząd a zwierzęta: flagi, stary zapis, idempotencja', () => {
     expect(b.hash()).toBe(a.hash());
     expect(pies(a.st)).toBeDefined();
   });
+
+  it('zapis i wczytanie w środku przerwy między szczeknięciami nie zmieniają przebiegu (hałas, napis, alarm)', () => {
+    const sim = gra(2, 12, { zombie: true });
+    wyslij(sim, { zwierze: ['pies'] });
+    sim.step();
+    const p = pies(sim.st);
+    run(sim, () => yard.has(tileOf(p)), 3000);
+    const z = spawnZombie(sim.st, w, ulicaWOdleglosci(p.x, p.y, 10, 11), 0);
+    run(sim, () => !!sim.st.szczek, 400, [z]);
+    expect(sim.st.szczek).toBeDefined();
+    // 30 ticków po szczeknięciu: przerwa trwa, hałas jeszcze słychać
+    run(sim, () => false, 30, [z]);
+    expect(sim.st.tick - sim.st.szczek!.tick).toBeLessThan(SZCZEK_CD);
+    const b = new Sim(w, JSON.parse(JSON.stringify(sim.st)) as SimState);
+    expect(b.hash()).toBe(sim.hash());
+    expect(b.st.szczek).toEqual(sim.st.szczek);
+    for (let k = 0; k < 2500; k++) {
+      przygotuj(sim.st, [z]);
+      przygotuj(b.st, [z]);
+      sim.step();
+      b.step();
+    }
+    expect(b.hash()).toBe(sim.hash());
+    expect(b.st.szczek).toEqual(sim.st.szczek);
+    expect(b.st.noise).toEqual(sim.st.noise);
+  });
+
+  it('zapis i wczytanie po śmierci psa: pies nie wraca, flaga dog zostaje zgaszona', () => {
+    const sim = gra(2, 12, { zombie: true });
+    rdzenPoza(sim.st);
+    wyslij(sim, { zwierze: ['pies'] });
+    sim.step();
+    const p = pies(sim.st);
+    run(sim, () => yard.has(tileOf(p)), 3000);
+    const blisko = w.fence.yard.find(
+      (i) => !w.blocked[i] && w.bid[i] < 0 && cheb(i, tileOf(p)) >= 2 && cheb(i, tileOf(p)) <= 3,
+    )!;
+    const z = spawnZombie(sim.st, w, blisko, 0);
+    run(sim, () => !pies(sim.st), 6000, [z]);
+    expect(sim.st.zwierzeta?.pies).toBe('zginal');
+    // zarząd widzi śmierć, gasi flagę i zapisuje stan
+    const gov = newGov(7, 'zombie');
+    gov.flags.dog = true;
+    govUpdate(gov, govInput(sim.st, w, 1000));
+    expect(gov.flags.dog).toBe(false);
+    const wpisow = gov.log.filter((l) => l.txt.pl.includes('Abonament')).length;
+    expect(wpisow).toBe(1);
+    // wczytanie obu zapisów
+    const b = new Sim(w, JSON.parse(JSON.stringify(sim.st)) as SimState);
+    const wczytany = loadGov(saveGov(gov));
+    expect(b.st.zwierzeta).toEqual({ pies: 'zginal' });
+    expect(wczytany.flags.dog).toBe(false);
+    // ani zarząd nie prosi o psa, ani symulacja go nie wystawia, nawet po dłuższej grze
+    for (let k = 0; k < 3; k++) {
+      const fx = govUpdate(wczytany, govInput(b.st, w, 1000 + k));
+      expect(fx.zwierze ?? []).toEqual([]);
+      applyGov(b.st, w, fx);
+      for (let n = 0; n < 40; n++) {
+        przygotuj(b.st, [z]);
+        b.step();
+      }
+    }
+    wyslij(b, { zwierze: ['pies'] });
+    b.step();
+    expect(pies(b.st)).toBeUndefined();
+    expect(wczytany.flags.dog).toBe(false);
+    expect(wczytany.log.filter((l) => l.txt.pl.includes('Abonament'))).toHaveLength(wpisow);
+  });
 });
 
 describe('zwierzęta nie są ludźmi', () => {
   it('ani pies, ani kot nie wchodzą do mieszkańców, ludności, zmarłych ani statystyk', () => {
-    const bez = gra(2, 12, { zombie: true, seed: 11 });
     const z = gra(2, 12, { zombie: true, seed: 11 });
     wyslij(z, { zwierze: ['pies', 'kot'] });
     for (let k = 0; k < 400; k++) {
-      przygotuj(bez.st, []);
       przygotuj(z.st, []);
-      bez.step();
       z.step();
     }
-    expect(pies(z.st)).toBeDefined();
-    expect(kot(z.st)).toBeDefined();
-    const a = snapshot(bez.st, w);
-    const b = snapshot(z.st, w);
-    expect(b.residents).toBe(a.residents);
-    expect(b.people.length).toBe(a.people.length);
-    expect(b.lokatorzy.length).toBe(a.lokatorzy.length);
-    expect(b.strangers).toBe(a.strangers);
-    expect(b.zombies).toEqual(a.zombies);
-    const ia = govInput(bez.st, w, 100);
-    const ib = govInput(z.st, w, 100);
-    expect(ib.people.length).toBe(ia.people.length);
-    expect(ib.residents).toBe(ia.residents);
-    expect(ib.ludnosc).toBe(ia.ludnosc);
-    expect(ib.lokatorzy ?? []).toEqual(ia.lokatorzy ?? []);
-    expect(ib.dead).toEqual(ia.dead);
-    expect(ib.horde).toEqual(ia.horde);
-    // ludzie z odczytu to dokładnie rdzeń z osobą
-    expect(ib.people.map((p) => p.id)).toEqual(
-      z.st.pawns.filter((p) => p.kind === 'core').map((p) => z.st.people[p.person].id),
-    );
+    const st = z.st;
+    expect(pies(st)).toBeDefined();
+    expect(kot(st)).toBeDefined();
+    const rdzen = st.pawns.filter((p) => p.kind === 'core');
+    const mieszkancy = st.pawns.filter((p) => p.kind === 'resident');
+    const snap = snapshot(st, w);
+    // odczyt ludzi to dokładnie rdzeń i mieszkańcy, żadne zwierzę
+    expect(snap.people.map((p) => p.pawn)).toEqual(rdzen.map((p) => p.id));
+    expect(snap.residents).toBe(mieszkancy.length);
+    for (const l of snap.lokatorzy)
+      expect(['resident', 'sasiad']).toContain(st.pawns.find((p) => p.id === l.pawn)?.kind);
+    expect(snap.strangers).toBe(st.pawns.filter((p) => p.kind === 'szabrownik').length);
+    expect(snap.zombies.all).toBe(st.pawns.filter((p) => p.kind === 'zombie').length);
+    const i = govInput(st, w, 100);
+    expect(i.people.map((p) => p.id)).toEqual(rdzen.map((p) => st.people[p.person].id));
+    expect(i.residents).toBe(mieszkancy.length);
+    expect(i.ludnosc).toBe(rdzen.length + mieszkancy.length);
+    for (const l of i.lokatorzy ?? []) expect(st.pawns.find((p) => p.id === l.pawn)?.kind).toBe('resident');
+    expect(i.dead).toEqual([]);
+    expect(st.dead ?? []).toEqual([]);
     // zwierzę nie ma osoby ani potrzeb
-    for (const p of [pies(z.st), kot(z.st)]) {
+    for (const p of [pies(st), kot(st)]) {
       expect(p.person).toBe(-1);
       expect(p.needs).toBeNull();
       expect(p.job?.t).toBe('zwierze');
       expect(p.job?.tile).toBe(-1);
     }
+  });
+
+  it('towarzystwo w potrzebach (company) nie liczy zwierząt: pies i kot na kafelku człowieka nic nie zmieniają', () => {
+    const z = gra(2, 12, { seed: 11 });
+    wyslij(z, { zwierze: ['pies', 'kot'] });
+    for (let k = 0; k < 200; k++) {
+      przygotuj(z.st, []);
+      z.step();
+    }
+    const ktos = z.st.pawns.find((p) => p.kind === 'core' && !p.away)!;
+    const needCtx = (z as unknown as { needCtx(p: Pawn, tout: number): { company: number } }).needCtx.bind(z);
+    const zwierzeta = [pies(z.st), kot(z.st)];
+    // daleko od wszystkich
+    for (const q of zwierzeta) {
+      q.x = 1.5;
+      q.y = 1.5;
+    }
+    const bez = needCtx(ktos, 10).company;
+    // na kafelku człowieka
+    for (const q of zwierzeta) {
+      q.x = ktos.x;
+      q.y = ktos.y;
+    }
+    expect(needCtx(ktos, 10).company).toBe(bez);
   });
 
   it('nie biorą poleceń: „idź tu” nie zmienia ich pracy, a liczba ludzi się nie zmienia', () => {
