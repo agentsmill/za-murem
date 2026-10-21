@@ -399,6 +399,8 @@ describe('uprząż bot:osada: tabela', () => {
     expect(opis[0]).toContain('2 razy');
     expect(opis[0]).toContain('dniu 1');
     expect(opis[0]).toContain('15:04');
+    // błąd mówi, co znaczy: silnik nie umie odpowiedzieć na ten rodzaj okna
+    expect(opis[0]).toContain('silnik nie umie zamknąć tego okna');
     expect(opis[1]).toContain('inne');
     expect(opis[1]).toContain('1 raz ');
   });

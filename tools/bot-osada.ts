@@ -328,13 +328,13 @@ export function ostatniePoranki(p: Przebieg, ile = OSTATNIE_PORANKI): string[] {
   return [POLA_PORANKA.map(([, nazwa, szer]) => prawo(nazwa, szer)).join(''), ...wiersze];
 }
 
-/** Opis okien zawieszonych jednego przebiegu: rodzaj okna, ile sekund przy ekranie czekało i kiedy pierwszy raz. */
+/** Opis okien zawieszonych jednego przebiegu: rodzaj okna, ile sekund przy ekranie nie dało się go zamknąć i kiedy pierwszy raz. */
 export function opisZawieszonych(z: readonly OknoZawieszone[]): string[] {
   const rodzaje = [...new Set(z.map((x) => x.k))];
   return rodzaje.map((k) => {
     const s = z.filter((x) => x.k === k);
     const tick = s[0].s * TICKS_PER_SECOND;
-    return `okno „${k}” zawieszone ${s.length} ${s.length === 1 ? 'raz' : 'razy'} (pierwszy raz w dniu ${dayOf(tick)} o ${clockOf(tick)})`;
+    return `okno „${k}” zawieszone ${s.length} ${s.length === 1 ? 'raz' : 'razy'} (pierwszy raz w dniu ${dayOf(tick)} o ${clockOf(tick)}): silnik nie umie zamknąć tego okna`;
   });
 }
 
