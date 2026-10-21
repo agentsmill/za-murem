@@ -428,6 +428,24 @@ describe('koniec gry', () => {
     expect(g.sim.hash()).toBe(hash);
     expect(tury).toBe(10);
   });
+
+  it('koniec ustawiony w oknie zarządu odbiera decydentowi resztę sekundy', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const okna: number[] = [];
+    const tury: number[] = [];
+    const d: Decydent = {
+      okno: (gr) => {
+        okna.push(sekunda(gr));
+        gr.gov.over = 'odwolanie';
+      },
+      tura: (gr) => tury.push(sekunda(gr)),
+    };
+    grajDo(g, d, TICKS_PER_DAY);
+    // pierwsze okno: decydent odpowiada koniec gry, więc tej sekundy nie ma już tury, a potem nic
+    expect(okna).toHaveLength(1);
+    expect(tury).toHaveLength(okna[0] - 1);
+    expect(g.sim.st.tick).toBe(okna[0] * TICKS_PER_SECOND);
+  });
 });
 
 describe('ręce gry', () => {

@@ -11,17 +11,19 @@
    Okno zarządu zamyka decydent. Jeśli po jego `okno` zarząd nadal pyta o to samo okno (ten sam rodzaj i identyfikator),
    odpowiada za niego `odpowiedzDomyslna` tymi samymi rękami: raport potwierdzony, uchwała pierwsza dozwolona albo
    odłożona, karta zatwierdzona, epilog zwycięstwa „graj dalej”, wydarzenie (i każdy rodzaj okna, którego moduł nie zna)
-   pierwszym dozwolonym wyborem. Dzięki temu żadne okno nie czeka dłużej niż sekundę przy ekranie, choćby decydent go
-   nie ruszył. Okno nowego rodzaju z własnym interfejsem zamknie tylko decydent albo nowa gałąź tej funkcji.
+   pierwszym dozwolonym wyborem. Dzięki temu okno, które da się zamknąć tymi rękami, nie czeka dłużej niż sekundę przy
+   ekranie, choćby decydent go nie ruszył. Okno nowego rodzaju z własnym interfejsem (inaczej niż wybory jak w wydarzeniu)
+   zamknie dopiero decydent albo nowa gałąź `odpowiedzDomyslna`.
 
-   Koniec gry (`gov.over`): `krokGry` wraca od razu, bez ruszania czasu i bez wołania decydenta; jeśli `govUpdate` ustawi
-   koniec w bieżącej sekundzie, decydent nie dostaje już tej sekundy (okien ani tury). `grajDo` kończy wtedy pętlę.
+   Koniec gry (`gov.over`): `krokGry` wraca od razu, bez ruszania czasu i bez wołania decydenta; jeśli koniec ustawi
+   `govUpdate` albo odpowiedź na okno w bieżącej sekundzie, decydent nie dostaje już reszty tej sekundy (okien ani tury).
+   `grajDo` kończy wtedy pętlę.
 
    Zapis (`zapiszGre`, `wczytajGre`) to głęboka kopia w JSON: symulacja, zarząd, pamięć silnika i opcje. Decydent nie
    trzyma żadnego stanu poza `GraAi.pamiec`, więc wczytana gra idzie dalej tak samo jak bez przerwy, a dwie gry w jednym
    procesie (przeplatane krok po kroku) nie wpływają na siebie. Dziennik nie wchodzi do zapisu.
 
-   Moduł nie losuje (`Math.random`), nie czyta czasu, nie importuje DOM ani modułów Node ani niczego z tests/ i tools/. */
+   Moduł niczego nie losuje, nie czyta zegara, nie importuje DOM ani modułów Node ani niczego z tests/ i tools/. */
 
 import { hashString } from '../core/rng.ts';
 import { wyslijWyprawe } from '../gov/dzienne.ts';
@@ -81,7 +83,7 @@ export type RuchRak =
   | { s: number; t: 'wyprawa'; cel: Cel; ids: string[] };
 
 /** Jedyne działania decydenta; każde wpisuje się do dziennika (gdy włączony), skutki zarządu idą przez `applyGov`.
-    Do dziennika trafia ruch, który coś zmienił: odmowa (`przydziel` albo `wyslij` z `false`) nie zostawia śladu. */
+    Odmowa, o której ręka mówi wynikiem (`przydziel` albo `wyslij` z `false`), nic nie zmienia i nie zostawia śladu. */
 export interface Rece {
   /** polecenie w grze: `sim.push` (kopia, wykonane od następnego kroku) */
   polecenie(c: Command): void;
@@ -160,50 +162,48 @@ export function wejscie(g: GraAi): GovInput {
 }
 
 /** Ręce gry: jedyna droga, którą decydent zmienia symulację i zarząd. Kolejność wywołań wewnątrz każdej ręki jest taka
-    jak w `answer()` z tests/unit/gov-play.ts. */
+    jak w `answer()` z tests/unit/gov-play.ts. Wpis do dziennika (gdy jest) powstaje po ruchu, w sekundzie przy ekranie,
+    w której go wykonano. */
 export function zrobRece(g: GraAi): Rece {
   const { sim, gov, w } = g;
   const st = sim.st;
   const sekunda = (): number => Math.floor(st.tick / TICKS_PER_SECOND);
-  const wpisz = (m: RuchRak): void => {
-    g.dziennik?.push(m);
-  };
   return {
     polecenie(c) {
       sim.push(c);
-      wpisz({ s: sekunda(), t: 'polecenie', c: structuredClone(c) });
+      g.dziennik?.push({ s: sekunda(), t: 'polecenie', c: structuredClone(c) });
     },
     potwierdzRaport() {
       ackReport(gov);
-      wpisz({ s: sekunda(), t: 'raport' });
+      g.dziennik?.push({ s: sekunda(), t: 'raport' });
     },
     podpisz(id) {
       applyGov(st, w, signLaw(gov, wejscie(g), id));
       sim.setLaws(lawsFrom(lawEffects(gov)));
-      wpisz({ s: sekunda(), t: 'uchwala', id });
+      g.dziennik?.push({ s: sekunda(), t: 'uchwala', id });
     },
     przydziel(osoba, klucz) {
       const ok = setNight(gov, osoba, klucz);
-      if (ok) wpisz({ s: sekunda(), t: 'noc', osoba, klucz });
+      if (ok) g.dziennik?.push({ s: sekunda(), t: 'noc', osoba, klucz });
       return ok;
     },
     zatwierdzNoc() {
       applyGov(st, w, confirmNight(gov, wejscie(g)));
-      wpisz({ s: sekunda(), t: 'zatwierdz' });
+      g.dziennik?.push({ s: sekunda(), t: 'zatwierdz' });
     },
     wybierz(k) {
       applyGov(st, w, chooseEvent(gov, wejscie(g), k));
-      wpisz({ s: sekunda(), t: 'wydarzenie', k });
+      g.dziennik?.push({ s: sekunda(), t: 'wydarzenie', k });
     },
     grajDalej() {
       grajDalej(gov);
-      wpisz({ s: sekunda(), t: 'dalej' });
+      g.dziennik?.push({ s: sekunda(), t: 'dalej' });
     },
     wyslij(cel, ids) {
       const wynik = wyslijWyprawe(gov, wejscie(g), cel, ids);
       if (!wynik.ok) return false;
       applyGov(st, w, wynik.fx);
-      wpisz({ s: sekunda(), t: 'wyprawa', cel: structuredClone(cel), ids: [...ids] });
+      g.dziennik?.push({ s: sekunda(), t: 'wyprawa', cel: structuredClone(cel), ids: [...ids] });
       return true;
     },
   };
@@ -243,7 +243,8 @@ export function odpowiedzDomyslna(p: Prompt, r: Rece): void {
 }
 
 /** Jeden krok gry: czas płynie o tick, a w pełnej sekundzie przy ekranie zarząd, okna i tura decydenta. Po końcu gry
-    (`gov.over`) nic. */
+    (`gov.over`) decydent nie jest już wołany: ani gdy koniec był przed krokiem, ani gdy ustawił go zarząd albo odpowiedź
+    na okno w bieżącej sekundzie. */
 export function krokGry(g: GraAi, d: Decydent): void {
   if (g.gov.over) return;
   const { sim, gov, w } = g;
@@ -255,17 +256,17 @@ export function krokGry(g: GraAi, d: Decydent): void {
   if (gov.over) return;
   const r = zrobRece(g);
   let p = pending(gov, wejscie(g));
-  for (let k = 0; k < MAX_OKIEN && p; k++) {
+  for (let k = 0; k < MAX_OKIEN && p && !gov.over; k++) {
     const id = kluczOkna(p);
     d.okno(g, p, r);
     p = pending(gov, wejscie(g));
     // decydent nie zamknął okna: odpowiada za niego odpowiedź domyślna
-    if (p && kluczOkna(p) === id) {
+    if (p && !gov.over && kluczOkna(p) === id) {
       odpowiedzDomyslna(p, r);
       p = pending(gov, wejscie(g));
     }
   }
-  d.tura(g, r);
+  if (!gov.over) d.tura(g, r);
 }
 
 /** Gra do ticku `tick` (bez niego, gdy już minął) albo do końca gry (`gov.over`). */

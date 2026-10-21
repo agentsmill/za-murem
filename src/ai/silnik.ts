@@ -15,7 +15,7 @@
 
    Cała pamięć silnika siedzi w `GraAi.pamiec`, zwykłym JSON z zapisem gry: decydenci nie mają stanu w zamknięciach ani na
    poziomie modułu, więc wczytana gra decyduje tak samo jak bez przerwy, a dwie gry w jednym procesie się nie mieszają.
-   Silnik czyta tylko stan swojej gry i działa tylko rękami; bez `Math.random`, czasu, DOM i modułów Node. */
+   Silnik czyta tylko stan swojej gry i działa tylko rękami; bez losowania, zegara, DOM i modułów Node. */
 
 import type { Prompt } from '../gov/typy.ts';
 import { hourOf, TICKS_PER_SECOND } from '../sim/clock.ts';
