@@ -4,7 +4,8 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
+   raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału co odświeżenie okienka, stan
+   w zapisie `Save.cele`), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
    (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
    podsumowanie, potwierdzenie), tablica badań (src/ui/badania.ts: warstwa na pełnym ekranie z pauzą, przycisk
    „Badania”, klawisz T, samo otwarcie po postawieniu pracowni, ?badania=demo do zrzutów), karta „Odkrycie” po
@@ -108,7 +109,7 @@ import {
   TECH_NAMES,
 } from './ui/budowa.ts';
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
-import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
+import { markTree } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
 import { oddajFokusPoKliknieciu } from './ui/fokus.ts';
 import {
@@ -166,7 +167,14 @@ import {
 import { Portrety } from './ui/portrety.ts';
 import { nalozPolecenia, nalozPraceOsoby, widokPracy, ZA_SIATKE_ZOMBIE } from './ui/praca.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
-import { nowyStanSciezki, type StanSciezki, stanZZapisu, zalicz, zaliczony } from './ui/sciezka.ts';
+import {
+  krokSciezki,
+  nowyStanSciezki,
+  type OdczytCelow,
+  type StanSciezki,
+  stanZZapisu,
+  widokSciezki,
+} from './ui/sciezka.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
@@ -288,8 +296,9 @@ const view = new GameView();
 let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
 let gov: GovState | null = null;
-/** stan ścieżki celów (src/ui/sciezka.ts): zaliczenia, których nie widać w stanie gry (drewno, które koza zje); nowy
-    przy nowej grze, z zapisu przy wznowieniu, do zapisu w `Save.cele` */
+/** stan ścieżki celów (src/ui/sciezka.ts): otwarty rozdział, cele zaliczone i przepadłe, także te, których nie widać
+    już w stanie gry (drewno, które koza zje); liczy go `renderGoals` co odświeżenie okienka. Nowy przy nowej grze,
+    z zapisu przy wznowieniu, do zapisu w `Save.cele` */
 let sciezka: StanSciezki = nowyStanSciezki();
 let loaded: Loaded | null = null;
 let seed = 0;
@@ -2019,11 +2028,30 @@ function hud(now: number) {
 }
 
 let goalsHtml = '';
-/** Zapas drewna na wieczór (pierwszy dzień) i na noc (drugi dzień) zaliczony choć raz: cel się nie cofa, kiedy koza
-    zje drewno. Zaliczenie siedzi w stanie ścieżki, a ten idzie do zapisu (`Save.cele`), więc przeładowanie strony go
-    nie gubi (usterka U6: dawniej pamięć strony i cel przepadał z kartą nocy). */
-const DREWNO_WIECZOR = 'r0.drewno';
-const DREWNO_NOC = 'r1.drewno2';
+/** Odczyt gry dla ścieżki celów z tej chwili (src/ui/sciezka.ts). Wejście zarządu liczy się dopiero wtedy, gdy któryś cel je
+    czyta (drewno na noc bierze z niego liczbę palenisk), i najwyżej raz na odczyt. */
+function odczytCelow(snap: SimSnapshot): OdczytCelow {
+  const s = sim!;
+  let wejscie: GovInput | null | undefined;
+  return {
+    st: s.st,
+    w: s.w,
+    snap,
+    gov,
+    get input() {
+      wejscie ??= gov ? input() : null;
+      return wejscie;
+    },
+    touch: touchUI,
+    words,
+    wordsEn: wordsE,
+    zaznaczony: snap.people.some((p) => selected.has(p.pawn)),
+  };
+}
+/** Okienko celów ze ścieżki: krok na odczycie z tej chwili (zaliczenia i przepadnięcia trafiają do stanu ścieżki, a ten
+    do zapisu, więc przeładowanie strony niczego nie cofa), potem widok otwartego rozdziału: nagłówek z tytułem
+    i licznikiem, lista, podpowiedź pod bieżącym celem, przepadły cel skreślony i dopisek celu, który czeka. Po ostatnim
+    rozdziale okienko się chowa. */
 function renderGoals(snap: SimSnapshot) {
   const el = $('goals');
   if (!sim) return;
@@ -2044,49 +2072,21 @@ function renderGoals(snap: SimSnapshot) {
     }
     return;
   }
-  const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
-  if (wood >= NIGHT_WOOD && sim.st.tut.step >= TUT_STEPS.length && !zaliczony(sciezka, DREWNO_WIECZOR))
-    sciezka = zalicz(sciezka, DREWNO_WIECZOR, sim.st.tick);
-  let list = goalsOf(sim.st, gov, {
-    touch: touchUI,
-    kitchen: snap.kitchen,
-    hour: snap.hour,
-    selected: snap.people.some((p) => selected.has(p.pawn)),
-    wood,
-    woodReady: zaliczony(sciezka, DREWNO_WIECZOR),
-    words,
-    wordsEn: wordsE,
-    w: sim.w,
-  });
-  let cur = currentGoal(list);
-  let title = L('Pierwszy dzień', 'Day one');
-  // po pierwszej nocy cele drugiego dnia: przeszukać, warsztat, obwód, drewno na noc
-  if (!cur && isDay2(gov)) {
-    if (wood >= DAY2_WOOD && !zaliczony(sciezka, DREWNO_NOC)) sciezka = zalicz(sciezka, DREWNO_NOC, sim.st.tick);
-    list = goalsDay2(sim.st, gov, {
-      touch: touchUI,
-      wood,
-      woodReady: zaliczony(sciezka, DREWNO_NOC),
-      holes: snap.fence.holes.length,
-      words,
-      wordsEn: wordsE,
-    });
-    cur = currentGoal(list);
-    title = L('Drugi dzień', 'Day two');
-  }
-  // po drugiej nocy lista znika
-  if (!cur) {
+  const o = odczytCelow(snap);
+  sciezka = krokSciezki(sciezka, o);
+  const v = widokSciezki(sciezka, o).rozdzial;
+  if (!v) {
     el.hidden = true;
     return;
   }
   el.hidden = false;
-  const done = list.filter((g) => g.done).length;
-  const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>${title}</span><b class="goals-n">${done}/${list.length}</b></button><ol class="goal-list">${list
+  const done = v.cele.filter((g) => g.done).length;
+  const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>${esc(v.tytul)}</span><b class="goals-n">${done}/${v.cele.length}</b></button><ol class="goal-list">${v.cele
     .map(
       (g, k) =>
-        `<li class="goal${g.missed ? ' missed' : g.done ? ' done' : g === cur ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${
-          g === cur ? `<small class="goal-how">${esc(g.how)}</small>` : ''
-        }</li>`,
+        `<li class="goal${g.missed ? ' missed' : g.done ? ' done' : g === v.biezacy ? ' now' : g.czeka ? ' czeka' : ''}" data-n="${k + 1}">${esc(g.text)}${
+          g === v.biezacy ? `<small class="goal-how">${esc(g.how)}</small>` : ''
+        }${g.czeka && !g.done ? `<small class="goal-czeka">${esc(g.czeka)}</small>` : ''}</li>`,
     )
     .join('')}</ol>`;
   if (html === goalsHtml) return;

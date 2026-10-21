@@ -794,6 +794,17 @@ a.btn {
   font-size: 13px;
   color: var(--lamp);
 }
+/* cel, którego teraz nie da się ruszyć (karta nocy dopiero o 20:00): przyciemniony, z krótkim dopiskiem pod tekstem */
+.goal.czeka {
+  opacity: 0.7;
+}
+.goal-czeka {
+  display: block;
+  margin-top: 1px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
 
 .treemark {
   position: absolute;

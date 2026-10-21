@@ -17,10 +17,12 @@ import { type Sim, trunkOf } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { costText } from '../../src/ui/budowa.ts';
-import { drzewoWObwodzie, type Goal, goalsDay2, goalsOf, najtanszeBudowle } from '../../src/ui/cele.ts';
+import { drzewoWObwodzie, type Goal, goalsOf, najtanszeBudowle } from '../../src/ui/cele.ts';
+import type { Cel } from '../../src/ui/sciezka.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { core, newGame, until } from './sasiedzi-pomoc.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
 
@@ -51,9 +53,9 @@ const day1 = (g: Game, o: { touch?: boolean; hour?: number; wood?: number; w?: b
     wordsEn: g.e,
     ...(o.w ? { w: g.w } : {}),
   });
-const day2 = (g: Game, touch = false): Goal[] =>
-  goalsDay2(g.st, g.gov, { touch, wood: 0, woodReady: false, holes: 2, words: g.words, wordsEn: g.e });
-const goal = (list: Goal[], key: Goal['key']): Goal => list.find((x) => x.key === key)!;
+/** cele drugiego dnia (rozdział R1 ścieżki) dla takiego odczytu gry */
+const day2 = (g: Game, touch = false): Cel[] => celeR1(g.st, g.w, g.gov, { touch, words: g.words, wordsEn: g.e });
+const goal = <T extends { key: string }>(list: T[], key: string): T => list.find((x) => x.key === key)!;
 
 /** drzewa (nie krzaki), których pień stoi na kafelku podwórka siatki: liczone tu wprost, inaczej niż w drzewoWObwodzie */
 const wPodworku = (w: Game['w']): number[] => {
@@ -292,11 +294,11 @@ describe('U4: drewno na wieczór', () => {
       }
   });
 
-  it('drewno drugiego dnia zostaje drewnem na noc', () => {
+  it('drewno drugiego dnia zostaje drewnem na całą noc', () => {
     const g = game('przymorze');
-    expect(goal(day2(g), 'drewno2').text).toBe('Przygotujcie drewno na noc.');
+    expect(goal(day2(g), 'drewno2').text).toBe('Zbierzcie drewno na całą noc.');
     ustawJezyk('en');
-    expect(goal(day2(g), 'drewno2').text).toBe('Get wood in for the night.');
+    expect(goal(day2(g), 'drewno2').text).toBe('Get in enough wood for the whole night.');
   });
 });
 

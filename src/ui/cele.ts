@@ -1,27 +1,29 @@
 /* Cele pierwszego dnia: kroki samouczka ze stanu symulacji (st.tut), drewno na wieczór i „przetrwać noc”
-   z raportów zarządu, do tego cele drugiego dnia. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu
-   i podpowiedzią do bieżącego kroku, w bieżącym języku (kroki samouczka to Tx, wybór przy rysowaniu). Zarząd i miejsce
-   suchego drzewa według słownika miejsca (w domu komitet i ogród), po angielsku z wordsEn. Podpowiedzi mówią o tym,
-   co naprawdę da się zrobić: `najtanszeBudowle` wybiera budowle, które da się teraz postawić (bez tych za badaniem
-   i z wolnym limitem), a `drzewoWObwodzie` mówi, czy w obrębie siatki zostało drzewo do ścięcia, bo w trybie zombie
-   drzewa za siatką stoją wśród szwendaczy i drewno trzeba wtedy brać z mebli. */
+   z raportów zarządu. Czyste funkcje bez DOM: interfejs dostaje listę z tekstem celu i podpowiedzią do bieżącego kroku,
+   w bieżącym języku (kroki samouczka to Tx, wybór przy rysowaniu). Zarząd i miejsce suchego drzewa według słownika
+   miejsca (w domu komitet i ogród), po angielsku z wordsEn. Podpowiedzi mówią o tym, co naprawdę da się zrobić:
+   `najtanszeBudowle` wybiera budowle, które da się teraz postawić (bez tych za badaniem i z wolnym limitem), a
+   `drzewoWObwodzie` mówi, czy w obrębie siatki zostało drzewo do ścięcia, bo w trybie zombie drzewa za siatką stoją
+   wśród szwendaczy i drewno trzeba wtedy brać z mebli.
+
+   To jest rozdział R0 ścieżki celów: src/ui/sciezka.ts opakowuje `goalsOf` w rozdział „Pierwszy dzień” i trzyma
+   zaliczenie drewna na wieczór w stanie ścieżki. Cele drugiego dnia mieszkają w rozdziale R1 tamże (z potrzebą drewna na
+   noc liczoną jak karta nocy), więc tu zostają tylko pomocniki, których używają oba rozdziały: `najtanszeBudowle`
+   i `zombieMode`. */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
-import { START_KIT } from '../sim/bron.ts';
-import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS, type BuildKind, isUnlocked, limitWhy } from '../sim/budowle.ts';
-import { type SimState, SPEAR_BOARDS, SPEAR_SCRAP, trunkOf } from '../sim/sim.ts';
+import { type SimState, trunkOf } from '../sim/sim.ts';
 import { modeOf } from '../sim/tryb.ts';
 import { TUT_STEPS, type TutStep, WARM_ENOUGH } from '../sim/tutorial.ts';
 import { HORDE_FROM } from '../sim/zombie.ts';
 import type { World } from '../world/world.ts';
-import { costText } from './budowa.ts';
-import { deg, manyEn } from './tekst.ts';
+import { deg } from './tekst.ts';
 
 export interface Goal {
-  key: TutStep | 'drewno' | 'noc' | 'przeszukaj' | 'budowla' | 'obwod' | 'dzida' | 'drewno2';
+  key: TutStep | 'drewno' | 'noc';
   text: string;
   /** jak to zrobić (tylko bieżący krok ma sens) */
   how: string;
@@ -35,11 +37,9 @@ export const NIGHT_WOOD = 3;
 
 /** pierwszy dzień: zapas na wieczór (ogień do snu), resztę nocy liczy dopiero karta nocy o 20:00 */
 const WOOD_GOAL = tx('Przygotujcie drewno na wieczór.', 'Get wood in for the evening.');
-/** drugi dzień: zapas na całą noc (DAY2_WOOD) */
-const WOOD_GOAL_2 = tx('Przygotujcie drewno na noc.', 'Get wood in for the night.');
-
 /** tryb zombie ze stanu symulacji albo zarządu (w grze oba się zgadzają, atrapy w testach mają czasem tylko jedno) */
-const zombieMode = (st: SimState, gov: GovState | null): boolean => modeOf(st) === 'zombie' || gov?.mode === 'zombie';
+export const zombieMode = (st: SimState, gov: GovState | null): boolean =>
+  modeOf(st) === 'zombie' || gov?.mode === 'zombie';
 
 /** Czy w obrębie siatki stoi jeszcze drzewo do ścięcia: nieścięte, nie krzak i nie suche drzewo, dopóki trwa samouczek
     (należy do jego kroków), a jego pień leży na kafelku podwórka siatki albo tuż obok niego (pień na linii obwodu jest
@@ -233,120 +233,3 @@ export const currentGoal = (goals: Goal[]): Goal | null => goals.find((g) => !g.
 
 /** znacznik nad suchym drzewem: dopóki zarząd go nie zetnie */
 export const markTree = (st: SimState): boolean => st.tut.step >= 0 && st.tut.step <= TUT_STEPS.indexOf('sciete');
-
-/** drewno na drugą noc: noc 22–6 zjada około 8 sztuk (sztuka na godzinę), także z dyżurem przy kozie */
-export const DAY2_WOOD = 8;
-
-/** czy to już drugi dzień: po pierwszym raporcie rano, do raportu po drugiej nocy */
-export const isDay2 = (gov: GovState | null): boolean => !!gov && gov.reports.length === 1;
-
-/** Cele drugiego dnia (docs/M2-fala-1.md): przeszukać puste mieszkanie (w domu jednorodzinnym dom komitetu, słowa
-    ze słownika miejsca; podpowiedź zaczyna od zaznaczenia osoby, bo bez niej prawy przycisk nic nie daje), postawić
-    pierwszą budowlę (dowolną; podpowiedź wskazuje dwie najtańsze, które da się postawić, z `najtanszeBudowle`), wzmocnić
-    obwód, mieć drewno na noc. Co przeszukane, daje stan gry (st.apts, a od fali 2 także pomieszczenia sąsiadów
-    w st.sasiedzi); budowle i zasieki to gotowe rzeczy w st.things; obwód liczy się też, gdy żadna dziura nie jest
-    otwarta. */
-export function goalsDay2(
-  st: SimState,
-  gov: GovState | null,
-  o: {
-    touch: boolean;
-    /** drewno na zapas teraz i czy zapas na noc już raz był */
-    wood: number;
-    woodReady: boolean;
-    /** otwarte dziury w siatce */
-    holes: number;
-    /** słowa miejsca po polsku i po angielsku (bez nich jak w bloku) */
-    words?: Words;
-    wordsEn?: WordsEn;
-  },
-): Goal[] {
-  const w = o.words ?? wordsOf(BLOK);
-  const e = o.wordsEn ?? wordsEn(BLOK);
-  const uSasiadow = (st.sasiedzi?.budynki ?? []).some(
-    (b) => b.przeszukane.length > 0 || b.mieszkania.some((m) => m.przeszukane.length > 0),
-  );
-  const searched = st.apts.some((a) => a.searched.length > 0) || uSasiadow;
-  const built = (kind: string) => st.things.some((t) => t.kind === kind);
-  const late = !!gov?.night?.confirmed || (gov?.reports.length ?? 0) > 1;
-  const b = o.touch
-    ? L('Przycisk Budowa u góry', 'The Build button at the top')
-    : L('Budowa (przycisk u góry albo B)', 'Build (button at the top, or B)');
-  // w trybie zombie siatka jest wzmocniona i bez dziur, a zasieki przed szwendaczami nie chronią lepiej niż ona:
-  // zamiast obwodu dzida dla warty (dzidy w rękach zarządu i w magazynie ponad te ze startu)
-  const zombie = gov?.mode === 'zombie';
-  const spears =
-    st.pawns.filter((p) => p.kind === 'core' && p.weapon === 'dzida').length +
-    (st.store.arms ?? []).filter((x) => x === 'dzida').length;
-  const startSpears = [...START_KIT.zombie.core, ...START_KIT.zombie.store].filter((x) => x === 'dzida').length;
-  // dwie budowle, które biorą najmniej materiału spośród tych, które da się postawić (koszty stroi bot, więc nie
-  // wpisuję ich na sztywno)
-  const kinds = najtanszeBudowle(st);
-  const cheap = kinds.map((k) => `${L(BUILDS[k].name.toLowerCase(), BUILDS_EN[k].the)} (${costText(BUILDS[k].cost)})`);
-  // dopiski do podpowiedzi pierwszej budowli: zasieki liczą się też do celu obwodu (którego w zombie nie ma),
-  // a w domu jednorodzinnym deski i złom mają też sąsiednie domy
-  const obok = (x: Words['szukanie']['obok'] | WordsEn['szukanie']['obok']): string =>
-    x ? (o.touch ? x.dotyk : x.mysz) : '';
-  const dopisek = (...zdania: string[]): string =>
-    zdania
-      .filter(Boolean)
-      .map((z) => ` ${z}`)
-      .join('');
-  const zasieki = !zombie && kinds.includes('zasieki');
-  return [
-    {
-      key: 'przeszukaj',
-      text: L(`Przeszukajcie ${w.szukanie.b}.`, `Search ${e.szukanie.b}.`),
-      how: o.touch ? L(w.szukanie.jak.dotyk, e.szukanie.jak.dotyk) : L(w.szukanie.jak.mysz, e.szukanie.jak.mysz),
-      done: searched,
-    },
-    {
-      key: 'budowla',
-      text: L('Postawcie pierwszą budowlę.', 'Put up your first structure.'),
-      how: L(
-        `${b}: dowolna budowla. Najmniej materiału biorą ${cheap.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje. Materiał daje przeszukiwanie i rozbiórka.${dopisek(
-          zasieki ? 'Zasieki liczą się też do obwodu.' : '',
-          obok(w.szukanie.obok),
-        )}`,
-        `${b}: any structure will do. The cheapest are ${cheap.join(' and ')}. ${e.Zarzad} will fetch the materials and do the building. Searching and taking things apart give you materials.${dopisek(
-          zasieki ? 'A barricade also counts for the perimeter.' : '',
-          obok(e.szukanie.obok),
-        )}`,
-      ),
-      done: st.things.some((t) => t.kind in BUILDS),
-    },
-    zombie
-      ? {
-          key: 'dzida',
-          text: L('Zróbcie dzidę dla warty.', 'Make a spear for the watch.'),
-          how: L(
-            `${o.touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
-            `${o.touch ? 'Press and hold on a pile of planks or scrap' : 'Right-click a pile of planks or scrap'}: “Make a spear” (${manyEn(SPEAR_BOARDS, 'plank', 'planks')} and ${SPEAR_SCRAP} scrap). A spear reaches shamblers through the fence. Planks and scrap come from searching ${e.szukanie.d} and taking things apart.`,
-          ),
-          done: spears > startSpears,
-        }
-      : {
-          key: 'obwod',
-          text: L('Wzmocnijcie obwód.', 'Strengthen the perimeter.'),
-          how: L(
-            `${b}: Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)}) albo załatajcie dziury${
-              o.touch ? ' (przytrzymajcie palec na dziurze)' : ' (prawy przycisk na dziurze)'
-            }. Otwartych dziur: ${o.holes}.`,
-            `${b}: a ${BUILDS_EN.zasieki.name.toLowerCase()} in place of a stretch of fence (${costText(BUILDS.zasieki.cost)}), or patch the holes${
-              o.touch ? ' (press and hold on a hole)' : ' (right-click a hole)'
-            }. Open holes: ${o.holes}.`,
-          ),
-          done: built('zasieki') || o.holes === 0,
-        },
-    {
-      key: 'drewno2',
-      text: tr(WOOD_GOAL_2),
-      how: L(
-        `Drewna na zapas: ${o.wood} z ${DAY2_WOOD}. Noc zjada około sztuki na godzinę, a przy kozie może ktoś czuwać.`,
-        `Wood stocked: ${o.wood} of ${DAY2_WOOD}. The night eats about one piece an hour, and someone can sit up with the stove.`,
-      ),
-      done: o.woodReady || late,
-      missed: !o.woodReady && late,
-    },
-  ];
-}
