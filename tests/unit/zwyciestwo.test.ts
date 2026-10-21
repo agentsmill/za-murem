@@ -573,10 +573,14 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // wydarzeń (karty z 0.3 z gościem pod bramą: uchodźcy, influencerka, aktywiści, dzieciaki, sąsiad od tokenów
     // i fachowiec w domu mają wagę 0 bez GovInput.goscie, a atrapa nie ma obcych), czyli inna pula, inne losowanie;
     // były 7fa6ef50, b2171b99 i 943895c7. Z wagami przywróconymi na próbę (zGosciem zawsze prawda) wychodzą dokładnie te
-    // dawne skróty, więc poza pulą nic się nie zmieniło.
+    // dawne skróty, więc poza pulą nic się nie zmieniło. Dwa pierwsze skróty przepięte w zadaniu 12 wydarzeń (pies i kot
+    // jako pionki): gry z ziarnem 1 („propozycja”) i 3 („zawsze-warta”) wybierają na karcie „Kot w piwnicy” „Uwolnić i
+    // przygarnąć”, które od teraz ustawia flagę `cat` w stanie zarządu (`flags.cat: true`); były 8587c921 i 9c2d504c, a po
+    // usunięciu `flags.cat` ze stanu wychodzą dokładnie one, więc poza tym jednym polem nic się nie zmieniło. Trzeci
+    // przebieg (ziarno 5, „losowo”) nie przygarnia kota i zostaje f064e248.
     const przebiegi = [
-      [1, 'propozycja', '8587c921'],
-      [3, 'zawsze-warta', '9c2d504c'],
+      [1, 'propozycja', 'cf77bec1'],
+      [3, 'zawsze-warta', '0e44994c'],
       [5, 'losowo', 'f064e248'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {

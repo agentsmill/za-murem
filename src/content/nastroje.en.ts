@@ -41,6 +41,8 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   'Wróciłam z łupem': 'I came back with loot',
   'Mamy psa': 'We have a dog',
   'Algorytm się znalazł': 'Algorithm came home',
+  // pies z karty „Pies przy siatce” zginął (src/gov/zwierzeta.ts)
+  'Abonament nie żyje': 'Subscription is dead',
   // mieszkaniec nakarmiony z kotła po kradzieży z głodu (karta „Kradzież z piwnicy”, GovHost.moodOf)
   'Najadł się z kotła': 'Fed from the pot',
   'Najadła się z kotła': 'Fed from the pot',

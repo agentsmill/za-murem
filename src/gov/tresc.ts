@@ -297,8 +297,8 @@ export interface GovHost extends EventHost, GoscHost {
   /** chwilowy nastrój jednej osoby (zarządu albo mieszkańca z osobą) na `hours` godzin gry; powód to polski napis
       z src/content/nastroje.en.ts, jak w `moodAll` */
   moodOf(id: string, why: string, d: number, hours: number): void;
-  flag(k: 'dog' | 'flashlight' | 'torch'): boolean;
-  setFlag(k: 'dog' | 'flashlight' | 'torch'): void;
+  flag(k: 'dog' | 'cat' | 'flashlight' | 'torch'): boolean;
+  setFlag(k: 'dog' | 'cat' | 'flashlight' | 'torch'): void;
   gateClosed(): boolean;
   /** czy ktoś trzyma dziś wartę */
   guarded(): boolean;
@@ -960,6 +960,7 @@ export const NEW_EVENTS: GEventDef[] = [
         label: tx('Uwolnić i przygarnąć', 'Free him and keep him'),
         ok: true,
         run: () => {
+          h.setFlag('cat');
           h.moodAll('Algorytm się znalazł', 3, 24);
           h.log(
             tx(
