@@ -13,11 +13,11 @@
    wypraw dziennych (src/ui/wyprawa.ts: wybór osób, podsumowanie, potwierdzenie), tablica badań (src/ui/badania.ts:
    warstwa na pełnym ekranie z pauzą, przycisk „Badania”, klawisz T, samo otwarcie po postawieniu pracowni,
    ?badania=demo do zrzutów), karta „Odkrycie” po ukończeniu badania (w kolejce okien jak spotkanie z sąsiadami,
-   przyciski „Postaw <budowla>”, „Następne badanie”, „Dalej”), podpowiedź o książce znalezionej w przeszukaniu, znaczek NOWE w menu budowy (pamięć przeglądarki,
-   src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie. ?kwadraty=3x3 (albo lista „1,0;0,-1”,
-   src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych dema (public/demo/<klucz>-kwadraty.json),
-   z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania, symulacja i polecenia znają sam dom
-   (`dodajKwadraty`, window.zm.kwadraty). */
+   przyciski „Postaw <budowla>”, „Następne badanie”, „Dalej”), podpowiedź o książce znalezionej w przeszukaniu, znaczek
+   NOWE w menu budowy (pamięć przeglądarki, src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie.
+   ?kwadraty=3x3 (albo lista „1,0;0,-1”, src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych
+   dema (public/demo/<klucz>-kwadraty.json), z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania,
+   symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
