@@ -11,7 +11,9 @@
    rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. Leżącego pionka i zwłoki
    składa warstwa z klatki stania przodem (art/lezenie.ts). Zmianę leżenia na podłodze widok sam zamienia w przejście
    (przejscia.ts): kładzenie się i wstawanie grają raz z animacji PixelLab, a zwłoki członka zarządu, który zginął
-   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState.
+   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState. Pies i kot
+   (src/sim/zwierzeta.ts) mają własny atlas rysowany kodem (art/zwierzeta.ts) i własną ścieżkę `rysujZwierze`, bez postaci z
+   PixelLab, broni i zaznaczenia; nad szczekającym psem napis „Hau!” rysuje zwierzetaLayer.ts.
    Kwadraty miasta obok domu (src/world/kwadraty.ts) dokłada dodajKwadrat: każdy ma własną scenę, kawałki w układzie
    miasta (kwadrat (sx, sy) zaczyna się w (sx·bok, sy·bok) pikseli), szwy z sąsiadami (szew.ts), drzewa i mgłę nad
    nieodkrytymi kwadratami (mglaLayer.ts). Tekstury kawałków mają budżety (chunks.ts, budzety): z bliska najwyżej kilkadziesiąt

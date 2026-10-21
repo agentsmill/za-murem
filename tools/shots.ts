@@ -2807,6 +2807,34 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // karta gościa pod bramą po angielsku (Przymorze, obcy włączeni): ta sama wizyta co w wyd-gosc-karta, ale cały ekran
+        // i karta w języku angielskim, bez polskich liter poza imionami i nazwami z mapy (en-wyd-gosc.png)
+        name: 'en-wyd-gosc',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 400);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 400)}`);
+          console.log(`  buttons: ${foot.join(' | ')}`);
+          if (!foot.some((f) => f.startsWith('event-show:'))) throw new Error('card without a Show button');
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, []);
+          if (pl.length) throw new Error(`Polish letters on the English guest card: ${pl.join(', ')}`);
+          await page.screenshot({ path: path.join(OUT, 'en-wyd-gosc.png') });
+        },
+      },
+      {
         // pies z karty „Pies przy siatce” jako prawdziwy pionek (Przymorze): przygarnięty za dnia wchodzi zza siatki bramą i
         // kręci się po podwórku przy bramie (wyd-pies-dzien.png), nocą leży przy bramie jako ciemny zarys (wyd-pies-noc.png),
         // a w trybie zombie z szwendaczem pod siatką szczeka: napis „Hau!” nad psem i hałas 12 m (wyd-pies-szczek.png).

@@ -21,6 +21,7 @@ import { snapshot } from '../../src/sim/snapshot.ts';
 import { PIES_HP, PIES_OBSZAR, SZCZEK_CD, SZCZEK_HALAS, SZCZEK_NAPIS } from '../../src/sim/zwierzeta.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
+import { polskieSlowa } from './po-angielsku.ts';
 
 const w = mockBlockM2();
 const size = w.size;
@@ -321,6 +322,8 @@ describe('pies: ginie od szwendacza', () => {
     expect(wpis!.txt.pl).toMatch(/nie żyje/);
     expect(wpis!.txt.en).toMatch(/Subscription/);
     expect(wpis!.txt.en).not.toMatch(/Abonament/);
+    // angielska wersja wpisu bez polskich słów (poza imieniem psa po polsku w polskiej wersji)
+    expect(polskieSlowa(wpis!.txt.en), wpis!.txt.en).toEqual([]);
     const nastroje = fx.moods.filter((m) => m.why === 'Abonament nie żyje');
     expect(nastroje.map((m) => m.id).sort()).toEqual(i.people.map((p) => p.id).sort());
     for (const m of nastroje) {

@@ -4,6 +4,7 @@
    na atrapie płótna (tools/arkusz-plotno.ts). */
 
 import { describe, expect, it } from 'vitest';
+import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
 import {
   animalFrameRect,
   makeAnimalAtlas,
@@ -18,7 +19,7 @@ import {
 import { isBoard, isLokator, STRANGERS, strangerVisibility, ZOMBIE_SHADOW } from '../../src/render/game.ts';
 import { LudziePixellab } from '../../src/render/ludziePixellab.ts';
 import { type PawnLike, poseOf } from '../../src/render/poses.ts';
-import { SZCZEK_NAPIS } from '../../src/sim/zwierzeta.ts';
+import { NAPIS_SZCZEKU, SZCZEK_NAPIS } from '../../src/sim/zwierzeta.ts';
 import { type FakeCanvas, fakeDocument } from '../../tools/arkusz-plotno.ts';
 
 const pionek = (o: Partial<PawnLike> = {}): PawnLike => ({
@@ -148,6 +149,17 @@ describe('zwierzę poza ludźmi', () => {
     expect(strangerVisibility(1, 0, 'pies')).toBeGreaterThanOrEqual(ZOMBIE_SHADOW);
     expect(strangerVisibility(1, 0, 'szabrownik')).toBe(0);
     expect(strangerVisibility(0, 0, 'pies')).toBe(1);
+  });
+
+  it('napis szczekania jest w obu językach', () => {
+    try {
+      ustawJezyk('pl');
+      expect(tr(NAPIS_SZCZEKU)).toBe('Hau!');
+      ustawJezyk('en');
+      expect(tr(NAPIS_SZCZEKU)).toBe('Woof!');
+    } finally {
+      ustawJezyk('pl');
+    }
   });
 
   it('nie da się go zaznaczyć jako zarządu ani mieszkańca', () => {
