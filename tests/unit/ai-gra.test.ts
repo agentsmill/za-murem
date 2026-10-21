@@ -1,16 +1,19 @@
 /* Gra prowadzona przez decydenta (src/ai/gra.ts) i silnik podstawowy (src/ai/silnik.ts), etap 1 osady AI
-   (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 1). Pilnuje pięciu rzeczy:
+   (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje siedmiu rzeczy:
    - równoważności: silnik podstawowy w pętli gry daje te same skróty co `playWithGov(..., 'zawsze-warta', ...)`,
      także z okolicą miasta, obcymi i drogami do zwycięstwa;
    - determinizmu: dwie gry w jednym procesie przeplatane nierówno, zapis i wczytanie w połowie (także w środku
      sekundy) i odtworzenie ruchów rąk z dziennika na świeżej grze dają ten sam przebieg;
    - rąk gry: każde działanie decydenta idzie przez `Rece` i do dziennika, wyprawa dzienna wychodzi przez `wyslij`;
    - okien zarządu: okno, którego decydent nie zamknie, dostaje odpowiedź domyślną w tej samej sekundzie;
-   - końca gry: po `gov.over` `krokGry` nie rusza czasu i nie woła decydenta. */
+   - końca gry: po `gov.over` `krokGry` nie rusza czasu i nie woła decydenta;
+   - okien zawieszonych: okno, którego nie zamknie nawet odpowiedź domyślna (nowy rodzaj z innej gałęzi), zapisuje się
+     w `GraAi.zawieszone` i nie jest ponawiane w tej samej sekundzie;
+   - tempa przeglądarki: z opcją `tempoPrzegladarki` potwierdzenie raportu przekazuje wejście jak main.ts. */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type Decydent,
   type GraAi,
@@ -30,12 +33,24 @@ import {
 import { silnik, silnikPodstawowy } from '../../src/ai/silnik.ts';
 import { powodOdmowy } from '../../src/gov/dzienne.ts';
 import type { LawOption, Prompt } from '../../src/gov/typy.ts';
+import { QUIET } from '../../src/gov/wspolne.ts';
 import { pending } from '../../src/gov/zarzad.ts';
 import { wygrajDroge } from '../../src/gov/zwyciestwo.ts';
 import { hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { playWithGov } from './gov-play.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
+
+/* `pending` z zarządu przechodzi przez przekładkę: domyślnie to prawdziwe okna, a gdy test ustawi `sztuczne.okno`, ono
+   zasłania prawdziwe. Tylko tak da się dać grze okno nowego rodzaju (z innej gałęzi), którego nie zamknie żadna ręka. */
+const sztuczne = vi.hoisted(() => ({ okno: null as Prompt | null }));
+vi.mock('../../src/gov/zarzad.ts', async (importOriginal) => {
+  const oryginal = await importOriginal<typeof import('../../src/gov/zarzad.ts')>();
+  return {
+    ...oryginal,
+    pending: (...a: Parameters<typeof oryginal.pending>) => sztuczne.okno ?? oryginal.pending(...a),
+  };
+});
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
 
@@ -310,6 +325,8 @@ describe('okna zarządu', () => {
     }
     expect(najdluzej).toBeLessThanOrEqual(5);
     expect(zatwierdzone).toBe(3);
+    // wszystkie okna dało się zamknąć rękami: żadne nie zostało zawieszone
+    expect(g.zawieszone).toEqual([]);
     // odpowiedzi domyślne poszły rękami, więc są w dzienniku: uchwała, karta, raport (i ani jedno polecenie gracza)
     const rodzaje = new Set(g.dziennik!.map((m) => m.t));
     for (const t of ['uchwala', 'zatwierdz', 'raport'] as const) expect(rodzaje).toContain(t);
@@ -400,6 +417,125 @@ describe('okna zarządu', () => {
       expect(odpowiedz({ k: 'nowe_okno', choices: [{ ok: false }] })).toEqual(['wydarzenie:0']);
       expect(odpowiedz({ k: 'nowe_okno' })).toEqual(['wydarzenie:0']);
     });
+  });
+});
+
+describe('okna zawieszone', () => {
+  /** okno nowego rodzaju, którego nie zamknie ani decydent, ani odpowiedź domyślna (`wybierz` nic nie zmienia) */
+  const nowe = { k: 'nowe_okno', id: 'x', choices: [{ ok: true }] } as unknown as Prompt;
+
+  it('okno, którego nie zamknie nawet odpowiedź domyślna, zapisuje się i nie jest ponawiane w tej samej sekundzie', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11, { dziennik: true });
+    expect(g.zawieszone).toEqual([]);
+    const okna: number[] = [];
+    const tury: number[] = [];
+    const d: Decydent = {
+      okno: (gr) => okna.push(sekunda(gr)),
+      tura: (gr) => tury.push(sekunda(gr)),
+    };
+    sztuczne.okno = nowe;
+    try {
+      grajDo(g, d, 3 * TICKS_PER_SECOND);
+    } finally {
+      sztuczne.okno = null;
+    }
+    // decydent raz na sekundę (dawniej do pięciu razy), tura idzie dalej, a okno czeka w zapisie z rodzajem i sekundą
+    expect(okna).toEqual([1, 2, 3]);
+    expect(tury).toEqual([1, 2, 3]);
+    expect(g.zawieszone).toEqual([
+      { k: 'nowe_okno', s: 1 },
+      { k: 'nowe_okno', s: 2 },
+      { k: 'nowe_okno', s: 3 },
+    ]);
+    // odpowiedź domyślna też raz na sekundę: wydarzenie bez skutku, ale ruch ręki jest w dzienniku
+    expect(g.dziennik!.filter((m) => m.t === 'wydarzenie')).toHaveLength(3);
+  });
+
+  it('zawieszenie nie psuje gry: po zdjęciu okna idą prawdziwe okna, a lista zostaje tylko z tym, co się zawiesiło', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    sztuczne.okno = nowe;
+    try {
+      grajDo(g, silnik, 2 * TICKS_PER_SECOND);
+    } finally {
+      sztuczne.okno = null;
+    }
+    expect(g.zawieszone).toHaveLength(2);
+    // do 21:00 pierwszego dnia: prawdziwe okna zamykają się dalej, karta nocy z 20:00 jest zatwierdzona
+    grajDo(g, silnik, 6 * TICKS_PER_HOUR);
+    expect(g.gov.night?.confirmed).toBe(true);
+    expect(g.zawieszone).toHaveLength(2);
+  });
+
+  it('zawieszone nie wchodzi do zapisu ani do skrótu gry: wczytana gra zaczyna z pustą listą', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const skrot = skrotGry(g);
+    g.zawieszone.push({ k: 'nowe_okno', s: 7 });
+    expect(skrotGry(g)).toBe(skrot);
+    expect(wczytajGre(demoWorld('przymorze'), zapiszGre(g)).zawieszone).toEqual([]);
+  });
+});
+
+describe('tempo przeglądarki', () => {
+  /** gra przez 3 dni z decydentem, który sam potwierdza raporty i mierzy, co to zrobiło w zarządzie */
+  function raporty(tempo: boolean) {
+    const g = nowaGraAi(demoWorld('przymorze'), 11, tempo ? { tempoPrzegladarki: true } : {});
+    const pomiary: { decyzje: number; po: number; next: number; przedNext: number; s: number }[] = [];
+    const d: Decydent = {
+      okno(gr, p, r) {
+        if (p.k !== 'raport') {
+          odpowiedzDomyslna(p, r);
+          return;
+        }
+        const przed = { decyzje: gr.gov.decisions.length, next: gr.gov.ev.next };
+        r.potwierdzRaport();
+        pomiary.push({
+          decyzje: przed.decyzje,
+          po: gr.gov.decisions.length,
+          next: gr.gov.ev.next,
+          przedNext: przed.next,
+          s: sekunda(gr),
+        });
+      },
+      tura: () => {},
+    };
+    grajDo(g, d, 3 * TICKS_PER_DAY);
+    return { g, pomiary };
+  }
+
+  it('z opcją potwierdzenie raportu przekazuje wejście: wpada do decyzji i wydarzenie czeka okno ciszy', () => {
+    const { g, pomiary } = raporty(true);
+    expect(pomiary.length).toBeGreaterThanOrEqual(2);
+    for (const m of pomiary) {
+      // decyzja rodzaju 'raport' z sekundą przy ekranie, w której raport przeczytano
+      expect(m.po).toBe(m.decyzje + 1);
+      expect(g.gov.decisions.some((x) => x.k === 'raport' && x.s === m.s)).toBe(true);
+      // najbliższe wydarzenie najwcześniej po QUIET sekundach od raportu
+      expect(m.next).toBeGreaterThanOrEqual(m.s + QUIET);
+      expect(m.next).toBeGreaterThanOrEqual(m.przedNext);
+    }
+  });
+
+  it('bez opcji raport potwierdza się jak w botach: bez decyzji i bez ciszy po raporcie', () => {
+    const { g, pomiary } = raporty(false);
+    expect(pomiary.length).toBeGreaterThanOrEqual(2);
+    for (const m of pomiary) {
+      expect(m.po).toBe(m.decyzje);
+      expect(m.next).toBe(m.przedNext);
+    }
+    expect(g.gov.decisions.some((x) => x.k === 'raport')).toBe(false);
+  });
+
+  it('opcja jedzie w zapisie gry: wczytana gra potwierdza raporty tak samo jak gra bez przerwy', () => {
+    const w = demoWorld('przymorze');
+    const ciagla = nowaGraAi(w, 11, { tempoPrzegladarki: true });
+    grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
+    const a = nowaGraAi(w, 11, { tempoPrzegladarki: true });
+    grajDo(a, silnik, TICKS_PER_DAY);
+    const b = wczytajGre(w, JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
+    expect(b.opts.tempoPrzegladarki).toBe(true);
+    grajDo(b, silnik, 2 * TICKS_PER_DAY);
+    expect(skrotGry(b)).toBe(skrotGry(ciagla));
+    expect(ciagla.gov.decisions.some((x) => x.k === 'raport')).toBe(true);
   });
 });
 

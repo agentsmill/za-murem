@@ -15,6 +15,17 @@
    ekranie, choćby decydent go nie ruszył. Okno nowego rodzaju z własnym interfejsem (inaczej niż wybory jak w wydarzeniu)
    zamknie dopiero decydent albo nowa gałąź `odpowiedzDomyslna`.
 
+   Okno, które zarząd trzyma także po odpowiedzi domyślnej (to samo okno), jest zawieszone: `krokGry` zapisuje je w
+   `GraAi.zawieszone` (rodzaj i sekunda przy ekranie), nie ponawia go do końca tej sekundy i idzie dalej do tury decydenta;
+   w następnej sekundzie próbuje od nowa. Lista to dziennik diagnostyczny przebiegu, a nie stan gry: nie wchodzi do zapisu
+   ani do skrótu. Uprząż (`npm run bot:osada`) pokazuje ją jako błąd przebiegu, bo zawieszone okno znaczy, że silnik nie
+   umie odpowiedzieć na nowy rodzaj okna z innej gałęzi.
+
+   Tempo przeglądarki (opcja `tempoPrzegladarki`): raport rano potwierdza się tak jak w src/main.ts, czyli z wejściem
+   (`ackReport(gov, wejscie)`), więc wpada do decyzji zarządu (`GovState.decisions`) i najbliższe wydarzenie czeka okno
+   ciszy `QUIET` (20 s przy ekranie). Bez opcji raport potwierdza się jak w botach (`ackReport(gov)`, bez ciszy), co daje
+   skróty zgodne z `playWithGov`; uprząż włącza opcję domyślnie, żeby liczby etapu odpowiadały tempu prawdziwej gry.
+
    Koniec gry (`gov.over`): `krokGry` wraca od razu, bez ruszania czasu i bez wołania decydenta; jeśli koniec ustawi
    `govUpdate` albo odpowiedź na okno w bieżącej sekundzie, decydent nie dostaje już reszty tej sekundy (okien ani tury).
    `grajDo` kończy wtedy pętlę.
@@ -68,6 +79,9 @@ export interface OpcjeGryAi {
   ludnosc2021?: number;
   /** zapisywać ruchy rąk w `GraAi.dziennik` */
   dziennik?: boolean;
+  /** tempo prawdziwej gry (src/main.ts): potwierdzenie raportu przekazuje wejście, więc liczy się jako decyzja i po nim
+      wydarzenie czeka okno ciszy (`ackReport(gov, wejscie)`); bez opcji jak w botach (`ackReport(gov)`), równo z `playWithGov` */
+  tempoPrzegladarki?: boolean;
 }
 
 /** Jeden ruch ręki. `s` to sekunda przy ekranie (tick / 20, zaokrąglone w dół), w której ruch wykonano; ruchy samouczka
@@ -87,7 +101,8 @@ export type RuchRak =
 export interface Rece {
   /** polecenie w grze: `sim.push` (kopia, wykonane od następnego kroku) */
   polecenie(c: Command): void;
-  /** raport rano przeczytany (`ackReport` bez wejścia, jak w `playWithGov`: bez ciszy po raporcie) */
+  /** raport rano przeczytany: `ackReport` bez wejścia jak w `playWithGov` (bez ciszy po raporcie), a z opcją
+      `tempoPrzegladarki` z wejściem jak w main.ts (decyzja zarządu i okno ciszy przed następnym wydarzeniem) */
   potwierdzRaport(): void;
   /** uchwała o danym id albo null (zarząd nic nie uchwala); skutki idą do symulacji, uchwały też (`sim.setLaws`) */
   podpisz(id: string | null): void;
@@ -112,6 +127,13 @@ export interface Decydent {
   tura(g: GraAi, r: Rece): void;
 }
 
+/** Okno zarządu, które zostało na swoim miejscu po odpowiedzi decydenta i odpowiedzi domyślnej: rodzaj okna (`Prompt.k`) i
+    sekunda przy ekranie, w której to stwierdzono. */
+export interface OknoZawieszone {
+  k: string;
+  s: number;
+}
+
 export interface GraAi {
   readonly w: World;
   readonly seed: number;
@@ -120,6 +142,9 @@ export interface GraAi {
   readonly gov: GovState;
   /** pamięć silnika (zwykły JSON); jedyny stan decydenta, wchodzi do zapisu i do skrótu gry */
   pamiec: PamiecSilnika;
+  /** okna zawieszone w tym przebiegu, po kolei (jeden wpis na każdą sekundę przy ekranie, w której okno nie dało się zamknąć);
+      dziennik diagnostyczny: poza zapisem i skrótem gry, po wczytaniu pusty */
+  readonly zawieszone: OknoZawieszone[];
   /** ruchy rąk po kolei; jest tylko z opcją `dziennik` */
   dziennik?: RuchRak[];
 }
@@ -134,7 +159,7 @@ export interface ZapisGryAi {
 }
 
 function zloz(w: World, seed: number, opts: OpcjeGryAi, sim: Sim, gov: GovState, pamiec: PamiecSilnika): GraAi {
-  return { w, seed, opts, sim, gov, pamiec, ...(opts.dziennik ? { dziennik: [] } : {}) };
+  return { w, seed, opts, sim, gov, pamiec, zawieszone: [], ...(opts.dziennik ? { dziennik: [] } : {}) };
 }
 
 /** Nowa gra od 15:00 pierwszego dnia: symulacja i zarząd jak w `playWithGov` (z `okolica` zarząd ma mapę miasta, z
@@ -174,7 +199,8 @@ export function zrobRece(g: GraAi): Rece {
       g.dziennik?.push({ s: sekunda(), t: 'polecenie', c: structuredClone(c) });
     },
     potwierdzRaport() {
-      ackReport(gov);
+      if (g.opts.tempoPrzegladarki) ackReport(gov, wejscie(g));
+      else ackReport(gov);
       g.dziennik?.push({ s: sekunda(), t: 'raport' });
     },
     podpisz(id) {
@@ -244,7 +270,8 @@ export function odpowiedzDomyslna(p: Prompt, r: Rece): void {
 
 /** Jeden krok gry: czas płynie o tick, a w pełnej sekundzie przy ekranie zarząd, okna i tura decydenta. Po końcu gry
     (`gov.over`) decydent nie jest już wołany: ani gdy koniec był przed krokiem, ani gdy ustawił go zarząd albo odpowiedź
-    na okno w bieżącej sekundzie. */
+    na okno w bieżącej sekundzie. Okno, które zostaje także po odpowiedzi domyślnej, idzie do `GraAi.zawieszone` i nie jest
+    ponawiane do końca sekundy (tura decydenta idzie dalej). */
 export function krokGry(g: GraAi, d: Decydent): void {
   if (g.gov.over) return;
   const { sim, gov, w } = g;
@@ -264,6 +291,11 @@ export function krokGry(g: GraAi, d: Decydent): void {
     if (p && !gov.over && kluczOkna(p) === id) {
       odpowiedzDomyslna(p, r);
       p = pending(gov, wejscie(g));
+      // i ona go nie zamknęła: okno zawieszone, bez ponawiania w tej sekundzie (inne okno nie przejdzie przed nim)
+      if (p && !gov.over && kluczOkna(p) === id) {
+        g.zawieszone.push({ k: p.k, s: Math.floor(st.tick / TICKS_PER_SECOND) });
+        break;
+      }
     }
   }
   if (!gov.over) d.tura(g, r);
