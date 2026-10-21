@@ -138,6 +138,18 @@ describe('równoważność z playWithGov', () => {
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   });
 
+  it.each([
+    ['zielonki', 12],
+    ['lanciego', 13],
+  ])('na demie %s (ziarno %i) też ten sam skrót co playWithGov przez 2 dni', (demoKlucz, ziarno) => {
+    const w = demoWorld(demoKlucz);
+    const g = nowaGraAi(w, ziarno);
+    grajDo(g, silnikPodstawowy, 2 * TICKS_PER_DAY);
+    const wzor = playWithGov(w, ziarno, 'zawsze-warta', 2, 4);
+    expect(g.sim.hash()).toBe(wzor.hash);
+    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
+  });
+
   it('start woła się raz, przed pierwszym krokiem, a tura co sekundę przy ekranie', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
     const tickiStartu: number[] = [];
@@ -178,12 +190,11 @@ describe('determinizm', () => {
     const w = demoWorld('przymorze');
     const ciagla = nowaGraAi(w, 11);
     grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
-    // po pełnej dobie, w środku sekundy i tuż po poleceniu ścięcia drzewa (tick 700: pamięć silnika niepusta, bo drzewo
-    // ze zlecenia czeka na sprawdzenie); między sekundami decydent nie ma żadnego stanu poza pamięcią w grze
+    // po pierwszej półminucie (pamięć silnika już zapisana), po pełnej dobie i w środku sekundy; między sekundami
+    // decydent nie ma żadnego stanu poza pamięcią w grze (pamięć niepustą sprawdza osobny test silnika podstawowego)
     for (const przerwa of [700, TICKS_PER_DAY, TICKS_PER_DAY + 7]) {
       const a = nowaGraAi(w, 11);
       grajDo(a, silnik, przerwa);
-      if (przerwa === 700) expect(a.pamiec.zlecone).toBeGreaterThanOrEqual(0);
       const zapis = JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi;
       const b = wczytajGre(w, zapis);
       expect(b.pamiec).toEqual(a.pamiec);
@@ -214,7 +225,8 @@ describe('determinizm', () => {
   it('odtworzenie ruchów rąk z dziennika na świeżej grze daje ten sam stan', () => {
     const w = demoWorld('przymorze');
     const g = nowaGraAi(w, 11, { dziennik: true });
-    // silnik, który przed odpowiedzią silnika daje każdemu, kto może, wartę: silnik sam nie zmienia przydziałów z karty
+    // karta nocy z propozycji zarządu ma już wartę, więc silnik niczego na niej nie przydziela; ten decydent dokłada
+    // przydziały (wartę każdemu, kto może), żeby dziennik miał też ruchy 'noc'
     const zPrzydzialami: Decydent = {
       ...silnik,
       okno(gr, p, r) {
@@ -441,7 +453,7 @@ describe('koniec gry', () => {
       tura: (gr) => tury.push(sekunda(gr)),
     };
     grajDo(g, d, TICKS_PER_DAY);
-    // pierwsze okno: decydent odpowiada koniec gry, więc tej sekundy nie ma już tury, a potem nic
+    // decydent kończy grę w pierwszym oknie: tej sekundy nie ma już tury ani kolejnych okien, a potem nic
     expect(okna).toHaveLength(1);
     expect(tury).toHaveLength(okna[0] - 1);
     expect(g.sim.st.tick).toBe(okna[0] * TICKS_PER_SECOND);

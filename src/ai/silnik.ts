@@ -93,12 +93,12 @@ function turaDrewna(g: GraAi, r: Rece): void {
   if (godzina < DREWNO_OD_GODZINY || godzina >= DREWNO_DO_GODZINY) return;
   const pam = g.pamiec;
   const drewno = snapshot(st, g.w).stock.wood;
-  const sciana = st.pawns.some((p) => p.job?.t === 'chop');
+  const ktosScina = st.pawns.some((p) => p.job?.t === 'chop');
   // drzewo z poprzedniego polecenia, którego nikt nie zaczął ścinać, jest nieosiągalne: następnym razem inne
-  if (pam.zlecone >= 0 && !sciana && !st.felled.includes(pam.zlecone) && !pam.pominieteDrzewa.includes(pam.zlecone))
+  if (pam.zlecone >= 0 && !ktosScina && !st.felled.includes(pam.zlecone) && !pam.pominieteDrzewa.includes(pam.zlecone))
     pam.pominieteDrzewa.push(pam.zlecone);
   pam.zlecone = -1;
-  if (drewno >= DREWNA_MIN || sciana) return;
+  if (drewno >= DREWNA_MIN || ktosScina) return;
   const k = najblizszeDrzewo(g, pam.pominieteDrzewa);
   const zarzad = rdzen(g);
   const kto = zarzad.find((p) => p.job?.t !== 'sleep' && p.job?.t !== 'guard') ?? zarzad[0];
