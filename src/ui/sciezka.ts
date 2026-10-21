@@ -1,5 +1,6 @@
-/* Ścieżka celów (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md): stan w zapisie interfejsu, silnik rozdziałów
-   i rozdziały R0 (pierwszy dzień) i R1 (drugi dzień). Dalsze rozdziały i okazje dochodzą w kolejnych zadaniach planu.
+/* Ścieżka celów (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md): stan w zapisie interfejsu, silnik rozdziałów,
+   rozdziały R0 (pierwszy dzień) i R1 (drugi dzień) oraz HTML okienka celów i linia celu w oknach. Dalsze rozdziały
+   i okazje dochodzą w kolejnych zadaniach planu.
 
    Stan. Ścieżka prowadzi gracza przez rozdziały R0–R8 i okazje O1–O7. `StanSciezki` trzyma to, co nie wynika ze stanu gry:
    który rozdział jest otwarty i od kiedy, liczniki z chwili otwarcia, cele zaliczone i przepadłe, zdarzenia samego
@@ -33,7 +34,16 @@
    dzidę), zebrać drewno na całą noc i dać komuś dyżur przy kozie. Dwa ostatnie mają termin i rozstrzyga je karta nocy:
    drewno liczy się z karty (`gov.night.card.wood`, a przed kartą z tą samą potrzebą, którą karta pokaże o 20:00),
    dyżur z przydziału `warta:koza` po zatwierdzeniu karty. Liczą się tylko karty, które powstały po otwarciu rozdziału
-   (plan nocy z tego samego dnia, ale sprzed wczytania gry, czeka na następną noc). */
+   (plan nocy z tego samego dnia, ale sprzed wczytania gry, czeka na następną noc).
+
+   Okienko i okna. `celeHtml(widok, { otwarte, touch })` składa wnętrze okienka `#goals` z widoku ścieżki, bez DOM: blok
+   okazji („Teraz: …”, jej cele, podpowiedź bieżącego) nad rozdziałem (nagłówek z licznikiem, lista, podpowiedź pod
+   bieżącym, cel czekający przyciemniony z dopiskiem, przepadły skreślony), a po ostatnim rozdziale zamiast niego wiersze
+   dróg do zwycięstwa. Zwinięte okienko (nagłówek zwija i rozwija je na telefonie i na komputerze, stan podaje main.ts)
+   ma w HTML tylko bieżący cel okazji, a bez okazji bieżący cel rozdziału. `celWOknie(widok, okno)` daje tekst celu do
+   linii „Cel: …” okna, które zasłania okienko (karta nocy, uchwała, tablica badań, spotkanie): bieżący cel, jeśli
+   dotyczy okna, a inaczej pierwszy niezrobiony cel tego okna, który da się ruszyć (karta nocy z za małym zapasem
+   drewna pokazuje dyżur przy kozie, choć bieżącym celem jest drewno). */
 
 import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
@@ -50,7 +60,7 @@ import { TUT_STEPS } from '../sim/tutorial.ts';
 import type { World } from '../world/world.ts';
 import { costText } from './budowa.ts';
 import { type Goal, goalsOf, NIGHT_WOOD, najtanszeBudowle, zombieMode } from './cele.ts';
-import { manyEn, num } from './tekst.ts';
+import { esc, manyEn, num } from './tekst.ts';
 
 /** rozdziały głównej ścieżki po kolei (R3 istnieje dopiero po scaleniu pracy ludzi); „koniec”: po ostatnim rozdziale */
 export const KLUCZE_ROZDZIALOW = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'koniec'] as const;
@@ -270,8 +280,11 @@ export interface Cel {
   okno?: OknoCelu;
 }
 
-/** Widok okienka celów. `okazja` i `drogi` dochodzą w kolejnych zadaniach planu; `rozdzial` jest pusty po ostatnim
-    rozdziale (okienko się chowa). `biezacy` to jeden z elementów `cele`. */
+/** Widok okienka celów (rysuje go `celeHtml`). `okazja` i `drogi` wypełniają kolejne zadania planu; `rozdzial` jest pusty
+    po ostatnim rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis z „Teraz: …” / “Now: …”
+    (nadaje go definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg do zwycięstwa po ostatnim
+    rozdziale: `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep` to „{ile} z {cel}” albo null; pusta lista
+    albo null znaczy: nic do pokazania, okienko się chowa. */
 export interface WidokSciezki {
   okazja: { tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
   rozdzial: { k: KluczRozdzialu; tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
@@ -598,3 +611,88 @@ const R1: DefRozdzialu = {
 
 /** Rozdziały głównej ścieżki po kolei; dalsze (R2–R8) dochodzą w kolejnych zadaniach planu. */
 export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1];
+
+/* ---------------------------------------------------------------- okienko celów (HTML) i linia celu w oknach */
+
+/** Opcje rysowania okienka: `otwarte` to okienko rozwinięte (cała lista), inaczej zwinięte do jednego bieżącego celu;
+    `touch` to ekran dotykowy (przycisk nagłówka mówi „Stuknij” zamiast „Kliknij”). */
+export type OpcjeOkienka = { otwarte: boolean; touch: boolean };
+
+/** Napis na nagłówku-przycisku: nagłówek zwija i rozwija okienko, na telefonie i na komputerze tak samo. */
+const podpowiedzNaglowka = (o: OpcjeOkienka): string =>
+  L(
+    `${o.touch ? 'Stuknij' : 'Kliknij'}, żeby ${o.otwarte ? 'zwinąć' : 'rozwinąć'} listę`,
+    `${o.touch ? 'Tap' : 'Click'} to ${o.otwarte ? 'collapse' : 'expand'} the list`,
+  );
+
+/** Nagłówek okienka albo bloku okazji: przycisk z tytułem i (rozdział) licznikiem zrobionych celów. */
+const naglowekHtml = (tytul: string, licznik: string, o: OpcjeOkienka): string =>
+  `<button type="button" class="goals-head" aria-expanded="${o.otwarte}" title="${esc(podpowiedzNaglowka(o))}"><span>${esc(tytul)}</span>${licznik}</button>`;
+
+/** Jeden cel listy. Klasa mówi, czym jest: zrobiony (ptaszek, przekreślony), przepadły (krzyżyk, przekreślony), bieżący
+    (z podpowiedzią) albo czekający (przyciemniony, z dopiskiem „czeka do …”); zwykły niezrobiony nie ma klasy. */
+function celHtml(c: Cel, n: number, biezacy: Cel | null): string {
+  const bie = !!biezacy && c.key === biezacy.key;
+  const klasa = c.missed ? ' missed' : c.done ? ' done' : bie ? ' now' : c.czeka ? ' czeka' : '';
+  const jak = bie ? `<small class="goal-how">${esc(c.how)}</small>` : '';
+  const dopisek = c.czeka && !c.done ? `<small class="goal-czeka">${esc(c.czeka)}</small>` : '';
+  return `<li class="goal${klasa}" data-key="${esc(c.key)}" data-n="${n}">${esc(c.text)}${jak}${dopisek}</li>`;
+}
+
+/** Lista celów rozdziału albo okazji. Zwinięta pokazuje tylko bieżący cel, a gdy go nie ma (reszta czeka), pierwszy
+    czekający, żeby było widać, na co się czeka. Numer (`data-n`) to miejsce na pełnej liście. Pusta lista to brak tekstu. */
+function listaCelow(cele: readonly Cel[], biezacy: Cel | null, otwarte: boolean, blok: 'okazja' | 'rozdzial'): string {
+  const pokaz = otwarte ? null : (biezacy ?? cele.find((c) => !c.done && c.czeka) ?? null);
+  const wiersze = cele
+    .map((c, k) => (otwarte || (pokaz && c.key === pokaz.key) ? celHtml(c, k + 1, biezacy) : ''))
+    .join('');
+  return wiersze ? `<ol class="goal-list" data-blok="${blok}">${wiersze}</ol>` : '';
+}
+
+/** Widok dróg do zwycięstwa po ostatnim rozdziale: wiersze „{nazwa}: {dalej}” z postępem; pierwszy jest bieżący. */
+function drogiHtml(drogi: readonly { nazwa: string; dalej: string; postep: string | null }[], o: OpcjeOkienka): string {
+  const wiersze = (o.otwarte ? drogi : drogi.slice(0, 1))
+    .map(
+      (d, k) =>
+        `<li class="goal${k === 0 ? ' now' : ''}" data-n="${k + 1}">${esc(`${d.nazwa}: ${d.dalej}`)}${
+          d.postep ? `<small class="goal-postep">${esc(d.postep)}</small>` : ''
+        }</li>`,
+    )
+    .join('');
+  return `${naglowekHtml(L('Drogi do zwycięstwa', 'Roads to victory'), '', o)}<ol class="goal-list" data-blok="drogi">${wiersze}</ol>`;
+}
+
+/** Okienko celów (wnętrze `#goals`) z widoku ścieżki; pusty napis, gdy nie ma czego pokazać (okienko się chowa).
+    Rozwinięte: blok okazji (tytuł „Teraz: …” i jej cele z podpowiedzią bieżącego) nad rozdziałem (nagłówek z tytułem
+    i licznikiem, lista, podpowiedź pod bieżącym celem); po ostatnim rozdziale zamiast niego drogi do zwycięstwa.
+    Zwinięte: jeden bieżący cel, okazji, a bez niej rozdziału; okazja bez bieżącego celu nie zasłania rozdziału. Cel
+    czekający ma klasę `czeka` i dopisek, przepadły jest skreślony i liczy się jak zrobiony. Wszystkie teksty i atrybuty
+    z widoku idą przez ucieczkę HTML; napisy samego okienka (podpowiedź nagłówka, „Drogi do zwycięstwa”) są w bieżącym
+    języku. Czysta funkcja: stan okienka (rozwinięte albo zwinięte, ekran dotykowy) dostaje z zewnątrz. */
+export function celeHtml(v: WidokSciezki, o: OpcjeOkienka): string {
+  const okazja = v.okazja;
+  // zwinięte okienko z okazją pokazuje samą okazję, ale tylko dopóki ma bieżący cel
+  const naOkazji = !!okazja && (o.otwarte || okazja.biezacy !== null);
+  const blokOkazji =
+    okazja && naOkazji
+      ? `<div class="goals-okazja">${naglowekHtml(okazja.tytul, '', o)}${listaCelow(okazja.cele, okazja.biezacy, o.otwarte, 'okazja')}</div>`
+      : '';
+  if (!o.otwarte && naOkazji) return blokOkazji;
+  const r = v.rozdzial;
+  if (r) {
+    const licznik = `<b class="goals-n">${r.cele.filter((c) => c.done).length}/${r.cele.length}</b>`;
+    return `${blokOkazji}${naglowekHtml(r.tytul, licznik, o)}${listaCelow(r.cele, r.biezacy, o.otwarte, 'rozdzial')}`;
+  }
+  if (v.drogi?.length) return `${blokOkazji}${drogiHtml(v.drogi, o)}`;
+  return blokOkazji;
+}
+
+/** Tekst celu do linii „Cel: …” okna, które zasłania okienko celów (karta nocy, uchwała, tablica badań, spotkanie
+    z sąsiadami), albo null, gdy żaden cel nie dotyczy tego okna. Bierze pierwszy niezrobiony cel z `okno` równym oknu,
+    najpierw z okazji, potem z rozdziału: gdy bieżący cel dotyczy okna, to on, a gdy bieżący cel jest inny albo nie da
+    się go ruszyć w tym oknie (drewno na noc przy karcie z za małym zapasem), cel okna, który da się ruszyć (dyżur przy
+    kozie). Cel zrobiony, przepadły i czekający linii nie daje. */
+export function celWOknie(v: WidokSciezki, okno: OknoCelu): string | null {
+  const cele = [...(v.okazja?.cele ?? []), ...(v.rozdzial?.cele ?? [])];
+  return cele.find((c) => c.okno === okno && !c.done && !c.czeka)?.text ?? null;
+}

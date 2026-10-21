@@ -26,6 +26,9 @@
    nazwa i działanie technologii, co odblokowuje, przyciski „Postaw <budowla>” (tylko gdy odblokowuje budowlę),
    „Następne badanie” (otwiera tablicę) i „Dalej”; wywołuje ją main.ts ze stanu symulacji jak spotkanie z sąsiadami.
 
+   Gdy bieżący cel ścieżki celów dotyczy tablicy (src/ui/sciezka.ts, `celWOknie`), `o.cel` dokłada do nagłówka linię
+   „Cel: …” obok „Gra stoi”: tablica zasłania okienko celów, więc cel mówi tu sam.
+
    `czyOtworzycSama` to warunek samego otwarcia tablicy (raz po wyborze, nigdy przy innym oknie, napadzie ani alarmie),
    `czyPokazacOdkrycie` taki sam warunek dla karty „Odkrycie” (czeka na inne okna, koniec napadu i „Do broni!”), a
    `napadTrwa` to napad w toku albo stado pod siatką, wspólne dla obu.
@@ -58,7 +61,7 @@ import type { GameMode } from '../sim/tryb.ts';
 import { EN } from './badania.en.ts';
 import { buildName, postawLabel } from './budowa.ts';
 import type { Sheet } from './okna.ts';
-import { esc, num } from './tekst.ts';
+import { esc, liniaCelu, num } from './tekst.ts';
 
 /** wymiary kartki i planszy w pikselach (współrzędne wspólne dla kartek i sznurków) */
 export const KARTA_W = 140;
@@ -322,8 +325,9 @@ function obsadaHtml(b: SimBadania, kart: Map<string, Kartka>): string {
 }
 
 /** Całe wnętrze tablicy badań. wybrana: technologia, której szczegóły widać (null: podpowiedź); mode: tryb gry
-    (kartki z innym `tryb` znikają, a w trybie zombie szczegóły biorą opis `dzialanieZombie`). */
-export function tablicaHtml(b: SimBadania, o: { wybrana: string | null; mode: GameMode }): string {
+    (kartki z innym `tryb` znikają, a w trybie zombie szczegóły biorą opis `dzialanieZombie`); cel: tekst celu ze ścieżki
+    celów, który dotyczy tablicy (`celWOknie(widok, 'tablica')`), jako linia „Cel: …” w nagłówku obok „Gra stoi”. */
+export function tablicaHtml(b: SimBadania, o: { wybrana: string | null; mode: GameMode; cel?: string }): string {
   const kart = new Map(b.kartki.map((k) => [k.id, k]));
   const techs = TECHS.filter((t) => (t.tryb === undefined || t.tryb === o.mode) && kart.has(t.id));
   const poz = uklad(techs);
@@ -355,7 +359,7 @@ export function tablicaHtml(b: SimBadania, o: { wybrana: string | null; mode: Ga
       return p && k ? kartkaHtml(t, k, p, i, o.wybrana === t.id) : '';
     })
     .join('');
-  return `<header class="tb-bar"><div class="tb-tytul"><b id="tbTytul">${L('Tablica badań', EN.tytul)}</b><small class="tb-pauza">${L('Gra stoi', EN.stoi)}</small></div><button type="button" class="btn go" data-akcja="zamknij" title="Esc · T">${L('Wróć do gry', EN.wroc)}</button></header><div class="tb-glowna"><div class="tb-wrap" tabindex="0"><div class="tb-board" style="width:${szer}px;height:${wys}px"><svg class="tb-nici" width="${szer}" height="${wys}" viewBox="0 0 ${szer} ${wys}" aria-hidden="true"><defs><marker id="tbSupel" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse"><circle cx="4" cy="4" r="3" fill="#b3261e"/></marker></defs>${nici}</svg>${naglowki}${kartki}</div></div>${szczegolyHtml(b, o, kart)}</div>${obsadaHtml(b, kart)}`;
+  return `<header class="tb-bar"><div class="tb-tytul"><b id="tbTytul">${L('Tablica badań', EN.tytul)}</b><small class="tb-pauza">${L('Gra stoi', EN.stoi)}</small>${o.cel ? liniaCelu(o.cel, 'tb-linia-celu', 'small') : ''}</div><button type="button" class="btn go" data-akcja="zamknij" title="Esc · T">${L('Wróć do gry', EN.wroc)}</button></header><div class="tb-glowna"><div class="tb-wrap" tabindex="0"><div class="tb-board" style="width:${szer}px;height:${wys}px"><svg class="tb-nici" width="${szer}" height="${wys}" viewBox="0 0 ${szer} ${wys}" aria-hidden="true"><defs><marker id="tbSupel" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse"><circle cx="4" cy="4" r="3" fill="#b3261e"/></marker></defs>${nici}</svg>${naglowki}${kartki}</div></div>${szczegolyHtml(b, o, kart)}</div>${obsadaHtml(b, kart)}`;
 }
 
 /** najmniejsza czcionka kartki w CSS (px, w skali 1): dopisek `.tb-meta`, pieczątka `.tb-stempel` i odznaki `.tb-bud`
