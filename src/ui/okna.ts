@@ -10,7 +10,8 @@
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
    wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
    (words, e); bez niego mówią jak w bloku. Lista wyboru karty nocy (optionText) wyszarza „Wartę na wieży”, gdy wszystkie
-   miejsca wieży zajmują inni (jak setAssign w src/gov/noc.ts).
+   miejsca wieży zajmują inni (jak setAssign w src/gov/noc.ts). Typ `Sheet` ma też pole `cel`: linię „Cel: …” z ścieżki
+   celów (src/ui/sciezka.ts) rysuje `sheetHtml` w src/ui/okno.ts pod nagłówkiem okna; funkcje tego pliku jej nie znają.
 
    „Jak grać” (`helpSheet(touch, zombie, words, e, opts?)`) mówi o starcie tak, jak jest w grze: `opts.osob` to liczba osób
    zarządu na starcie (main.ts podaje ją z gry; bez niej cztery, jak w panelu „Wasz zarząd”), zdanie o zarządzie nazywa ją
@@ -82,6 +83,10 @@ export interface Sheet {
     | 'odkrycie';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
+  /** linia „Cel: …” pod nagłówkiem: tekst celu ze ścieżki celów, który dotyczy tego okna (`celWOknie` w src/ui/sciezka.ts;
+      zwykły tekst, `sheetHtml` w src/ui/okno.ts ucieka go sam). Dopisuje ją main.ts do okien karty nocy, uchwały i spotkania
+      z sąsiadami; okno bez celu nie ma linii */
+  cel?: string;
 }
 
 /** nazwy rodzajów łupu w obu językach (karta nocy, raport, karta miejsca na mapie miasta) */
