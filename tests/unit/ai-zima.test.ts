@@ -527,6 +527,18 @@ describe('droga do kozy z beczki w pokoju zarządu', () => {
     expect(g.sim.st.builds.filter((b) => b.kind === 'koza_beczka')).toHaveLength(0);
   }, 120_000);
 
+  it('t_kozy zbadane z góry (bez pracowni): plan kozy w pokoju zarządu idzie przed pracownią', () => {
+    // gra z gotowymi badaniami (scenariusz, zapis z innego silnika) nie ma pracowni, a koza ma stanąć od razu
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    g.sim.st.techDone = ['t_kozy'];
+    const s = szpieg();
+    turaZimy(g, s.r);
+    expect(s.ruchy).toHaveLength(1);
+    expect(s.ruchy[0]).toContain('"kind":"koza_beczka"');
+    const m = JSON.parse(s.ruchy[0].replace('polecenie:', ''));
+    expect(houseOf(g.w)!.room[m.y * g.w.size + m.x]).toBe(pokojZarzadu(g.sim.st, g.w));
+  });
+
   it('jedna koza z beczki w pokoju: warstwa nie stawia drugiej, gdy pierwsza już stoi', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
     grajDo(g, silnik, 11 * TICKS_PER_DAY);

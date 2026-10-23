@@ -5,10 +5,10 @@
    Warstwa prowadzi więc do kozy z beczki w pokoju, w którym śpi zarząd, trzyma drewno na noc i wystawia dyżur przy kozie.
 
    `turaZimy` idzie co 30 sekund przy ekranie (pilnuje tego `silnik` w src/ai/silnik.ts) i robi najwyżej jedną rzecz na
-   raz, w tej kolejności: bez pracowni plan pracowni (`miejsceNa(..., 'pracownia')`, z dala od miejsc, na których stanie
-   koza z beczki: w ciasnym pokoju stół zastawiłby ją okno); z pracownią i bez bieżącego badania
-   wybór badania `t_kozy`, gdy osada ma do niego wiedzę (do stołu siadają ludzie sami albo ich sadza warstwa rozwoju
-   z zadania 5); po `t_kozy` i bez kozy z beczki w pokoju zarządu plan `koza_beczka` w tym pokoju. Ręce do budowy i zbieranie
+   raz: po `t_kozy` i bez kozy z beczki w pokoju zarządu plan `koza_beczka` w tym pokoju (pracownia nie jest do tego
+   potrzebna); bez pracowni plan pracowni (`miejsceNa(..., 'pracownia')`, z dala od miejsc, na których stanie koza
+   z beczki: w ciasnym pokoju stół zastawiłby jej okno); z pracownią i bez bieżącego badania wybór badania `t_kozy`, gdy
+   osada ma do niego wiedzę (do stołu siadają ludzie sami albo ich sadza warstwa rozwoju z zadania 5). Ręce do budowy i zbieranie
    materiału dają automat pracy ludzi (plan w grze czeka, aż ktoś go zacznie, a szaber, warsztat i noszenie znoszą
    materiały), więc warstwa nie ponawia planów, które już stoją. Jedna rzecz automat nie załatwia: w domu jednorodzinnym
    (Zielonki) po przeszukaniu pomieszczeń zostaje o kilka desek za mało na pracownię (14), a deski leżą w gruzie na
@@ -142,14 +142,37 @@ function kafelkiKozy(st: SimState, w: World): Set<number> {
   return new Set(miejscaNa(poBadaniu, w, 'koza_beczka', pokoj).map((m) => m.y * w.size + m.x));
 }
 
-/** Jedna tura warstwy (co 30 s przy ekranie): pracownia, badanie kozy, koza z beczki w pokoju zarządu. Najwyżej jedno
-    polecenie na turę; plan, któremu brakuje materiału, dostaje rozbiórkę śmieci. */
+/** Koza z beczki w pokoju zarządu po badaniu `t_kozy` (nie potrzebuje pracowni: stół jest tylko do badania): plan kozy
+    w tym pokoju albo zbieranie materiału do planu, który już stoi. true, gdy coś z tego tej tury zrobiono albo plan
+    czeka na kozę; false, gdy koza już stoi albo nie ma dla niej miejsca. */
+function turaKozy(g: GraAi, r: Rece): boolean {
+  const { sim, w } = g;
+  const st = sim.st;
+  const pokoj = pokojZarzadu(st, w);
+  const h = houseOf(w);
+  if (!h || pokoj < 0) return false;
+  const plan = st.builds.find((b) => b.kind === 'koza_beczka');
+  if (plan) {
+    zbierzMaterial(g, r, 'koza_beczka', plan);
+    return true;
+  }
+  if (st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * w.size + t.x] === pokoj)) return false;
+  const miejsce = miejsceNa(st, w, 'koza_beczka', pokoj);
+  if (!miejsce) return false;
+  r.polecenie({ t: 'build', ids: [], kind: 'koza_beczka', ...miejsce });
+  return true;
+}
+
+/** Jedna tura warstwy (co 30 s przy ekranie): koza z beczki po badaniu, pracownia, badanie kozy. Najwyżej jedno polecenie
+    na turę; plan, któremu brakuje materiału, dostaje rozbiórkę śmieci. */
 export function turaZimy(g: GraAi, r: Rece): void {
   const { sim, w } = g;
   const st = sim.st;
-  const pracownia = st.things.some((t) => t.kind === 'pracownia');
-  // 1. bez pracowni nie ma badań: plan pracowni (jest jedna na grę, plan w toku też się liczy)
-  if (!pracownia) {
+  const kozaZbadana = !!st.techDone?.includes(BADANIE_KOZY);
+  // 1. po badaniu kozy: koza z beczki w pokoju zarządu, bez względu na pracownię (zapis z gotowymi badaniami jej nie ma)
+  if (kozaZbadana && turaKozy(g, r)) return;
+  // 2. bez pracowni nie ma badań: plan pracowni (jest jedna na grę, plan w toku też się liczy)
+  if (!st.things.some((t) => t.kind === 'pracownia')) {
     const plan = st.builds.find((b) => b.kind === 'pracownia');
     if (plan) zbierzMaterial(g, r, 'pracownia', plan);
     else {
@@ -158,24 +181,9 @@ export function turaZimy(g: GraAi, r: Rece): void {
     }
     return;
   }
-  // 2. z pracownią i bez bieżącego badania: badanie kozy, o ile osada ma do niego wiedzę
-  if (!st.techDone?.includes(BADANIE_KOZY)) {
-    if (!st.research?.cur && kartka(st, BADANIE_KOZY, modeOf(st)).stan === 'do_wziecia')
-      r.polecenie({ t: 'research', ids: [], tech: BADANIE_KOZY });
-    return;
-  }
-  // 3. po badaniu i bez kozy z beczki w pokoju zarządu: plan kozy w tym pokoju (plan w toku też się liczy)
-  const pokoj = pokojZarzadu(st, w);
-  const h = houseOf(w);
-  if (!h || pokoj < 0) return;
-  const plan = st.builds.find((b) => b.kind === 'koza_beczka');
-  if (plan) {
-    zbierzMaterial(g, r, 'koza_beczka', plan);
-    return;
-  }
-  if (st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * w.size + t.x] === pokoj)) return;
-  const miejsce = miejsceNa(st, w, 'koza_beczka', pokoj);
-  if (miejsce) r.polecenie({ t: 'build', ids: [], kind: 'koza_beczka', ...miejsce });
+  // 3. z pracownią i bez bieżącego badania: badanie kozy, o ile osada ma do niego wiedzę
+  if (!kozaZbadana && !st.research?.cur && kartka(st, BADANIE_KOZY, modeOf(st)).stan === 'do_wziecia')
+    r.polecenie({ t: 'research', ids: [], tech: BADANIE_KOZY });
 }
 
 /** Dyżur przy kozie na karcie nocy (przed jej zatwierdzeniem): najbardziej wypoczęta osoba ze zdrowiem co najmniej 40, która
