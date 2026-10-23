@@ -38,7 +38,8 @@
    Znajomi (src/gov/znajomi.ts): plan napadu (`planNapadu`, z `confirm` i z `poscigNocy`) bierze w zwykłym trybie jednego
    ujemnego znajomego (`wrogDoNapadu`, raz na znajomego): `RaidPlan.znajomy` niesie jego imię, epitet i wygląd (jeden
    szabrownik w symulacji dostaje ten wygląd), a raport rano dostaje zaraz po opisie napadu linię „Wśród nich był X, ten od
-   słoików” (`znajomyWNapadzie`, w obu wynikach napadu). W zombie napadów nie ma i znajomi nie dołączają do niczego. */
+   słoików” (`znajomyWNapadzie`, w obu wynikach napadu; gdy w nocy tylko ktoś kręcił się przy siatce, „To był…”; bez linii, gdy
+   symulacja nie wystawiła szabrowników: `GovInput.napadWystawiony`). W zombie napadów nie ma i znajomi nie dołączają do niczego. */
 
 import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
 import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
@@ -1000,10 +1001,18 @@ function finds(st: GovState, fx: GovEffects): Tx[] {
   return out;
 }
 
-/** Linia raportu o znajomym wśród szabrowników (jeśli plan napadu go niósł): zaraz po opisie przebiegu napadu. */
-function znajomyWNapadzie(st: GovState, r: NonNullable<NonNullable<GovState['night']>['raid']>): void {
+/** Linia raportu o znajomym w napadzie (jeśli plan napadu go niósł), zaraz po opisie przebiegu napadu: „Wśród nich był…” albo,
+    gdy w nocy tylko ktoś kręcił się przy siatce, „To był…”. Bez linii, gdy symulacja nie wystawiła szabrowników
+    (`GovInput.napadWystawiony` jest fałszem: nie było skąd podejść), bo wtedy nikogo wśród nich nie było. */
+function znajomyWNapadzie(
+  st: GovState,
+  i: GovInput,
+  r: NonNullable<NonNullable<GovState['night']>['raid']>,
+  wariant: 'wsrod' | 'to',
+): void {
+  if (i.napadWystawiony === false) return;
   const z = r.znajomy ? st.znajomi?.find((x) => x.id === r.znajomy) : undefined;
-  if (z) st.night!.lines.push(liniaWsrod(z));
+  if (z) st.night!.lines.push(liniaWsrod(z, wariant));
 }
 
 function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
@@ -1090,7 +1099,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     for (const p of here) fx.moods.push({ id: p.id, why: 'Przegoniliśmy szabrowników', d: 6, hours: 12 });
     for (const p of i.people) addNeeds(fx, p.id, { safe: 8 });
     logGov(st, i, n.lines[n.lines.length - 1], true, fx);
-    znajomyWNapadzie(st, r);
+    znajomyWNapadzie(st, i, r, here.length ? 'wsrod' : 'to');
     result('odparty');
     return;
   }
@@ -1111,7 +1120,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     ),
   );
   logGov(st, i, n.lines[n.lines.length - 1], true, fx);
-  znajomyWNapadzie(st, r);
+  znajomyWNapadzie(st, i, r, 'wsrod');
   mood(st, -2, 4);
   for (const p of i.people) {
     addNeeds(fx, p.id, { safe: -25 });

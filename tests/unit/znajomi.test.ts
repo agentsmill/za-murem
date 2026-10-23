@@ -33,6 +33,8 @@ import {
   epitet,
   type JakId,
   NASTAWIENIE,
+  NIKOGO,
+  type Obecni,
   obecniWOsiedlu,
   POWROT_ODSTEP_DNI,
   POWROT_WIEK_DNI,
@@ -169,6 +171,13 @@ function zn(over: Partial<Znajomy> = {}): Znajomy {
   };
 }
 
+/** obecni w osiedlu do testów: imiona, numery pionków i zmarli */
+const obecni = (imiona: string[] = [], pionki: number[] = [], zmarli: string[] = []): Obecni => ({
+  imiona: new Set(imiona),
+  pionki: new Set(pionki),
+  zmarli: new Set(zmarli),
+});
+
 // ---------------------------------------------------------------- wpis po decyzji o gościu
 
 describe('decyzja o gościu zostawia znajomego', () => {
@@ -271,6 +280,7 @@ describe('decyzja o gościu zostawia znajomego', () => {
         id: mowiacy.id,
         osoba: { first: mowiacy.first, name: mowiacy.name, f: mowiacy.f, age: mowiacy.age },
         look: LOOKI[0],
+        pion: 100,
         kto: p.gosc.kto,
         jak: p.jak,
         nastawienie: p.n,
@@ -287,7 +297,12 @@ describe('decyzja o gościu zostawia znajomego', () => {
     const s = stan(g, { wpis: { zywi: [1, 2, 3], pawns: [101, 102, 103] } });
     wybierz(s, 'Wpuścić na noc');
     expect(znajomi(s)).toHaveLength(1);
-    expect(znajomi(s)[0]).toMatchObject({ id: g.osoby[1].id, osoba: { name: g.osoby[1].name }, look: LOOKI[1] });
+    expect(znajomi(s)[0]).toMatchObject({
+      id: g.osoby[1].id,
+      osoba: { name: g.osoby[1].name },
+      look: LOOKI[1],
+      pion: 101,
+    });
     // tylko jeden wpis na wizytę, choć grupa ma cztery osoby
     const cala = stan(reczny({ kto: 'rodzina', ilu: 4, chce: 'nocleg' }));
     wybierz(cala, 'Wpuścić na noc');
@@ -439,6 +454,7 @@ describe('decyzja o gościu zostawia znajomego', () => {
       id: 'r2',
       osoba: { first: 'Marek', name: 'Marek Nowak', f: false, age: 44 },
       look: 12,
+      pion: 102,
       kto: 'lokator',
       jak: 'wyrzucony',
       nastawienie: -2,
@@ -580,8 +596,8 @@ describe('powrót znajomego', () => {
     ];
     expect(doPowrotu(st, 9, 'zwykly')?.id).toBe('c');
     // kto jest w osiedlu (po imieniu i nazwisku), nie wraca
-    expect(doPowrotu(st, 9, 'zwykly', new Set(['C C']))?.id).toBe('b');
-    expect(doPowrotu(st, 9, 'zwykly', new Set(['C C', 'B B', 'A A']))).toBeNull();
+    expect(doPowrotu(st, 9, 'zwykly', obecni(['C C']))?.id).toBe('b');
+    expect(doPowrotu(st, 9, 'zwykly', obecni(['C C', 'B B', 'A A']))).toBeNull();
     // zmarły nie wraca
     st.znajomi[2].zmarl = true;
     expect(doPowrotu(st, 9, 'zwykly')?.id).toBe('b');
@@ -633,6 +649,75 @@ describe('powrót znajomego', () => {
     ).toBeNull();
     // odszedł z osiedla: znowu może przyjść
     expect(doPowrotu(st, 9, 'zwykly', obecniWOsiedlu(i))?.id).toBe('g0p0');
+  });
+
+  it('obecność po numerze pionka: przyjęty mieszka u nas mimo zmiany imienia, a imiennik z innym pionkiem go nie blokuje', () => {
+    const st = newGov(1);
+    st.znajomi = [zn({ jak: 'przyjety', nastawienie: 2, ostatnio: 1, pion: 120 })];
+    // pionek 120 jest w osiedlu (gracz zmienił mu imię): nie wraca, choć imienia już nie ma w wejściu
+    expect(doPowrotu(st, 9, 'zwykly', obecni([], [120]))).toBeNull();
+    // inny człowiek o tym samym imieniu i nazwisku, inny pionek: nie blokuje
+    expect(doPowrotu(st, 9, 'zwykly', obecni(['Henryk Kowalski'], [999]))?.id).toBe('g0p0');
+    // bez znanego pionka (zapis sprzed pola) rozstrzyga imię i nazwisko
+    st.znajomi = [zn({ jak: 'przyjety', nastawienie: 2, ostatnio: 1 })];
+    expect(doPowrotu(st, 9, 'zwykly', obecni(['Henryk Kowalski']))).toBeNull();
+    expect(doPowrotu(st, 9, 'zwykly', obecni([], [120]))?.id).toBe('g0p0');
+    // zmarły wyklucza po imieniu z listy zmarłych, nawet gdy pionek znany
+    st.znajomi = [zn({ jak: 'przyjety', nastawienie: 2, ostatnio: 1, pion: 120 })];
+    expect(doPowrotu(st, 9, 'zwykly', obecni([], [], ['Henryk Kowalski']))).toBeNull();
+    // obecniWOsiedlu bierze pionki zarządu i mieszkańców oraz imiona zmarłych
+    const i = new Atrapa(1).input();
+    const lok = {
+      pawn: 150,
+      id: 's17',
+      name: 'Ewa Nowak',
+      first: 'Ewa',
+      f: true,
+      age: 40,
+      prof: 'x',
+      skills: {},
+      traits: [],
+      needs: i.people[0].needs,
+      asleep: false,
+      inside: true,
+      tile: 1,
+    };
+    const o = obecniWOsiedlu({ ...i, lokatorzy: [lok], dead: [{ id: '', name: 'Zmarły Z', cause: 'głód', tick: 1 }] });
+    expect(o.pionki.has(150)).toBe(true);
+    for (const p of i.people) expect(o.pionki.has(p.pawn)).toBe(true);
+    expect(o.imiona.has('Ewa Nowak')).toBe(true);
+    expect(o.zmarli.has('Zmarły Z')).toBe(true);
+    expect(NIKOGO.pionki.size + NIKOGO.imiona.size + NIKOGO.zmarli.size).toBe(0);
+  });
+
+  it('ten sam człowiek po pionku: imiennik z innym pionkiem to osobny wpis, ta sama osoba po zmianie imienia jeden', () => {
+    const st = newGov(1);
+    const baza = {
+      id: 'g1p0',
+      osoba: { first: 'Anna', name: 'Anna Nowak', f: true, age: 33 },
+      look: 7,
+      kto: 'wedrowiec' as const,
+      dzien: 2,
+    };
+    zapamietaj(st, { ...baza, jak: 'nocleg', pion: 110 }, 2, { wizyta: 'g1' });
+    // imiennik (to samo imię, nazwisko, płeć i wiek), ale inny pionek i inne id: ktoś inny
+    zapamietaj(st, { ...baza, id: 'g8p0', jak: 'nocleg', pion: 111 }, 4, { wizyta: 'g8' });
+    expect(st.znajomi).toHaveLength(2);
+    // ten sam pionek (id po przyjęciu inne, imię zmienione przez gracza): ten sam człowiek
+    zapamietaj(
+      st,
+      { ...baza, id: 's5', osoba: { ...baza.osoba, name: 'Ania Nowak' }, kto: 'lokator', jak: 'wyrzucony', pion: 110 },
+      6,
+      { wizyta: 'ws5' },
+    );
+    expect(st.znajomi).toHaveLength(2);
+    expect(st.znajomi![0]).toMatchObject({ id: 'g1p0', pion: 110, jak: 'wyrzucony', nastawienie: -2 });
+    // bez pionka rozstrzyga imię: starszy wpis bez pionka dostaje ten, który go podaje
+    const st2 = newGov(1);
+    zapamietaj(st2, { ...baza, jak: 'nocleg' }, 2, { wizyta: 'g1' });
+    zapamietaj(st2, { ...baza, id: 'g9p0', jak: 'nocleg', pion: 120 }, 4, { wizyta: 'g9' });
+    expect(st2.znajomi).toHaveLength(1);
+    expect(st2.znajomi![0].pion).toBe(120);
   });
 
   const KTO_POWROTU: (KtoId | 'lokator')[] = [
@@ -842,9 +927,24 @@ describe('powrót znajomego', () => {
     expect(znajomi(s)[0]).toMatchObject({ id: 'g0p0', jak: 'przyjety', nastawienie: 2, wizyty: 2, ostatnio: 6 });
     // worek: Jedzenie 2–4 na rano po wpuszczeniu na noc
     ({ s, g } = gosc('jedzenie'));
+    const logiPrzed = s.gov.log.length;
     fx = wybierz(s, 'Wpuścić na noc');
     const dar = s.gov.later.find((l) => (l.stock.supplies ?? 0) > 0);
     expect(dar?.stock.supplies).toBe(g.porcje);
+    // jedzenie dochodzi rano, więc dopiero poranna linia mówi o porcjach; w chwili wyboru wiadomo tylko, że worek leży przy bramie
+    expect(dar?.line.pl).toMatch(new RegExp(`\\b${g.porcje}\\b.*jedzenia|jedzenia.*\\b${g.porcje}\\b`));
+    expect(dar?.line.en).toMatch(new RegExp(`\\b${g.porcje} portions? of food`));
+    const naWybor = s.gov.log.slice(logiPrzed).map((l) => l.txt);
+    const worek = naWybor.find((t) => /worek/.test(t.pl));
+    expect(worek, naWybor.map((t) => t.pl).join(' | ')).toBeTruthy();
+    expect(worek!.pl).toMatch(/przy bramie|przy furtce/);
+    expect(worek!.en).toMatch(/at the (garden )?gate/);
+    for (const t of naWybor) {
+      expect(t.pl).not.toMatch(/porcj/);
+      expect(t.en).not.toMatch(/portion/);
+    }
+    expect(polskieSlowa(worek!.en, ['Henryk Kowalski'])).toEqual([]);
+    expect(polskieSlowa(dar!.line.en, ['Henryk Kowalski'])).toEqual([]);
     expect(znajomi(s)[0]).toMatchObject({ jak: 'nocleg', nastawienie: 2, wizyty: 2 });
     // po odprawie worka nie ma
     ({ s } = gosc('jedzenie'));
@@ -1001,6 +1101,52 @@ describe('znajomy w napadzie', () => {
     expect(linia.en).toMatch(/^Ewa Nowak, the .+, was among them\.$/);
   });
 
+  it('„Ktoś kręcił się…, ale siatka wytrzymała”: raport mówi „To był/To była …”, a nie „Wśród nich”', () => {
+    for (const f of [false, true]) {
+      const wrog = zn({
+        id: 'g3p0',
+        jak: 'zlapany',
+        nastawienie: -2,
+        osoba: { first: f ? 'Ewa' : 'Henryk', name: f ? 'Ewa Nowak' : 'Henryk Kowalski', f, age: 40 },
+      });
+      const { gov, atr } = nocZNapadem([wrog]);
+      const n = gov.night!;
+      // brama, słaby napad i ostrzeżenie: obrona wystarcza, nikt nie stoi na warcie (nikt nie przegania szabrowników)
+      n.raid!.post = 'brama';
+      n.raid!.attack = 2.1;
+      for (const id of Object.keys(n.assign)) n.assign[id] = 'sen';
+      gov.tonight.alert = n.day;
+      atr.tick = tickAt(3, 6, 10);
+      govUpdate(gov, atr.input());
+      const linie = gov.reports.find((r) => r.day === 2)!.lines;
+      const e = epitet(gov.znajomi![0]);
+      expect(
+        linie.some((l) => l.pl.startsWith('Ktoś kręcił się')),
+        linie.map((l) => l.pl).join(' | '),
+      ).toBe(true);
+      expect(linie.some((l) => l.pl.startsWith('Wśród nich'))).toBe(false);
+      const l = linie.find((x) => x.pl.startsWith('To '))!;
+      expect(l.pl).toBe(`To ${f ? 'była' : 'był'} ${wrog.osoba.name}, ${e.pl}.`);
+      expect(l.en).toBe(`It was ${wrog.osoba.name}, ${e.en}.`);
+      expect(polskieSlowa(l.en, [wrog.osoba.name])).toEqual([]);
+    }
+  });
+
+  it('szabrownicy, których symulacja nie wystawiła, nie dostają linii o znajomym (napadWystawiony)', () => {
+    const wrog = zn({ id: 'g3p0', jak: 'zlapany', nastawienie: -2 });
+    const linia = (wystawiony: boolean | undefined) => {
+      const { gov, atr } = nocZNapadem([wrog]);
+      atr.tick = tickAt(3, 6, 10);
+      const i = atr.input();
+      govUpdate(gov, wystawiony === undefined ? i : { ...i, napadWystawiony: wystawiony });
+      return gov.reports.find((r) => r.day === 2)!.lines.filter((l) => /^(Wśród nich|To był)/.test(l.pl));
+    };
+    expect(linia(false)).toHaveLength(0);
+    expect(linia(true)).toHaveLength(1);
+    // atrapa bez pola (stare testy): jak z wystawionymi
+    expect(linia(undefined)).toHaveLength(1);
+  });
+
   it('wrogDoNapadu: najbardziej ujemny, przy remisie najdawniejszy, raz na znajomego, bez obecnych i zmarłych', () => {
     const st = newGov(1);
     const os = (n: string) => ({ first: n, name: `${n} X`, f: false, age: 30 });
@@ -1024,9 +1170,9 @@ describe('znajomy w napadzie', () => {
     st.znajomi.forEach((z) => {
       delete z.napad;
     });
-    expect(wrogDoNapadu(st, 9, new Set(['C X']))?.id).toBe('b');
+    expect(wrogDoNapadu(st, 9, obecni(['C X']))?.id).toBe('b');
     st.znajomi[1].zmarl = true;
-    expect(wrogDoNapadu(st, 9, new Set(['C X']))?.id).toBe('a');
+    expect(wrogDoNapadu(st, 9, obecni(['C X']))?.id).toBe('a');
     // w zombie ujemny nie dołącza do niczego
     expect(wrogDoNapadu(st, 9, undefined, 'zombie')).toBeNull();
     // bez znajomych nic
@@ -1126,6 +1272,24 @@ describe('szabrownik ze znajomego w symulacji', () => {
       }
       expect(st.raid!.n).toBe(people);
     }
+  });
+
+  it('odczyt napadWystawiony: brak bez napadu, fałsz przed wystawieniem i gdy nie było skąd podejść, prawda po wystawieniu', () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 21);
+    const sim = new Sim(w, st);
+    expect(govInput(st, w, 0).napadWystawiony).toBeUndefined();
+    applyGov(st, w, plan(2));
+    expect(govInput(st, w, 0).napadWystawiony).toBe(false);
+    while (st.tick < atHour(1, 23)) sim.step();
+    expect(st.pawns.filter((p) => p.kind === 'szabrownik')).toHaveLength(2);
+    expect(govInput(st, w, 0).napadWystawiony).toBe(true);
+    // brak skąd podejść (spawnRaid kończy napad bez szabrowników): spot zostaje −1
+    const pusty = createSim(w, 3, { core: 2 });
+    applyGov(pusty, w, plan(2));
+    pusty.raid!.phase = 3;
+    pusty.raid!.outcome = 'odparty';
+    expect(govInput(pusty, w, 0).napadWystawiony).toBe(false);
   });
 
   it('plan bez znajomego: wszyscy w zwykłych strojach, a losowania ze stanu są te same z nim i bez niego', () => {

@@ -317,6 +317,10 @@ export interface GovInput {
   wieza?: number;
   /** ile palenisk (koza zarządu, kozy z beczek, kocioł liczony jako kilka) pali drewno nocą; bez pola jedno */
   paleniska?: number;
+  /** napad z planu zarządu (`RaidPlan`): czy symulacja wystawiła szabrowników (spawnRaid znalazł skąd podejść). Pole jest
+      tylko, gdy napad jest zaplanowany; fałsz przed wystawieniem i gdy nie było skąd podejść (świat bez ulicy przy siatce).
+      Z tego zarząd wie, czy w raporcie wolno mówić, że szabrownicy byli (`znajomyWNapadzie`); bez pola jak z wystawionymi. */
+  napadWystawiony?: boolean;
 }
 
 // ---------------------------------------------------------------- wyjście

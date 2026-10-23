@@ -255,6 +255,8 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
     const o = a.gosc.osoby[k];
     if (!o) return;
     const odmowa = jak === 'odprawiony' && a.gosc.chce === 'jedzenie' && stockNow(i, fx).supplies > ZAPAS_ODMOWY;
+    // pionek mówiącego: ten sam przed bramą, po przyjęciu do osiedla i po awansie do zarządu
+    const pion = w && zywi.length ? w.pawns[w.zywi.indexOf(k)] : undefined;
     const z = zapamietaj(
       st,
       {
@@ -262,6 +264,7 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
         id: k === 0 && a.gosc.wraca ? a.gosc.wraca : o.id,
         osoba: { first: o.first, name: o.name, f: o.f, age: o.age },
         prof: o.prof,
+        ...(pion !== undefined ? { pion } : {}),
         look: lookOsoby(a, k),
         kto: a.gosc.kto,
         jak,
@@ -737,13 +740,21 @@ function rzeczy(r: NonNullable<Gosc['rzecz']>): Tx {
     Fach działa przez przyjęcie do zarządu, nie tutaj. */
 function nagroda(h: GovHost, g: Gosc): void {
   if (g.porcje !== undefined) {
+    // jedzenie dochodzi do zapasów rano (`later`), więc porcje są dopiero w porannej linii; teraz wiadomo tylko, że worek leży
     const p = mowiacy(g);
-    const line = tx(
-      `${p.name} zostawi${plec(p, 'ł', 'ła')} worek z jedzeniem: ${porcje(g.porcje)}.`,
-      `${p.name} left a sack of food: ${portions(g.porcje)}.`,
+    h.later(
+      { supplies: g.porcje },
+      tx(
+        `Worek od gościa dołożył do zapasów: ${porcje(g.porcje)} jedzenia.`,
+        `The guest's sack added ${portions(g.porcje)} of food to the stores.`,
+      ),
     );
-    h.later({ supplies: g.porcje }, line);
-    h.log(line);
+    h.log(
+      tx(
+        `${p.name} zostawi${plec(p, 'ł', 'ła')} worek z jedzeniem ${h.words().brama.przy}.`,
+        `${p.name} left a sack of food at ${h.wordsEn().brama}.`,
+      ),
+    );
   }
   if (g.ma === 'rzecz' && g.rzecz) {
     if (g.rzecz.arms) h.dajBron(g.rzecz.arms);

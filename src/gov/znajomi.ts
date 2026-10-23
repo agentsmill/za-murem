@@ -4,7 +4,8 @@
    Kto i kiedy. Jeden wpis na człowieka. Po każdej decyzji o gościu (karta gościa z klocków, sześć kart z 0.3 z gościem,
    „Złapany”, kradzież wykryta rano) zapisuje się mówiący, czyli pierwsza żywa osoba grupy, ta sama, którą karta nazywa;
    po wyrzuceniu mieszkańca bramą (`kto: 'lokator'`, `wyrzucony`). Ten sam człowiek (to samo imię i nazwisko, płeć i wiek;
-   id osoby zmienia się przy przyjęciu, bo symulacja nadaje swoje) dostaje jeden wpis: `zapamietaj` dolicza nastawienie
+   id osoby zmienia się przy przyjęciu, bo symulacja nadaje swoje; ten sam pionek to na pewno ten sam człowiek, a gdy oba wpisy
+   znają pionek, tylko on rozstrzyga) dostaje jeden wpis: `zapamietaj` dolicza nastawienie
    w zakresie −2..2, podnosi licznik wizyt i odświeża `ostatnio`. Decyzja podjęta w tej samej wizycie co poprzednia (noc,
    która skończyła się kradzieżą; złapany po wpuszczeniu na noc) poprawia wpis zamiast dokładać drugi (`opcje.wizyta`,
    `Znajomy.przed` to nastawienie sprzed tej wizyty).
@@ -17,7 +18,8 @@
    Powrót (`doPowrotu`): wraca ktoś o dodatnim nastawieniu i niewrogim ostatnim zdarzeniu (nie okradł, nie został złapany
    ani wyrzucony), którego ostatnie spotkanie było co najmniej `POWROT_WIEK_DNI` dni temu, najwyżej jeden powrót
    na `POWROT_ODSTEP_DNI` dni we wszystkich wpisach razem (`Znajomy.wrocil`), nie ktoś, kto mieszka u nas, jest w zarządzie
-   albo nie żyje (`obecniWOsiedlu`, po imieniu i nazwisku, bo symulacja nadaje przyjętym nowe id). Wybór bez losowania:
+   albo nie żyje (`obecniWOsiedlu`: po numerze pionka mówiącego, który przeżywa przyjęcie i awans, a bez znanego pionka po
+   imieniu i nazwisku; zmarli po imieniu z listy zmarłych). Wybór bez losowania:
    najlepiej nastawiony, potem najdawniejszy, potem po id. Powrót to prawdziwa wizyta gościa (`planujPowrot` w wizyta.ts,
    `Gosc.wraca`), więc nie ma tu żadnej karty: wydarzenie `powrot` tylko ją planuje, jak `gosc`.
 
@@ -45,7 +47,8 @@ export type JakId = 'nakarmiony' | 'nocleg' | 'przyjety' | 'odprawiony' | 'okrad
 
 /** Człowiek, o którym zarząd pamięta. `osoba` to to, po czym go poznać (imię, nazwisko, płeć, wiek), `prof` jego zawód
     (do powrotu z tym samym fachem), `look` wygląd pionka. `kto`: archetyp gościa albo `lokator` (mieszkaniec wyrzucony
-    bramą), `jak` ostatnie zdarzenie, `nastawienie` suma zdarzeń w −2..2. `dzien` to dzień pierwszego wpisu, `wizyty` ile
+    bramą), `pion` numer pionka mówiącego (przeżywa przyjęcie do osiedla i awans, więc po nim poznaje się mieszkańca; stary
+    zapis go nie ma), `jak` ostatnie zdarzenie, `nastawienie` suma zdarzeń w −2..2. `dzien` to dzień pierwszego wpisu, `wizyty` ile
     razy o nim decydowano, `ostatnio` dzień ostatniego wpisu. Pola pomocnicze: `wizyta` i `przed` (poprawka w tej samej
     wizycie), `wrocil` (dzień ostatniego powrotu gościem), `napad` (dzień, w którym poszedł z szabrownikami; raz),
     `zmarl` (zginął na oczach zarządu: nie wraca). */
@@ -53,6 +56,7 @@ export interface Znajomy {
   id: string;
   osoba: Pick<Person, 'first' | 'name' | 'f' | 'age'>;
   look: number;
+  pion?: number;
   kto: KtoId | 'lokator';
   jak: JakId;
   nastawienie: number;
@@ -106,8 +110,13 @@ export interface OpcjeZapisu {
   odmowa?: boolean;
 }
 
-const tenSam = (a: Znajomy['osoba'], b: Znajomy['osoba']): boolean =>
-  a.name === b.name && a.f === b.f && a.age === b.age;
+/** Ten sam człowiek: to samo id, a gdy oba wpisy znają pionek, to ten sam pionek (imiennik z innym pionkiem to ktoś inny, a
+    zmiana imienia przez gracza nie robi z niego kogoś nowego); bez pionka po imieniu, nazwisku, płci i wieku. */
+const tenSam = (y: Pick<Znajomy, 'id' | 'osoba' | 'pion'>, z: Pick<Znajomy, 'id' | 'osoba' | 'pion'>): boolean => {
+  if (y.id === z.id) return true;
+  if (y.pion !== undefined && z.pion !== undefined) return y.pion === z.pion;
+  return y.osoba.name === z.osoba.name && y.osoba.f === z.osoba.f && y.osoba.age === z.osoba.age;
+};
 
 /**
  * Zapisuje decyzję o człowieku. Pierwszy raz dodaje wpis, kolejny (to samo id albo ta sama osoba) uaktualnia: `jak`, `kto`,
@@ -123,12 +132,13 @@ export function zapamietaj(
 ): Znajomy {
   const lista = (st.znajomi ??= []);
   const delta = z.jak === 'odprawiony' && opcje.odmowa ? ODMOWA : NASTAWIENIE[z.jak];
-  const x = lista.find((y) => y.id === z.id || tenSam(y.osoba, z.osoba));
+  const x = lista.find((y) => tenSam(y, z));
   if (!x) {
     const nowy: Znajomy = {
       id: z.id,
       osoba: { first: z.osoba.first, name: z.osoba.name, f: z.osoba.f, age: z.osoba.age },
       ...(z.prof !== undefined ? { prof: z.prof } : {}),
+      ...(z.pion !== undefined ? { pion: z.pion } : {}),
       look: z.look,
       kto: z.kto,
       jak: z.jak,
@@ -148,6 +158,7 @@ export function zapamietaj(
   x.nastawienie = USTAWIA_MIN.has(z.jak) ? MIN : przytnij(przed + delta);
   x.ostatnio = d;
   if (z.prof !== undefined && x.prof === undefined) x.prof = z.prof;
+  if (z.pion !== undefined) x.pion = z.pion;
   if (!poprawka) {
     x.wizyty++;
     x.przed = przed;
@@ -162,19 +173,48 @@ export function zapamietaj(
 export function poprawJak(st: GovState, id: string, wizyta: string, jak: JakId, d: number): Znajomy | null {
   const x = st.znajomi?.find((y) => y.id === id);
   if (!x) return null;
-  return zapamietaj(st, { id: x.id, osoba: x.osoba, look: x.look, kto: x.kto, jak, dzien: x.dzien }, d, { wizyta });
+  return zapamietaj(
+    st,
+    {
+      id: x.id,
+      osoba: x.osoba,
+      look: x.look,
+      kto: x.kto,
+      jak,
+      dzien: x.dzien,
+      ...(x.pion !== undefined ? { pion: x.pion } : {}),
+    },
+    d,
+    { wizyta },
+  );
 }
 
-/** Imiona i nazwiska ludzi, którzy są w osiedlu albo nie żyją: zarząd, mieszkańcy z osobą i zmarli z wejścia. Znajomy
-    o takim imieniu nie wraca (przyjęty mieszka u nas, zmarły nie przyjdzie). Po imieniu i nazwisku, bo symulacja nadaje
-    przyjętym nowe id. */
-export function obecniWOsiedlu(i: Pick<GovInput, 'people' | 'lokatorzy' | 'dead'>): Set<string> {
-  return new Set([
-    ...i.people.map((p) => p.name),
-    ...(i.lokatorzy ?? []).map((l) => l.name),
-    ...(i.dead ?? []).map((d) => d.name),
-  ]);
+/** Kto jest teraz w osiedlu albo nie żyje: numery pionków zarządu i mieszkańców (`GovPerson.pawn`, `GovLokator.pawn`), ich imiona
+    i nazwiska (dla znajomych bez znanego pionka) i imiona zmarłych. */
+export interface Obecni {
+  pionki: ReadonlySet<number>;
+  imiona: ReadonlySet<string>;
+  zmarli: ReadonlySet<string>;
 }
+
+/** nikogo (testy i wywołania bez wejścia) */
+export const NIKOGO: Obecni = { pionki: new Set(), imiona: new Set(), zmarli: new Set() };
+
+/** Obecni w osiedlu z wejścia: zarząd, mieszkańcy z osobą i zmarli. Znajomy o takim pionku mieszka u nas (pionek przeżywa
+    przyjęcie i awans), bez znanego pionka decyduje imię i nazwisko; zmarły nie wraca (po imieniu z listy zmarłych, bo wpis
+    zgonu nie ma numeru pionka). */
+export function obecniWOsiedlu(i: Pick<GovInput, 'people' | 'lokatorzy' | 'dead'>): Obecni {
+  const lokatorzy = i.lokatorzy ?? [];
+  return {
+    pionki: new Set([...i.people.map((p) => p.pawn), ...lokatorzy.map((l) => l.pawn)]),
+    imiona: new Set([...i.people.map((p) => p.name), ...lokatorzy.map((l) => l.name)]),
+    zmarli: new Set((i.dead ?? []).map((d) => d.name)),
+  };
+}
+
+/** czy znajomy jest w osiedlu albo nie żyje */
+const niema = (z: Znajomy, o: Obecni): boolean =>
+  !(z.pion !== undefined ? o.pionki.has(z.pion) : o.imiona.has(z.osoba.name)) && !o.zmarli.has(z.osoba.name);
 
 // ---------------------------------------------------------------- wybór
 
@@ -188,12 +228,7 @@ const najpierwNajdawniejszy = (a: Znajomy, b: Znajomy): number =>
  * Najlepiej nastawiony, remis: najdawniejszy, potem po id. Ujemny nie wraca w żadnym trybie; w zombie nie ma też napadu
  * (`wrogDoNapadu`).
  */
-export function doPowrotu(
-  st: GovState,
-  day: number,
-  mode: GameMode,
-  obecni: ReadonlySet<string> = new Set(),
-): Znajomy | null {
+export function doPowrotu(st: GovState, day: number, mode: GameMode, obecni: Obecni = NIKOGO): Znajomy | null {
   const lista = st.znajomi;
   if (!lista?.length) return null;
   const ostatniPowrot = lista.reduce(
@@ -207,7 +242,7 @@ export function doPowrotu(
       !WROGIE.has(z.jak) &&
       !z.zmarl &&
       day - z.ostatnio >= POWROT_WIEK_DNI &&
-      !obecni.has(z.osoba.name) &&
+      niema(z, obecni) &&
       (z.kto === 'lokator' || KTO[z.kto].tryby.includes(mode)),
   );
   mozliwi.sort((a, b) => b.nastawienie - a.nastawienie || najpierwNajdawniejszy(a, b));
@@ -222,12 +257,12 @@ export function doPowrotu(
 export function wrogDoNapadu(
   st: GovState,
   day: number,
-  obecni: ReadonlySet<string> = new Set(),
+  obecni: Obecni = NIKOGO,
   mode: GameMode = 'zwykly',
 ): Znajomy | null {
   if (mode === 'zombie') return null;
   const mozliwi = (st.znajomi ?? []).filter(
-    (z) => z.nastawienie < 0 && z.napad === undefined && !z.zmarl && z.ostatnio <= day && !obecni.has(z.osoba.name),
+    (z) => z.nastawienie < 0 && z.napad === undefined && !z.zmarl && z.ostatnio <= day && niema(z, obecni),
   );
   mozliwi.sort((a, b) => a.nastawienie - b.nastawienie || a.dzien - b.dzien || najpierwNajdawniejszy(a, b));
   return mozliwi[0] ?? null;
@@ -331,13 +366,16 @@ export function epitet(z: Znajomy): Tx {
   return z.osoba.f ? tx(v.f, v.enF ?? v.en) : tx(v.m, v.en);
 }
 
-/** Linia raportu o znajomym wśród szabrowników: „Wśród nich był Henryk Kowalski, ten od słoików.” */
-export function liniaWsrod(z: Znajomy): Tx {
+/** Linia raportu o znajomym w napadzie: „Wśród nich był Henryk Kowalski, ten od słoików.” Gdy w nocy tylko ktoś kręcił się
+    przy siatce („Ktoś kręcił się…, ale siatka wytrzymała”), mówi „To był Henryk Kowalski, ten od słoików.” (`wariant: 'to'`). */
+export function liniaWsrod(z: Znajomy, wariant: 'wsrod' | 'to' = 'wsrod'): Tx {
   const e = epitet(z);
-  return tx(
-    `Wśród nich ${plec(z.osoba, 'był', 'była')} ${z.osoba.name}, ${e.pl}.`,
-    `${z.osoba.name}, ${e.en}, was among them.`,
-  );
+  return wariant === 'to'
+    ? tx(`To ${plec(z.osoba, 'był', 'była')} ${z.osoba.name}, ${e.pl}.`, `It was ${z.osoba.name}, ${e.en}.`)
+    : tx(
+        `Wśród nich ${plec(z.osoba, 'był', 'była')} ${z.osoba.name}, ${e.pl}.`,
+        `${z.osoba.name}, ${e.en}, was among them.`,
+      );
 }
 
 /** Znajomy w planie napadu (`RaidPlan.znajomy`): imię i nazwisko, epitet i wygląd. */

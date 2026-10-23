@@ -327,6 +327,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     kozaLit: s.kozaLit,
     people: people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
     ...(lokatorzy.length ? { lokatorzy } : {}),
+    ...(st.raid ? { napadWystawiony: st.raid.spot >= 0 } : {}),
     stock: {
       wood: s.stock.wood,
       woodSklad: s.stock.woodSklad,
