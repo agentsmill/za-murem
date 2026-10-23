@@ -278,7 +278,9 @@ const optTxt = (t: unknown): Tx | undefined => (t === undefined || t === null ? 
 
 /** Zapis sprzed angielskiej wersji ma w kronice, raportach, karcie nocy i liniach na rano zwykłe polskie napisy.
     Zamienia je w miejscu na Tx z tym samym tekstem w obu językach (stare wpisy zostają po polsku także po
-    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. */
+    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. Dane haków łańcuchów (`watki.haki[].d`,
+    src/gov/watki.ts) są zwykłym JSON od początku, więc `Tx` w nich to obiekt `{ pl, en }`, który przechodzi zapis bez
+    normalizacji (pilnuje tego tests/unit/watki.test.ts). */
 export function normalizujTeksty(st: GovState): GovState {
   for (const l of st.log ?? []) l.txt = txt(l.txt);
   for (const l of st.later ?? []) l.line = txt(l.line);
