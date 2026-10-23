@@ -1,9 +1,9 @@
 /* Warunki zwycięstwa, etap 1 (docs/superpowers/specs/2026-10-19-warunki-zwyciestwa-design.md): pięć dróg, ich kamienie
    milowe i krok zarządu, który je zalicza. Funkcje na `GovInput` i `GovState`, bez symulacji (src/gov nie importuje
    src/sim), bez rysowania i bez losowania: ten sam ciąg wejść daje ten sam stan, także po zapisie i wczytaniu. Czyste
-   (nic nie zmieniają) są `ocenDrogi`, `celLudnosci`, `ludnoscOf` i `nazwaDrogi`; stan zmieniają tylko `wlaczZwyciestwo`,
-   `krokZwyciestwa`, `grajDalej` i `wygrajDroge`, i to wyłącznie `GovState.zwyciestwo` (krok także kronikę: `st.log`
-   i `fx.log`).
+   (nic nie zmieniają) są `ocenDrogi`, `celLudnosci`, `ludnoscOf`, `nazwaDrogi` i `terenMozliwy`; stan zmieniają tylko
+   `wlaczZwyciestwo`, `krokZwyciestwa`, `grajDalej` i `wygrajDroge`, i to wyłącznie `GovState.zwyciestwo` (krok także
+   kronikę: `st.log` i `fx.log`).
 
    Drogi: `technologia` („Prąd bez miedzi”), `teren` („Za Murem”), `lek`, `ludnosc` („Nowe osiedle”) i `cuda`. Na tym
    etapie gotowa jest ludnościowa w całości, pierwszy kamień terenu i sześć kamieni technologii z odczytu badań (w grze
@@ -25,6 +25,8 @@
    (`GovInput.teren.mozliwe` równe 0, np. na Przymorzu każdy stoi za jezdnią), teren przed pierwszym kamieniem ma zamiast
    zdania o płocie „Wkrótce: wspólny płot przez jezdnię.” (zdanie „co dalej” kazałoby robić rzecz niemożliwą). Po pierwszym
    kamieniu i bez pola `mozliwe` (atrapy, stare wejścia) nic się nie zmienia; sam kamień liczy się dalej z `przylaczone`.
+   Regułę „czy teren ma sens na tej mapie” trzyma jeden eksportowany predykat, `terenMozliwy`: czytają go ekran dróg i cel
+   „otoczcie sąsiada” ze ścieżki celów, żeby lista celów i ekran dróg się nie rozjeżdżały.
 
    Stan (`GovState.zwyciestwo`, `StanZwyciestwa`) powstaje dopiero po `wlaczZwyciestwo`, tak jak `miasto` po `wlaczMiasto`
    (src/gov/wyprawy.ts): `newGov` go nie ma, `krokZwyciestwa` bez niego nie robi nic, więc skróty zarządu w botach i testach
@@ -216,8 +218,9 @@ const WKROTCE_PRAD = tx('Wkrótce: ery 3–6 czekają na prąd.', 'Coming soon: 
 const WKROTCE_PLOT = tx('Wkrótce: wspólny płot przez jezdnię.', 'Coming soon: a shared fence across the road.');
 
 /** „Co dalej” przy pierwszym kamieniu terenu tam, gdzie da się otoczyć choć jednego sąsiada (inaczej `WKROTCE_PLOT`;
-    reszta terenu to „Wkrótce”, `wkrotceDrogi`) */
-const DALEJ_TEREN = tx(
+    reszta terenu to „Wkrótce”, `wkrotceDrogi`). Eksport dla celu ścieżki celów, który mówi to samo zdanie (zob.
+    `terenMozliwy`). */
+export const DALEJ_TEREN = tx(
   'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
   'Put a shared fence round the first building next door.',
 );
@@ -361,9 +364,14 @@ function spelnione(droga: Droga, i: GovInput, cel: number): number {
   return n;
 }
 
-/** Czy na tej mapie wspólny płot nie dosięga żadnego sąsiada: odczyt mówi wprost, że budynków do otoczenia jest zero
-    (`GovInput.teren.mozliwe`). Bez pola (atrapy, stare wejścia) zarząd zakłada, że się da. */
-const bezPlotu = (i: GovInput): boolean => typeof i.teren?.mozliwe === 'number' && i.teren.mozliwe <= 0;
+/** Czy na tej mapie droga terenu ma sens, czyli wspólny płot dosięga choć jednego sąsiada. Odpowiedź „nie” tylko wtedy, gdy
+    odczyt mówi wprost, że budynków do otoczenia jest zero (`GovInput.teren.mozliwe`, np. na Przymorzu każdy stoi za
+    jezdnią); bez pola (atrapy, stare wejścia) zarząd zakłada, że się da. To jedyne miejsce tej reguły: czytają ją ekran
+    dróg (`wkrotceDrogi`: „Wkrótce: wspólny płot przez jezdnię.” zamiast „co dalej”) i cel „otoczcie wspólnym płotem
+    pierwszy sąsiedni budynek” ze ścieżki celów (src/ui/sciezka-rozdzialy.ts), więc lista celów i ekran dróg nie mogą się
+    rozjechać. */
+export const terenMozliwy = (i: Pick<GovInput, 'teren'>): boolean =>
+  !(typeof i.teren?.mozliwe === 'number' && i.teren.mozliwe <= 0);
 
 /** „Wkrótce” drogi przy `zaliczone` kamieniach: ludność go nie ma, droga przebyta do końca też nie, teren dopiero po
     pierwszym kamieniu (wcześniej pierwszy kamień jest do zdobycia od razu, chyba że płot nie dosięga żadnego sąsiada:
@@ -372,7 +380,7 @@ const bezPlotu = (i: GovInput): boolean => typeof i.teren?.mozliwe === 'number' 
     reguły: okno pokazuje to, co dostanie w `PostepDrogi.wkrotce`. */
 function wkrotceDrogi(droga: Droga, zaliczone: number, i: GovInput): Tx | null {
   if (droga === 'ludnosc' || zaliczone >= DROGI[droga].kamienie.length) return null;
-  if (droga === 'teren' && zaliczone < 1) return bezPlotu(i) ? WKROTCE_PLOT : null;
+  if (droga === 'teren' && zaliczone < 1) return terenMozliwy(i) ? null : WKROTCE_PLOT;
   // z odczytem badań (gra bez badań go nie ma i zostaje przy dawnym „Wkrótce”) „Wkrótce” zaczyna się tam, gdzie kończą się
   // zdania „co dalej” (po dwóch pierwszych kamieniach)
   if (droga === 'technologia' && i.badania !== undefined)
