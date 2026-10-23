@@ -2072,6 +2072,8 @@ function odczytCelow(snap: SimSnapshot): OdczytCelow {
     words,
     wordsEn: wordsE,
     zaznaczony: snap.people.some((p) => selected.has(p.pawn)),
+    // okno mapy miasta: nie ma go z ?miasto=0 ani na osiedlu zapasowym, choć gov.miasto istnieje (wlaczMiasto niżej)
+    mapaMiasta: mapaMiasta !== null,
   };
 }
 /** Krok ścieżki na odczycie z tej chwili i jej widok: zaliczenia i przepadnięcia trafiają do stanu ścieżki, a ten do

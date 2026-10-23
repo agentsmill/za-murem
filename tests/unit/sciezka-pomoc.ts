@@ -127,6 +127,8 @@ export interface OpcjeOdczytu {
   zaznaczony?: boolean;
   words?: Words;
   wordsEn?: WordsEn;
+  /** gra ma okno mapy miasta (`OdczytCelow.mapaMiasta`); bez pola, jak w większości testów, decyduje `gov.miasto` */
+  mapaMiasta?: boolean;
 }
 
 /** Odczyt gry dla ścieżki ze stanu symulacji, świata i zarządu (albo jego braku): nowa migawka za każdym razem (odczyt nie
@@ -142,6 +144,7 @@ export function odczytZ(st: SimState, w: World, gov: GovState | null, o: OpcjeOd
     words: o.words ?? wordsOfWorld(w),
     wordsEn: o.wordsEn ?? wordsEnOfWorld(w),
     ...(o.zaznaczony !== undefined ? { zaznaczony: o.zaznaczony } : {}),
+    ...(o.mapaMiasta !== undefined ? { mapaMiasta: o.mapaMiasta } : {}),
   };
 }
 

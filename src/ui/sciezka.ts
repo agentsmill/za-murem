@@ -228,6 +228,10 @@ export interface OdczytCelow {
   /** słowa miejsca po polsku i po angielsku (w domu komitet, furtka, dom) */
   words: Words;
   wordsEn: WordsEn;
+  /** gra ma okno mapy miasta (`mapaMiasta` w main.ts jest różne od null). Nie ma go z `?miasto=0` ani na osiedlu zapasowym
+      bez położenia, choć stan miasta w zarządzie (`gov.miasto`) istnieje; cele, które potrzebują mapy, wtedy nie istnieją.
+      Bez pola (testy) o mapie decyduje `gov.miasto`. */
+  mapaMiasta?: boolean;
   /** ktoś z zarządu jest zaznaczony w interfejsie; zaznaczenie dociera do symulacji dopiero z następnym krokiem (na pauzie
       wcale), a krok samouczka „zaznacz” ma być widać od razu */
   zaznaczony?: boolean;

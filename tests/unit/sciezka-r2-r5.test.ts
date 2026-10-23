@@ -1017,6 +1017,49 @@ describe.each([
   });
 });
 
+describe('R5 a okno mapy miasta w grze (flaga w odczycie)', () => {
+  it('bez okna mapy (?miasto=0, osiedle zapasowe bez położenia) nie ma wyprawy ani łupu, choć `gov.miasto` istnieje', () => {
+    const g = poPierwszymRaporcie('przymorze', 'zwykly');
+    wlaczMiasto(g.gov);
+    const bez = { mapaMiasta: false };
+    otworz(g, 'r5', bez);
+    expect(cele(g, bez).map((c) => c.key)).toEqual(['ogrodek']);
+    // z oknem mapy trzy cele, a bez flagi (testy) decyduje `gov.miasto`
+    expect(cele(g, { mapaMiasta: true }).map((c) => c.key)).toEqual(['wyprawa', 'lup', 'ogrodek']);
+    expect(cele(g).map((c) => c.key)).toEqual(['wyprawa', 'lup', 'ogrodek']);
+    // flaga wygrywa z `gov.miasto` także w drugą stronę: okno mapy bez stanu miasta w zarządzie to wciąż trzy cele
+    const h = poPierwszymRaporcie('przymorze', 'zwykly');
+    expect(h.gov.miasto).toBeUndefined();
+    otworz(h, 'r5', { mapaMiasta: true });
+    expect(cele(h, { mapaMiasta: true }).map((c) => c.key)).toEqual(['wyprawa', 'lup', 'ogrodek']);
+  });
+
+  it('R5 bez okna mapy kończy się samym ogródkiem: wyprawa i łup nie blokują rozdziału', () => {
+    const g = poPierwszymRaporcie('przymorze', 'zwykly');
+    wlaczMiasto(g.gov);
+    const bez = { mapaMiasta: false };
+    otworz(g, 'r5', bez);
+    expect(g.sciezka.rozdzial).toBe('r5');
+    const { st, w } = g.sim;
+    const a = allowedAnchors(st, w, 'ogrodek', 0)[0];
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'ogrodek',
+      x: a % w.size,
+      y: Math.floor(a / w.size),
+      w: 3,
+      h: 2,
+      rot: 0,
+      n: 1,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    expect(krok(g, bez).rozdzial).toBe('koniec');
+    expect(zrobione(g, 'r5')).toEqual(['r5.ogrodek']);
+  });
+});
+
 describe.each(KOMBINACJE)('R5 ogrodek: %s %s', (key, mode) => {
   it('fałsz bez ogródka, plan nie wystarcza, gotowy ogródek zalicza', () => {
     const g = poPierwszymRaporcie(key, mode);

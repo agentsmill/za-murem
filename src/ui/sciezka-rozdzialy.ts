@@ -19,8 +19,9 @@
    (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu); wariant „ludzie” w bloku
    z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich
    budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu. R5 „Jedzenie” uczy mapy
-   miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu; oba cele tylko w grze z mapą miasta,
-   `gov.miasto`, bo z `?miasto=0` przycisku mapy nie ma) i ogródka. Rozdziały R2–R5 nie mają terminów: nic z nich nie
+   miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu; oba cele tylko w grze z oknem mapy
+   miasta, które gra zgłasza flagą `OdczytCelow.mapaMiasta`: z `?miasto=0` i na osiedlu zapasowym bez położenia przycisku
+   mapy nie ma, choć `gov.miasto` istnieje; bez flagi, w testach, decyduje `gov.miasto`) i ogródka. Rozdziały R2–R5 nie mają terminów: nic z nich nie
    przepada. R3 (praca ludzi) i R6–R8 dochodzą w kolejnych zadaniach planu, więc po R2 otwiera się R4.
 
    Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
@@ -508,8 +509,9 @@ const R4: DefRozdzialu = {
 
 /* ---------------------------------------------------------------- R5. Jedzenie */
 
-/** gra ma mapę miasta (`gov.miasto`, opcja `miasto`; z `?miasto=0` przycisku mapy nie ma, więc cele z mapy nie wchodzą do listy) */
-const zMapaMiasta = (o: OdczytCelow): boolean => !!o.gov?.miasto;
+/** Gra ma okno mapy miasta, więc cele z mapy mają sens. Gra mówi to flagą `mapaMiasta` w odczycie (z `?miasto=0` i na osiedlu
+    zapasowym bez położenia przycisku mapy nie ma, choć `gov.miasto` istnieje); bez flagi (testy) decyduje `gov.miasto`. */
+const zMapaMiasta = (o: OdczytCelow): boolean => o.mapaMiasta ?? !!o.gov?.miasto;
 
 /** „Budowa” albo, na dotyku, „Przycisk Budowa u góry” (jak w celu obwodu) */
 const budowaZakladka = (touch: boolean): string =>
