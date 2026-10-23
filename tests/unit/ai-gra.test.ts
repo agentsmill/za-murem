@@ -1,7 +1,8 @@
 /* Gra prowadzona przez decydenta (src/ai/gra.ts) i silnik podstawowy (src/ai/silnik.ts), etap 1 osady AI
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje siedmiu rzeczy:
    - równoważności: silnik podstawowy w pętli gry daje te same skróty co `playWithGov(..., 'zawsze-warta', ...)`,
-     także z okolicą miasta, obcymi i drogami do zwycięstwa;
+     także z okolicą miasta, obcymi i drogami do zwycięstwa, a na Lanciego (ziarno 14) przez 10 dni, czyli także po
+     pierwszym przydziale warty na karcie nocy (8. dzień), którego krótkie przebiegi nie dosięgają;
    - determinizmu: dwie gry w jednym procesie przeplatane nierówno, zapis i wczytanie w połowie (także w środku
      sekundy) i odtworzenie ruchów rąk z dziennika na świeżej grze dają ten sam przebieg;
    - rąk gry: każde działanie decydenta idzie przez `Rece` i do dziennika, wyprawa dzienna wychodzi przez `wyslij`;
@@ -37,6 +38,7 @@ import { QUIET } from '../../src/gov/wspolne.ts';
 import { pending } from '../../src/gov/zarzad.ts';
 import { wygrajDroge } from '../../src/gov/zwyciestwo.ts';
 import { hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { przygotujGre } from '../../tools/bot-osada.ts';
 import { playWithGov } from './gov-play.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
@@ -53,6 +55,9 @@ vi.mock('../../src/gov/zarzad.ts', async (importOriginal) => {
 });
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
+const demoLanciego = JSON.parse(
+  fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/lanciego.json'), 'utf8'),
+);
 
 /** sekundy przy ekranie (przy 1× tick / 20) */
 const sekunda = (g: GraAi): number => Math.floor(g.sim.st.tick / TICKS_PER_SECOND);
@@ -164,6 +169,55 @@ describe('równoważność z playWithGov', () => {
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   });
+
+  it('Lanciego, ziarno 14, 10 dni z obcymi i okolicą: ten sam skrót co playWithGov, także po przydziale warty na karcie', () => {
+    // tu pierwsza karta nocy bez warty z propozycji zarządu wypada 8. dnia (sekunda przy ekranie 6920): wtedy wchodzi
+    // gałąź przydziału warty (zdjęcie chorego z warty, najbardziej wypoczęty na pierwszy posterunek), której 2–3-dniowe
+    // przebiegi nie dosięgają
+    const w = demoWorld('lanciego');
+    const okolica = okolicaZGeo(demoLanciego.geo);
+    const g = nowaGraAi(w, 14, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
+    grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
+    const wzor = playWithGov(w, 14, 'zawsze-warta', 10, 4, {
+      obcy: true,
+      miasto: { okolica },
+      zwyciestwo: { ludnosc2021: 900 },
+    });
+    // gałąź jest naprawdę w przebiegu: obie pętle przydzieliły wartę na karcie nocy po 7. dniu
+    const wartaZKarty = g.dziennik!.find((m) => m.t === 'noc' && m.klucz.startsWith('warta:'));
+    expect(wartaZKarty).toBeDefined();
+    expect(wartaZKarty!.s * TICKS_PER_SECOND).toBeGreaterThan(7 * TICKS_PER_DAY);
+    expect(wzor.decisions.some((d) => d.kind === 'przydział' && d.text.includes(': warta '))).toBe(true);
+    expect(g.sim.st.tick).toBe(10 * TICKS_PER_DAY);
+    expect(g.sim.hash()).toBe(wzor.hash);
+    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
+  });
+
+  it('Lanciego, ziarno 14, 11 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
+    // z mieszkańcami z generatora świat i przebieg są inne: pierwszy przydział warty wypada w sekundzie 9800 (11. dzień)
+    const base = await przygotujGre('lanciego', 14, false);
+    const { w, opts } = base;
+    const g = nowaGraAi(w, 14, {
+      core: 4,
+      obcy: true,
+      mieszkancy: opts.mieszkancy,
+      okolica: opts.okolica,
+      ludnosc2021: opts.ludnosc2021,
+      dziennik: true,
+    });
+    grajDo(g, silnikPodstawowy, 11 * TICKS_PER_DAY);
+    const wzor = playWithGov(w, 14, 'zawsze-warta', 11, 4, {
+      obcy: true,
+      mieszkancy: opts.mieszkancy,
+      miasto: { okolica: opts.okolica! },
+      zwyciestwo: { ludnosc2021: opts.ludnosc2021 },
+    });
+    expect(g.dziennik!.some((m) => m.t === 'noc' && m.klucz.startsWith('warta:'))).toBe(true);
+    expect(wzor.decisions.some((d) => d.kind === 'przydział' && d.text.includes(': warta '))).toBe(true);
+    expect(g.sim.st.tick).toBe(11 * TICKS_PER_DAY);
+    expect(g.sim.hash()).toBe(wzor.hash);
+    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
+  }, 120_000);
 
   it('start woła się raz, przed pierwszym krokiem, a tura co sekundę przy ekranie', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
