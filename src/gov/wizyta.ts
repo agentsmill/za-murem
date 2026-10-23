@@ -258,7 +258,8 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
     const z = zapamietaj(
       st,
       {
-        id: a.gosc.wraca ?? o.id,
+        // powracający mówiący to znajomy z wpisu; gdyby zginął, a zostało rodzeństwo, to jego decyzja jest nową osobą
+        id: k === 0 && a.gosc.wraca ? a.gosc.wraca : o.id,
         osoba: { first: o.first, name: o.name, f: o.f, age: o.age },
         prof: o.prof,
         look: lookOsoby(a, k),
@@ -492,7 +493,8 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
     najwyżej jeden powrót na 4 doby). null (nic nie zmienione): gra bez obcych albo nikt nie może wrócić. Losuje tylko z ziarna
     zarządu; karty nie pokazuje, ta przychodzi pod bramą jak dla każdego gościa. */
 export function planujPowrot(st: GovState, i: GovInput, fx: GovEffects): Gosc | null {
-  if (!i.goscie) return null;
+  // gra bez obcych albo trwa inna wizyta (jedna naraz): nic się nie zmienia
+  if (!i.goscie || (st.goscie?.aktywny && !st.goscie.aktywny.koniec)) return null;
   const mode = st.mode ?? 'zwykly';
   const z = doPowrotu(st, i.day, mode, obecniWOsiedlu(i));
   if (!z) return null;

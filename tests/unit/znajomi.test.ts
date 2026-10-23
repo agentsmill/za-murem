@@ -681,6 +681,14 @@ describe('powrót znajomego', () => {
     expect(p.gov.goscie!.aktywny!.gosc.wraca).toBe('g0p0');
     expect(p.gov.goscie!.aktywny!.looks).toEqual(fx.gosc!.looks);
     expect(p.gov.znajomi![0].wrocil).toBe(5);
+    // inna wizyta w toku: planowanie powrotu niczego nie nadpisuje
+    const wToku = stan(null, { dzien: 9 });
+    wToku.gov.znajomi = [zn({ ostatnio: 3 })];
+    wToku.gov.goscie = { n: 1, czytane: 0, aktywny: p.gov.goscie!.aktywny };
+    const fxToku = emptyEffects();
+    expect(planujPowrot(wToku.gov, wToku.i, fxToku)).toBeNull();
+    expect(fxToku.gosc).toBeUndefined();
+    expect(wToku.gov.goscie.n).toBe(1);
     // wizyta w toku: nikt więcej nie wraca; po jej końcu dopiero po czterech dobach
     expect(def('powrot').w(makeHost(p.gov, p.i, emptyEffects()))).toBe(0);
     delete p.gov.goscie!.aktywny;
@@ -1222,6 +1230,19 @@ describe('powrót na prawdziwej symulacji', () => {
     // zarząd zaznaczył powrót i nie wyśle drugiego przez cztery doby
     expect(z.wrocil).toBeLessThanOrEqual(i.day);
     expect(doPowrotu(gov, z.wrocil! + POWROT_ODSTEP_DNI - 1, 'zwykly')).toBeNull();
+    // determinizm: ta sama gra drugi raz daje ten sam stan zarządu i symulacji w chwili powrotu, a zapis i wczytanie
+    // zarządu przy otwartej karcie nie zmieniają ani karty, ani skutku wyboru
+    const drugi = (await graj(31, 9))!;
+    expect(saveGov(drugi.gov)).toBe(saveGov(gov));
+    expect(drugi.sim.hash()).toBe(wynik!.sim.hash());
+    const wczytany = loadGov(saveGov(gov));
+    expect(eventView(wczytany, i)).toEqual(eventView(gov, i));
+    const kk = p.choices.findIndex((c) => c.ok && c.label.pl.startsWith('Wpuścić na noc'));
+    if (kk >= 0) {
+      const fxA = chooseEvent(structuredClone(gov), i, kk);
+      const fxB = chooseEvent(wczytany, i, kk);
+      expect(fxB).toEqual(fxA);
+    }
     // decyzja: wpuszczony na noc, wpis rośnie (wizyty 2), a zmiana nie dokłada drugiego znajomego
     const k = p.choices.findIndex((c) => c.ok && c.label.pl.startsWith('Wpuścić na noc'));
     if (k >= 0) {
