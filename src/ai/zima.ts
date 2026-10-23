@@ -63,7 +63,9 @@ const ZDROWIE_DYZURU = 40;
 const ROZBIORKA_OD_GODZINY = 7;
 const ROZBIORKA_DO_GODZINY = 20;
 /** dyżur przy kozie jest potrzebny, gdy na dworze w chwili karty jest poniżej tylu °C (ciepły jesienny wieczór go nie
-    wymaga, a kosztuje komuś noc snu) */
+    wymaga, a kosztuje komuś noc snu). Pomiar (Przymorze, ziarna 11–30, średni dzień końca gry): dyżur w każdą noc z drewnem
+    18,35, od 8°C 19,15; progi od −3 do 8°C dają 18,6–19,45, czyli w granicach szumu, więc próg nie jest dostrojony
+    do żadnego ziarna */
 const ZIMNO_DYZURU = 8;
 
 /** Drewno na noc tak jak na karcie nocy (`nightWood` w src/gov/noc.ts): WOOD_PER_HOUR × 10 godzin × liczba palenisk
