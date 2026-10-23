@@ -51,6 +51,10 @@
    pionki powstają i ruszają od następnego kroku, a zapis niczego nie gubi. Plan idzie jako kopia osób, bo kolejka jest
    częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
 
+   Pies i kot (src/sim/zwierzeta.ts): `GovInput.zwierzeta` to wpis symulacji o zwierzętach (`SimState.zwierzeta`: pies żyje albo
+   zginął, kot żyje), a `fx.zwierze` idzie do kolejki poleceń jako 'zwierze'. Zwierząt nie liczy żaden odczyt ludzi: ani `people`,
+   `lokatorzy`, `residents`, `ludnosc`, ani `dead`.
+
    Zmarli (`dead`, `zmarli`): zarząd i mieszkańcy po kolei; do karty „Pogrzeb” każdy wpis niesie płeć `f` (gdy zmarły miał
    osobę w `st.people`), minutę gry zgonu `min` i w trybie zombie los zwłok `cialo` (leżą, dobite, nie ma ich), liczone ze
    zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
@@ -358,6 +362,8 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
     ...(st.obcy?.werbunek ? { werbunek: zwerbowani(st) } : {}),
     ...(st.obcy ? { goscie: goscieOdczyt(st, w) } : {}),
+    // pies i kot: wpis o zwierzęciu, które symulacja już wystawiła (albo zabiła); bez wpisu zarząd z flagą dog albo cat prosi o nie
+    ...(st.zwierzeta ? { zwierzeta: { ...st.zwierzeta } } : {}),
     dead: zmarli(st, zombie),
     // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
     // sama liczba, którą czyta EventHost.pop(); kto wychodzi bramą, już się nie liczy), a przyłączone budynki to te, które
@@ -561,6 +567,8 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   // goście z klocków: plan wizyty i rozkazy po kolei, przez kolejkę poleceń (pionki powstają i ruszają od następnego kroku)
   if (fx.gosc) cmd({ t: 'gosc', ids: [], plan: kopiaPlanu(fx.gosc) });
   for (const r of fx.goscRozkaz ?? []) cmd({ t: 'goscrozkaz', ids: [], id: r.id, co: r.co });
+  // pies i kot z flag zarządu: pionek powstaje od następnego kroku (idempotentnie, symulacja pomija zwierzę z wpisem)
+  for (const z of fx.zwierze ?? []) cmd({ t: 'zwierze', ids: [], co: z });
   // hałas z zarządu (pościg za gościem w trybie zombie): jak każdy hałas, słychać go przez NOISE_TICKS
   if (fx.halas) {
     const noise = (st.noise ??= []);

@@ -49,13 +49,17 @@
    zlapany, końcowe), a pionki chodzą w `goscTick`. Rozkazy `fx.goscRozkaz` (polecenie 'goscrozkaz') odsyłają grupę,
    wpuszczają ją na noc (ognisko, sen, rano wyjście bramą), przyjmują jako mieszkańców (`zostan`) albo z mówiącym w zarządzie
    (`zarzad`, `awansuj`); kłamca o 2:00 bierze jedzenie, a czuwająca osoba zarządu go łapie. Goście są ofiarami szwendaczy
-   (`isPrey`), w trybie zombie szwendacz w pobliżu płoszy grupę pod bramą. Nic w tym kodzie nie losuje ze `st.rng`. */
+   (`isPrey`), w trybie zombie szwendacz w pobliżu płoszy grupę pod bramą. Nic w tym kodzie nie losuje ze `st.rng`.
+   Pies i kot (src/sim/zwierzeta.ts, rodzaje `pies` i `kot`, praca 'zwierze'): `fx.zwierze` z zarządu wystawia je poleceniem
+   'zwierze' (najwyżej raz, wpis w `SimState.zwierzeta`), `zwierzeTick` prowadzi ich dzień i noc (pies przy bramie od strony
+   podwórka, kot przy kozie zarządu), `psiSzczek` szczeka na wroga. Pies jest ofiarą szwendaczy (`isPrey`) i ginie bez
+   zwłok i bez wpisu zmarłych, kot nie ginie. Nie mają potrzeb ani osoby, więc żadne zliczanie ludzi ich nie widzi. */
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
-import type { GoscRozkaz, PlanGoscia } from '../gov/typy.ts';
+import type { GoscRozkaz, PlanGoscia, ZwierzetaStan } from '../gov/typy.ts';
 import { IN, type Interior } from '../world/interior.ts';
 import type { Tree, World } from '../world/world.ts';
 import type { Wreck } from '../world/wrecks.ts';
@@ -383,6 +387,18 @@ import {
   ZOMBIE_HP,
   ZOMBIE_SPEED,
 } from './zombie.ts';
+import {
+  jestZwierzeciem,
+  KOT_TEMPO,
+  PIES_HP,
+  PIES_OBSZAR,
+  PIES_TEMPO,
+  type RodzajZwierzecia,
+  SZCZEK_ALARM,
+  SZCZEK_CD,
+  SZCZEK_HALAS,
+  SZCZEK_ZASIEG,
+} from './zwierzeta.ts';
 
 /** kafelków na tick: 4 kafelki na sekundę przy 1× */
 export const WALK_SPEED = 4 / TICKS_PER_SECOND;
@@ -722,7 +738,11 @@ export type JobKind =
       tile: miejsce, do którego idzie.
       Wychodzi pracą 'odejscie' (z podwórka: faza 0 do wyjścia za bramą; z ulicy: faza 1 do kafelka, z którego przyszedł,
       what 'ucieczka' przy spłoszeniu). */
-  | 'gosc';
+  | 'gosc'
+  /** pies i kot (src/sim/zwierzeta.ts): `what` to 'wchodzi' (pies zza bramy), 'wloczy' (idzie gdzieś na swoim terenie),
+      'idzie' (na legowisko), 'stoi' i 'lezy'; phase 1: w drodze (po dojściu zaczyna się postój), `tile` zawsze −1, żeby
+      nie rezerwował kafelka innym; `wait` pionka to tick następnej decyzji */
+  | 'zwierze';
 
 /** zajęcia mieszkańców (praca 'stay', target): w domu, na podwórku, przy ognisku */
 export const STAY_HOME = 0;
@@ -787,7 +807,7 @@ export interface Job {
     szwendacze, lokatorzy sąsiednich budynków (M2 fala 2: pionki tylko w trakcie spotkania i po nim, dopóki zarząd
     jest w ich budynku), handlarz pod bramą, wędrowcy, obce ekipy i ludzie handlarza (zbir) oraz goście z klocków
     zarządu (gosc, src/sim/gosc.ts: grupa pionków z osobami w state.people, idzie ulicą pod bramę i czeka na decyzję;
-    po przyjęciu zmienia rodzaj na resident albo core) */
+    po przyjęciu zmienia rodzaj na resident albo core), pies i kot (src/sim/zwierzeta.ts: bez osoby i potrzeb, nie ludzie) */
 export type PawnKind =
   | 'core'
   | 'crowd'
@@ -799,7 +819,9 @@ export type PawnKind =
   | 'wedrowiec'
   | 'obcy'
   | 'zbir'
-  | 'gosc';
+  | 'gosc'
+  | 'pies'
+  | 'kot';
 
 /** wróg: szabrownik, szwendacz albo wrogi człowiek (napadnięty handlarz, ludzie handlarza; do ataku z menu i obrony) */
 export const isEnemy = (p: Pick<Pawn, 'kind' | 'wrogi'>): boolean =>
@@ -1025,7 +1047,9 @@ export type Command =
   | { t: 'prog'; ids: number[]; co: keyof Progi; n: number }
   /** goście z klocków (ids puste): plan wizyty z zarządu (wystawia grupę pionków) i rozkaz dla grupy po id gościa */
   | { t: 'gosc'; ids: number[]; plan: PlanGoscia }
-  | { t: 'goscrozkaz'; ids: number[]; id: string; co: GoscRozkaz };
+  | { t: 'goscrozkaz'; ids: number[]; id: string; co: GoscRozkaz }
+  /** pies albo kot z zarządu (ids puste): wystawić pionek, jeśli symulacja nie ma o nim wpisu w `SimState.zwierzeta` */
+  | { t: 'zwierze'; ids: number[]; co: RodzajZwierzecia };
 
 /** polecenia zmieniające `st.praca` */
 type PolecenieUstawien = Extract<Command, { t: 'prio' | 'stale' | 'zasiatke' | 'prog' }>;
@@ -1206,6 +1230,15 @@ export interface SimState {
       zarząd czyta ją po kolei (zakończone wizyty zostają). Pola nie ma, dopóki zarząd nie wyśle pierwszego planu, więc
       gra bez gości ma ten sam skrót stanu. */
   goscie?: GoscSim[];
+  /** pies i kot (src/sim/zwierzeta.ts): `pies` żyje albo zginął, `kot` żyje; wpis powstaje przy wystawieniu zwierzęcia
+      (polecenie 'zwierze'), więc gra bez przygarniętych zwierząt nie ma pola i ma ten sam skrót stanu. Zarząd czyta je w
+      `GovInput.zwierzeta` i na tej podstawie prosi o wystawienie (`GovEffects.zwierze`). */
+  zwierzeta?: ZwierzetaStan;
+  /** szczekanie psa: `tick` ostatniego szczeknięcia (napis nad psem widać krótko, SZCZEK_NAPIS, przerwa SZCZEK_CD), `wrog`:
+      przy ostatnim szczeknięciu był wróg w zasięgu, a przy późniejszym sprawdzeniu bez wroga alarm się kończy (false),
+      `halas`: tick ostatniego hałasu w trybie zombie (nowy hałas przy nowym alarmie albo po SZCZEK_ALARM). Pola nie ma,
+      dopóki pies nie szczeknął. */
+  szczek?: { tick: number; wrog?: boolean; halas?: number };
 }
 
 /** M2 fala 2, etap 3: plan wspólnego płotu (jeden naraz): budynek, materiały potrzebne i doniesione, praca w tickach
@@ -2581,6 +2614,13 @@ export class Sim {
   /** kafelki podwórka przy bramie, na których stoi warta (najbliżej środka bramy najpierw); to i maski siatki niżej
       liczy przeliczSiatke (także po wspólnym płocie) */
   private gateStand: number[] = [];
+  /** kafelki podwórka, po których za dnia snuje się pies: najwyżej PIES_OBSZAR m od środka bramy, wolne ze świata; liczone
+      razem z `gateStand`, ze świata, nie ze stanu */
+  private psiObszar: number[] = [];
+  /** kandydaci na legowisko psa nocą: kafelki podwórka co najmniej dwa kroki od bramy, od najbliższych jej środka (jeden krok
+      od bramy stoi warta i sięga skrzydło bramy, które zasłoniłoby leżącego psa); `psiLegowisko` bierze pierwszy, który
+      teraz nie jest zablokowany */
+  private psiLegowiska: number[] = [];
   /** kafelek za bramą, na którym znika i pojawia się wyprawa (−1: świat bez siatki) */
   exitTile = -1;
   /** kafelek przed drzwiami siedziby, do którego wraca wyprawa */
@@ -2704,6 +2744,11 @@ export class Sim {
     this.gateStand = (shape?.yard ?? [])
       .filter((i) => !still[i] && gate.some((g) => cheb(g, i) <= 1))
       .sort((a, b) => dg(a) - dg(b) || a - b);
+    this.psiObszar = (shape?.yard ?? []).filter((i) => !still[i] && dg(i) <= PIES_OBSZAR * PIES_OBSZAR);
+    this.psiLegowiska = (shape?.yard ?? [])
+      .filter((i) => !still[i] && !gate.some((g) => cheb(g, i) < 2))
+      .sort((a, b) => dg(a) - dg(b) || a - b)
+      .slice(0, 48);
     this.exitTile = exitOf(w);
     this.fenceMask = new Uint8Array(size * size);
     for (const t of shape?.tiles ?? []) this.fenceMask[t] = 1;
@@ -2807,6 +2852,9 @@ export class Sim {
   /** przechodniość i obszary dla danego rodzaju pionka */
   private layer(kind: PawnKind): { blocked: Uint8Array; reg: Int32Array } {
     if (kind === 'core') return { blocked: this.coreBlocked, reg: this.reg };
+    // pies i kot chodzą jak zarząd: brama jest dla nich otwarta zawsze (pies przeciska się pod zamkniętą), a reszta siatki
+    // i dziury zamknięte
+    if (jestZwierzeciem(kind)) return { blocked: this.coreBlocked, reg: this.reg };
     // handlarz, wędrowcy, obce ekipy i goście chodzą tylko po stronie ulicy, ludzie handlarza jak szabrownicy
     if (kind === 'zbir') return this.lay.szabrownik;
     return kind === 'handlarz' || kind === 'wedrowiec' || kind === 'obcy' || kind === 'gosc'
@@ -2951,6 +2999,11 @@ export class Sim {
         this.sasiadTick(p);
         continue;
       }
+      // pies i kot: własny krok, bez potrzeb, poleceń i walki (src/sim/zwierzeta.ts)
+      if (jestZwierzeciem(p.kind)) {
+        this.zwierzeTick(p);
+        continue;
+      }
       if (p.wrogi) {
         if (this.hostileTick(p)) gone = true;
         continue;
@@ -3048,6 +3101,8 @@ export class Sim {
     // goście idą zmęczeni jak wędrowcy, a spłoszeni uciekają
     if (p.kind === 'gosc') return p.job?.what === 'ucieczka' ? FLEE_SPEED : WANDER_SPEED;
     if (p.kind === 'zombie') return p.job?.phase === 3 ? CHASE_SPEED : ZOMBIE_SPEED;
+    if (p.kind === 'pies') return PIES_TEMPO;
+    if (p.kind === 'kot') return KOT_TEMPO;
     return 1;
   }
 
@@ -3098,6 +3153,10 @@ export class Sim {
     }
     if (c.t === 'goscrozkaz') {
       this.goscRozkaz(c.id, c.co);
+      return;
+    }
+    if (c.t === 'zwierze') {
+      this.wystawZwierze(c.co);
       return;
     }
     if (c.t === 'gate') {
@@ -4596,6 +4655,7 @@ export class Sim {
       case 'scavenge':
       case 'zemsta':
       case 'gosc':
+      case 'zwierze':
         return false;
       case 'talk':
         return this.talkWork(p, j, at);
@@ -7567,6 +7627,177 @@ export class Sim {
     return true;
   }
 
+  /* ---------- pies i kot (src/sim/zwierzeta.ts) ---------- */
+
+  /** Pies albo kot z polecenia 'zwierze': wystawiony najwyżej raz (wpis w `st.zwierzeta` jest od razu, więc drugie
+      polecenie, stary zapis z flagą zarządu i zmarły pies nie dają drugiego zwierzęcia). Pies zaczyna za siatką na kafelku
+      na zewnątrz bramy (`outsideOf`, jak goście) i dopiero wchodzi, kot staje przed kozą zarządu (a bez niej na
+      pierwszym kafelku mieszkania). Świat bez bramy albo bez mieszkania zarządu zostawia wpis bez pionka. */
+  private wystawZwierze(co: RodzajZwierzecia): void {
+    const st = this.st;
+    const rec = (st.zwierzeta ??= {});
+    if (rec[co === 'pies' ? 'pies' : 'kot'] !== undefined) return;
+    if (co === 'pies') rec.pies = 'zyje';
+    else rec.kot = 'zyje';
+    const at = co === 'pies' ? this.outsideOf(gateTiles(this.w))[0] : this.kotLegowisko();
+    if (at === undefined || at < 0) return;
+    const p = newPawn(st, this.w, co, -1, at, at, 0);
+    if (co === 'pies') p.hp = PIES_HP;
+    p.job = { ...this.newJob('zwierze', -1, -1, false), what: 'wchodzi' };
+    // decyzja od razu w pierwszym kroku pionka: dokąd (dzień: gdzieś na podwórku, noc: na legowisko)
+    p.wait = st.tick;
+    st.pawns.push(p);
+  }
+
+  /** Krok psa albo kota (`st.rng` tylko do losowania celu spaceru i długości postoju): idzie swoją drogą; po dojściu stoi (spacer) albo
+      leży (legowisko); gdy postój minie, decyduje od nowa: noc to legowisko, dzień spacer po swoim terenie (pies: podwórko
+      do PIES_OBSZAR m od bramy, kot: mieszkanie zarządu). Co sekundę pies sprawdza, czy ma na kogo szczekać. */
+  private zwierzeTick(p: Pawn): void {
+    const st = this.st;
+    const tick = st.tick;
+    const j = (p.job ??= this.newJob('zwierze', -1, -1, false));
+    const pies = p.kind === 'pies';
+    if (pies && (tick + p.id) % THINK_EVERY === 0) this.psiSzczek(p);
+    if (p.pi < p.path.length) {
+      this.walk(p);
+      return;
+    }
+    const tu = this.tileOf(p);
+    // dotarł: stoi, a na legowisku leży; postój do następnej decyzji
+    if (j.phase === 1) {
+      j.phase = 0;
+      const lezy = j.what === 'idzie';
+      j.what = lezy ? 'lezy' : 'stoi';
+      p.wait = tick + (lezy ? THINK_EVERY : (pies ? 60 : 200) + Math.floor(nextRandom(st.rng) * (pies ? 240 : 600)));
+      return;
+    }
+    if (tick < p.wait) return;
+    if (this.night()) {
+      const spot = pies ? this.psiLegowisko(tu) : this.kotLegowisko();
+      if (spot >= 0 && tu !== spot) {
+        if (this.go(p, spot)) {
+          j.what = 'idzie';
+          j.phase = 1;
+        } else p.wait = tick + THINK_EVERY;
+        return;
+      }
+      j.what = 'lezy';
+      p.wait = tick + THINK_EVERY;
+      return;
+    }
+    // dzień: wstaje i idzie gdzieś na swoim terenie (cel z `st.rng`, najwyżej kilka prób, żeby nie trafić w przeszkodę)
+    if (j.what === 'lezy') j.what = 'stoi';
+    const cel = pies ? this.psiSpacer() : this.kotSpacer();
+    if (cel >= 0 && cel !== tu && this.go(p, cel)) {
+      j.what = 'wloczy';
+      j.phase = 1;
+    } else p.wait = tick + 3 * THINK_EVERY;
+  }
+
+  /** Legowisko psa, sprawdzane przy każdej decyzji (po ognisku, łacie albo zasiekach na kafelku pies nie tkwi w miejscu, bo
+      `go()` do zablokowanego kafelka zawodzi): pies leżący na kandydacie, który nadal jest wolny, zostaje; inaczej pierwszy
+      wolny kandydat bez rzeczy na kafelku (zapasy, drewno), a gdy wszystkie zajęte pierwszy nieblokujący, na końcu
+      pierwszy wolny kafelek przy bramie (−1: świat bez bramy). */
+  private psiLegowisko(tu: number): number {
+    if (this.psiLegowiska.includes(tu) && !this.coreBlocked[tu]) return tu;
+    const size = this.w.size;
+    let zajety = -1;
+    for (const i of this.psiLegowiska) {
+      if (this.coreBlocked[i]) continue;
+      if (!this.thingAt(i % size, Math.floor(i / size))) return i;
+      if (zajety < 0) zajety = i;
+    }
+    return zajety >= 0 ? zajety : (this.gateStand.find((i) => !this.coreBlocked[i]) ?? -1);
+  }
+
+  /** cel spaceru psa: losowy wolny kafelek podwórka do PIES_OBSZAR m od bramy, −1 bez takich */
+  private psiSpacer(): number {
+    return this.losowyWolny(this.psiObszar);
+  }
+
+  /** Legowisko kota: wolny kafelek (bez mebli i sterty zapasów, drewna itp.) tuż obok kozy zarządu (najbliżej kafelka przed
+      nią, bez niego, bo tam klęczy zarząd i zasłoniłby kota; bez takiego sam kafelek przed kozą), w tym samym pomieszczeniu; bez kozy pierwszy kafelek mieszkania
+      zarządu; −1 bez mieszkania. */
+  private kotLegowisko(): number {
+    const h = this.house;
+    if (!h) return -1;
+    const size = this.w.size;
+    const koza = this.koza();
+    if (!koza) return this.kotMieszkanie()[0] ?? -1;
+    const front = frontTile(koza, size);
+    const ok = front >= 0 && front < size * size && !this.coreBlocked[front];
+    const dFront = (i: number) =>
+      ((i % size) - (front % size)) ** 2 + (Math.floor(i / size) - Math.floor(front / size)) ** 2;
+    let best: number = -1;
+    if (ok)
+      for (let y: number = koza.y - 1; y <= koza.y + koza.h; y++)
+        for (let x: number = koza.x - 1; x <= koza.x + koza.w; x++) {
+          const i: number = y * size + x;
+          if (x < 0 || y < 0 || x >= size || y >= size || i === front || this.coreBlocked[i]) continue;
+          if (this.roomOf[i] !== this.roomOf[front] || this.thingAt(x, y)) continue;
+          if (best < 0 || dFront(i) < dFront(best) || (dFront(i) === dFront(best) && i < best)) best = i;
+        }
+    if (best >= 0) return best;
+    return ok ? front : nearestFree(this.coreBlocked, size, koza.y * size + koza.x);
+  }
+
+  /** cel spaceru kota: losowy wolny kafelek mieszkania zarządu, −1 bez takich */
+  private kotSpacer(): number {
+    return this.losowyWolny(this.kotMieszkanie());
+  }
+
+  /** przechodnie kafelki pomieszczeń mieszkania zarządu */
+  private kotMieszkanie(): number[] {
+    const h = this.house;
+    if (!h) return [];
+    const out: number[] = [];
+    for (const r of h.rooms) if (r.apt === h.home) out.push(...this.roomTiles[r.id]);
+    return out;
+  }
+
+  /** losowy kafelek z listy, który teraz nie jest zablokowany (ognisko, łata); do 6 losowań, −1 gdy nic z tego */
+  private losowyWolny(list: readonly number[]): number {
+    if (!list.length) return -1;
+    for (let k = 0; k < 6; k++) {
+      const i = list[Math.floor(nextRandom(this.st.rng) * list.length)];
+      if (!this.coreBlocked[i]) return i;
+    }
+    return -1;
+  }
+
+  /** Pies szczeka na wroga (szabrownik, szwendacz, wrogi człowiek; nie gość ani wędrowiec) w promieniu SZCZEK_ZASIEG m, nie
+      częściej niż co SZCZEK_CD ticków: `st.szczek` (napis nad psem), pies patrzy na wroga. W trybie zombie szczekanie jest
+      też hałasem SZCZEK_HALAS m, na który idą szwendacze, ale tylko gdy zaczyna nowy alarm: przy poprzednim sprawdzeniu
+      (poprzednim szczeknięciu albo sprawdzeniu bez wroga) nie było wroga w zasięgu, albo od ostatniego hałasu minęło
+      SZCZEK_ALARM; szwendacze stale stojący pod siatką przy bramie nie robią z psa stałego magnesu na stado. Liczone na
+      kwadratach odległości, bez Math.hypot. */
+  private psiSzczek(p: Pawn): void {
+    const st = this.st;
+    if (st.szczek && st.tick < st.szczek.tick + SZCZEK_CD) return;
+    const r2 = SZCZEK_ZASIEG * SZCZEK_ZASIEG;
+    let wrog: Pawn | undefined;
+    for (const q of st.pawns) {
+      if (!isEnemy(q) || q.away || this.graveyard.has(q.id)) continue;
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      if (dx * dx + dy * dy <= r2) {
+        wrog = q;
+        break;
+      }
+    }
+    if (!wrog) {
+      // sprawdzenie bez wroga kończy alarm: następny wróg w zasięgu zacznie nowy
+      if (st.szczek?.wrog) st.szczek.wrog = false;
+      return;
+    }
+    const przed = st.szczek;
+    const nowy = !przed?.wrog || st.tick >= (przed.halas ?? Number.NEGATIVE_INFINITY) + SZCZEK_ALARM;
+    const halas = nowy && modeOf(st) === 'zombie' ? st.tick : przed?.halas;
+    st.szczek = { tick: st.tick, wrog: true, ...(halas !== undefined ? { halas } : {}) };
+    this.face(p, wrog.x, wrog.y);
+    if (nowy && modeOf(st) === 'zombie') this.addNoise(p.x, p.y, SZCZEK_HALAS);
+  }
+
   /* ---------- goście z klocków (src/sim/gosc.ts) ---------- */
 
   /** Nowa wizyta z planu zarządu (polecenie 'gosc'): po jednym pionku na osobę, osoby trafiają do `st.people` z
@@ -9023,6 +9254,8 @@ export class Sim {
 
   /** obrażenia: ludzie z potrzebami tracą zdrowie, reszta życie; ranny szabrownik ucieka */
   private hurt(t: Pawn, dmg: number, by: Pawn | null): void {
+    // kot nie ginie: nic go nie rani
+    if (t.kind === 'kot') return;
     this.addFx('trafienie', t.x, t.y);
     if (t.needs) {
       t.needs.health = Math.max(0, t.needs.health - dmg);
@@ -9040,7 +9273,8 @@ export class Sim {
       boli wszystkich, zabicie człowieka boli tego, kto zabił. */
   private die(p: Pawn, cause: Dead['cause'], by: Pawn | null): void {
     const st = this.st;
-    if (this.graveyard.has(p.id)) return;
+    // kot nie ginie
+    if (p.kind === 'kot' || this.graveyard.has(p.id)) return;
     this.graveyard.add(p.id);
     const tick = st.tick;
     const x = Math.floor(p.x);
@@ -9048,6 +9282,13 @@ export class Sim {
     // na wyprawie: umiera poza mapą, bez zwłok i krwi przy bramie
     const away = p.away;
     this.release(p);
+    // pies: znika bez zwłok (więc nie wstanie), bez wpisu zmarłych, żałoby i liczników naszych zgonów; zostaje wpis w
+    // stanie, z którego zarząd dowie się o śmierci
+    if (p.kind === 'pies') {
+      (st.zwierzeta ??= {}).pies = 'zginal';
+      this.addFx('smierc', p.x, p.y);
+      return;
+    }
     if (p.kind === 'gosc') this.goscZginal(p);
     if (p.sack) this.dropSack(p);
     if (!away) {
@@ -9447,6 +9688,7 @@ export class Sim {
         q.kind === 'handlarz' ||
         q.kind === 'wedrowiec' ||
         q.kind === 'gosc' ||
+        q.kind === 'pies' ||
         q.kind === 'obcy') &&
       !q.away &&
       !this.graveyard.has(q.id) &&
@@ -9651,7 +9893,8 @@ export class Sim {
     this.addFx('ugryzienie', t.x, t.y, p.x, p.y);
     const facing = t.job?.t === 'fight' || (t.job?.t === 'guard' && t.job.phase === 1);
     if (nextRandom(st.rng) >= (facing ? BITE_HIT_FIGHTING : BITE_HIT)) return;
-    st.tally!.bites++;
+    // ugryzienia psa nie wchodzą do liczników ludzi (raport i boty trybu zombie liczą tylko ludzi)
+    if (t.kind !== 'pies') st.tally!.bites++;
     this.hurt(t, BITE_DMG, p);
     if (this.graveyard.has(t.id) || modeOf(st) !== 'zombie') return;
     if (nextRandom(st.rng) < BITE_INFECT) infect(st, t, nextRandom(st.rng) < LIMB);
@@ -10597,7 +10840,14 @@ export class Sim {
     const dark = daylight(this.st.tick) < 0.5 && !(inside && (this.light[r] ?? 0) >= 0.5) && !fire && !lit;
     let company = 0;
     for (const q of this.st.pawns)
-      if (q !== p && !q.away && q.kind !== 'szabrownik' && Math.hypot(q.x - p.x, q.y - p.y) <= 4) company++;
+      if (
+        q !== p &&
+        !q.away &&
+        q.kind !== 'szabrownik' &&
+        !jestZwierzeciem(q.kind) &&
+        Math.hypot(q.x - p.x, q.y - p.y) <= 4
+      )
+        company++;
     // obcych widać z dworu z daleka, z wnętrza tylko bliżej (przez okno); śpiący ich nie widzi
     // szwendaczy przy siatce bywa dużo: straszą najwyżej jak dwóch obcych
     let strangers = 0;

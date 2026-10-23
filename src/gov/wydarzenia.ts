@@ -401,7 +401,7 @@ export function makeHost(
     moodOf: (id, why, d, hours) => {
       fx.moods.push({ id, why, d, hours });
     },
-    flag: (k) => st.flags[k],
+    flag: (k) => !!st.flags[k],
     setFlag: (k) => {
       st.flags[k] = true;
     },

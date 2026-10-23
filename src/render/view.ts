@@ -11,7 +11,9 @@
    rysuje postać z animacji PixelLab (ludzieLayer.ts), gdy obsada ma daną pozę: inaczej kod. Leżącego pionka i zwłoki
    składa warstwa z klatki stania przodem (art/lezenie.ts). Zmianę leżenia na podłodze widok sam zamienia w przejście
    (przejscia.ts): kładzenie się i wstawanie grają raz z animacji PixelLab, a zwłoki członka zarządu, który zginął
-   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState.
+   podczas gry, upadają i zostają na ostatniej klatce upadku; stan tych przejść jest tylko tu, nie w SimState. Pies i kot
+   (src/sim/zwierzeta.ts) mają własny atlas rysowany kodem (art/zwierzeta.ts) i własną ścieżkę `rysujZwierze`, bez postaci z
+   PixelLab, broni i zaznaczenia; nad szczekającym psem napis „Hau!” rysuje zwierzetaLayer.ts.
    Kwadraty miasta obok domu (src/world/kwadraty.ts) dokłada dodajKwadrat: każdy ma własną scenę, kawałki w układzie
    miasta (kwadrat (sx, sy) zaczyna się w (sx·bok, sy·bok) pikseli), szwy z sąsiadami (szew.ts), drzewa i mgłę nad
    nieodkrytymi kwadratami (mglaLayer.ts). Tekstury kawałków mają budżety (chunks.ts, budzety): z bliska najwyżej kilkadziesiąt
@@ -29,6 +31,7 @@ import {
   type TextureSource,
   TextureStyle,
 } from 'pixi.js';
+import { tr } from '../core/jezyk.ts';
 import type { WeaponId } from '../sim/bron.ts';
 import { naObwodzie } from '../sim/budowle.ts';
 import { minutesAt, TICKS_PER_SECOND } from '../sim/clock.ts';
@@ -36,6 +39,7 @@ import { TRADER_HP, ZBIR_HP } from '../sim/handlarz.ts';
 import { NOISE_TICKS, type Pawn, type SimState, STRANGER_HP } from '../sim/sim.ts';
 import { WANDERER_HP } from '../sim/wedrowcy.ts';
 import { ZOMBIE_HP } from '../sim/zombie.ts';
+import { jestZwierzeciem, NAPIS_SZCZEKU, napisSzczekuWidac, PIES_HP, SZCZEK_NAPIS } from '../sim/zwierzeta.ts';
 import { czasPrzejscia } from './art/animacjePozy.ts';
 import { ANCHOR_Y, type ArmPose, CELL, makeWeaponAtlas, thrusts, weaponRect } from './art/bron.ts';
 import { korektaDloni } from './art/bronPixellab.ts';
@@ -67,6 +71,15 @@ import {
   stronaZPrzesuniecia,
   ZASIEG_DRZEW,
 } from './art/szew.ts';
+import {
+  animalFrameRect,
+  makeAnimalAtlas,
+  type RodzajZwierzat,
+  ZW_FH,
+  ZW_FW,
+  ZW_KOTWICA,
+  type ZwierzePoza,
+} from './art/zwierzeta.ts';
 import { mockWear, type WearMock } from './atrapy.ts';
 import { BuildLayer, type BuildPlan, type Placement } from './buildLayer.ts';
 import {
@@ -128,6 +141,7 @@ import { smokeSources } from './smoke.ts';
 import { SmokeLayer } from './smokeLayer.ts';
 import { TreeLayer } from './treeLayer.ts';
 import { fenceThings, mockWrecks } from './yard.ts';
+import { type NapisZwierzecia, ZwierzetaLayer } from './zwierzetaLayer.ts';
 
 const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 /** od tej ciemności zaznaczenie i droga rysują się nad mapą światła, a zaznaczeni dostają zarys */
@@ -226,6 +240,11 @@ export class GameView {
   /** atlas szwendaczy i nakładek broni z teksturami klatek */
   private zatlas: TextureSource | null = null;
   private zTex = new Map<number, Texture>();
+  /** atlas psa i kota (art/zwierzeta.ts) z teksturami klatek, bez ścieżki ludzi z PixelLab */
+  private zwatlas: TextureSource | null = null;
+  private zwTex = new Map<number, Texture>();
+  /** napis „Hau!” nad szczekającym psem: nad światem i nad mapą światła, bez ciemnienia nocą */
+  private readonly zwierzeta = new ZwierzetaLayer();
   private warms: TextureSource | null = null;
   private wTex = new Map<string, Texture>();
   /** broń w ręce (nakładka) i zwłoki, trupy na ziemi: po id pionka i id rzeczy */
@@ -374,6 +393,7 @@ export class GameView {
       this.xray,
       this.buildOverlay,
       this.smoke.container,
+      this.zwierzeta.container,
     );
     this.actors.sortableChildren = true;
     this.app.stage.addChild(this.root);
@@ -381,6 +401,7 @@ export class GameView {
     this.atlas = Texture.from(people).source;
     this.outline = Texture.from(outlineAtlas(people) as HTMLCanvasElement).source;
     this.zatlas = Texture.from(makeZombieAtlas() as HTMLCanvasElement).source;
+    this.zwatlas = Texture.from(makeAnimalAtlas() as HTMLCanvasElement).source;
     this.warms = Texture.from(makeWeaponAtlas() as HTMLCanvasElement).source;
     if (opts.workers !== false && workersAvailable())
       this.painter = new WorkerPainter(spawnChunkWorker, poolSize(navigator.hardwareConcurrency || 4, PHONE));
@@ -774,6 +795,59 @@ export class GameView {
     this.builds.setPlacement(p);
   }
 
+  /** Pies albo kot: klatka z atlasu zwierząt, pozycja i kolejność jak pionka, widoczność jak innych pionków (pod dachem
+      tylko w przekroju) i nocą pies jako ciemny zarys (strangerVisibility). Nad szczekającym psem napis „Hau!”. */
+  private rysujZwierze(
+    p: Pawn,
+    sp: Sprite,
+    x: number,
+    y: number,
+    pose: PoseView,
+    lights: readonly Light[],
+    time: number,
+    st: SimState,
+    napisy: NapisZwierzecia[],
+  ): void {
+    sp.texture = this.animalTexture(p.kind as RodzajZwierzat, pose.apose ?? 'chod', pose.dir, pose.frame);
+    sp.scale.x = 1;
+    sp.anchor.set(ZW_KOTWICA[0] / ZW_FW, ZW_KOTWICA[1] / ZW_FH);
+    sp.position.set(Math.round(x * TILE), Math.round(y * TILE));
+    sp.zIndex = pose.z ?? y;
+    sp.visible = this.wnetrza || !this.underRoof(x, y);
+    if (STRANGERS.has(p.kind)) {
+      const vis = strangerVisibility(this.darkness, lightAt(x, y - 0.5, lights, time, this.insideFn), p.kind);
+      sp.visible &&= vis > 0.08;
+      sp.alpha = Math.min(1, vis * 1.6);
+      const v = Math.min(1, vis * 1.4);
+      const c = Math.round(24 + 231 * v);
+      sp.tint = (c << 16) | (c << 8) | Math.min(255, c + 8);
+    }
+    if (p.kind === 'pies' && sp.visible && napisSzczekuWidac(st.szczek, st.tick)) {
+      const dawno = (st.tick - st.szczek!.tick) / SZCZEK_NAPIS;
+      napisy.push({
+        id: p.id,
+        x: x * TILE,
+        y: y * TILE - ZW_KOTWICA[1] + 4,
+        tekst: tr(NAPIS_SZCZEKU),
+        alpha: Math.min(1, 2.5 * (1 - dawno)),
+      });
+    }
+  }
+
+  /** klatka atlasu zwierząt: rodzaj, poza, kierunek, klatka; tekstury tworzone przy pierwszym użyciu */
+  private animalTexture(rodzaj: RodzajZwierzat, poza: ZwierzePoza, dir: number, f: number): Texture {
+    const k =
+      ((((rodzaj === 'pies' ? 0 : 1) * 3 + (poza === 'chod' ? 0 : poza === 'lez' ? 1 : 2)) * 4 + (dir & 3)) * 4 + f) |
+      0;
+    let tex = this.zwTex.get(k);
+    if (!tex) {
+      const [x, y, w, h] = animalFrameRect(rodzaj, poza, dir, f);
+      tex = new Texture({ source: this.zwatlas!, frame: new Rectangle(x, y, w, h) });
+      this.zwTex.set(k, tex);
+    }
+    return tex;
+  }
+
   /** uszkodzenia, plany i łóżka piętrowe z dwojgiem śpiących do póz prac M2 i snu (co klatkę) */
   private poseCtx(st: SimState): PoseCtx {
     let sleepers: Map<number, number> | null = null;
@@ -788,6 +862,7 @@ export class GameView {
       damage: (st as { damage?: readonly { kind: string }[] }).damage,
       builds: this.plans,
       bunkFull,
+      szczek: st.szczek?.tick,
     };
   }
 
@@ -1271,6 +1346,7 @@ export class GameView {
     this.marks.clear();
     const gameT = (st.tick + alpha) / TICKS_PER_SECOND;
     const ctx = this.poseCtx(st);
+    const napisy: NapisZwierzecia[] = [];
     // wersje kolorystyczne zarządu z jego składu (także ludzie na wyprawie), zanim ktokolwiek się narysuje
     this.ludzie?.dane.przypiszZarzad(st.pawns, st.people);
     for (const p of st.pawns) {
@@ -1288,6 +1364,11 @@ export class GameView {
       const y = pv ? pv[1] + (p.y - pv[1]) * alpha : p.y;
       const pose = poseOf(p, gameT, st.things, p.kind === 'core' && this.feed.feeding(p, st.tick), ctx);
       this.poses.set(p.id, pose);
+      // pies i kot: własny atlas i napis szczekania, poza ścieżką ludzi (PixelLab, broń, zarys za koroną, zaznaczenie)
+      if (jestZwierzeciem(p.kind)) {
+        this.rysujZwierze(p, sp, x, y, pose, lights, time, st, napisy);
+        continue;
+      }
       // zmiana leżenia na podłodze uruchamia kładzenie się albo wstawanie; ostatni kierunek i leżenie członka zarządu
       // zna widok, kiedy jego pionek zniknie, a zwłoki zaczną upadek
       this.przejscia.obserwuj(p.id, pose.lie?.kind ?? null, gameT, x, y, pose.dir);
@@ -1410,6 +1491,7 @@ export class GameView {
         this.weaponSprites.get(id)?.destroy();
         this.weaponSprites.delete(id);
       }
+    this.zwierzeta.update(napisy, z);
     this.drawCorpses(st, gameT);
     this.drawCombat(st);
     // dym z kozy (przez okno) i z ogniska, z czasu gry; widać go także przy dachu
@@ -1640,20 +1722,23 @@ export class GameView {
       const max =
         p.kind === 'zombie'
           ? ZOMBIE_HP
-          : p.kind === 'szabrownik'
-            ? STRANGER_HP
-            : p.kind === 'handlarz'
-              ? TRADER_HP
-              : p.kind === 'gosc'
-                ? goscMaxHp(p)
-                : p.kind === 'wedrowiec' || p.kind === 'obcy'
-                  ? WANDERER_HP
-                  : p.kind === 'zbir'
-                    ? ZBIR_HP
-                    : 100;
+          : p.kind === 'pies'
+            ? PIES_HP
+            : p.kind === 'szabrownik'
+              ? STRANGER_HP
+              : p.kind === 'handlarz'
+                ? TRADER_HP
+                : p.kind === 'gosc'
+                  ? goscMaxHp(p)
+                  : p.kind === 'wedrowiec' || p.kind === 'obcy'
+                    ? WANDERER_HP
+                    : p.kind === 'zbir'
+                      ? ZBIR_HP
+                      : 100;
       const hp = p.needs ? p.needs.health : (p.hp ?? max);
       const busy =
         p.kind === 'zombie' ||
+        p.kind === 'pies' ||
         p.kind === 'szabrownik' ||
         ((p.kind === 'handlarz' || p.kind === 'wedrowiec' || p.kind === 'obcy') && p.job?.phase === 3) ||
         !!p.wrogi ||

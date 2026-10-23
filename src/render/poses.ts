@@ -5,7 +5,8 @@
    (guard na posterunku KOZA_POST), warta na wieży (rysuje się przed jej sprite'em) i drzemka wartownika (guard
    w fazie 4). Prace M2: przeszukiwanie i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa
    i zajmowanie mieszkania młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę,
-   naprawę i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
+   naprawę i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Pies i kot (praca 'zwierze') mają własne pozy z
+   atlasu zwierząt (`apose`: chód, leżenie, szczekanie psa tuż po szczeknięciu), nigdy pozy ludzi. Fala 2: przy cudzych drzwiach
    wyważanie zamachem, deski i pukanie młotkiem, zamek na kolanach, pomieszczenie sąsiada przeszukuje
    na kolanach. Gość wpuszczony na noc (praca 'gosc', what 'spi') śpi na ziemi przy ognisku jak śpiący na podłodze.
    Klatki liczone z czasu gry, bez stanu w symulacji. Dokładanie do kozy trwa w symulacji jeden tick, więc widok pamięta je
@@ -13,8 +14,10 @@
 
 import { type WeaponId, weaponOf } from '../sim/bron.ts';
 import { BITE_CD } from '../sim/zombie.ts';
+import { SZCZEK_NAPIS } from '../sim/zwierzeta.ts';
 import { type ArmPose, thrusts } from './art/bron.ts';
 import { FRAMES, type Lie, lieHead, type Pose, type ZPose } from './art/people.ts';
+import type { ZwierzePoza } from './art/zwierzeta.ts';
 import type { ThingLike } from './section.ts';
 
 /** Napierający szwendacze stoją na środkach kafelków, więc tłum przy jednym miejscu siatki nakładałby się w jeden
@@ -58,6 +61,8 @@ export interface PoseCtx {
   builds?: readonly { id: number; kind: string }[];
   /** łóżka piętrowe, na których śpią dwie osoby (id rzeczy) */
   bunkFull?: ReadonlySet<number>;
+  /** tick ostatniego szczeknięcia psa (`SimState.szczek.tick`): przez SZCZEK_NAPIS ticków stojący pies pokazuje szczekanie */
+  szczek?: number;
 }
 
 export type ThingWithId = ThingLike & { id?: number };
@@ -74,6 +79,8 @@ export interface PoseView {
   arm?: ArmPose;
   /** szwendacz: klatka z atlasu szwendaczy (chód albo ugryzienie) */
   zpose?: ZPose;
+  /** pies albo kot: poza z atlasu zwierząt (chód, leżenie, szczekanie); `pose` to wtedy tylko wypełniacz */
+  apose?: ZwierzePoza;
 }
 
 const TILE = 32;
@@ -135,6 +142,15 @@ export function poseOf(
   const tt = t + (p.id % 7) * 0.13;
   const j = p.job;
   const tick = t * 20;
+  if (p.kind === 'pies' || p.kind === 'kot') {
+    // zwierzę: chód w drodze, a stojące leży (praca mówi 'lezy'), szczeka tuż po szczeknięciu (pies) albo po prostu stoi;
+    // oddech i otwieranie pyska to dwie klatki w czasie
+    const od = tick - (ctx.szczek ?? Number.NEGATIVE_INFINITY);
+    if (!moving && p.kind === 'pies' && od >= 0 && od < SZCZEK_NAPIS)
+      return { pose: 'walk', dir, frame: Math.floor(od / 6) % 2, apose: 'szczek' };
+    if (!moving && j?.what === 'lezy') return { pose: 'walk', dir, frame: Math.floor(tt * 0.6) % 2, apose: 'lez' };
+    return { pose: 'walk', dir, frame: step, apose: 'chod' };
+  }
   if (p.kind === 'zombie') {
     // tuż po ugryzieniu rzut; stojąc (przy siatce) kołysze się, w drodze chwiejny chód
     const since = BITE_CD - ((p.cd ?? 0) - tick);

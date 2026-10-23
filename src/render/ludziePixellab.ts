@@ -6,8 +6,10 @@
    zestawienie z pamięcią podręczną. Leżenie i zwłoki (komórki z klatki stania przodem, art/lezenie.ts) mają tu własny
    wybór postaci i pamięć komórek. Przejścia między staniem a leżeniem (upadek przy śmierci, kładzenie się, wstawanie:
    art/animacjePozy.ts, PRZEJSCIA) wybierają klatkę z czasu od startu przejścia; start i kierunek zna widok
-   (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. */
+   (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. Pies i kot nie dostają tu postaci (null): mają własny atlas
+   rysowany kodem (art/zwierzeta.ts). */
 
+import { jestZwierzeciem } from '../sim/zwierzeta.ts';
 import {
   kluczAnimacji,
   numerKlatki,
@@ -118,6 +120,8 @@ export class LudziePixellab {
   /** postać pionka: zarząd z czterech postaci zarządu, reszta z mieszkańców, po płci i wieku osoby; pionek bez osoby
       (przybysz, tłum) po numerze wyglądu z gry, tylko dorosły. Wybór zostaje na stałe, dopóki pionek jest w grze. */
   postacPionka(p: PionekLudzi, osoby: readonly OsobaLudzi[]): PostacLudzi | null {
+    // pies i kot mają własny atlas (art/zwierzeta.ts): pionek bez osoby dostałby tu człowieka z wyglądu
+    if (jestZwierzeciem(p.kind)) return null;
     const znana = this.postacie.get(p.id);
     if (znana !== undefined) return znana;
     const zarzad = p.kind === 'core';

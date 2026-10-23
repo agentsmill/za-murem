@@ -268,6 +268,11 @@ export interface GovInput {
   /** goście z klocków (src/gov/goscie.ts) w symulacji, po kolei, od najstarszego; lista tylko rośnie. Pole jest (choćby
       puste) tylko w grze z obcymi (`SimOpts.obcy`), bez niego zarząd nie planuje gości */
   goscie?: readonly GovGosc[];
+  /** zwierzęta w symulacji (pies i kot jako pionki, src/sim/zwierzeta.ts): `zyje` to pionek już wystawiony, `zginal` to
+      pies zabity przez szwendacza. Bez wpisu o zwierzęciu symulacja go nie zna: zarząd, który ma flagę `dog` albo
+      `cat`, wysyła wtedy `GovEffects.zwierze` (świeże przygarnięcie i stary zapis z flagą bez pionka to ten sam
+      przypadek). Bez pola (gra bez zwierząt): żadnego. */
+  zwierzeta?: ZwierzetaStan;
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
       lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
@@ -407,6 +412,16 @@ export interface GovEffects {
   /** hałas na kafelku (numer kafelka mapy) w promieniu `r` metrów, np. pościg za gościem wpuszczonym na noc w trybie
       zombie przyciąga szwendaczy; symulacja dopisuje go do `st.noise` jak każdy hałas (`NOISE_TICKS`, `applyGov`) */
   halas?: { tile: number; r: number };
+  /** zwierzęta, które symulacja ma wystawić jako pionki: pies (z flagi `dog`) i kot (z flagi `cat`), gdy symulacja nie
+      ma o nich wpisu w `GovInput.zwierzeta`; wystawienie jest idempotentne. Tablica powstaje przy pierwszym zwierzęciu */
+  zwierze?: ('pies' | 'kot')[];
+}
+
+/** Stan zwierząt w symulacji (`SimState.zwierzeta`, odczyt `GovInput.zwierzeta`): pies żyje albo zginął, kot żyje i nie
+    ginie. Pole zwierzęcia pojawia się przy jego wystawieniu i zostaje do końca gry. */
+export interface ZwierzetaStan {
+  pies?: 'zyje' | 'zginal';
+  kot?: 'zyje';
 }
 
 export interface RaidPlan {
@@ -647,7 +662,10 @@ export interface GovState {
   reports: NightReport[];
   /** czy ognisko paliło się wieczorem i ile mebli spalono do poprzedniego rana */
   evening: { campfire: boolean; burned: number };
-  flags: { dog: boolean; flashlight: boolean; torch: boolean };
+  /** `dog`: pies przygarnięty (obrona nocy w noc.ts) i, dopóki żyje, pionek na mapie; flaga gaśnie, gdy symulacja
+      zgłosi jego śmierć (`GovInput.zwierzeta.pies === 'zginal'`). `cat`: kot przygarnięty (karta „Kot w piwnicy” albo
+      „Kot w szopie”), pionek, który nie ginie; pole od przygarnięcia, stary zapis go nie ma i liczy się jako fałsz */
+  flags: { dog: boolean; flashlight: boolean; torch: boolean; cat?: boolean };
   /** na tę noc: podwójna warta (dzień), szabrownicy zachęceni (dzień), premia do obrony, pościg za gościem wpuszczonym
       na noc (dzień nocy: szansa napadu ×1,5 i napad przy bramie; pole od pierwszego takiego gościa) */
   tonight: { alert: number; boost: number; bonus: number; bonusDay: number; poscig?: number };

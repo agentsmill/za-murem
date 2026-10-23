@@ -2854,6 +2854,277 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // karta gościa pod bramą po angielsku (Przymorze, obcy włączeni): ta sama wizyta co w wyd-gosc-karta, ale cały ekran
+        // i karta w języku angielskim, bez polskich liter poza imionami i nazwami z mapy (en-wyd-gosc.png)
+        name: 'en-wyd-gosc',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 400);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 400)}`);
+          console.log(`  buttons: ${foot.join(' | ')}`);
+          if (!foot.some((f) => f.startsWith('event-show:'))) throw new Error('card without a Show button');
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, []);
+          if (pl.length) throw new Error(`Polish letters on the English guest card: ${pl.join(', ')}`);
+          await page.screenshot({ path: path.join(OUT, 'en-wyd-gosc.png') });
+        },
+      },
+      {
+        // pies z karty „Pies przy siatce” jako prawdziwy pionek (Przymorze): przygarnięty za dnia wchodzi zza siatki bramą i
+        // kręci się po podwórku przy bramie (wyd-pies-dzien.png), nocą leży przy bramie jako ciemny zarys (wyd-pies-noc.png),
+        // a w trybie zombie z szwendaczem pod siatką szczeka: napis „Hau!” nad psem i hałas 12 m (wyd-pies-szczek.png).
+        // Sprite psa sprawdzany przed każdym zrzutem
+        name: 'wyd-pies',
+        query: '',
+        run: async (page, base) => {
+          const pies = (page: Page) =>
+            page.evaluate(() => {
+              const zm = window.zm!;
+              const p = zm.sim!.st.pawns.find((q) => q.kind === 'pies');
+              return p ? { x: p.x, y: p.y, what: p.job?.what ?? '' } : null;
+            });
+          /** dopóki warunek nie zajdzie, kroki symulacji (najwyżej max); zwraca liczbę kroków */
+          const krokiDo = (page: Page, warunek: string, max: number) =>
+            page.evaluate(
+              ([w, n]) => {
+                const zm = window.zm!;
+                const sim = zm.sim!;
+                const ok = new Function('sim', 'st', `return (${w as string});`) as (s: unknown, t: unknown) => boolean;
+                let k = 0;
+                while (k < (n as number) && !ok(sim, sim.st)) {
+                  for (const p of sim.st.pawns)
+                    if (p.kind === 'core' && p.needs) Object.assign(p.needs, { food: 100, warm: 100, rest: 100 });
+                  sim.step();
+                  k++;
+                }
+                return k;
+              },
+              [warunek, max] as const,
+            );
+          const wBramie = `(() => { const d = st.pawns.find((p) => p.kind === 'pies'); return !!d && sim.w.fence.yard.includes(Math.floor(d.y) * sim.w.size + Math.floor(d.x)); })()`;
+          // dzień: przygarnięty pies wchodzi bramą i kręci się po podwórku
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=10&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'pies' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          const start = await pies(page);
+          console.log(`  pies po pierwszym kroku: (${start?.x.toFixed(1)}, ${start?.y.toFixed(1)}) ${start?.what}`);
+          const za = await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const d = sim.st.pawns.find((q) => q.kind === 'pies')!;
+            return !sim.w.fence.yard.includes(Math.floor(d.y) * sim.w.size + Math.floor(d.x));
+          });
+          if (!za) throw new Error('pies nie zaczyna za siatką');
+          const wszedl = await krokiDo(page, wBramie, 4000);
+          console.log(`  pies na podwórku po ${wszedl} krokach`);
+          await krokiDo(page, 'false', 900);
+          const dzien = await pies(page);
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y - 0.6, 3), [dzien!.x, dzien!.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'pies', 'dzień, na podwórku przy bramie');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-dzien.png') });
+          // noc: pies leży przy bramie od środka
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=23&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'pies' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          const lezy = await krokiDo(page, `st.pawns.some((p) => p.kind === 'pies' && p.job?.what === 'lezy')`, 4000);
+          const noc = await pies(page);
+          console.log(`  pies leży po ${lezy} krokach: (${noc?.x.toFixed(1)}, ${noc?.y.toFixed(1)}) ${noc?.what}`);
+          if (noc?.what !== 'lezy') throw new Error('pies nocą nie leży przy bramie');
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y, 3.2), [noc.x, noc.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'pies', 'noc, leży przy bramie');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-noc.png') });
+          // to samo z ogniskiem na podwórku 3 m od bramy: pies leży w jego świetle
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const w = sim.w;
+            const st = sim.st;
+            const g = w.fence.gate;
+            const gx = g.x + g.w / 2;
+            const gy = g.y;
+            const cel = w.fence.yard
+              .filter(
+                (i) => !w.blocked[i] && !st.things.some((t) => t.x === i % w.size && t.y === Math.floor(i / w.size)),
+              )
+              .sort(
+                (a, b) =>
+                  Math.abs(Math.hypot((a % w.size) - gx, Math.floor(a / w.size) - gy) - 3) -
+                    Math.abs(Math.hypot((b % w.size) - gx, Math.floor(b / w.size) - gy) - 3) || a - b,
+              )[0];
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'ognisko',
+              x: cel % w.size,
+              y: Math.floor(cel / w.size),
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 0,
+              fuel: 100000,
+              by: -1,
+              owner: -1,
+            });
+          });
+          await waitIdle(page);
+          await frames(page, 4);
+          await zwierzeNarysowane(page, 'pies', 'noc, leży w świetle ogniska');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-noc-ognisko.png') });
+          // tryb zombie: pies na podwórku, szwendacze pod siatką przy bramie, szczeka (napis i hałas)
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&cam=hq,1`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const st = sim.st;
+            st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+            st.cmds.push({ t: 'zwierze', ids: [], co: 'pies' } as never);
+            sim.step();
+          });
+          await krokiDo(page, wBramie, 4000);
+          await krokiDo(page, 'false', 300);
+          const szczek = await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const st = sim.st;
+            const g = sim.w.fence.gate;
+            // szwendacze pod siatką przy bramie (trzech)
+            sim.spawnAtFence(3, (g.y - 1) * sim.w.size + g.x);
+            let k = 0;
+            while (k < 400 && !st.szczek) {
+              for (const p of st.pawns)
+                if (p.kind === 'core' && p.needs) Object.assign(p.needs, { food: 100, warm: 100, rest: 100 });
+              sim.step();
+              k++;
+            }
+            const d = st.pawns.find((q) => q.kind === 'pies')!;
+            const zs = st.pawns.filter((q) => q.kind === 'zombie');
+            const najblizszy = Math.min(...zs.map((q) => Math.hypot(q.x - d.x, q.y - d.y)));
+            const halas = (st.noise ?? []).filter((n) => n.r === 12).length;
+            zm.setCam(d.x, d.y - 2, 2.2);
+            return {
+              k,
+              szczek: st.szczek?.tick ?? null,
+              tick: st.tick,
+              najblizszy: Math.round(najblizszy * 10) / 10,
+              halas,
+              zombi: zs.length,
+            };
+          });
+          console.log(`  szczeknięcie po ${szczek.k} krokach: ${JSON.stringify(szczek)}`);
+          if (szczek.szczek === null) throw new Error('pies nie zaszczekał na szwendaczy pod siatką');
+          if (szczek.halas < 1) throw new Error('szczekanie nie dało hałasu 12 m w trybie zombie');
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'pies', 'szczeka na szwendaczy', true);
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-szczek.png') });
+        },
+      },
+      {
+        // kot z karty „Kot w piwnicy” jako prawdziwy pionek (Przymorze, przekrój siedziby): nocą śpi zwinięty przy kozie
+        // zarządu (wyd-kot-noc.png), za dnia chodzi po mieszkaniu zarządu (wyd-kot-dzien.png). Sprite kota sprawdzany
+        // przed każdym zrzutem
+        name: 'wyd-kot',
+        query: '',
+        run: async (page, base) => {
+          const gdzieKot = (page: Page) =>
+            page.evaluate(() => {
+              const zm = window.zm!;
+              const sim = zm.sim!;
+              const k = sim.st.pawns.find((q) => q.kind === 'kot');
+              const koza = sim.st.things.find((t) => t.kind === 'koza')!;
+              return k ? { x: k.x, y: k.y, what: k.job?.what ?? '', koza: { x: koza.x, y: koza.y } } : null;
+            });
+          const kroki = (page: Page, warunek: string, max: number) =>
+            page.evaluate(
+              ([w, n]) => {
+                const sim = window.zm!.sim!;
+                const ok = new Function('st', `return (${w as string});`) as (t: unknown) => boolean;
+                let k = 0;
+                while (k < (n as number) && !ok(sim.st)) {
+                  for (const p of sim.st.pawns)
+                    if (p.kind === 'core' && p.needs) Object.assign(p.needs, { food: 100, warm: 100, rest: 100 });
+                  sim.step();
+                  k++;
+                }
+                return k;
+              },
+              [warunek, max] as const,
+            );
+          // noc: kot śpi przy kozie
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=23&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'kot' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          // zarząd na wyprawie (poza kadrem): w kuchni stoją przy kozie i zasłaniają kota, który leży im pod nogami
+          await page.evaluate(() => {
+            for (const p of window.zm!.sim!.st.pawns) if (p.kind === 'core') p.away = true;
+          });
+          // koza pali się (noc przy ogniu: okna świecą, w pokoju jasno)
+          await page.evaluate(() => {
+            for (const t of window.zm!.sim!.st.things) if (t.kind === 'koza') t.fuel = 20000;
+          });
+          await kroki(page, `st.pawns.some((p) => p.kind === 'kot' && p.job?.what === 'lezy')`, 4000);
+          await kroki(page, 'false', 200);
+          const noc = await gdzieKot(page);
+          const wokol = await page.evaluate(
+            ([x, y]) => {
+              const st = window.zm!.sim!.st;
+              return st.things
+                .filter((t) => t.x <= x + 2 && t.x + t.w >= x - 2 && t.y <= y + 2 && t.y + t.h >= y - 2)
+                .map((t) => `${t.kind}(${t.x},${t.y},${t.w}x${t.h})`);
+            },
+            [Math.floor(noc!.x), Math.floor(noc!.y)] as const,
+          );
+          console.log(`  rzeczy wokół kota: ${wokol.join(' ')}`);
+          console.log(
+            `  kot nocą: (${noc?.x.toFixed(1)}, ${noc?.y.toFixed(1)}) ${noc?.what}, koza (${noc?.koza.x}, ${noc?.koza.y})`,
+          );
+          if (noc?.what !== 'lezy') throw new Error('kot nocą nie śpi przy kozie');
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y - 0.5, 4), [noc.x, noc.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'kot', 'noc, śpi przy kozie');
+          await page.screenshot({ path: path.join(OUT, 'wyd-kot-noc.png') });
+          // dzień: kot chodzi po mieszkaniu zarządu
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=10&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'kot' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          await kroki(page, `st.pawns.some((p) => p.kind === 'kot' && p.job?.what === 'wloczy')`, 4000);
+          await kroki(page, 'false', 40);
+          const dzien = await gdzieKot(page);
+          console.log(`  kot za dnia: (${dzien?.x.toFixed(1)}, ${dzien?.y.toFixed(1)}) ${dzien?.what}`);
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y - 0.5, 4), [dzien!.x, dzien!.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'kot', 'dzień, chodzi po mieszkaniu');
+          await page.screenshot({ path: path.join(OUT, 'wyd-kot-dzien.png') });
+        },
+      },
+      {
         // uchodźcy z karty 0.3 jako prawdziwi ludzie pod bramą (Przymorze, obcy włączeni, w puli zarządu tylko ta karta):
         // zarząd wystawia grupę, ta idzie ulicą pod bramę i dopiero wtedy otwiera się karta z liczbą osób równą liczbie
         // pionków. Zrzuty: karta (wyd-uchodzcy-karta.png), po „Pokaż” grupa pod bramą (wyd-uchodzcy-brama.png) i po
@@ -8677,6 +8948,38 @@ async function gosciNarysowani(page: Page, co: string): Promise<void> {
   console.log(`  ${co} (${r.godzina}): sprite'y gości ${JSON.stringify(r.sprites)}`);
   if (!r.sprites.length) throw new Error(`${co}: nie ma pionków gości`);
   if (r.sprites.some((x) => !x.visible || x.alpha <= 0)) throw new Error(`${co}: gość nie jest narysowany`);
+}
+
+/** Czy pies albo kot jest narysowany: sprite w widoku ma `visible` i `alpha` > 0 (nocą psa chowa ciemność tylko do ciemnego
+    zarysu, nie całkiem). Z `napis`: nad psem jest też napis szczekania („Hau!” albo „Woof!”) w warstwie napisów widoku.
+    Rzuca, gdy nie ma zwierzęcia, jest ukryte albo brakuje napisu; `co` do komunikatu. */
+async function zwierzeNarysowane(page: Page, rodzaj: 'pies' | 'kot', co: string, napis = false): Promise<void> {
+  const r = await page.evaluate((rodzaj) => {
+    const zm = window.zm!;
+    const v = zm.view as unknown as {
+      pawnSprites: Map<
+        number,
+        { visible: boolean; alpha: number; texture: { frame: { width: number; height: number } } }
+      >;
+      zwierzeta: { teksty: Map<number, { text: string; alpha: number }> };
+    };
+    const p = zm.sim!.st.pawns.find((q) => q.kind === rodzaj);
+    const sp = p ? v.pawnSprites.get(p.id) : undefined;
+    return {
+      godzina: document.getElementById('hTime')?.textContent ?? '',
+      jest: !!p,
+      visible: !!sp?.visible,
+      alpha: sp ? Math.round(sp.alpha * 100) / 100 : 0,
+      ramka: sp ? [sp.texture.frame.width, sp.texture.frame.height] : null,
+      napisy: [...v.zwierzeta.teksty.values()].map((t) => `${t.text} (${Math.round(t.alpha * 100) / 100})`),
+    };
+  }, rodzaj);
+  console.log(`  ${co} (${r.godzina}): ${rodzaj} narysowany ${JSON.stringify(r)}`);
+  if (!r.jest) throw new Error(`${co}: nie ma pionka ${rodzaj}`);
+  if (!r.visible || r.alpha <= 0) throw new Error(`${co}: ${rodzaj} nie jest narysowany`);
+  const [szer, wys] = r.ramka ?? [0, 0];
+  if (szer !== 32 || wys !== 32) throw new Error(`${co}: klatka ${rodzaj} spoza atlasu zwierząt`);
+  if (napis && !r.napisy.length) throw new Error(`${co}: brak napisu szczekania nad psem`);
 }
 
 /** Czy pionki o tych numerach są narysowane (sprite w widoku z `visible` i `alpha` > 0), niezależnie od rodzaju: goście
