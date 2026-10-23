@@ -15,8 +15,10 @@
    - tura: ścinanie drzewa na opał jak w silniku podstawowym, ale już poniżej zapasu na dwie noce (`progDrewna`), nie
      dopiero poniżej 6 sztuk; do tego `turaZimy` (pracownia, badanie kozy, koza z beczki w pokoju zarządu) co 30 sekund
      przy ekranie (`CO_TIKOW_WARSTWY`), a licznik jej wywołań siedzi w pamięci (`PamiecSilnika.wywolania`);
-   - okno karty nocy: przygotowanie jak w silniku podstawowym (chorzy z warty, wartownik przy siatce), do tego dyżur przy
-     kozie (`dyzurNaKarcie`), potem zatwierdzenie; reszta okien jak w silniku podstawowym.
+   - okno karty nocy: chorzy zdjęci z warty jak w silniku podstawowym, potem dyżur przy kozie (`dyzurNaKarcie`), dopiero
+     potem wartownik przy siatce, wybierany spośród śpiących (kolejność odwrócona względem silnika podstawowego: przy mało
+     zdrowych dyżur ma pierwszeństwo, a wyprawy nie tracą ludzi na wartę), na końcu zatwierdzenie; reszta okien jak
+     w silniku podstawowym.
    Warstwy idą w kolejności dopisywania i najwyżej raz na 30 sekund przy ekranie, poza oknami zarządu, które dostają
    odpowiedź od razu. Silnik podstawowy niczego z warstw nie używa i dalej odtwarza `playWithGov` co do skrótu.
 
@@ -29,6 +31,7 @@
    strony używają importów tylko w ciele funkcji; warstwy dopisywane do `silnik` mają więc być deklaracjami funkcji, a nie
    stałymi liczonymi przy ładowaniu modułu z cudzych importów. */
 
+import { isFenceGuard, KOZA_KEY } from '../gov/noc.ts';
 import type { Prompt } from '../gov/typy.ts';
 import { hourOf, TICKS_PER_SECOND } from '../sim/clock.ts';
 import { dryTreeOf } from '../sim/house.ts';
@@ -127,27 +130,40 @@ function turaDrewna(g: GraAi, r: Rece, prog: (g: GraAi) => number = () => DREWNA
   pam.zlecone = k;
 }
 
-/** karta nocy: chorych z warty zdjąć, a gdy nikt nie stoi, najbardziej wypoczętego zdrowego dać na pierwszy posterunek
-    (bez zatwierdzania; zatwierdza ten, kto woła) */
-function kartaPrzygotuj(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
-  const karta = p.card;
+/** karta nocy, część pierwsza: chorych z warty zdjąć (poniżej ZDROWIE_WARTY zdrowia wartownik schodzi w nocy z posterunku) */
+function zdejmijChorychZWarty(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
   // przydział na żywo z zarządu (p.assign to kopia sprzed zmian), zmiany z tej samej karty widać od razu
   const przydzial = g.gov.night?.assign ?? {};
-  for (const osoba of karta.people)
+  for (const osoba of p.card.people)
     if ((przydzial[osoba.id] ?? '').startsWith('warta:') && osoba.needs.health < ZDROWIE_WARTY)
       r.przydziel(osoba.id, 'sen');
-  if (!Object.values(przydzial).some((klucz) => klucz.startsWith('warta:'))) {
-    const najlepsza = [...karta.people]
-      .filter((o) => o.needs.health >= ZDROWIE_WARTY)
-      .sort((a, b) => b.needs.rest - a.needs.rest)[0];
-    const posterunek = karta.posts[0]?.key;
-    if (najlepsza && posterunek) r.przydziel(najlepsza.id, `warta:${posterunek}`);
-  }
 }
 
-/** karta nocy z wartą (silnik podstawowy): przygotowanie, potem zatwierdzenie */
+/** karta nocy, część druga: gdy nikt nie stoi na warcie przy siatce, najbardziej wypoczętego zdrowego dać na pierwszy
+    posterunek; dyżurny przy kozie (`warta:koza`) nie jest strażnikiem przy siatce i nie wolno go z dyżuru zdejmować.
+    Silnik podstawowy wybiera spośród wszystkich zdrowych, także tych, których karta wysyła na wyprawę (jak bot
+    `zawsze-warta`); silnik z warstwami (`tylkoSpiacy`) tylko spośród śpiących, bo wyprawa po jedzenie albo drewno waży
+    więcej niż jedna warta, a warstwy mogą ją przydzielić przed wartą. */
+function wartaPrzySiatce(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece, tylkoSpiacy = false): void {
+  const karta = p.card;
+  const przydzial = g.gov.night?.assign ?? {};
+  if (Object.values(przydzial).some(isFenceGuard)) return;
+  const najlepsza = [...karta.people]
+    .filter(
+      (o) =>
+        o.needs.health >= ZDROWIE_WARTY &&
+        przydzial[o.id] !== KOZA_KEY &&
+        (!tylkoSpiacy || (przydzial[o.id] ?? 'sen') === 'sen'),
+    )
+    .sort((a, b) => b.needs.rest - a.needs.rest)[0];
+  const posterunek = karta.posts[0]?.key;
+  if (najlepsza && posterunek) r.przydziel(najlepsza.id, `warta:${posterunek}`);
+}
+
+/** karta nocy z wartą (silnik podstawowy): chorzy z warty, warta przy siatce, zatwierdzenie */
 function kartaZWarta(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
-  kartaPrzygotuj(g, p, r);
+  zdejmijChorychZWarty(g, p, r);
+  wartaPrzySiatce(g, p, r);
   r.zatwierdzNoc();
 }
 
@@ -181,14 +197,18 @@ function progDrewnaZimy(g: GraAi): number {
   return progDrewna(wejscie(g));
 }
 
-/** okno zarządu silnika z warstwą zimy: karta nocy z dyżurem przy kozie, reszta jak w silniku podstawowym */
+/** okno zarządu silnika z warstwą zimy: karta nocy z dyżurem przy kozie, reszta jak w silniku podstawowym. Dyżur ma
+    pierwszeństwo przed wartą przy siatce: gdy zdrowych jest mało (głód rozkłada zdrowie od około 9. dnia), ogień w pokoju
+    zarządu trzyma ciepło do rana, a bez niego rano marznie cały zarząd i wkurzenie rośnie o 6 punktów na dobę, podczas gdy
+    brak warty kosztuje najwyżej napad na zapasy, których wtedy już nie ma. */
 function oknoSilnika(g: GraAi, p: Prompt, r: Rece): void {
   if (p.k !== 'karta') {
     oknoPodstawowe(g, p, r);
     return;
   }
-  kartaPrzygotuj(g, p, r);
+  zdejmijChorychZWarty(g, p, r);
   dyzurNaKarcie(g, p, r);
+  wartaPrzySiatce(g, p, r, true);
   r.zatwierdzNoc();
 }
 

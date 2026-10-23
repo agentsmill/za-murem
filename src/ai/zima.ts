@@ -20,16 +20,17 @@
    dopiero poniżej 6 sztuk).
 
    Dyżur przy kozie (`dyzurNaKarcie`) wystawia na karcie nocy najbardziej wypoczętą osobę ze zdrowiem co najmniej 40, która
-   śpi (nie stoi na warcie przy siatce ani nie idzie na wyprawę), ale tylko gdy drewna starcza na noc i na dworze jest
-   zimno: dyżurny nie śpi i dokłada do wszystkich palenisk (koza zarządu, koza z beczki), więc pokój zarządu ma ogień do
-   rana (sztuka starcza na godzinę, koza mieści 4). Gdy karta nie ma tej opcji dla osoby (brak `warta:koza`), idzie
-   polecenie `guard` na posterunku „koza” dla jej pionka.
+   śpi (nie idzie na wyprawę), ale tylko gdy drewna starcza na noc i na dworze jest zimno: dyżurny nie śpi i dokłada do
+   wszystkich palenisk (koza zarządu, koza z beczki), więc pokój zarządu ma ogień do rana (sztuka starcza na godzinę, koza
+   mieści 4). Gdy zdrowych śpiących nie ma, dyżur bierze zdrowego wartownika spod siatki: od około 9. dnia głód rozkłada
+   zdrowie i zdrowych zostaje mało, a ogień w pokoju zarządu waży wtedy więcej niż warta. Gdy karta nie ma tej opcji dla
+   osoby (brak `warta:koza`), idzie polecenie `guard` na posterunku „koza” dla jej pionka.
 
    Warstwa czyta stan gry jak gracz (`wejscie`, `SimState`, świat) i działa tylko rękami (`Rece`); nie ma własnego stanu
    poza pamięcią silnika w grze, niczego nie losuje i nie czyta zegara. Moduły gra.ts, silnik.ts i zima.ts importują się
    nawzajem; cykl jest bezpieczny, bo nikt nie używa cudzego importu przy ładowaniu modułu, tylko w ciele funkcji. */
 
-import { KOZA, KOZA_KEY, WOOD_PER_HOUR } from '../gov/noc.ts';
+import { isFenceGuard, KOZA, KOZA_KEY, WOOD_PER_HOUR } from '../gov/noc.ts';
 import type { GovInput, Prompt } from '../gov/typy.ts';
 import { kartka } from '../sim/badania.ts';
 import { BUILDS, type BuildKind, type BuildPlan, type Mat } from '../sim/budowle.ts';
@@ -178,19 +179,25 @@ export function turaZimy(g: GraAi, r: Rece): void {
 }
 
 /** Dyżur przy kozie na karcie nocy (przed jej zatwierdzeniem): najbardziej wypoczęta osoba ze zdrowiem co najmniej 40, która
-    śpi, dostaje `warta:koza`; gdy karta nie ma tej opcji dla osoby, idzie polecenie `guard` na posterunku „koza”. Tylko gdy
-    drewna starcza na noc, na dworze jest zimno i nikt jeszcze nie czuwa przy kozie. */
+    śpi, dostaje `warta:koza`. Gdy żadna śpiąca nie ma tyle zdrowia, bierze go najbardziej wypoczęty zdrowy wartownik przy
+    siatce: ogień w pokoju zarządu waży więcej niż warta, gdy zdrowych jest mało. Gdy karta nie ma tej opcji dla osoby,
+    idzie polecenie `guard` na posterunku „koza” (wartownik najpierw wraca do snu na karcie). Tylko gdy drewna starcza na
+    noc, na dworze jest zimno i nikt jeszcze nie czuwa przy kozie. */
 export function dyzurNaKarcie(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
   const i = wejscie(g);
   if (i.outdoor >= ZIMNO_DYZURU || i.stock.wood < drewnoNaNoc(i)) return;
   // przydział na żywo z zarządu (p.assign to kopia sprzed zmian), zmiany z tej samej karty widać od razu
   const przydzial = g.gov.night?.assign ?? {};
   if (Object.values(przydzial).includes(KOZA_KEY)) return;
-  const dyzurny = [...p.card.people]
-    .filter((o) => o.needs.health >= ZDROWIE_DYZURU && (przydzial[o.id] ?? 'sen') === 'sen')
-    .sort((a, b) => b.needs.rest - a.needs.rest)[0];
+  const najbardziejWypoczety = (jest: (klucz: string) => boolean) =>
+    [...p.card.people]
+      .filter((o) => o.needs.health >= ZDROWIE_DYZURU && jest(przydzial[o.id] ?? 'sen'))
+      .sort((a, b) => b.needs.rest - a.needs.rest)[0];
+  const spiacy = najbardziejWypoczety((klucz) => klucz === 'sen');
+  const dyzurny = spiacy ?? najbardziejWypoczety(isFenceGuard);
   if (!dyzurny) return;
   if (dyzurny.options.some((o) => o.key === KOZA_KEY && o.ok) && r.przydziel(dyzurny.id, KOZA_KEY)) return;
+  if (!spiacy) r.przydziel(dyzurny.id, 'sen');
   const pionek = pionekOsoby(g, dyzurny.id);
   if (pionek !== undefined) r.polecenie({ t: 'guard', ids: [pionek], post: KOZA });
 }

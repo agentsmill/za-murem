@@ -94,6 +94,10 @@ function szpieg(odmow: readonly string[] = []): { r: Rece; ruchy: string[] } {
   return { r, ruchy };
 }
 
+/** zdrowie osób na karcie: 100 dla osób o podanych numerach na karcie, 39 (za mało na dyżur i wartę) dla reszty */
+const zdroweTylko = (p: Karta, ...numery: number[]): number[] =>
+  p.card.people.map((_, k) => (numery.includes(k) ? 100 : 39));
+
 /** wszyscy na karcie śpią, z wypoczęciem z listy (kolejność osób na karcie; reszta 50) i ze zdrowiem z listy albo
     jedną liczbą dla wszystkich (domyślnie 100) */
 function ustawKarte(g: GraAi, p: Karta, rest: readonly number[], health: number | readonly number[] = 100): void {
@@ -122,6 +126,28 @@ function dyzurNaPierwszejKarcie(
         const s = szpieg(odmow);
         dyzurNaKarcie(gr, p, s.r);
         wynik = { ruchy: s.ruchy, karta: p };
+      }
+      silnik.okno(gr, p, r);
+    },
+  };
+  while (!wynik && !g.gov.over && g.sim.st.tick < od + 3 * TICKS_PER_DAY) krokGry(g, d);
+  if (!wynik) throw new Error('nie doszło do karty nocy');
+  return wynik;
+}
+
+/** Gra silnikiem do pierwszej karty nocy po ticku `od`, przestawia ją (`przed`), oddaje całe okno silnikowi i zwraca
+    przydział zatwierdzonej karty (id osoby → klucz). */
+function przydzialPoOknie(g: GraAi, od: number, przed: (g: GraAi, p: Karta) => void): Record<string, string> {
+  let wynik: Record<string, string> | null = null;
+  const d: Decydent = {
+    ...silnik,
+    okno(gr, p, r) {
+      if (p.k === 'karta' && !wynik && gr.sim.st.tick >= od) {
+        przed(gr, p);
+        silnik.okno(gr, p, r);
+        expect(gr.gov.night?.confirmed).toBe(true);
+        wynik = { ...gr.gov.night!.assign };
+        return;
       }
       silnik.okno(gr, p, r);
     },
@@ -593,6 +619,79 @@ describe('dyżur przy kozie na karcie nocy', () => {
       ustawKarte(gr, p, [90, 80, 70, 60], 39);
     });
     expect(nikt.ruchy).toEqual([]);
+  });
+
+  it('gdy tylko strażnik przy siatce jest zdrowy, dyżur przy kozie ma pierwszeństwo przed strażą', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const { ruchy, karta } = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
+      dorzucDrewno(gr);
+      ustawKarte(gr, p, [95, 80, 70, 60], zdroweTylko(p, 0));
+      gr.gov.night!.assign[p.card.people[0].id] = 'warta:brama';
+    });
+    expect(ruchy).toEqual([`noc:${karta.card.people[0].id}=${KOZA_KEY}`]);
+  });
+
+  describe('cała karta: kolejność dyżuru i warty przy siatce', () => {
+    const wartyPrzySiatce = (a: Record<string, string>): string[] =>
+      Object.entries(a)
+        .filter(([, k]) => k.startsWith('warta:') && k !== KOZA_KEY)
+        .map(([id]) => id);
+    const dyzurni = (a: Record<string, string>): string[] =>
+      Object.entries(a)
+        .filter(([, k]) => k === KOZA_KEY)
+        .map(([id]) => id);
+
+    it('jedna zdrowa osoba: staje przy kozie, a siatka zostaje bez warty', () => {
+      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      let ludzie: string[] = [];
+      const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
+        dorzucDrewno(gr);
+        ludzie = p.card.people.map((o) => o.id);
+        // zdrowa jest osoba najmniej wypoczęta: wybór nie zależy od wypoczęcia, tylko od zdrowia
+        ustawKarte(gr, p, [90, 80, 70, 50], zdroweTylko(p, 3));
+      });
+      expect(dyzurni(a)).toEqual([ludzie[3]]);
+      expect(wartyPrzySiatce(a)).toEqual([]);
+    });
+
+    it('dwie zdrowe osoby: jedna przy kozie, druga na warcie przy siatce', () => {
+      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      let ludzie: string[] = [];
+      const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
+        dorzucDrewno(gr);
+        ludzie = p.card.people.map((o) => o.id);
+        ustawKarte(gr, p, [90, 80, 70, 60], zdroweTylko(p, 1, 3));
+      });
+      expect(dyzurni(a)).toHaveLength(1);
+      expect(wartyPrzySiatce(a)).toHaveLength(1);
+      expect([...dyzurni(a), ...wartyPrzySiatce(a)].sort()).toEqual([ludzie[1], ludzie[3]].sort());
+      // przy kozie najbardziej wypoczęta z nich
+      expect(dyzurni(a)).toEqual([ludzie[1]]);
+    });
+
+    it('osoba na wyprawie nie zostaje strażnikiem przy siatce, nawet gdy jest najbardziej wypoczęta', () => {
+      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      let ludzie: string[] = [];
+      const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
+        dorzucDrewno(gr);
+        ludzie = p.card.people.map((o) => o.id);
+        ustawKarte(gr, p, [99, 90, 80, 70]);
+        gr.gov.night!.assign[ludzie[0]] = 'wyprawa:blisko';
+      });
+      expect(a[ludzie[0]]).toBe('wyprawa:blisko');
+      expect(dyzurni(a)).toEqual([ludzie[1]]);
+      expect(wartyPrzySiatce(a)).toEqual([ludzie[2]]);
+    });
+
+    it('wszyscy zdrowi: dyżur i warta przy siatce, reszta śpi', () => {
+      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
+        dorzucDrewno(gr);
+        ustawKarte(gr, p, [90, 80, 70, 60]);
+      });
+      expect(dyzurni(a)).toHaveLength(1);
+      expect(wartyPrzySiatce(a)).toHaveLength(1);
+    });
   });
 
   it('karta bez opcji dyżuru przy kozie: polecenie guard na posterunku „koza” dla pionka tej osoby', () => {
