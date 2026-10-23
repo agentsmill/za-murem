@@ -240,13 +240,14 @@ export interface OdczytCelow {
 /** okno, które zasłania okienko celów i dostaje linię „Cel: …”, gdy bieżący cel dotyczy tego okna */
 export type OknoCelu = 'karta' | 'uchwala' | 'tablica' | 'spotkanie';
 
-/** Definicja celu. `jest`: cel istnieje w tej grze (tryb, mapa); bez niego (fałsz) nie wchodzi do listy i nie blokuje
-    rozdziału. `zrobiony`: warunek zaliczenia (silnik zapisuje zaliczenie na stałe). `czeka`: dopisek, gdy celu teraz nie
+/** Definicja celu. `jest`: cel istnieje w tej grze (tryb, mapa, stan gry); bez niego (fałsz) nie wchodzi do listy i nie
+    blokuje rozdziału. Dostaje też stan ścieżki, żeby cel już zaliczony mógł zostać na liście, choć warunek istnienia przestał
+    być prawdziwy (uchwała, gdy podpisano wszystkie, które da się podpisać). `zrobiony`: warunek zaliczenia (silnik zapisuje zaliczenie na stałe). `czeka`: dopisek, gdy celu teraz nie
     da się ruszyć („czeka do 20:00”), inaczej null. `przepadl`: termin minął (tylko cele jednej nocy). Teksty w bieżącym
     języku (`L()`), nigdy z modułu na poziomie importu. */
 export interface DefCelu {
   key: string;
-  jest?(o: OdczytCelow): boolean;
+  jest?(o: OdczytCelow, s: StanSciezki): boolean;
   tekst(o: OdczytCelow): string;
   jak(o: OdczytCelow): string;
   zrobiony(o: OdczytCelow, s: StanSciezki): boolean;
@@ -293,11 +294,12 @@ const kluczCelu = (r: KluczRozdzialu, c: Pick<DefCelu, 'key'>): string => `${r}.
 const przepadly = (s: StanSciezki, klucz: string): boolean => s.przepadle.includes(klucz);
 
 /** cele rozdziału, które istnieją w tej grze */
-const celeGry = (d: DefRozdzialu, o: OdczytCelow): readonly DefCelu[] => d.cele.filter((c) => c.jest?.(o) !== false);
+const celeGry = (d: DefRozdzialu, o: OdczytCelow, s: StanSciezki): readonly DefCelu[] =>
+  d.cele.filter((c) => c.jest?.(o, s) !== false);
 
 /** rozdział skończony: każdy jego cel jest zrobiony albo przepadł */
 const skonczony = (d: DefRozdzialu, s: StanSciezki, o: OdczytCelow): boolean =>
-  celeGry(d, o).every((c) => {
+  celeGry(d, o, s).every((c) => {
     const klucz = kluczCelu(d.k, c);
     return zaliczony(s, klucz) || przepadly(s, klucz);
   });
@@ -344,7 +346,7 @@ export function krokSciezki(
     const k = rozdzialy.findIndex((d) => d.k === t.rozdzial);
     if (k < 0) break;
     const d = rozdzialy[k];
-    for (const c of celeGry(d, o)) {
+    for (const c of celeGry(d, o, t)) {
       const klucz = kluczCelu(d.k, c);
       if (zaliczony(t, klucz) || przepadly(t, klucz)) continue;
       if (c.zrobiony(o, t)) t.zrobione[klucz] = tick;
@@ -372,7 +374,7 @@ export function widokSciezki(
 ): WidokSciezki {
   const d = rozdzialy.find((r) => r.k === s.rozdzial);
   if (!d) return { okazja: null, rozdzial: null, drogi: null };
-  const cele: Cel[] = celeGry(d, o).map((c) => {
+  const cele: Cel[] = celeGry(d, o, s).map((c) => {
     const klucz = kluczCelu(d.k, c);
     const zrobiony = zaliczony(s, klucz);
     const missed = !zrobiony && przepadly(s, klucz);

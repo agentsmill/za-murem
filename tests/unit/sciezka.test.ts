@@ -61,6 +61,8 @@ interface Flagi {
   termin: boolean;
   /** cel `opc` istnieje na tej mapie */
   opc: boolean;
+  /** warunek zaliczenia celu `opc` w teście o `jest` ze stanem ścieżki */
+  opcZrobiony: boolean;
   /** cel `a` czeka */
   czeka: boolean;
   /** własny warunek otwarcia rozdziału r1 */
@@ -75,6 +77,7 @@ const flagi = (): Flagi => ({
   e: false,
   termin: false,
   opc: false,
+  opcZrobiony: false,
   czeka: false,
   otwarcie: false,
 });
@@ -330,6 +333,46 @@ describe('silnik ścieżki: rozdziały na atrapie', () => {
     f2.b = true;
     expect(e2.krokA().rozdzial).toBe('r0');
     expect(e2.widokA().rozdzial!.cele.map((c) => c.key)).toEqual(['a', 'b', 'opc']);
+  });
+
+  it('`jest` dostaje stan ścieżki: cel zaliczony zostaje na liście, choć warunek istnienia przestał być prawdziwy', () => {
+    // cel istnieje, dopóki f.opc, a zaliczony zostaje także potem (jak uchwała, gdy nie ma już co podpisać)
+    const def = (f: Flagi): DefRozdzialu[] => {
+      const d = atrapa(f);
+      d[0] = {
+        ...d[0],
+        cele: [
+          cl('a', () => f.a),
+          cl('opc', () => f.opcZrobiony, { jest: (_o, s) => f.opc || zaliczony(s, 'r0.opc') }),
+        ],
+      };
+      return d;
+    };
+    // zaliczony przed zniknięciem warunku: dalej na liście, z ptaszkiem
+    const g = nowaGra('przymorze');
+    const f = flagi();
+    const e = silnik(g, def(f));
+    f.opc = true;
+    f.opcZrobiony = true;
+    e.krokA();
+    expect(zaliczony(g.sciezka, 'r0.opc')).toBe(true);
+    f.opc = false;
+    f.opcZrobiony = false;
+    expect(e.widokA().rozdzial!.cele.map((c) => [c.key, c.done])).toEqual([
+      ['a', false],
+      ['opc', true],
+    ]);
+    // niezaliczony, gdy warunek zniknął: nie ma go na liście i nie blokuje rozdziału
+    const h = nowaGra('przymorze');
+    const f2 = flagi();
+    const e2 = silnik(h, def(f2));
+    f2.opc = true;
+    f2.a = true;
+    expect(e2.krokA().rozdzial, 'cel istnieje i blokuje').toBe('r0');
+    expect(e2.widokA().rozdzial!.cele.map((c) => c.key)).toEqual(['a', 'opc']);
+    f2.opc = false;
+    expect(e2.widokA().rozdzial!.cele.map((c) => c.key)).toEqual(['a']);
+    expect(e2.krokA().rozdzial).toBe('r1');
   });
 
   it('liczniki `start` zapisują się przy otwarciu rozdziału i potem się nie zmieniają', () => {

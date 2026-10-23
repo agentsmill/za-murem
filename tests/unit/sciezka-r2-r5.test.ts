@@ -23,6 +23,7 @@ import { mulberry } from '../../src/core/rng.ts';
 import { powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING } from '../../src/gov/noc.ts';
 import type { GovEffects, NightReport, Prompt } from '../../src/gov/typy.ts';
+import { lawOptions } from '../../src/gov/uchwaly.ts';
 import { atHour, emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
 import { celZMiejsca, wlaczMiasto } from '../../src/gov/wyprawy.ts';
 import { LAW_HOUR, LAW_MINUTE, setNight, signLaw } from '../../src/gov/zarzad.ts';
@@ -594,6 +595,85 @@ describe.each(KOMBINACJE_ZWYKLE)('R4 uchwala: podpis sprzed otwarcia rozdziału 
     expect(cel(g, 'uchwala').done, 'wpis z false nie jest podpisem').toBe(false);
     g.gov.laws.signed.u_b = true;
     expect(cel(g, 'uchwala').done).toBe(true);
+  });
+});
+
+/** Podpisuje po kolei wszystkie uchwały, które da się podpisać (bez odnowienia między nimi): zostają same podpisane i zablokowane
+    drogą. Zwraca ich numery. */
+function podpiszWszystkie(g: Gra): string[] {
+  const podpisane: string[] = [];
+  for (let k = 0; k < 10; k++) {
+    const i = wejscie(g);
+    const ok = lawOptions(g.gov, i).find((o) => o.s === 'ok');
+    if (!ok) break;
+    applyGov(g.sim.st, g.sim.w, signLaw(g.gov, i, ok.id));
+    g.gov.laws.last = -1_000_000_000;
+    podpisane.push(ok.id);
+  }
+  return podpisane;
+}
+
+describe.each(KOMBINACJE)('R4 uchwala, gdy nie ma już czego podpisać: %s %s', (key, mode) => {
+  it('podpisane wszystkie uchwały drogi (cztery z sześciu): cel nie istnieje i nie blokuje rozdziału', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    const podpisane = podpiszWszystkie(g);
+    expect(podpisane).toHaveLength(4);
+    expect(lawOptions(g.gov, wejscie(g)).filter((o) => o.s === 'ok' || o.s === 'cd')).toEqual([]);
+    otworz(g, 'r4');
+    expect(klucze(g)).toEqual(['wkurzenie', 'nowi', 'ludzie']);
+    expect(widok(g).rozdzial!.cele).toHaveLength(3);
+    // pozostałe trzy cele zamykają rozdział, mimo że uchwały nie ma
+    g.gov.reports.push(raport(1, 2));
+    zdarz(g, 'budynek');
+    applyGov(
+      g.sim.st,
+      g.sim.w,
+      skutki((e) => e.join.push(makePerson(mulberry(31), new Set(), () => 131))),
+    );
+    expect(krok(g).rozdzial).toBe('r5');
+    expect(zrobione(g, 'r4')).toEqual(['r4.ludzie', 'r4.nowi', 'r4.wkurzenie']);
+  });
+
+  it('dopóki któraś uchwała jest do podpisania teraz albo po odnowieniu, cel istnieje i czeka na zebranie', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    // jedna uchwała podpisana przed otwarciem rozdziału: reszta czeka na odnowienie (36 godzin), więc cel jest
+    const i = wejscie(g);
+    applyGov(g.sim.st, g.sim.w, signLaw(g.gov, i, lawOptions(g.gov, i).find((o) => o.s === 'ok')!.id));
+    expect(lawOptions(g.gov, wejscie(g)).some((o) => o.s === 'cd')).toBe(true);
+    otworz(g, 'r4');
+    expect(klucze(g)).toEqual(['uchwala', 'wkurzenie', 'nowi', 'ludzie']);
+    expect(cel(g, 'uchwala')).toMatchObject({ done: false, czeka: 'czeka do zebrania' });
+  });
+
+  it('ostatnia uchwała, którą da się podpisać, zalicza cel zamiast go ukryć', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    // trzy uchwały podpisane przed otwarciem rozdziału, czwarta zostaje
+    const wszystkie = klon(g);
+    const cztery = podpiszWszystkie(wszystkie);
+    for (const id of cztery.slice(0, 3)) g.gov.laws.signed[id] = true;
+    g.gov.laws.path = wszystkie.gov.laws.path;
+    expect(lawOptions(g.gov, wejscie(g)).some((o) => o.s === 'ok')).toBe(true);
+    otworz(g, 'r4');
+    expect(g.sciezka.start.uchwaly).toBe(3);
+    expect(klucze(g)).toContain('uchwala');
+    // czwarta podpisana: nie ma już co podpisać, ale cel jest zaliczony tym podpisem, a nie zniknął
+    applyGov(g.sim.st, g.sim.w, signLaw(g.gov, wejscie(g), cztery[3]));
+    expect(lawOptions(g.gov, wejscie(g)).filter((o) => o.s === 'ok' || o.s === 'cd')).toEqual([]);
+    expect(klucze(g)).toContain('uchwala');
+    expect(cel(g, 'uchwala').done).toBe(true);
+  });
+
+  it('zaliczona uchwała zostaje na liście, choć potem podpisano wszystkie i nie ma już czego podpisać', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    otworz(g, 'r4');
+    expect(klucze(g)).toContain('uchwala');
+    const podpisane = podpiszWszystkie(g);
+    expect(podpisane).toHaveLength(4);
+    expect(lawOptions(g.gov, wejscie(g)).filter((o) => o.s === 'ok' || o.s === 'cd')).toEqual([]);
+    // podpisy po otwarciu zaliczyły cel i został na liście z ptaszkiem
+    expect(klucze(g)).toEqual(['uchwala', 'wkurzenie', 'nowi', 'ludzie']);
+    expect(cel(g, 'uchwala').done).toBe(true);
+    expect(g.sciezka.zrobione).toHaveProperty(['r4.uchwala']);
   });
 });
 

@@ -15,7 +15,7 @@
    płonące po 18:00 z `gov.evening.campfire`; zombie: pionek zarządu bijący z polecenia szwendacza, `job.order`) i uzbrojonej
    warty (zwykły tryb: broń u `min(2, osób)` osób; zombie: karta nocy zatwierdzona po otwarciu rozdziału z `min(2, osób)`
    przydziałami `warta:siatka` u osób z dzidą, czeka do karty, bez terminu). R4 „Zarząd” (w domu „Komitet”) uczy uchwał
-   (podpis po otwarciu, czeka do zebrania), odczytu porannego raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie; czeka do rana), nowych ludzi
+   (podpis po otwarciu, czeka do zebrania; cel nie istnieje, gdy żadnej uchwały nie da się już podpisać ani po odnowieniu), odczytu porannego raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie; czeka do rana), nowych ludzi
    (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu); wariant „ludzie” w bloku
    z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich
    budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu. R5 „Jedzenie” uczy mapy
@@ -32,6 +32,7 @@ import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING, WOOD_PER_HOUR } from '../gov/noc.ts';
 import type { GovInput, GovState, NightPlan, NightReport } from '../gov/typy.ts';
+import { lawOptions } from '../gov/uchwaly.ts';
 import { atHour } from '../gov/wspolne.ts';
 import { LAW_HOUR, LAW_MINUTE } from '../gov/zarzad.ts';
 import { START_KIT } from '../sim/bron.ts';
@@ -432,12 +433,25 @@ const maMieszkancow = (o: OdczytCelow): boolean =>
 /** „19:30” z godziny i minuty zebrania zarządu */
 const godzinaZebrania = `${LAW_HOUR}:${String(LAW_MINUTE).padStart(2, '0')}`;
 
+/** Czy jakąś uchwałę da się jeszcze podpisać, teraz (`ok`) albo po odnowieniu (`cd`). Zebranie zarząd zwołuje tylko wtedy,
+    gdy coś jest `ok` (`govUpdate` w src/gov/zarzad.ts), a z jednej drogi da się podpisać najwyżej cztery z sześciu uchwał,
+    więc potem cel „podpiszcie uchwałę” czekałby na zebranie, które nigdy nie przyjdzie. Bez zarządu i jego wejścia (atrapa
+    w testach) nie wiadomo, więc cel zostaje. */
+const mozeJeszczeUchwalic = (o: OdczytCelow): boolean =>
+  !o.gov || !o.input || lawOptions(o.gov, o.input).some((x) => x.s === 'ok' || x.s === 'cd');
+
+/** podpisano uchwałę po otwarciu rozdziału (to samo wyrażenie co w `zrobiony` celu `uchwala` i w jego `jest`) */
+const podpisanoPoOtwarciu = (o: OdczytCelow, s: StanSciezki): boolean => uchwalyPodpisane(o.gov) > s.start.uchwaly;
+
 const R4: DefRozdzialu = {
   k: 'r4',
   tytul: (o) => L(wielka(o.words.zarzad.krotko), wielka(o.wordsEn.krotko)),
   cele: [
     {
       key: 'uchwala',
+      // nie istnieje, gdy nie ma już czego podpisać; zaliczony (także przez ostatnią podpisaną uchwałę, zanim krok zdążył to
+      // zapisać) zostaje na liście
+      jest: (o, s) => Object.hasOwn(s.zrobione, 'r4.uchwala') || podpisanoPoOtwarciu(o, s) || mozeJeszczeUchwalic(o),
       tekst: () => L('Podpiszcie kolejną uchwałę.', 'Pass another resolution.'),
       jak: (o) =>
         L(
@@ -447,7 +461,7 @@ const R4: DefRozdzialu = {
       okno: 'uchwala',
       // czeka do zebrania (okno uchwały otwiera się o 19:30, o ile odnowienie pozwala)
       czeka: (o) => (o.gov?.lawPending ? null : L('czeka do zebrania', 'waiting for the meeting')),
-      zrobiony: (o, s) => uchwalyPodpisane(o.gov) > s.start.uchwaly,
+      zrobiony: podpisanoPoOtwarciu,
     },
     {
       key: 'wkurzenie',
