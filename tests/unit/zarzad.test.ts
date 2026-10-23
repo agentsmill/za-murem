@@ -25,7 +25,7 @@ import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { confirmNight, govUpdate, loadGov, newGov, pending, saveGov, setNight, signLaw } from '../../src/gov/zarzad.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { BURN_TICKS } from '../../src/sim/sim.ts';
-import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { pl } from './po-angielsku.ts';
 

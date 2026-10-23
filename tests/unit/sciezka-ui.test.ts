@@ -30,9 +30,9 @@ import {
   celWOknie,
   type KluczRozdzialu,
   type OknoCelu,
-  potrzebaDrewna,
   type WidokSciezki,
 } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { esc, liniaCelu } from '../../src/ui/tekst.ts';
 import { FORBIDDEN_DOM, demoWorld as swiat } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';

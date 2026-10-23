@@ -1,6 +1,7 @@
-/* Ścieżka celów (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md): stan w zapisie interfejsu, silnik rozdziałów,
-   rozdziały R0 (pierwszy dzień) i R1 (drugi dzień) oraz HTML okienka celów i linia celu w oknach. Dalsze rozdziały
-   i okazje dochodzą w kolejnych zadaniach planu.
+/* Ścieżka celów (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md): stan w zapisie interfejsu, silnik rozdziałów
+   oraz HTML okienka celów i linia celu w oknach. Treść rozdziałów (definicje celów R0, R1 i dalszych, lista `ROZDZIALY`)
+   leży w src/ui/sciezka-rozdzialy.ts, żeby ten plik nie rósł z każdym rozdziałem; okazje dochodzą w kolejnym zadaniu
+   planu.
 
    Stan. Ścieżka prowadzi gracza przez rozdziały R0–R8 i okazje O1–O7. `StanSciezki` trzyma to, co nie wynika ze stanu gry:
    który rozdział jest otwarty i od kiedy, liczniki z chwili otwarcia, cele zaliczone i przepadłe, zdarzenia samego
@@ -18,7 +19,10 @@
    prawdziwy, choćby poprzedni nie był skończony: R1 otwiera się po zamknięciu pierwszego raportu, także gdy samouczek
    z R0 nie jest skończony (został pominięty), i w grze wczytanej ze starego stanu „pierwszy dzień”, w której raport jest
    już zamknięty. Rozdział z `jest` fałszywym jest pomijany (R3 istnieje tylko z modułem pracy ludzi), a po ostatnim
-   rozdziale stan to „koniec”. Cel, który wygrał z terminem w tym samym kroku, jest zaliczony; cel przepadły nie wraca.
+   rozdziale stan to „koniec”. „Koniec” zapisany, zanim dopisano późniejsze rozdziały (serwer testowy kończył ścieżkę na
+   R1, zanim doszło R2), nie zostaje na zawsze: krok otwiera pierwszy rozdział po ostatnim rozstrzygniętym i ścieżka
+   rusza dalej; bez żadnego wpisu (stan ustawiony ręcznie do zrzutu) „koniec” zostaje. Cel, który wygrał z terminem
+   w tym samym kroku, jest zaliczony; cel przepadły nie wraca.
    Zaliczenie jest trwałe, przepadnięcie też. `widokSciezki(stan, odczyt)` robi z zapisanego stanu to, co rysuje okienko
    (tytuł, cele z tekstem, podpowiedzią, dopiskiem „czeka” i znacznikiem przepadnięcia, bieżący cel); niczego nie
    zalicza, więc przed nim woła się krok. Odczyt jest migawką z jednej chwili: kto zmienia stan gry, buduje nowy.
@@ -29,12 +33,8 @@
    pola w zapisie to brak pola: `jestStanSciezki` sprawdza kształt (woła ją `readSave`, który takie pole zdejmuje,
    i `stanZZapisu`, który wtedy zaczyna od stanu na start).
 
-   R0 to `goalsOf` (src/ui/cele.ts) opakowany w rozdział: te same teksty, te same zaliczenia, a drewno na wieczór trzyma
-   stan ścieżki. R1 to cele drugiego dnia: przeszukać, postawić pierwszą budowlę, wzmocnić obwód (w trybie zombie zrobić
-   dzidę), zebrać drewno na całą noc i dać komuś dyżur przy kozie. Dwa ostatnie mają termin i rozstrzyga je karta nocy:
-   drewno liczy się z karty (`gov.night.card.wood`, a przed kartą z tą samą potrzebą, którą karta pokaże o 20:00),
-   dyżur z przydziału `warta:koza` po zatwierdzeniu karty. Liczą się tylko karty, które powstały po otwarciu rozdziału
-   (plan nocy z tego samego dnia, ale sprzed wczytania gry, czeka na następną noc).
+   Rozdziały. Co każdy cel mówi i kiedy się zalicza, opisuje src/ui/sciezka-rozdzialy.ts (R0 to `goalsOf` z
+   src/ui/cele.ts opakowany w rozdział, dalej R1 i kolejne). Silnik bierze stamtąd tylko `ROZDZIALY`.
 
    Okienko i okna. `celeHtml(widok, { otwarte, touch })` składa wnętrze okienka `#goals` z widoku ścieżki, bez DOM: blok
    okazji („Teraz: …”, jej cele, podpowiedź bieżącego) nad rozdziałem (nagłówek z licznikiem, lista, podpowiedź pod
@@ -47,20 +47,12 @@
 
 import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
-import { CARD_HOUR, KOZA_KEY, MORNING, WOOD_PER_HOUR } from '../gov/noc.ts';
-import type { GovInput, GovState, NightPlan } from '../gov/typy.ts';
-import { atHour } from '../gov/wspolne.ts';
-import { START_KIT } from '../sim/bron.ts';
-import { BUILDS_EN } from '../sim/budowle.en.ts';
-import { BUILDS } from '../sim/budowle.ts';
-import { minutesAt } from '../sim/clock.ts';
-import { PATCH_COST, type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
-import { populacja, type SimSnapshot } from '../sim/snapshot.ts';
-import { TUT_STEPS } from '../sim/tutorial.ts';
+import type { GovInput, GovState } from '../gov/typy.ts';
+import type { SimState } from '../sim/sim.ts';
+import type { SimSnapshot } from '../sim/snapshot.ts';
 import type { World } from '../world/world.ts';
-import { costText } from './budowa.ts';
-import { type Goal, goalsOf, NIGHT_WOOD, najtanszeBudowle, zombieMode } from './cele.ts';
-import { esc, manyEn, num } from './tekst.ts';
+import { ludnoscPodZarzadem, lupZMiasta, ROZDZIALY, uchwalyPodpisane } from './sciezka-rozdzialy.ts';
+import { esc } from './tekst.ts';
 
 /** rozdziały głównej ścieżki po kolei (R3 istnieje dopiero po scaleniu pracy ludzi); „koniec”: po ostatnim rozdziale */
 export const KLUCZE_ROZDZIALOW = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'koniec'] as const;
@@ -175,13 +167,17 @@ function kopia(s: StanSciezki): StanSciezki {
 /** Liczniki do `StanSciezki.start` z odczytu gry w tej chwili: podpisane uchwały (bez cofniętych), raporty, ludność
     pod zarządem (`populacja`, ta sama liczba co `GovInput.ludnosc`), łup zabrany z miejsc z mapy miasta, spotkania
     z sąsiadami (`st.sasiedzi.nr`) i zaliczone kamienie drogi ludnościowej. Zarząd i pola opcjonalne mogą nie istnieć
-    (gra bez mapy miasta, dróg albo sąsiadów): wtedy zero. */
+    (gra bez mapy miasta, dróg albo sąsiadów): wtedy zero. Uchwały, ludność i łup liczą funkcje z
+    src/ui/sciezka-rozdzialy.ts, te same, którymi warunki celów liczą stan z chwili sprawdzenia: porównanie „więcej niż
+    przy otwarciu” ma po obu stronach to samo wyrażenie. Wyjątek to raporty: `raporty` to długość `gov.reports`, a ta lista ma
+    sufit 10 wpisów (najstarszy wypada), więc od 11. nocy nie nadaje się do liczenia nowych raportów; cele rozpoznają raport
+    po otwarciu po dniu nocy (`raportyPoOtwarciu` w src/ui/sciezka-rozdzialy.ts). */
 export function licznikiStartu(st: SimState, gov: GovState | null): StanSciezki['start'] {
   return {
-    uchwaly: gov ? Object.values(gov.laws.signed).filter(Boolean).length : 0,
+    uchwaly: uchwalyPodpisane(gov),
     raporty: gov?.reports.length ?? 0,
-    ludnosc: populacja(st).razem,
-    lup: Object.values(gov?.miasto?.zabrano ?? {}).reduce((suma, n) => suma + n, 0),
+    ludnosc: ludnoscPodZarzadem(st),
+    lup: lupZMiasta(gov),
     spotkania: st.sasiedzi?.nr ?? 0,
     kamienLudnosci: gov?.zwyciestwo?.kamienie.ludnosc ?? 0,
   };
@@ -234,6 +230,10 @@ export interface OdczytCelow {
   /** słowa miejsca po polsku i po angielsku (w domu komitet, furtka, dom) */
   words: Words;
   wordsEn: WordsEn;
+  /** gra ma okno mapy miasta (`mapaMiasta` w main.ts jest różne od null). Nie ma go z `?miasto=0` ani na osiedlu zapasowym
+      bez położenia, choć stan miasta w zarządzie (`gov.miasto`) istnieje; cele, które potrzebują mapy, wtedy nie istnieją.
+      Bez pola (testy) o mapie decyduje `gov.miasto`. */
+  mapaMiasta?: boolean;
   /** ktoś z zarządu jest zaznaczony w interfejsie; zaznaczenie dociera do symulacji dopiero z następnym krokiem (na pauzie
       wcale), a krok samouczka „zaznacz” ma być widać od razu */
   zaznaczony?: boolean;
@@ -242,13 +242,14 @@ export interface OdczytCelow {
 /** okno, które zasłania okienko celów i dostaje linię „Cel: …”, gdy bieżący cel dotyczy tego okna */
 export type OknoCelu = 'karta' | 'uchwala' | 'tablica' | 'spotkanie';
 
-/** Definicja celu. `jest`: cel istnieje w tej grze (tryb, mapa); bez niego (fałsz) nie wchodzi do listy i nie blokuje
-    rozdziału. `zrobiony`: warunek zaliczenia (silnik zapisuje zaliczenie na stałe). `czeka`: dopisek, gdy celu teraz nie
+/** Definicja celu. `jest`: cel istnieje w tej grze (tryb, mapa, stan gry); bez niego (fałsz) nie wchodzi do listy i nie
+    blokuje rozdziału. Dostaje też stan ścieżki, żeby cel już zaliczony mógł zostać na liście, choć warunek istnienia przestał
+    być prawdziwy (uchwała, gdy podpisano wszystkie, które da się podpisać). `zrobiony`: warunek zaliczenia (silnik zapisuje zaliczenie na stałe). `czeka`: dopisek, gdy celu teraz nie
     da się ruszyć („czeka do 20:00”), inaczej null. `przepadl`: termin minął (tylko cele jednej nocy). Teksty w bieżącym
     języku (`L()`), nigdy z modułu na poziomie importu. */
 export interface DefCelu {
   key: string;
-  jest?(o: OdczytCelow): boolean;
+  jest?(o: OdczytCelow, s: StanSciezki): boolean;
   tekst(o: OdczytCelow): string;
   jak(o: OdczytCelow): string;
   zrobiony(o: OdczytCelow, s: StanSciezki): boolean;
@@ -295,22 +296,34 @@ const kluczCelu = (r: KluczRozdzialu, c: Pick<DefCelu, 'key'>): string => `${r}.
 const przepadly = (s: StanSciezki, klucz: string): boolean => s.przepadle.includes(klucz);
 
 /** cele rozdziału, które istnieją w tej grze */
-const celeGry = (d: DefRozdzialu, o: OdczytCelow): readonly DefCelu[] => d.cele.filter((c) => c.jest?.(o) !== false);
+const celeGry = (d: DefRozdzialu, o: OdczytCelow, s: StanSciezki): readonly DefCelu[] =>
+  d.cele.filter((c) => c.jest?.(o, s) !== false);
 
 /** rozdział skończony: każdy jego cel jest zrobiony albo przepadł */
 const skonczony = (d: DefRozdzialu, s: StanSciezki, o: OdczytCelow): boolean =>
-  celeGry(d, o).every((c) => {
+  celeGry(d, o, s).every((c) => {
     const klucz = kluczCelu(d.k, c);
     return zaliczony(s, klucz) || przepadly(s, klucz);
   });
+
+/** Numer ostatniego rozdziału z `rozdzialy`, w którym coś już rozstrzygnięto (wpis w `zrobione` albo `przepadle` z kluczem
+    tego rozdziału), albo −1. Wpisy okazji ('o2.wymiana') i rozdziałów bez definicji się nie liczą. Po tym numerze widać, do
+    którego rozdziału doszła wersja, która zapisała stan. */
+const ostatniRozstrzygniety = (s: StanSciezki, rozdzialy: readonly DefRozdzialu[]): number => {
+  const wpisy = [...Object.keys(s.zrobione), ...s.przepadle];
+  for (let k = rozdzialy.length - 1; k >= 0; k--) if (wpisy.some((w) => w.startsWith(`${rozdzialy[k].k}.`))) return k;
+  return -1;
+};
 
 /** Krok ścieżki: nowy stan z odczytu gry (wejście i odczyt zostają nietknięte). Zalicza cele otwartego rozdziału, których
     warunek jest prawdziwy, i oznacza przepadłe (zaliczenie wygrywa z terminem, a rozstrzygnięty cel nie zmienia się już
     nigdy). Gdy rozdział jest skończony, otwiera następny: zapisuje tick otwarcia i liczniki `start` z tej chwili, a cele
     nowego rozdziału, które gra już spełnia, zalicza od razu, w tym samym kroku (może to zamknąć i ten rozdział). Rozdział
-    z `otwiera` otwiera się po swoim warunku, choćby poprzedni nie był skończony. Po ostatnim rozdziale stan to „koniec”.
-    Stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian. `rozdzialy` pozwala podstawić inne definicje
-    (testy zasad); w grze zawsze `ROZDZIALY`. */
+    z `otwiera` otwiera się po swoim warunku, choćby poprzedni nie był skończony. Po ostatnim rozdziale stan to „koniec”;
+    „koniec” zapisany przez wersję, która nie znała późniejszych rozdziałów (zapis po R1, zanim doszło R2), otwiera w tym
+    kroku pierwszy rozdział po ostatnim rozstrzygniętym, od chwili kroku, i ścieżka rusza dalej jak zwykle (zob.
+    `ostatniRozstrzygniety`). Stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian. `rozdzialy` pozwala
+    podstawić inne definicje (testy zasad); w grze zawsze `ROZDZIALY`. */
 export function krokSciezki(
   s: StanSciezki,
   o: OdczytCelow,
@@ -318,12 +331,24 @@ export function krokSciezki(
 ): StanSciezki {
   const t = kopia(s);
   const tick = o.st.tick;
+  // „koniec” zapisany, zanim dopisano późniejsze rozdziały (serwer testowy po R1 miał go bez R2): ścieżka rusza od
+  // pierwszego rozdziału po ostatnim rozstrzygniętym, który istnieje w tej grze. Bez żadnego wpisu (stan ustawiony ręcznie
+  // do zrzutu) i po ostatnim rozdziale „koniec” zostaje
+  if (t.rozdzial === 'koniec') {
+    const ostatni = ostatniRozstrzygniety(t, rozdzialy);
+    const dalej = ostatni < 0 ? undefined : rozdzialy.slice(ostatni + 1).find((n) => n.jest?.(o) !== false);
+    if (dalej && (dalej.otwiera ? dalej.otwiera(o) : true)) {
+      t.rozdzial = dalej.k;
+      t.od = tick;
+      t.start = licznikiStartu(o.st, o.gov);
+    }
+  }
   // każdy obieg zostawia otwarty późniejszy rozdział niż poprzedni, więc kończy się najwyżej po jednym na rozdział
   for (let obieg = 0; obieg <= rozdzialy.length; obieg++) {
     const k = rozdzialy.findIndex((d) => d.k === t.rozdzial);
     if (k < 0) break;
     const d = rozdzialy[k];
-    for (const c of celeGry(d, o)) {
+    for (const c of celeGry(d, o, t)) {
       const klucz = kluczCelu(d.k, c);
       if (zaliczony(t, klucz) || przepadly(t, klucz)) continue;
       if (c.zrobiony(o, t)) t.zrobione[klucz] = tick;
@@ -351,7 +376,7 @@ export function widokSciezki(
 ): WidokSciezki {
   const d = rozdzialy.find((r) => r.k === s.rozdzial);
   if (!d) return { okazja: null, rozdzial: null, drogi: null };
-  const cele: Cel[] = celeGry(d, o).map((c) => {
+  const cele: Cel[] = celeGry(d, o, s).map((c) => {
     const klucz = kluczCelu(d.k, c);
     const zrobiony = zaliczony(s, klucz);
     const missed = !zrobiony && przepadly(s, klucz);
@@ -370,247 +395,6 @@ export function widokSciezki(
   const biezacy = cele.find((c) => !c.done && !c.czeka) ?? null;
   return { okazja: null, rozdzial: { k: d.k, tytul: d.tytul(o), cele, biezacy }, drogi: null };
 }
-
-/* ---------------------------------------------------------------- R0. Pierwszy dzień */
-
-/** zapas drewna jak w oknie celów od zawsze: skład, luzem i w rękach (bez drewna w ogniu) */
-const zapasDrewna = (o: OdczytCelow): number =>
-  o.snap.stock.woodSklad + o.snap.stock.woodLoose + o.snap.stock.woodCarried;
-
-/** Cele pierwszego dnia z `goalsOf` (src/ui/cele.ts) dla tego odczytu. Zaliczenie drewna rozstrzyga stan ścieżki, nie
-    ta lista, więc `woodReady` nie jest tu potrzebne: teksty i kroki samouczka od niego nie zależą. */
-const r0Lista = (o: OdczytCelow): Goal[] =>
-  goalsOf(o.st, o.gov, {
-    touch: o.touch,
-    kitchen: o.snap.kitchen,
-    hour: o.snap.hour,
-    ...(o.zaznaczony !== undefined ? { selected: o.zaznaczony } : {}),
-    wood: zapasDrewna(o),
-    words: o.words,
-    wordsEn: o.wordsEn,
-    w: o.w,
-  });
-
-const r0Cel = (o: OdczytCelow, key: Goal['key']): Goal =>
-  r0Lista(o).find((g) => g.key === key) ?? { key, text: '', how: '', done: false };
-
-/** po pierwszej nocy albo po zatwierdzeniu karty nocy: termin drewna na wieczór minął */
-const poTerminieWieczoru = (o: OdczytCelow): boolean => (o.gov?.reports.length ?? 0) > 0 || !!o.gov?.night?.confirmed;
-
-const R0: DefRozdzialu = {
-  k: 'r0',
-  tytul: () => L('Pierwszy dzień', 'Day one'),
-  cele: [
-    ...TUT_STEPS.map(
-      (key): DefCelu => ({
-        key,
-        jest: (o) => o.st.tut.step >= 0,
-        tekst: (o) => r0Cel(o, key).text,
-        jak: (o) => r0Cel(o, key).how,
-        zrobiony: (o) => r0Cel(o, key).done,
-      }),
-    ),
-    {
-      key: 'drewno',
-      jest: (o) => o.st.tut.step >= 0,
-      tekst: (o) => r0Cel(o, 'drewno').text,
-      jak: (o) => r0Cel(o, 'drewno').how,
-      // zapas raz zaliczony zostaje zaliczony (koza zje drewno do wieczora); po terminie zaliczyć się już nie da
-      zrobiony: (o) => !poTerminieWieczoru(o) && o.st.tut.step >= TUT_STEPS.length && zapasDrewna(o) >= NIGHT_WOOD,
-      przepadl: poTerminieWieczoru,
-    },
-    {
-      key: 'noc',
-      tekst: (o) => r0Cel(o, 'noc').text,
-      jak: (o) => r0Cel(o, 'noc').how,
-      zrobiony: (o) => (o.gov?.reports.length ?? 0) > 0,
-    },
-  ],
-};
-
-/* ---------------------------------------------------------------- R1. Drugi dzień */
-
-/** Drewno na całą noc przy dyżurze, jak liczy je karta nocy o 20:00 (`nightWood` w src/gov/noc.ts): WOOD_PER_HOUR na
-    godzinę razy 10 godzin od CARD_HOUR do MORNING razy liczba palenisk (`GovInput.paleniska`, bez pola jedno). Ta sama
-    liczba stoi w podpowiedzi celu przed kartą, a karta pokaże ją o 20:00. */
-export const potrzebaDrewna = (i: Pick<GovInput, 'paleniska'> | null): number =>
-  Math.ceil(((MORNING - CARD_HOUR + 24) % 24) * WOOD_PER_HOUR * (i?.paleniska ?? 1));
-
-/** po zamknięciu pierwszego raportu: raport jest, a okno raportu już nie */
-const poPierwszymRaporcie = (o: OdczytCelow): boolean => !!o.gov && o.gov.reports.length >= 1 && !o.gov.report;
-
-/** Plan nocy (karta), który powstał po otwarciu rozdziału. Karta powstaje o CARD_HOUR dnia `plan.day`, więc liczy się, jeśli
-    ta godzina nie jest wcześniejsza niż chwila otwarcia rozdziału. Plan sprzed otwarcia (gra wczytana po zatwierdzeniu
-    karty) czeka na następną noc. Plan bez dnia (atrapa) się nie liczy. */
-const kartaPoOtwarciu = (o: OdczytCelow, s: StanSciezki): NightPlan | null => {
-  const n = o.gov?.night;
-  return n && atHour(n.day, CARD_HOUR) >= minutesAt(s.od) ? n : null;
-};
-
-/** karta nocy z tej nocy ma w przydziałach dyżur przy kozie */
-const maDyzur = (n: NightPlan): boolean => Object.values(n.assign ?? {}).includes(KOZA_KEY);
-
-/** „Budowa (przycisk u góry albo B)”; na dotyku sam przycisk */
-const przyciskBudowy = (touch: boolean): string =>
-  touch
-    ? L('Przycisk Budowa u góry', 'The Build button at the top')
-    : L('Budowa (przycisk u góry albo B)', 'Build (button at the top, or B)');
-
-function budowlaJak(o: OdczytCelow): string {
-  const { words: w, wordsEn: e, touch } = o;
-  const b = przyciskBudowy(touch);
-  // dwie budowle, które biorą najmniej materiału spośród tych, które da się postawić (koszty stroi bot, więc nie wpisuję
-  // ich na sztywno)
-  const kinds = najtanszeBudowle(o.st);
-  const tanie = kinds.map((k) => `${L(BUILDS[k].name.toLowerCase(), BUILDS_EN[k].the)} (${costText(BUILDS[k].cost)})`);
-  // dopiski: zasieki liczą się też do celu obwodu (którego w zombie nie ma), a w domu jednorodzinnym deski i złom mają
-  // też sąsiednie domy
-  const obok = (x: Words['szukanie']['obok'] | WordsEn['szukanie']['obok']): string =>
-    x ? (touch ? x.dotyk : x.mysz) : '';
-  const dopisek = (...zdania: string[]): string =>
-    zdania
-      .filter(Boolean)
-      .map((z) => ` ${z}`)
-      .join('');
-  const zasieki = !zombieMode(o.st, o.gov) && kinds.includes('zasieki');
-  return L(
-    `${b}: dowolna budowla. Najmniej materiału biorą ${tanie.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje. Materiał daje przeszukiwanie i rozbiórka.${dopisek(
-      zasieki ? 'Zasieki liczą się też do obwodu.' : '',
-      obok(w.szukanie.obok),
-    )}`,
-    `${b}: any structure will do. The cheapest are ${tanie.join(' and ')}. ${e.Zarzad} will fetch the materials and do the building. Searching and taking things apart give you materials.${dopisek(
-      zasieki ? 'A barricade also counts for the perimeter.' : '',
-      obok(e.szukanie.obok),
-    )}`,
-  );
-}
-
-function obwodJak(o: OdczytCelow): string {
-  const dziury = num(o.snap.fence.holes.length, 0);
-  const zasieki = costText(BUILDS.zasieki.cost);
-  const b = o.touch ? L('Przycisk Budowa u góry', 'The Build button at the top') : L('Budowa', 'Build');
-  return L(
-    `${b}, zakładka Obwód: ${BUILDS.zasieki.name} w miejscu odcinka siatki (${zasieki}) albo łatanie: ${
-      o.touch ? 'przytrzymajcie palec na dziurze' : 'prawy przycisk na dziurze'
-    }, „Załatać dziurę” (${PATCH_COST} deski albo ${PATCH_COST} złomu na łatę). Otwartych dziur: ${dziury}.`,
-    `${b}, Perimeter tab: a ${BUILDS_EN.zasieki.name.toLowerCase()} in place of a stretch of fence (${zasieki}), or patch the holes: ${
-      o.touch ? 'press and hold on a hole' : 'right-click a hole'
-    }, “Patch the hole” (${PATCH_COST} planks or ${PATCH_COST} scrap a patch). Open holes: ${dziury}.`,
-  );
-}
-
-/** dzidy w rękach zarządu i w magazynie oraz tyle, ile było ich na starcie trybu zombie */
-const dzidy = (o: OdczytCelow): { sa: number; start: number } => ({
-  sa:
-    o.st.pawns.filter((p) => p.kind === 'core' && p.weapon === 'dzida').length +
-    (o.st.store.arms ?? []).filter((x) => x === 'dzida').length,
-  start: [...START_KIT.zombie.core, ...START_KIT.zombie.store].filter((x) => x === 'dzida').length,
-});
-
-function dzidaJak(o: OdczytCelow): string {
-  const { words: w, wordsEn: e, touch } = o;
-  return L(
-    `${touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
-    `${touch ? 'Press and hold on a pile of planks or scrap' : 'Right-click a pile of planks or scrap'}: “Make a spear” (${manyEn(SPEAR_BOARDS, 'plank', 'planks')} and ${SPEAR_SCRAP} scrap). A spear reaches shamblers through the fence. Planks and scrap come from searching ${e.szukanie.d} and taking things apart.`,
-  );
-}
-
-function drewnoNaNocJak(o: OdczytCelow): string {
-  const { words: w, wordsEn: e, touch } = o;
-  const mam = num(Math.floor(o.snap.stock.wood), 0);
-  const trzeba = num(potrzebaDrewna(o.input), 0);
-  if (zombieMode(o.st, o.gov))
-    return L(
-      `Drewna ${mam} z ${trzeba}, razem z tym w kozie. Za siatką są szwendacze: spalcie meble ${w.szukanie.w} („Spalić …”) albo idźcie po drzewo za dnia z dzidą, kiedy pod siatką jest pusto.`,
-      `Wood: ${mam} of ${trzeba}, counting what’s in the stove. There are shamblers outside the fence: burn furniture ${e.szukanie.w} (“Burn the …”), or go for a tree by day with a spear when nobody is at the fence.`,
-    );
-  return L(
-    `Drewna ${mam} z ${trzeba}, razem z tym w kozie: tyle zje noc od ${CARD_HOUR}:00 do ${MORNING}:00 przy dyżurze, sztuka na godzinę. ${
-      touch ? 'Stuknijcie pień drzewa' : 'Prawy przycisk na drzewie: „Ściąć drzewo”'
-    }; za dnia ${w.brama.m} stoi otwarta.`,
-    `Wood: ${mam} of ${trzeba}, counting what’s in the stove: that’s what the night from ${CARD_HOUR}:00 to ${MORNING}:00 burns with a stove watch, one piece an hour. ${
-      touch ? 'Tap the trunk of a tree' : 'Right-click a tree: “Chop down the tree”'
-    }; ${e.brama} stays open by day.`,
-  );
-}
-
-const R1: DefRozdzialu = {
-  k: 'r1',
-  tytul: () => L('Drugi dzień', 'Day two'),
-  otwiera: poPierwszymRaporcie,
-  cele: [
-    {
-      key: 'przeszukaj',
-      tekst: (o) => L(`Przeszukajcie ${o.words.szukanie.b}.`, `Search ${o.wordsEn.szukanie.b}.`),
-      jak: (o) =>
-        o.touch
-          ? L(o.words.szukanie.jak.dotyk, o.wordsEn.szukanie.jak.dotyk)
-          : L(o.words.szukanie.jak.mysz, o.wordsEn.szukanie.jak.mysz),
-      // co przeszukane, daje stan gry: mieszkania siedziby, a od fali 2 także pomieszczenia sąsiednich budynków
-      zrobiony: (o) =>
-        o.st.apts.some((a) => a.searched.length > 0) ||
-        (o.st.sasiedzi?.budynki ?? []).some(
-          (b) => b.przeszukane.length > 0 || b.mieszkania.some((m) => m.przeszukane.length > 0),
-        ),
-    },
-    {
-      key: 'budowla',
-      tekst: () => L('Postawcie pierwszą budowlę.', 'Put up your first structure.'),
-      jak: budowlaJak,
-      zrobiony: (o) => o.st.things.some((t) => t.kind in BUILDS),
-    },
-    {
-      key: 'obwod',
-      // w trybie zombie siatka jest wzmocniona i bez dziur, a zasieki przed szwendaczami nie chronią lepiej niż ona:
-      // zamiast obwodu dzida dla warty
-      jest: (o) => !zombieMode(o.st, o.gov),
-      tekst: () => L('Wzmocnijcie obwód.', 'Strengthen the perimeter.'),
-      jak: obwodJak,
-      zrobiony: (o) => o.st.things.some((t) => t.kind === 'zasieki') || o.snap.fence.holes.length === 0,
-    },
-    {
-      key: 'dzida',
-      jest: (o) => zombieMode(o.st, o.gov),
-      tekst: () => L('Zróbcie dzidę dla warty.', 'Make a spear for the watch.'),
-      jak: dzidaJak,
-      zrobiony: (o) => {
-        const d = dzidy(o);
-        return d.sa > d.start;
-      },
-    },
-    {
-      key: 'drewno2',
-      tekst: () => L('Zbierzcie drewno na całą noc.', 'Get in enough wood for the whole night.'),
-      jak: drewnoNaNocJak,
-      // rozstrzyga karta nocy: zaliczony, gdy karta pokazuje zapas równy potrzebie, przepadł, gdy zatwierdzona bez niego
-      zrobiony: (o, s) => {
-        const wood = kartaPoOtwarciu(o, s)?.card?.wood;
-        return !!wood && wood.have >= wood.need;
-      },
-      przepadl: (o, s) => !!kartaPoOtwarciu(o, s)?.confirmed,
-    },
-    {
-      key: 'dyzur',
-      tekst: () => L('Dajcie komuś dyżur przy kozie.', 'Put someone on stove watch.'),
-      jak: () =>
-        L(
-          'Na karcie nocy o 20:00 wybierzcie przy jednej osobie „Czuwa przy kozie”. Bez dyżuru koza gaśnie, kiedy wszyscy zasną.',
-          'On the Night orders at 20:00, pick “Watches the stove” for one person. Without a stove watch the fire goes out once everyone is asleep.',
-        ),
-      okno: 'karta',
-      // czeka do karty nocy; zaliczony przy zatwierdzeniu karty z `warta:koza`, przepadł przy zatwierdzeniu bez niego
-      czeka: (o, s) => (kartaPoOtwarciu(o, s) ? null : L(`czeka do ${CARD_HOUR}:00`, `waiting for ${CARD_HOUR}:00`)),
-      zrobiony: (o, s) => {
-        const n = kartaPoOtwarciu(o, s);
-        return !!n?.confirmed && maDyzur(n);
-      },
-      przepadl: (o, s) => !!kartaPoOtwarciu(o, s)?.confirmed,
-    },
-  ],
-};
-
-/** Rozdziały głównej ścieżki po kolei; dalsze (R2–R8) dochodzą w kolejnych zadaniach planu. */
-export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1];
 
 /* ---------------------------------------------------------------- okienko celów (HTML) i linia celu w oknach */
 

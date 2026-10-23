@@ -19,7 +19,7 @@ import { nowyBudynek } from '../../src/sim/sasiedzi.ts';
 import type { Command } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
-import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { doorWhere, core as rdzen } from './sasiedzi-pomoc.ts';
@@ -511,6 +511,11 @@ describe.each(KOMBINACJE)('R1: karta nocy, drewno i dyżur: %s %s', (key, mode) 
     // rozdział skończony: okienko pokazuje następny rozdział albo jest schowane, drugiego dnia już nie ma
     expect(widok(g).rozdzial?.k).not.toBe('r1');
     expect(widok(g).rozdzial?.k).not.toBe('r0');
+    // następny to R2 „Ludzie i noc”, otwarty w chwili zamknięcia R1, z licznikami z tej chwili
+    expect(g.sciezka.rozdzial).toBe('r2');
+    expect(g.sciezka.od).toBe(g.sim.st.tick);
+    expect(widok(g).rozdzial?.tytul).toBe('Ludzie i noc');
+    expect(g.sciezka.start.raporty).toBe(g.gov.reports.length);
   });
 });
 

@@ -8,7 +8,7 @@
    bez ponownego grania dwóch dób. Żadnego losowania poza ziarnem gry; wszystko w Node, bez przeglądarki. */
 
 import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
-import type { GovState, NightCard, Prompt } from '../../src/gov/typy.ts';
+import type { GovInput, GovState, NightCard, Prompt } from '../../src/gov/typy.ts';
 import { ackReport, chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
@@ -20,7 +20,9 @@ import { snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import {
   type Cel,
+  type KluczRozdzialu,
   krokSciezki,
+  licznikiStartu,
   nowyStanSciezki,
   type OdczytCelow,
   type StanSciezki,
@@ -28,6 +30,8 @@ import {
   type WidokSciezki,
   widokSciezki,
 } from '../../src/ui/sciezka.ts';
+import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
+import type { Miejsce } from '../../src/world/miasto.ts';
 import type { World } from '../../src/world/world.ts';
 import { newGame, core as rdzen } from './sasiedzi-pomoc.ts';
 
@@ -47,11 +51,19 @@ export interface Gra {
   sciezka: StanSciezki;
   /** gra bez automatu pracy ludzi (`bezAutomatu`): osoby zarządu, którym nowe rodzaje pracy już wyłączono */
   wylaczeni?: number[];
+  /** miejsca z okolicy w wejściu zarządu (`GovInput.okolica`, jak w grze z mapą miasta): z nimi karta nocy proponuje
+      wyprawy do miejsc z mapy, bez nich do celów z TARGETS */
+  okolica?: Miejsce[];
 }
 
 /** nowa gra: 4 osoby zarządu, godzina 15:00 pierwszego dnia, ścieżka na starcie (pierwszy dzień) */
 export function nowaGra(key: Demo, mode: GameMode = 'zwykly', seed = 5): Gra {
   return { key, mode, seed, sim: newGame(key, mode, seed), gov: newGov(seed, mode), sciezka: nowyStanSciezki() };
+}
+
+/** gra z gotową symulacją (mieszkańcy z generatora, jednoosobowy zarząd, spotkanie w drzwiach) i zarządem na starcie */
+export function graZSymulacji(key: Demo, mode: GameMode, seed: number, sim: Sim): Gra {
+  return { key, mode, seed, sim, gov: newGov(seed, mode), sciezka: nowyStanSciezki() };
 }
 
 /** niezależna kopia gry z tej samej chwili: stan symulacji, zarządu i ścieżki to zwykły JSON, a `Sim` odbudowuje resztę
@@ -103,8 +115,11 @@ export function przezZapis(g: Gra): Gra {
 /** sekundy przy ekranie w tej chwili (przy tempie 1×) */
 export const ekran = (st: SimState): number => Math.floor(st.tick / TICKS_PER_SECOND);
 
-/** wejście zarządu z tej chwili, tak jak buduje je gra */
-export const wejscie = (g: Gra) => govInput(g.sim.st, g.sim.w, ekran(g.sim.st));
+/** wejście zarządu z tej chwili, tak jak buduje je gra (z okolicą, jeśli gra ją ma) */
+export const wejscie = (g: Gra): GovInput => ({
+  ...govInput(g.sim.st, g.sim.w, ekran(g.sim.st)),
+  ...(g.okolica ? { okolica: g.okolica } : {}),
+});
 
 /** opcje odczytu: dotyk zamiast myszy, zaznaczenie w interfejsie i słowa miejsca (domyślnie z świata gry) */
 export interface OpcjeOdczytu {
@@ -112,6 +127,8 @@ export interface OpcjeOdczytu {
   zaznaczony?: boolean;
   words?: Words;
   wordsEn?: WordsEn;
+  /** gra ma okno mapy miasta (`OdczytCelow.mapaMiasta`); bez pola, jak w większości testów, decyduje `gov.miasto` */
+  mapaMiasta?: boolean;
 }
 
 /** Odczyt gry dla ścieżki ze stanu symulacji, świata i zarządu (albo jego braku): nowa migawka za każdym razem (odczyt nie
@@ -127,15 +144,19 @@ export function odczytZ(st: SimState, w: World, gov: GovState | null, o: OpcjeOd
     words: o.words ?? wordsOfWorld(w),
     wordsEn: o.wordsEn ?? wordsEnOfWorld(w),
     ...(o.zaznaczony !== undefined ? { zaznaczony: o.zaznaczony } : {}),
+    ...(o.mapaMiasta !== undefined ? { mapaMiasta: o.mapaMiasta } : {}),
   };
 }
 
 /** Cele rozdziału R1 (drugi dzień) dla takiego odczytu: stan ścieżki otwarty w R1 od ticku stanu, jeden krok i widok.
-    Każde wywołanie liczy od zera, więc test, który zmienia stan gry między wywołaniami, widzi tylko jego skutki. */
+    Każde wywołanie liczy od zera, więc test, który zmienia stan gry między wywołaniami, widzi tylko jego skutki. Krok
+    robi się na samych R0 i R1, a widok bierze zawsze R1: gdy wszystkie jego cele są rozstrzygnięte, ścieżka otwiera
+    następny rozdział (R2), ale cele R1 dalej mają ptaszki, o które pytają testy. */
 export function celeR1(st: SimState, w: World, gov: GovState | null, o: OpcjeOdczytu = {}): Cel[] {
   const odczytGry = odczytZ(st, w, gov, o);
-  const stan = krokSciezki({ ...nowyStanSciezki(), rozdzial: 'r1', od: st.tick }, odczytGry);
-  return widokSciezki(stan, odczytGry).rozdzial?.cele ?? [];
+  const rozdzialy = ROZDZIALY.slice(0, 2);
+  const stan = krokSciezki({ ...nowyStanSciezki(), rozdzial: 'r1', od: st.tick }, odczytGry, rozdzialy);
+  return widokSciezki({ ...stan, rozdzial: 'r1' }, odczytGry, rozdzialy).rozdzial?.cele ?? [];
 }
 
 /** Odczyt gry dla ścieżki z tej chwili */
@@ -147,6 +168,14 @@ export function odczyt(g: Gra, o: OpcjeOdczytu = {}): OdczytCelow {
 export function krok(g: Gra, o?: OpcjeOdczytu): StanSciezki {
   g.sciezka = krokSciezki(g.sciezka, odczyt(g, o));
   return g.sciezka;
+}
+
+/** Otwiera rozdział w tej chwili jak `window.zm.rozdzial(k)` (tick otwarcia i liczniki „od otwarcia” z tej chwili, wpisy
+    zrobionych celów zostają) i robi krok: cele, które gra już spełnia, zaliczają się od razu. Do testów rozdziałów, które
+    nie chcą grać dwóch dób do chwili, w której rozdział otworzyłby się sam. */
+export function otworz(g: Gra, k: KluczRozdzialu, o?: OpcjeOdczytu): StanSciezki {
+  g.sciezka = { ...g.sciezka, rozdzial: k, od: g.sim.st.tick, start: licznikiStartu(g.sim.st, g.gov) };
+  return krok(g, o);
 }
 
 /** widok okienka celów: stan ścieżki po jednym kroku na bieżącym odczycie (tak jak `renderGoals`) */
