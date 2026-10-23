@@ -9,19 +9,36 @@
    dzidę), zebrać drewno na całą noc i dać komuś dyżur przy kozie. Dwa ostatnie mają termin i rozstrzyga je karta nocy:
    drewno liczy się z karty (`gov.night.card.wood`, a przed kartą z tą samą potrzebą, którą karta pokaże o 20:00),
    dyżur z przydziału `warta:koza` po zatwierdzeniu karty. Liczą się tylko karty, które powstały po otwarciu rozdziału
-   (plan nocy z tego samego dnia, ale sprzed wczytania gry, czeka na następną noc). Dalsze rozdziały dochodzą w kolejnych
-   zadaniach planu. */
+   (plan nocy z tego samego dnia, ale sprzed wczytania gry, czeka na następną noc).
+
+   R2 „Ludzie i noc” uczy listy ludzi (zdarzenie interfejsu `lista`), światła albo dzidy przez siatkę (zwykły tryb: ognisko
+   płonące po 18:00 z `gov.evening.campfire`; zombie: pionek zarządu bijący z polecenia szwendacza, `job.order`) i uzbrojonej
+   warty (zwykły tryb: broń u `min(2, osób)` osób; zombie: karta nocy zatwierdzona po otwarciu rozdziału z `min(2, osób)`
+   przydziałami `warta:siatka` u osób z dzidą, czeka do karty, bez terminu). R4 „Zarząd” (w domu „Komitet”) uczy uchwał
+   (podpis po otwarciu, czeka do zebrania), spadku wkurzenia (raport po otwarciu z `dAnger < 0`, czeka do rana), nowych ludzi
+   (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu); wariant „ludzie” w bloku
+   z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich
+   budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu. R5 „Jedzenie” uczy mapy
+   miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu; oba cele tylko w grze z mapą miasta,
+   `gov.miasto`, bo z `?miasto=0` przycisku mapy nie ma) i ogródka. Rozdziały R2–R5 nie mają terminów: nic z nich nie
+   przepada. R3 (praca ludzi) i R6–R8 dochodzą w kolejnych zadaniach planu, więc po R2 otwiera się R4.
+
+   Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
+   te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
+   sprawdzenia, więc obie strony porównania nie rozjadą się. */
 
 import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING, WOOD_PER_HOUR } from '../gov/noc.ts';
-import type { GovInput, NightPlan } from '../gov/typy.ts';
+import type { GovInput, GovState, NightPlan } from '../gov/typy.ts';
 import { atHour } from '../gov/wspolne.ts';
+import { LAW_HOUR, LAW_MINUTE } from '../gov/zarzad.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS } from '../sim/budowle.ts';
 import { minutesAt } from '../sim/clock.ts';
-import { PATCH_COST, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
+import { CAMPFIRE_WOOD, PATCH_COST, type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
+import { populacja } from '../sim/snapshot.ts';
 import { TUT_STEPS } from '../sim/tutorial.ts';
 import { costText } from './budowa.ts';
 import { type Goal, goalsOf, NIGHT_WOOD, najtanszeBudowle, zombieMode } from './cele.ts';
@@ -266,5 +283,269 @@ const R1: DefRozdzialu = {
   ],
 };
 
-/** Rozdziały głównej ścieżki po kolei; dalsze (R2–R8) dochodzą w kolejnych zadaniach planu. */
-export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1];
+/* ---------------------------------------------------------------- liczniki „od otwarcia” */
+
+/** Podpisane uchwały bez cofniętych (wpis z `false` się nie liczy); zero bez zarządu. To samo wyrażenie liczy
+    `licznikiStartu` w chwili otwarcia rozdziału i cel `uchwala` w chwili sprawdzenia. W grze `signed` ma tylko wartości
+    `true`, więc to samo daje `Object.keys(gov.laws.signed).length` z projektu. */
+export const uchwalyPodpisane = (gov: GovState | null): number =>
+  gov ? Object.values(gov.laws.signed).filter(Boolean).length : 0;
+
+/** Ludność pod zarządem: zarząd i mieszkańcy (`populacja`, ta sama liczba co `GovInput.ludnosc`, czyli `ludnoscOf`
+    z dróg do zwycięstwa). Zmiany po otwarciu rozdziału widać tylko jako różnicę z liczbą z chwili otwarcia. */
+export const ludnoscPodZarzadem = (st: SimState): number => populacja(st).razem;
+
+/** Łup zabrany z miejsc z mapy miasta (suma `gov.miasto.zabrano`, dzienne i nocne wyprawy); zero bez mapy miasta. */
+export const lupZMiasta = (gov: GovState | null): number =>
+  Object.values(gov?.miasto?.zabrano ?? {}).reduce((suma, n) => suma + n, 0);
+
+/** Czy zdarzenie interfejsu (lista ludzi, karta mieszkańca, karta budynku, ekran dróg) zdarzyło się od otwarcia rozdziału.
+    Liczy się też zdarzenie w tym samym ticku co otwarcie: na pauzie tick stoi, a kliknięcie zaraz po otwarciu rozdziału
+    ma ten sam numer. */
+const zdarzeniePoOtwarciu = (s: StanSciezki, k: keyof StanSciezki['ui']): boolean => {
+  const tick = s.ui[k];
+  return tick !== undefined && tick >= s.od;
+};
+
+/** cel nocy czeka do karty, która powstała po otwarciu rozdziału (jak dyżur przy kozie w R1) */
+const czekaDoKarty = (o: OdczytCelow, s: StanSciezki): string | null =>
+  kartaPoOtwarciu(o, s) ? null : L(`czeka do ${CARD_HOUR}:00`, `waiting for ${CARD_HOUR}:00`);
+
+/** dwie osoby, a w mniejszym zarządzie tyle, ile osób jest (progi celów R2) */
+const dwieOsoby = (o: OdczytCelow): number => Math.min(2, o.snap.people.length);
+
+/* ---------------------------------------------------------------- R2. Ludzie i noc */
+
+/** klucz przydziału na karcie nocy: warta przy siatce (tylko w trybie zombie) */
+const SIATKA_KEY = 'warta:siatka';
+
+/** ktoś z zarządu bije z polecenia gracza szwendacza (polecenie `attack` zakłada pracę `fight` z `order`; bez polecenia
+    walczy warta albo ktoś zaatakowany) */
+const bijeSzwendacza = (o: OdczytCelow): boolean =>
+  o.st.pawns.some((p) => {
+    const j = p.job;
+    return (
+      p.kind === 'core' &&
+      j?.t === 'fight' &&
+      j.order &&
+      o.st.pawns.some((q) => q.id === j.target && q.kind === 'zombie')
+    );
+  });
+
+const R2: DefRozdzialu = {
+  k: 'r2',
+  tytul: () => L('Ludzie i noc', 'People and the night'),
+  cele: [
+    {
+      key: 'sily',
+      tekst: () => L('Sprawdźcie, kto ma siły na noc.', 'Check who has the energy for tonight.'),
+      jak: (o) =>
+        o.touch
+          ? L(
+              'Stuknijcie portret na liście pod paskiem: karta pokaże siły tej osoby.',
+              'Tap a portrait in the row under the top bar: the card shows that person’s Energy.',
+            )
+          : L(
+              'Kliknijcie portret na liście pod paskiem: karta pokaże siły tej osoby. Klawisze Q i E przełączają ludzi po kolei.',
+              'Click a portrait in the row under the top bar: the card shows that person’s Energy. Keys Q and E step through your people.',
+            ),
+      zrobiony: (_o, s) => zdarzeniePoOtwarciu(s, 'lista'),
+    },
+    {
+      key: 'ognisko',
+      // w trybie zombie światło nocą przyciąga szwendaczy, więc zamiast ogniska dźgnięcie szwendacza przez siatkę
+      jest: (o) => !zombieMode(o.st, o.gov),
+      tekst: () => L('Rozpalcie ognisko na podwórku.', 'Light a campfire in the yard.'),
+      jak: (o) =>
+        L(
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (${num(CAMPFIRE_WOOD, 0)} drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta ${o.words.brama.przy} też ma lampę.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} a free spot in the yard: “Light a campfire here” (${num(CAMPFIRE_WOOD, 0)} wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at ${o.wordsEn.brama} carries a lamp too.`,
+        ),
+      // flagę zarządu ustawia ognisko, które płonie po 18:00; zeruje ją raport rano
+      zrobiony: (o) => !!o.gov?.evening.campfire,
+    },
+    {
+      key: 'dzgnij',
+      jest: (o) => zombieMode(o.st, o.gov),
+      tekst: () => L('Dźgnijcie szwendacza przez siatkę.', 'Spear a shambler through the fence.'),
+      jak: (o) =>
+        L(
+          `${o.touch ? 'Stuknijcie osobę z dzidą i przytrzymajcie palec' : 'Zaznaczcie osobę z dzidą i prawy przycisk'} na szwendaczu przy siatce: „Atakuj szwendacza”. Dzida sięga przez siatkę; strzał zabija od razu, ale ściąga następnych.`,
+          `${o.touch ? 'Tap someone with a spear and press and hold on' : 'Select someone with a spear and right-click'} a shambler at the fence: “Attack the shambler”. A spear reaches through the fence; a shot kills outright but draws more of them.`,
+        ),
+      // chwilowy stan: praca w toku, zaliczana, gdy okienko ją zobaczy
+      zrobiony: bijeSzwendacza,
+    },
+    {
+      key: 'uzbrojeni',
+      jest: (o) => !zombieMode(o.st, o.gov),
+      tekst: () => L('Dajcie broń drugiej osobie.', 'Arm a second person.'),
+      jak: (o) =>
+        L(
+          `Na karcie osoby bez broni ${o.touch ? 'stuknijcie' : 'kliknijcie'} „Zmień”: weźmie nóż albo łom z magazynu. Uzbrojona warta broni się lepiej i karta nocy to liczy.`,
+          `On the card of someone without a weapon, ${o.touch ? 'tap' : 'click'} “Swap”: they take the knife or the crowbar from the storeroom. An armed watch holds out better, and the Night orders count it.`,
+        ),
+      zrobiony: (o) => o.snap.people.filter((p) => p.weapon).length >= dwieOsoby(o),
+    },
+    {
+      key: 'dzidy',
+      jest: (o) => zombieMode(o.st, o.gov),
+      tekst: () => L('Postawcie na noc dwie dzidy przy siatce.', 'Put two spears on watch at the fence tonight.'),
+      jak: () =>
+        L(
+          'Na karcie nocy wybierzcie „Warta przy siatce” dwóm osobom z dzidą. Drugą dzidę da „Zmień” na karcie osoby (zapasowa z magazynu) albo „Zrobić dzidę”.',
+          'On the Night orders, pick “Watch at the fence” for two people with spears. A second spear comes from “Swap” on a person’s card (the spare in the storeroom) or from “Make a spear”.',
+        ),
+      okno: 'karta',
+      // czeka do karty nocy; bez terminu: próba co noc, aż dwie dzidy staną przy siatce
+      czeka: czekaDoKarty,
+      zrobiony: (o, s) => {
+        const n = kartaPoOtwarciu(o, s);
+        if (!n?.confirmed) return false;
+        const straz = o.snap.people.filter((p) => n.assign?.[p.id] === SIATKA_KEY && p.weapon === 'dzida');
+        return straz.length >= dwieOsoby(o);
+      },
+    },
+  ],
+};
+
+/* ---------------------------------------------------------------- R4. Zarząd */
+
+const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** raporty rano, które powstały po otwarciu rozdziału (`start.raporty` to liczba raportów w chwili otwarcia) */
+const raportyPoOtwarciu = (o: OdczytCelow, s: StanSciezki) => (o.gov?.reports ?? []).slice(s.start.raporty);
+
+/** Czy siedziba ma mieszkańców z osobą z generatora (pionki `resident`). Nie `snap.lokatorzy`: ta lista ma też lokatorów
+    sąsiednich budynków (pionki `sasiad` w trakcie spotkania), a tekst celu nie może przeskakiwać z domu na blok. */
+const maMieszkancow = (o: OdczytCelow): boolean =>
+  o.st.pawns.some((p) => p.kind === 'resident' && p.person >= 0 && !!o.st.people[p.person]);
+
+/** „19:30” z godziny i minuty zebrania zarządu */
+const godzinaZebrania = `${LAW_HOUR}:${String(LAW_MINUTE).padStart(2, '0')}`;
+
+const R4: DefRozdzialu = {
+  k: 'r4',
+  tytul: (o) => L(wielka(o.words.zarzad.krotko), wielka(o.wordsEn.krotko)),
+  cele: [
+    {
+      key: 'uchwala',
+      tekst: () => L('Podpiszcie kolejną uchwałę.', 'Pass another resolution.'),
+      jak: (o) =>
+        L(
+          `Zebranie ${o.words.zarzad.dk} o ${godzinaZebrania}, kiedy minie półtorej doby od poprzedniej uchwały. Drogi porządku i wspólnoty się wykluczają: pierwsza uchwała z jednej zamyka drugą.`,
+          `${o.wordsEn.Zarzad} meets at ${godzinaZebrania} once a day and a half has passed since the last resolution. The Order and Community paths rule each other out: the first resolution on one closes the other.`,
+        ),
+      okno: 'uchwala',
+      // czeka do zebrania (okno uchwały otwiera się o 19:30, o ile odnowienie pozwala)
+      czeka: (o) => (o.gov?.lawPending ? null : L('czeka do zebrania', 'waiting for the meeting')),
+      zrobiony: (o, s) => uchwalyPodpisane(o.gov) > s.start.uchwaly,
+    },
+    {
+      key: 'wkurzenie',
+      tekst: () => L('Niech wkurzenie spadnie przez noc.', 'Get the anger down overnight.'),
+      jak: (o) =>
+        L(
+          `Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple, a wieczorem pali się ognisko; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu ${o.words.walne} odwoła ${o.words.zarzad.krotko}.`,
+          `The Morning report shows how trust and anger moved. Anger drops when people are fed and warm and a campfire burns in the evening; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger ${o.wordsEn.walne} votes ${o.wordsEn.krotko} out.`,
+        ),
+      // rozstrzyga raport rano: do pierwszego raportu po otwarciu rozdziału cel czeka, potem jest bieżący, aż raport pokaże spadek
+      czeka: (o, s) => (raportyPoOtwarciu(o, s).length ? null : L('czeka do rana', 'waiting for morning')),
+      zrobiony: (o, s) => raportyPoOtwarciu(o, s).some((r) => r.dAnger < 0),
+    },
+    {
+      key: 'nowi',
+      tekst: () => L('Przyjmijcie kogoś nowego.', 'Take someone new in.'),
+      jak: (o) =>
+        L(
+          `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od ${o.words.brama.d}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
+          `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${o.wordsEn.brama}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
+        ),
+      // zgon w międzyczasie tylko opóźnia cel: liczy się ludność większa niż przy otwarciu
+      zrobiony: (o, s) => ludnoscPodZarzadem(o.st) > s.start.ludnosc,
+    },
+    {
+      key: 'ludzie',
+      tekst: (o) =>
+        maMieszkancow(o)
+          ? L('Poznajcie mieszkańców siedziby.', 'Meet the residents of your block.')
+          : L('Poznajcie sąsiadów zza płotu.', 'Get to know the neighbours over the fence.'),
+      jak: (o) =>
+        maMieszkancow(o)
+          ? L(
+              `${o.touch ? 'Stuknijcie' : 'Kliknijcie'} mieszkańca na podwórku albo w mieszkaniu, kiedy nikt nie jest zaznaczony: karta powie, kim jest i z kim mieszka. Mieszkańcy są wymyśleni.`,
+              `${o.touch ? 'Tap' : 'Click'} a resident in the yard or in a flat while nobody is selected: the card tells you who they are and who they live with. The residents are made up.`,
+            )
+          : L(
+              `${o.touch ? 'Stuknijcie' : 'Kliknijcie'} sąsiedni dom, kiedy nikt nie jest zaznaczony: karta powie, kogo z nich znacie i jak się do nich dostać.`,
+              `${o.touch ? 'Tap' : 'Click'} a house next door while nobody is selected: the card tells you which neighbours you know and how to get in.`,
+            ),
+      // karta mieszkańca albo karta cudzego budynku: zależy od tego, co gracz kliknął, a nie od wariantu tekstu
+      zrobiony: (_o, s) => zdarzeniePoOtwarciu(s, 'mieszkaniec') || zdarzeniePoOtwarciu(s, 'budynek'),
+    },
+  ],
+};
+
+/* ---------------------------------------------------------------- R5. Jedzenie */
+
+/** gra ma mapę miasta (`gov.miasto`, opcja `miasto`; z `?miasto=0` przycisku mapy nie ma, więc cele z mapy nie wchodzą do listy) */
+const zMapaMiasta = (o: OdczytCelow): boolean => !!o.gov?.miasto;
+
+/** „Budowa” albo, na dotyku, „Przycisk Budowa u góry” (jak w celu obwodu) */
+const budowaZakladka = (touch: boolean): string =>
+  touch ? L('Przycisk Budowa u góry', 'The Build button at the top') : L('Budowa', 'Build');
+
+const R5: DefRozdzialu = {
+  k: 'r5',
+  tytul: () => L('Jedzenie', 'Food'),
+  cele: [
+    {
+      key: 'wyprawa',
+      jest: zMapaMiasta,
+      tekst: () => L('Wyślijcie wyprawę z mapy miasta.', 'Send a supply run from the city map.'),
+      jak: (o) => {
+        const zombie = zombieMode(o.st, o.gov);
+        return L(
+          `${o.touch ? 'Mapa miasta (przycisk u góry): stuknięcie' : 'Mapa miasta (przycisk u góry albo M): klik'} w miejsce, na jego karcie „Wyślij wyprawę”, wybierzcie osoby i potwierdźcie. Tylko za dnia, od ${MORNING}:00 do ${CARD_HOUR}:00; ryzyko i łup widać przed wyjściem.${
+            zombie ? ' Za siatką są szwendacze: ryzyko jest większe, a kłopoty bywają ugryzieniem.' : ''
+          }`,
+          `${o.touch ? 'City map (button at the top): tap' : 'City map (button at the top, or M): click'} a place, then “Send a supply run” on its card, pick the people and confirm. By day only, from ${MORNING}:00 to ${CARD_HOUR}:00; you see the risk and the haul before they leave.${
+            zombie ? ' There are shamblers out there: the risk is higher, and trouble can mean a bite.' : ''
+          }`,
+        );
+      },
+      // chwilowy stan: wyprawa dzienna w drodze, zaliczana, gdy okienko ją zobaczy
+      zrobiony: (o) => !!o.gov?.wyprawy?.length,
+    },
+    {
+      key: 'lup',
+      jest: zMapaMiasta,
+      tekst: () => L('Przynieście łup z wyprawy.', 'Bring back loot from a run.'),
+      jak: () =>
+        L(
+          'Wyprawa wraca sama o godzinie z karty miejsca. Ranni wracają z ranami, więc posyłajcie wypoczętych i uzbrojonych. Na karcie nocy wyprawa idzie po zmroku: „Wyprawa blisko” jest bezpieczniejsza, „daleko” przynosi więcej.',
+          'The run comes back on its own at the time shown on the place card. The hurt come back hurt, so send rested, armed people. On the Night orders a run goes out after dark: a short run is safer, a long one brings back more.',
+        ),
+      // liczy też wyprawy nocne do miejsc z mapy: łup z obu idzie do `gov.miasto.zabrano`
+      zrobiony: (o, s) => lupZMiasta(o.gov) > s.start.lup,
+    },
+    {
+      key: 'ogrodek',
+      tekst: () => L('Postawcie ogródek.', 'Put in a vegetable patch.'),
+      jak: (o) => {
+        const koszt = costText(BUILDS.ogrodek.cost);
+        const b = budowaZakladka(o.touch);
+        return L(
+          `${b}, zakładka Podwórko: ${BUILDS.ogrodek.name} (${koszt}) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.`,
+          `${b}, Yard tab: ${BUILDS_EN.ogrodek.name} (${koszt}) on a free bit of the yard. It grows food after a few days; not much in autumn.`,
+        );
+      },
+      zrobiony: (o) => o.st.things.some((t) => t.kind === 'ogrodek'),
+    },
+  ],
+};
+
+/** Rozdziały głównej ścieżki po kolei: pierwszy dzień, drugi dzień, ludzie i noc, zarząd, jedzenie. R3 (praca ludzi)
+    dochodzi po scaleniu `praca-ludzi`, R6–R8 w następnym zadaniu planu; do tego czasu po R2 otwiera się R4, a po R5 jest
+    „koniec”. */
+export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1, R2, R4, R5];

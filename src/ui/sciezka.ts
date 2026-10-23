@@ -49,9 +49,9 @@ import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
 import type { GovInput, GovState } from '../gov/typy.ts';
 import type { SimState } from '../sim/sim.ts';
-import { populacja, type SimSnapshot } from '../sim/snapshot.ts';
+import type { SimSnapshot } from '../sim/snapshot.ts';
 import type { World } from '../world/world.ts';
-import { ROZDZIALY } from './sciezka-rozdzialy.ts';
+import { ludnoscPodZarzadem, lupZMiasta, ROZDZIALY, uchwalyPodpisane } from './sciezka-rozdzialy.ts';
 import { esc } from './tekst.ts';
 
 /** rozdziały głównej ścieżki po kolei (R3 istnieje dopiero po scaleniu pracy ludzi); „koniec”: po ostatnim rozdziale */
@@ -167,13 +167,15 @@ function kopia(s: StanSciezki): StanSciezki {
 /** Liczniki do `StanSciezki.start` z odczytu gry w tej chwili: podpisane uchwały (bez cofniętych), raporty, ludność
     pod zarządem (`populacja`, ta sama liczba co `GovInput.ludnosc`), łup zabrany z miejsc z mapy miasta, spotkania
     z sąsiadami (`st.sasiedzi.nr`) i zaliczone kamienie drogi ludnościowej. Zarząd i pola opcjonalne mogą nie istnieć
-    (gra bez mapy miasta, dróg albo sąsiadów): wtedy zero. */
+    (gra bez mapy miasta, dróg albo sąsiadów): wtedy zero. Uchwały, ludność i łup liczą funkcje z
+    src/ui/sciezka-rozdzialy.ts, te same, którymi warunki celów liczą stan z chwili sprawdzenia: porównanie „więcej niż
+    przy otwarciu” ma po obu stronach to samo wyrażenie. */
 export function licznikiStartu(st: SimState, gov: GovState | null): StanSciezki['start'] {
   return {
-    uchwaly: gov ? Object.values(gov.laws.signed).filter(Boolean).length : 0,
+    uchwaly: uchwalyPodpisane(gov),
     raporty: gov?.reports.length ?? 0,
-    ludnosc: populacja(st).razem,
-    lup: Object.values(gov?.miasto?.zabrano ?? {}).reduce((suma, n) => suma + n, 0),
+    ludnosc: ludnoscPodZarzadem(st),
+    lup: lupZMiasta(gov),
     spotkania: st.sasiedzi?.nr ?? 0,
     kamienLudnosci: gov?.zwyciestwo?.kamienie.ludnosc ?? 0,
   };

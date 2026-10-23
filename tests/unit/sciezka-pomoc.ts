@@ -20,7 +20,9 @@ import { snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import {
   type Cel,
+  type KluczRozdzialu,
   krokSciezki,
+  licznikiStartu,
   nowyStanSciezki,
   type OdczytCelow,
   type StanSciezki,
@@ -28,6 +30,7 @@ import {
   type WidokSciezki,
   widokSciezki,
 } from '../../src/ui/sciezka.ts';
+import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
 import type { World } from '../../src/world/world.ts';
 import { newGame, core as rdzen } from './sasiedzi-pomoc.ts';
 
@@ -52,6 +55,11 @@ export interface Gra {
 /** nowa gra: 4 osoby zarządu, godzina 15:00 pierwszego dnia, ścieżka na starcie (pierwszy dzień) */
 export function nowaGra(key: Demo, mode: GameMode = 'zwykly', seed = 5): Gra {
   return { key, mode, seed, sim: newGame(key, mode, seed), gov: newGov(seed, mode), sciezka: nowyStanSciezki() };
+}
+
+/** gra z gotową symulacją (mieszkańcy z generatora, jednoosobowy zarząd, spotkanie w drzwiach) i zarządem na starcie */
+export function graZSymulacji(key: Demo, mode: GameMode, seed: number, sim: Sim): Gra {
+  return { key, mode, seed, sim, gov: newGov(seed, mode), sciezka: nowyStanSciezki() };
 }
 
 /** niezależna kopia gry z tej samej chwili: stan symulacji, zarządu i ścieżki to zwykły JSON, a `Sim` odbudowuje resztę
@@ -131,11 +139,14 @@ export function odczytZ(st: SimState, w: World, gov: GovState | null, o: OpcjeOd
 }
 
 /** Cele rozdziału R1 (drugi dzień) dla takiego odczytu: stan ścieżki otwarty w R1 od ticku stanu, jeden krok i widok.
-    Każde wywołanie liczy od zera, więc test, który zmienia stan gry między wywołaniami, widzi tylko jego skutki. */
+    Każde wywołanie liczy od zera, więc test, który zmienia stan gry między wywołaniami, widzi tylko jego skutki. Krok
+    robi się na samych R0 i R1, a widok bierze zawsze R1: gdy wszystkie jego cele są rozstrzygnięte, ścieżka otwiera
+    następny rozdział (R2), ale cele R1 dalej mają ptaszki, o które pytają testy. */
 export function celeR1(st: SimState, w: World, gov: GovState | null, o: OpcjeOdczytu = {}): Cel[] {
   const odczytGry = odczytZ(st, w, gov, o);
-  const stan = krokSciezki({ ...nowyStanSciezki(), rozdzial: 'r1', od: st.tick }, odczytGry);
-  return widokSciezki(stan, odczytGry).rozdzial?.cele ?? [];
+  const rozdzialy = ROZDZIALY.slice(0, 2);
+  const stan = krokSciezki({ ...nowyStanSciezki(), rozdzial: 'r1', od: st.tick }, odczytGry, rozdzialy);
+  return widokSciezki({ ...stan, rozdzial: 'r1' }, odczytGry, rozdzialy).rozdzial?.cele ?? [];
 }
 
 /** Odczyt gry dla ścieżki z tej chwili */
@@ -147,6 +158,14 @@ export function odczyt(g: Gra, o: OpcjeOdczytu = {}): OdczytCelow {
 export function krok(g: Gra, o?: OpcjeOdczytu): StanSciezki {
   g.sciezka = krokSciezki(g.sciezka, odczyt(g, o));
   return g.sciezka;
+}
+
+/** Otwiera rozdział w tej chwili jak `window.zm.rozdzial(k)` (tick otwarcia i liczniki „od otwarcia” z tej chwili, wpisy
+    zrobionych celów zostają) i robi krok: cele, które gra już spełnia, zaliczają się od razu. Do testów rozdziałów, które
+    nie chcą grać dwóch dób do chwili, w której rozdział otworzyłby się sam. */
+export function otworz(g: Gra, k: KluczRozdzialu, o?: OpcjeOdczytu): StanSciezki {
+  g.sciezka = { ...g.sciezka, rozdzial: k, od: g.sim.st.tick, start: licznikiStartu(g.sim.st, g.gov) };
+  return krok(g, o);
 }
 
 /** widok okienka celów: stan ścieżki po jednym kroku na bieżącym odczycie (tak jak `renderGoals`) */
