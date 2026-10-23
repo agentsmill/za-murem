@@ -60,6 +60,7 @@
    zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
+import { type Wyglad, wygladMieszkanca } from '../content/people.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type {
@@ -204,7 +205,7 @@ function kafelekKozy(st: SimState, w: World): number | undefined {
 }
 
 /** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
-const lokatorZarzadu = (p: SimPerson, look?: number): GovLokator => ({
+const lokatorZarzadu = (p: SimPerson, look?: number, wyglad?: Wyglad): GovLokator => ({
   pawn: p.pawn,
   id: p.id,
   name: p.name,
@@ -219,6 +220,7 @@ const lokatorZarzadu = (p: SimPerson, look?: number): GovLokator => ({
   inside: p.inside,
   tile: p.tile,
   ...(look !== undefined ? { look } : {}),
+  ...(wyglad !== undefined ? { wyglad } : {}),
 });
 
 /** Zmarli z zarządu i mieszkańcy (`GovInput.dead`), po kolei, z tym, czego potrzebuje pogrzeb: płeć `f` zmarłego, który
@@ -314,9 +316,17 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
   const residents = s.residents - odchodzacyMieszkancy;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
-  // wygląd pionka mieszkańca idzie do zarządu, który zapamięta go, gdy wyrzuci mieszkańca (`Znajomy.look`)
-  const wyglad = new Map(st.pawns.map((q) => [q.id, q.look]));
-  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map((l) => lokatorZarzadu(l, wyglad.get(l.pawn)));
+  // wygląd pionka mieszkańca (numer stroju i postać PixelLab: pole gościa albo wybór widoku dla osoby z generatora) idzie do
+  // zarządu, który zapamięta go, gdy wyrzuci mieszkańca (`Znajomy.look`, `Znajomy.wyglad`)
+  const pionki = new Map(st.pawns.map((q) => [q.id, q]));
+  const lokatorzy = s.lokatorzy
+    .filter((l) => mieszkancy.has(l.pawn))
+    .map((l) => {
+      const q = pionki.get(l.pawn);
+      const osoba = q && q.person >= 0 ? st.people[q.person] : undefined;
+      const wyglad = q?.wyglad ? { ...q.wyglad } : osoba ? wygladMieszkanca(q!.person, osoba) : undefined;
+      return lokatorZarzadu(l, q?.look, wyglad);
+    });
   return {
     tick: s.tick,
     day: s.day,

@@ -31,6 +31,7 @@ import {
   type TextureSource,
   TextureStyle,
 } from 'pixi.js';
+import type { Wyglad } from '../content/people.ts';
 import { tr } from '../core/jezyk.ts';
 import type { WeaponId } from '../sim/bron.ts';
 import { naObwodzie } from '../sim/budowle.ts';
@@ -1564,18 +1565,8 @@ export class GameView {
   /** postać zwłok człowieka z PixelLab, jej wersja kolorystyczna i indeks osoby zmarłego z zarządu (−1: inny zmarły).
       Zmarły z zarządu to ta sama postać co za życia (wpis zmarłych zna id osoby), inni to dorosły mieszkaniec po
       wyglądzie z gry (rzecz zna tylko wygląd). null: zwłoki rysuje kod */
-  private zwlokiPostac(st: SimState, t: { id: number; n: number; dead?: number }) {
-    if (!this.ludzie) return null;
-    const zmarly = t.dead !== undefined ? st.dead?.[t.dead] : undefined;
-    const osoba = zmarly?.kind === 'core' && zmarly.id ? st.people.findIndex((q) => q.id === zmarly.id) : -1;
-    const dane = this.ludzie.dane;
-    const postac = (osoba >= 0 ? dane.postacOsoby(osoba, st.people, true) : null) ?? dane.postacZwlok(t.n);
-    if (!postac) return null;
-    const wersja = dane.wersjaPionka(
-      { id: t.id, kind: osoba >= 0 ? 'core' : 'zwloki', person: osoba, look: t.n },
-      postac,
-    );
-    return { postac, wersja, osoba };
+  private zwlokiPostac(st: SimState, t: { id: number; n: number; dead?: number; wyglad?: Wyglad }) {
+    return this.ludzie?.dane.zwlokiCzlowieka(st, t) ?? null;
   }
 
   /** zwłoki bez upadku z PixelLab, na podłodze: komórka leżenia z klatki stania; jej środek to środek ciała, więc kładzie

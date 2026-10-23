@@ -433,6 +433,7 @@ export function makeHost(
             osoba: { first: l.first, name: l.name, f: l.f, age: l.age },
             prof: l.prof,
             pion: l.pawn,
+            ...(l.wyglad ? { wyglad: l.wyglad } : {}),
             look: l.look ?? 4 + (Number.parseInt(hashString(l.id), 16) % 12),
             kto: 'lokator',
             jak: 'wyrzucony',

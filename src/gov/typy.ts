@@ -145,6 +145,9 @@ export interface GovLokator {
   /** wygląd pionka (numer stroju): zarząd zapamiętuje go, gdy wyrzuca mieszkańca, żeby znajomy miał twarz na mapie
       (`Znajomy.look`); atrapy w testach mogą go nie podawać (wtedy wygląd z hasha id) */
   look?: number;
+  /** postać PixelLab mieszkańca (`Pawn.wyglad`, a bez niego `wygladMieszkanca` z numeru osoby): zarząd zapamiętuje ją przy
+      wyrzuceniu (`Znajomy.wyglad`), żeby ten sam człowiek w napadzie wyglądał jak za życia w osiedlu */
+  wyglad?: Wyglad;
 }
 
 /** Faza wizyty gościa w symulacji (faza grupy to faza mówiącego, gdy żyje, a gdy zginie, następnego żywego):

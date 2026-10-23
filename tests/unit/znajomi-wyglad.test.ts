@@ -8,14 +8,16 @@
    Prawdziwa obsada PixelLab z manifestu (atlasy), animacje udawane, jak w ludzie-pixellab.test.ts; symulacja na bloku M2. */
 
 import { describe, expect, it } from 'vitest';
-import { makePerson, type Person, type Wyglad, wygladZnajomego } from '../../src/content/people.ts';
+import { makePerson, type Person, type Wyglad, wygladMieszkanca, wygladZnajomego } from '../../src/content/people.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import type { GoscRozkaz, GovEffects, PlanGoscia } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
+import { makeHost } from '../../src/gov/wydarzenia.ts';
+import { newGov } from '../../src/gov/zarzad.ts';
 import { wPlanieNapadu, type Znajomy } from '../../src/gov/znajomi.ts';
 import type { KlatkaLudzi, OpisGrafiki, PostacLudzi } from '../../src/render/art/pixellab.ts';
 import { LudziePixellab } from '../../src/render/ludziePixellab.ts';
-import { applyGov } from '../../src/sim/gov.ts';
+import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { tickAt } from '../../src/sim/handlarz.ts';
 import { createSim, type Pawn, Sim, type SimState } from '../../src/sim/sim.ts';
 import { atlasy } from '../../tools/atlasy.ts';
@@ -135,6 +137,11 @@ const znajomy = (c: Czlowiek): Znajomy => ({
 
 /** szabrownicy z planu napadu ze znajomym c (stoją za siatką po 22:30) */
 function szabrownicy(c: Czlowiek, ilu = 2): { st: SimState; wszyscy: Pawn[]; on: Pawn } {
+  return szabrownicyZ(znajomy(c), ilu);
+}
+
+/** to samo dla wpisu znajomego z zarządu (także wyrzuconego mieszkańca) */
+function szabrownicyZ(z: Znajomy, ilu = 2): { st: SimState; wszyscy: Pawn[]; on: Pawn } {
   const st = createSim(w, 3, { core: 2 });
   st.tick = atHour(1, 21);
   const sim = new Sim(w, st);
@@ -146,7 +153,7 @@ function szabrownicy(c: Czlowiek, ilu = 2): { st: SimState; wszyscy: Pawn[]; on:
       where: { pl: 'przy bramie', en: 'at the gate' },
       attack: 4.6,
       people: ilu,
-      znajomy: wPlanieNapadu(znajomy(c)),
+      znajomy: wPlanieNapadu(z),
     },
   });
   while (st.tick < atHour(1, 23)) sim.step();
@@ -195,7 +202,8 @@ describe('ta sama postać: gość, szabrownik, powracający, przyjęty', () => {
         expect(pion.wyglad, c.name).toEqual(wygladZnajomego(c.look, c));
         wyslij(sim.st, { goscRozkaz: rozkazy('g1', co) });
         sim.step();
-        expect(pion.kind, co).not.toBe('gosc');
+        // „zostan”: mieszkaniec; „zarzad”: mówiący wchodzi do zarządu (ten sam pionek, rodzaj core)
+        expect(pion.kind, co).toBe(co === 'zarzad' ? 'core' : 'resident');
         expect(figura(sim.st, pion), `${c.name} po przyjęciu (${co})`).toBe(bramaFig);
       }
       // gość pod bramą w pierwszej wizycie
@@ -311,5 +319,143 @@ describe('ludzie bez pola wyglad wybierają postać jak dotąd', () => {
     const po = l.postacPionka(gosc, OSOBY)!;
     expect(po.zarzad).toBe(false);
     expect(l.postacPionka(inny, OSOBY)!.zarzad).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------- wyrzucony mieszkaniec w napadzie
+
+/** w świecie testowym są dwaj mieszkańcy z łóżkiem, więc człowiek to para (który pionek, ziarno osoby i jej numeru) */
+const MIESZKANCY: [number, number][] = [
+  [0, 1],
+  [1, 2],
+  [0, 3],
+  [1, 4],
+  [0, 5],
+  [1, 6],
+  [0, 7],
+  [1, 8],
+];
+
+/** pionek mieszkańca z łóżkiem dostaje osobę z generatora (jak mieszkaniec z generatora mieszkańców): płeć i wiek z ziarna */
+function mieszkanka(st: SimState, k: number, ziarno: number): Pawn {
+  const lista = st.pawns.filter((p) => p.kind === 'resident' && st.things.some((t) => t.owner === p.id));
+  const pawn = lista[k];
+  // inne numery osób w każdej grze: kilka osób przed nią
+  for (let n = 0; n < ziarno % 5; n++)
+    st.people.push(makePerson(mulberry(900 + n), new Set(st.people.map((q) => q.first)), () => 300 + n));
+  const o = makePerson(mulberry(40 + ziarno), new Set(st.people.map((q) => q.first)), () => 200 + ziarno);
+  st.people.push(o);
+  pawn.person = st.people.length - 1;
+  return pawn;
+}
+
+describe('wyrzucony mieszkaniec w napadzie wygląda jak za życia', () => {
+  it('wygladMieszkanca to wybór widoku dla mieszkańca z osobą: ta sama postać i wersja co pionek bez pola', () => {
+    for (const [k, ziarno] of MIESZKANCY) {
+      const st = createSim(w, 3, { core: 2 });
+      const pawn = mieszkanka(st, k, ziarno);
+      const zycie = figura(st, pawn);
+      const bezOsoby = {
+        id: 777,
+        kind: 'szabrownik',
+        person: -1,
+        look: 1,
+        wyglad: wygladMieszkanca(pawn.person, st.people[pawn.person]),
+      };
+      const l = nowyWidok();
+      const po = l.postacPionka(bezOsoby, st.people)!;
+      expect(`${po.id}:${l.wersjaPionka(bezOsoby, po)}`, `mieszkaniec ${k}/${ziarno}`).toBe(zycie);
+    }
+  });
+
+  it('mieszkaniec wyrzucony przez zarząd i szabrownik ze znajomego to ta sama postać i wersja co za życia', () => {
+    for (const [k, ziarno] of MIESZKANCY) {
+      const st = createSim(w, 3, { core: 2 });
+      const pawn = mieszkanka(st, k, ziarno);
+      const zycie = figura(st, pawn);
+      // zarząd wyrzuca go bramą: wpis znajomego niesie wygląd z odczytu
+      const i = govInput(st, w, 0);
+      const l = i.lokatorzy!.find((x) => x.pawn === pawn.id)!;
+      expect(l.wyglad, `lokator ${k}/${ziarno} w odczycie`).toEqual(
+        wygladMieszkanca(pawn.person, st.people[pawn.person]),
+      );
+      const gov = newGov(1);
+      makeHost(gov, i, emptyEffects()).wyrzuc(l.id);
+      const z = gov.znajomi![0];
+      expect(z).toMatchObject({ kto: 'lokator', jak: 'wyrzucony', nastawienie: -2, pion: pawn.id, look: pawn.look });
+      // później idzie z szabrownikami
+      const { st: noc, on } = szabrownicyZ(z);
+      expect(on.look).toBe(pawn.look);
+      expect(figura(noc, on), `wyrzucony mieszkaniec ${k}/${ziarno} w napadzie`).toBe(zycie);
+    }
+  });
+
+  it('gość przyjęty jako mieszkaniec, potem wyrzucony: w napadzie ma twarz gościa z bramy', () => {
+    for (const c of LUDZIE.slice(0, 3)) {
+      const sim = gra();
+      const pion = poBramie(sim, plan('g1', c));
+      const przy = figura(sim.st, pion);
+      wyslij(sim.st, { goscRozkaz: rozkazy('g1', 'zostan') });
+      sim.step();
+      expect(pion.kind).toBe('resident');
+      const i = govInput(sim.st, w, 0);
+      const l = i.lokatorzy!.find((x) => x.pawn === pion.id)!;
+      expect(l.wyglad).toEqual(pion.wyglad);
+      const gov = newGov(1);
+      makeHost(gov, i, emptyEffects()).wyrzuc(l.id);
+      const { st, on } = szabrownicyZ(gov.znajomi![0]);
+      expect(figura(st, on), c.name).toBe(przy);
+    }
+  });
+});
+
+// ---------------------------------------------------------------- zwłoki gościa
+
+describe('zwłoki mają tę samą postać i wersję co żywy pionek z polem wyglad', () => {
+  const umrzyj = (sim: Sim, p: Pawn) => {
+    (sim as unknown as { die(p: Pawn, cause: string, by: Pawn | null): void }).die(p, 'rany', null);
+    const t = sim.st.things.find((x) => x.kind === 'zwloki')!;
+    expect(t, 'zwłoki').toBeTruthy();
+    return t;
+  };
+  /** postać i wersja zwłok w widoku bez pamięci: ta sama droga, którą idzie widok gry */
+  const figuraZwlok = (st: SimState, t: SimState['things'][number]): string => {
+    const zw = nowyWidok().zwlokiCzlowieka(st, t);
+    return zw ? `${zw.postac.id}:${zw.wersja}` : 'kod';
+  };
+
+  it('gość przyjęty do osiedla i gość awansowany do zarządu: zwłoki = żywy pionek', () => {
+    for (const c of LUDZIE) {
+      for (const co of ['zostan', 'zarzad'] as const) {
+        const sim = gra();
+        const pion = poBramie(sim, plan('g1', c));
+        wyslij(sim.st, { goscRozkaz: rozkazy('g1', co) });
+        sim.step();
+        expect(pion.kind, `${c.name} ${co}`).toBe(co === 'zarzad' ? 'core' : 'resident');
+        const zywy = figura(sim.st, pion);
+        const t = umrzyj(sim, pion);
+        expect(t.wyglad, `${c.name} ${co}: zwłoki niosą wygląd`).toEqual(pion.wyglad);
+        expect(figuraZwlok(sim.st, t), `${c.name} ${co}`).toBe(zywy);
+      }
+    }
+  });
+
+  it('gość pod bramą, szabrownik ze znajomego: zwłoki = żywy pionek; zwykły mieszkaniec, zarząd i szabrownik po staremu', () => {
+    const c = LUDZIE[1];
+    const sim = gra();
+    const gosc = poBramie(sim, plan('g1', c));
+    const zywy = figura(sim.st, gosc);
+    expect(figuraZwlok(sim.st, umrzyj(sim, gosc)), 'gość').toBe(zywy);
+    const { st, on } = szabrownicyZ(znajomy(c));
+    const zSz = figura(st, on);
+    (new Sim(w, st) as unknown as { die(p: Pawn, cause: string, by: Pawn | null): void }).die(on, 'rany', null);
+    expect(figuraZwlok(st, st.things.find((x) => x.kind === 'zwloki')!), 'szabrownik').toBe(zSz);
+    // bez pola: zwykły szabrownik (po wyglądzie rzeczy) i mieszkaniec bez osoby, jak przed zmianą
+    const st2 = createSim(w, 3, { core: 2 });
+    const l = nowyWidok();
+    const bez = { id: 5, n: 4, kind: 'zwloki' } as unknown as SimState['things'][number];
+    const zw = l.zwlokiCzlowieka(st2, bez)!;
+    expect(zw.postac.id).toBe(l.postacZwlok(4)!.id);
+    expect(zw.osoba).toBe(-1);
   });
 });

@@ -42,6 +42,15 @@ export const ri = (a: number, b: number, r: Rng): number => a + Math.floor(r() *
 /** Losowy element tablicy (jak G.pick). */
 export const pick = <T>(arr: readonly T[], r: Rng): T => arr[Math.floor(r() * arr.length)];
 
+/** Liczba całkowita (32 bity bez znaku) z liczby: mieszanie bez losowania, ta sama liczba daje ten sam wynik w każdym silniku.
+    Widok z niej wybiera postać i wersję kolorystyczną człowieka (src/render/ludziePixellab.ts), a `wygladMieszkanca`
+    (src/content/people.ts) liczy z niej to samo dla mieszkańca, który wychodzi z osiedla. */
+export function skrotLiczby(n: number): number {
+  let h = Math.imul(n | 0, 0x9e3779b1) ^ 0x85ebca6b;
+  h = Math.imul(h ^ (h >>> 15), 0xc2b2ae35);
+  return (h ^ (h >>> 13)) >>> 0;
+}
+
 /** Prosty skrót do porównywania stanów (FNV-1a na tekście). */
 export function hashString(s: string): string {
   let h = 0x811c9dc5;

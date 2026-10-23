@@ -1,7 +1,7 @@
 /* Ludzie: generator fachowców przeniesiony z makeSpec w js/sim.js (0.3).
    Kolejność losowań jest ta sama, więc to samo ziarno daje tę samą osobę. */
 
-import { hashString, pick, type Rng, ri } from '../core/rng.ts';
+import { hashString, pick, type Rng, ri, skrotLiczby } from '../core/rng.ts';
 import { type Dom, NAMES, PROFS, type Prof, SURN, TRAIT_PAIRS, TRAITS } from './data.ts';
 
 export interface Assign {
@@ -94,6 +94,9 @@ export interface Wyglad {
   f: boolean;
   age: number;
   los: number;
+  /** ziarno wersji kolorystycznej (widok bierze je modulo liczba ramp); bez niego wersja z `los`. Ma je tylko wygląd
+      mieszkańca (`wygladMieszkanca`), którego wersja zależy od numeru osoby, nie od ziarna postaci */
+  wer?: number;
 }
 
 /**
@@ -108,6 +111,16 @@ export function wygladZnajomego(look: number, osoba: Pick<Person, 'first' | 'nam
     age: osoba.age,
     los: Number.parseInt(hashString(`${look}|${osoba.first}|${osoba.name}`), 16),
   };
+}
+
+/**
+ * Wygląd mieszkańca z osobą z generatora mieszkańców, który jest w osiedlu pod numerem osoby `person`: to samo, co widok
+ * wybiera dla niego za życia (postać z obsady mieszkańców po płci i wieku, rozstrzygnięta numerem osoby, i wersja
+ * kolorystyczna z tego numeru). Mieszkaniec wyrzucony bramą idzie później z szabrownikami jako znajomy z takim wyglądem, więc
+ * wygląda dokładnie tak, jak wyglądał u nas. Liczone z `skrotLiczby` (core/rng.ts), tej samej funkcji co w widoku.
+ */
+export function wygladMieszkanca(person: number, osoba: Pick<Person, 'f' | 'age'>): Wyglad {
+  return { f: osoba.f, age: osoba.age, los: skrotLiczby(person), wer: skrotLiczby(person ^ 0x2f6b) };
 }
 
 /** Odmiana przez płeć: g(p, 'poszedł', 'poszła'). */

@@ -17,6 +17,7 @@
    zwykli szabrownicy) wybierają postać jak dotąd. */
 
 import type { Wyglad } from '../content/people.ts';
+import { skrotLiczby as skrot } from '../core/rng.ts';
 import { jestZwierzeciem } from '../sim/zwierzeta.ts';
 import {
   kluczAnimacji,
@@ -71,13 +72,6 @@ export interface KlatkaPionka {
   wersja: number;
   zarzad: boolean;
   zastepcza: boolean;
-}
-
-/** liczba całkowita z indeksu osoby: ta sama osoba zawsze dostaje tę samą postać, bez losowania w widoku */
-function skrot(n: number): number {
-  let h = Math.imul(n | 0, 0x9e3779b1) ^ 0x85ebca6b;
-  h = Math.imul(h ^ (h >>> 15), 0xc2b2ae35);
-  return (h ^ (h >>> 13)) >>> 0;
 }
 
 export class LudziePixellab {
@@ -136,9 +130,7 @@ export class LudziePixellab {
     if (znana !== undefined) return znana;
     // gość i znajomy: postać z jego danych, z obsady mieszkańców (po awansie do zarządu ta sama)
     if (p.wyglad) {
-      const z = this.mieszkancy
-        ? postacDlaOsoby(this.pula, { f: p.wyglad.f, age: p.wyglad.age, zarzad: false }, p.wyglad.los)
-        : null;
+      const z = this.postacZWygladu(p.wyglad);
       this.postacie.set(p.id, z);
       return z;
     }
@@ -190,8 +182,46 @@ export class LudziePixellab {
   wersjaPionka(p: PionekLudzi, postac: PostacLudzi): number {
     if (postac.zarzad) return this.wersjeZarzadu.get(p.id) ?? 0;
     // gość i znajomy: wersja z ziarna wyglądu, jak postać (ta sama u gościa, powracającego, przyjętego i szabrownika)
-    if (p.wyglad) return skrot(p.wyglad.los ^ 0x2f6b) % (this.rampy.length + 1);
+    if (p.wyglad) return this.wersjaWygladu(p.wyglad);
     return skrot((p.person >= 0 ? p.person : p.id + 7919) ^ 0x2f6b) % (this.rampy.length + 1);
+  }
+
+  /** Postać człowieka z historii zarządu: z obsady mieszkańców po płci i wieku, rozstrzygnięta ziarnem `los` (u mieszkańca
+      wyrzuconego bramą to skrót jego numeru osoby, więc ta sama postać co za życia); null bez mieszkańców w obsadzie. */
+  postacZWygladu(w: Wyglad): PostacLudzi | null {
+    return this.mieszkancy ? postacDlaOsoby(this.pula, { f: w.f, age: w.age, zarzad: false }, w.los) : null;
+  }
+
+  /** Wersja kolorystyczna człowieka z historii zarządu: z `wer` (mieszkaniec wyrzucony bramą: ta, którą miał w osiedlu), a bez
+      niego z ziarna postaci. */
+  wersjaWygladu(w: Wyglad): number {
+    return (w.wer ?? skrot(w.los ^ 0x2f6b)) % (this.rampy.length + 1);
+  }
+
+  /**
+   * Postać, wersja i numer osoby (−1: brak) zwłok człowieka: jeśli zmarły miał wygląd z historii zarządu (`wyglad` na zwłokach:
+   * gość pod bramą, przyjęty do osiedla albo do zarządu, szabrownik ze znajomego), leży w tej samej postaci i wersji co żywy
+   * pionek, także po awansie do zarządu (żywy rysował się z obsady mieszkańców). Zmarły z zarządu to ta sama postać co za życia
+   * (wpis zmarłych zna id osoby), inni to dorosły mieszkaniec po wyglądzie z gry (rzecz zna tylko wygląd). null: obsada nie ma
+   * postaci (zwłoki rysuje kod).
+   */
+  zwlokiCzlowieka(
+    st: { people: readonly (OsobaLudzi & { id: string })[]; dead?: readonly { kind: string; id: string }[] },
+    t: { id: number; n: number; dead?: number; wyglad?: Wyglad },
+  ): { postac: PostacLudzi; wersja: number; osoba: number } | null {
+    const zmarly = t.dead !== undefined ? st.dead?.[t.dead] : undefined;
+    const osoba = zmarly?.kind === 'core' && zmarly.id ? st.people.findIndex((q) => q.id === zmarly.id) : -1;
+    if (t.wyglad) {
+      const postac = this.postacZWygladu(t.wyglad);
+      return postac ? { postac, wersja: this.wersjaWygladu(t.wyglad), osoba } : null;
+    }
+    const postac = (osoba >= 0 ? this.postacOsoby(osoba, st.people, true) : null) ?? this.postacZwlok(t.n);
+    if (!postac) return null;
+    const wersja = this.wersjaPionka(
+      { id: t.id, kind: osoba >= 0 ? 'core' : 'zwloki', person: osoba, look: t.n },
+      postac,
+    );
+    return { postac, wersja, osoba };
   }
 
   /** pionek zniknął z gry albo wrócił z wyprawy */

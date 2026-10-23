@@ -763,6 +763,8 @@ export interface Thing {
   until?: number;
   /** zepsuty mebel ze świata (w pustym mieszkaniu): z rozbiórki połowa materiału */
   broken?: boolean;
+  /** zwłoki człowieka z `Pawn.wyglad` (gość, znajomy): ten sam wygląd, żeby leżał w tej samej postaci i wersji co żywy pionek */
+  wyglad?: Wyglad;
   /** zasieki i barykada: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
   prev?: number;
   /** zwłoki: numer wpisu w state.dead (osobno od owner, bo numery pionków i wpisów się pokrywają) */
@@ -7634,6 +7636,7 @@ export class Sim {
     }
     const body = newThing(st, 'zwloki', x, y);
     body.n = p.look;
+    if (p.wyglad) body.wyglad = { ...p.wyglad };
     if (!odchodzil) body.dead = st.dead!.length - 1;
     body.until = tick + BODY_TICKS;
     // w trybie zombie każdy zmarły wstaje, chyba że ktoś go dobije

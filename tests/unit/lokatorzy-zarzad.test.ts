@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { wygladMieszkanca } from '../../src/content/people.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { makeHost } from '../../src/gov/wydarzenia.ts';
@@ -42,6 +43,7 @@ const POLA = [
   'skills',
   'tile',
   'traits',
+  'wyglad',
 ] as const;
 
 const demo = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'demo/przymorze.json'), 'utf8')) as {
@@ -111,6 +113,11 @@ describe('GovInput.lokatorzy', () => {
         tile: s.tile,
         // wygląd pionka, żeby zarząd zapamiętał wyrzuconego mieszkańca z twarzą (Znajomy.look)
         look: st.pawns.find((p) => p.id === l.pawn)!.look,
+        // postać PixelLab mieszkańca (to, co widok wybiera dla osoby z generatora), żeby wyrzucony wyglądał potem jak za życia
+        wyglad: wygladMieszkanca(
+          st.pawns.find((p) => p.id === l.pawn)!.person,
+          st.people[st.pawns.find((p) => p.id === l.pawn)!.person],
+        ),
       });
     }
     // zmiana w wejściu nie rusza stanu symulacji

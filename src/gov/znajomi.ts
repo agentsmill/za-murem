@@ -56,6 +56,8 @@ export interface Znajomy {
   id: string;
   osoba: Pick<Person, 'first' | 'name' | 'f' | 'age'>;
   look: number;
+  /** postać PixelLab z chwili wyrzucenia mieszkańca (`GovLokator.wyglad`); bez niego z `wygladZnajomego` */
+  wyglad?: Wyglad;
   pion?: number;
   kto: KtoId | 'lokator';
   jak: JakId;
@@ -139,6 +141,7 @@ export function zapamietaj(
       osoba: { first: z.osoba.first, name: z.osoba.name, f: z.osoba.f, age: z.osoba.age },
       ...(z.prof !== undefined ? { prof: z.prof } : {}),
       ...(z.pion !== undefined ? { pion: z.pion } : {}),
+      ...(z.wyglad !== undefined ? { wyglad: { ...z.wyglad } } : {}),
       look: z.look,
       kto: z.kto,
       jak: z.jak,
@@ -159,6 +162,7 @@ export function zapamietaj(
   x.ostatnio = d;
   if (z.prof !== undefined && x.prof === undefined) x.prof = z.prof;
   if (z.pion !== undefined) x.pion = z.pion;
+  if (z.wyglad !== undefined) x.wyglad = { ...z.wyglad };
   if (!poprawka) {
     x.wizyty++;
     x.przed = przed;
@@ -378,15 +382,16 @@ export function liniaWsrod(z: Znajomy, wariant: 'wsrod' | 'to' = 'wsrod'): Tx {
       );
 }
 
-/** Znajomy w planie napadu (`RaidPlan.znajomy`): imię i nazwisko, epitet, wygląd pionka (`look`) i postać (`wyglad`, ta sama
-    funkcja z płci, wieku, wyglądu i imienia co u gościa w symulacji, żeby szabrownik miał twarz gościa). */
+/** Znajomy w planie napadu (`RaidPlan.znajomy`): imię i nazwisko, epitet, wygląd pionka (`look`) i postać (`wyglad`: ta sama
+    funkcja z płci, wieku, wyglądu i imienia co u gościa w symulacji, żeby szabrownik miał twarz gościa, a dla wyrzuconego
+    mieszkańca wygląd, który niósł jego pionek w osiedlu, żeby wyglądał jak za życia). */
 export function wPlanieNapadu(z: Znajomy): { id: string; imie: Tx; epitet: Tx; look: number; wyglad: Wyglad } {
   return {
     id: z.id,
     imie: tx(z.osoba.name, z.osoba.name),
     epitet: epitet(z),
     look: z.look,
-    wyglad: wygladZnajomego(z.look, z.osoba),
+    wyglad: z.wyglad ? { ...z.wyglad } : wygladZnajomego(z.look, z.osoba),
   };
 }
 
