@@ -14,15 +14,22 @@
    R2 „Ludzie i noc” uczy listy ludzi (zdarzenie interfejsu `lista`), światła albo dzidy przez siatkę (zwykły tryb: ognisko
    płonące po 18:00 z `gov.evening.campfire`; zombie: pionek zarządu bijący z polecenia szwendacza, `job.order`) i uzbrojonej
    warty (zwykły tryb: broń u `min(2, osób)` osób; zombie: karta nocy zatwierdzona po otwarciu rozdziału z `min(2, osób)`
-   przydziałami `warta:siatka` u osób z dzidą, czeka do karty, bez terminu). R4 „Zarząd” (w domu „Komitet”) uczy uchwał
-   (podpis po otwarciu, czeka do zebrania; cel nie istnieje, gdy żadnej uchwały nie da się już podpisać ani po odnowieniu), odczytu porannego raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie; czeka do rana), nowych ludzi
-   (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu); wariant „ludzie” w bloku
-   z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich
-   budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu. R5 „Jedzenie” uczy mapy
-   miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu; oba cele tylko w grze z oknem mapy
-   miasta, które gra zgłasza flagą `OdczytCelow.mapaMiasta`: z `?miasto=0` i na osiedlu zapasowym bez położenia przycisku
-   mapy nie ma, choć `gov.miasto` istnieje; bez flagi, w testach, decyduje `gov.miasto`) i ogródka. Rozdziały R2–R5 nie mają terminów: nic z nich nie
-   przepada. R3 (praca ludzi) i R6–R8 dochodzą w kolejnych zadaniach planu, więc po R2 otwiera się R4.
+   przydziałami `warta:siatka` u osób z dzidą, czeka do karty, bez terminu).
+
+   R4 „Zarząd” (w domu „Komitet”) uczy uchwał (podpis po otwarciu, czeka do zebrania; cel nie istnieje, gdy żadnej uchwały nie
+   da się już podpisać ani po odnowieniu, chyba że jest zaliczony: stąd `jest(o, s)` ze stanem ścieżki), odczytu porannego
+   raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie, bo o 6:00 rośnie ono
+   prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego; czeka do rana; raport rozpoznaje się po dniu nocy,
+   nie po numerze na liście, która ma sufit 10 wpisów), nowych ludzi (ludność większa niż przy otwarciu) i kart mieszkańców
+   albo budynków (zdarzenie interfejsu). Wariant „ludzie” w bloku z mieszkańcami z generatora liczy tylko pionki `resident`
+   z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich budynków (pionki `sasiad` podczas spotkania), którzy nie
+   powinni przestawiać tekstu w domu.
+
+   R5 „Jedzenie” uczy mapy miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu) i ogródka. Cele
+   z mapy istnieją tylko w grze z oknem mapy miasta, które gra zgłasza flagą `OdczytCelow.mapaMiasta`: z `?miasto=0` i na
+   osiedlu zapasowym bez położenia przycisku mapy nie ma, choć `gov.miasto` istnieje; bez flagi, w testach, decyduje
+   `gov.miasto`. Rozdziały R2–R5 nie mają terminów: nic z nich nie przepada. R3 (praca ludzi) i R6–R8 dochodzą w kolejnych
+   zadaniach planu, więc po R2 otwiera się R4.
 
    Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
    te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili

@@ -169,7 +169,9 @@ function kopia(s: StanSciezki): StanSciezki {
     z sąsiadami (`st.sasiedzi.nr`) i zaliczone kamienie drogi ludnościowej. Zarząd i pola opcjonalne mogą nie istnieć
     (gra bez mapy miasta, dróg albo sąsiadów): wtedy zero. Uchwały, ludność i łup liczą funkcje z
     src/ui/sciezka-rozdzialy.ts, te same, którymi warunki celów liczą stan z chwili sprawdzenia: porównanie „więcej niż
-    przy otwarciu” ma po obu stronach to samo wyrażenie. */
+    przy otwarciu” ma po obu stronach to samo wyrażenie. Wyjątek to raporty: `raporty` to długość `gov.reports`, a ta lista ma
+    sufit 10 wpisów (najstarszy wypada), więc od 11. nocy nie nadaje się do liczenia nowych raportów; cele rozpoznają raport
+    po otwarciu po dniu nocy (`raportyPoOtwarciu` w src/ui/sciezka-rozdzialy.ts). */
 export function licznikiStartu(st: SimState, gov: GovState | null): StanSciezki['start'] {
   return {
     uchwaly: uchwalyPodpisane(gov),
