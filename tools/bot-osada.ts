@@ -18,7 +18,9 @@
    Wyjście: nagłówek, dla każdego dema tabela przebiegów (ziarno, koniec albo „żyje”, przyczyna, ludność o 6:00 w dniach 10,
    20, 30 i ostatnim, dzień pierwszego kamienia ludności, budowle na koniec, czas), dla przebiegu bez przeżycia ostatnie
    pięć poranków (ludność, zarząd, budowle, badania, jedzenie, drewno, zimni, głodni, zaufanie, wkurzenie) i linia „przeżyło
-   x z n”, na końcu błędy przebiegów, uwagi i werdykt. Postęp idzie na stderr.
+   x z n”, na końcu błędy przebiegów, uwagi i werdykt. Postęp idzie na stderr. Budowle w tabeli i w ocenie to budowle poza
+   obwodem (`budowleStojace`: bez zasieków i barykady). Demo, w którym któryś przebieg się nie udał, nie jest oceniane: pod
+   jego tabelą i w werdykcie stoi „nie oceniono”, a pozostałe przebiegi tego dema nie liczą się do werdyktu.
    Kod wyjścia: 0 gdy werdykt przechodzi (albo jest `--bez-progu`, czyli sam pomiar bez progów) i żaden przebieg nie padł;
    1 gdy werdykt nie przechodzi (bez `--bez-progu`) albo któryś przebieg jest błędny (proces padł, przekroczył limit czasu
    albo zostawił okno zarządu zawieszone: silnik nie umie odpowiedzieć na taki rodzaj okna); 2 przy złych argumentach.
@@ -45,16 +47,18 @@ import {
 } from '../src/ai/gra.ts';
 import { silnik } from '../src/ai/silnik.ts';
 import { liczbaZbadanych } from '../src/sim/badania.ts';
-import { BUILDS } from '../src/sim/budowle.ts';
 import { clockOf, dayOf, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { populacja } from '../src/sim/snapshot.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import { okolicaZGeo } from '../tests/unit/miasto-play.ts';
 import {
+  type BlednyPrzebieg,
   budowleNaKoniec,
+  budowleStojace,
   type DzienPrzebiegu,
   dzienKamienia,
   ludnoscWDniu,
+  PROGI,
   type Przebieg,
   przezyl,
   werdykt,
@@ -188,8 +192,9 @@ export function poranekTick(dzien: number): number {
 }
 
 /** Stan osady o 6:00, po kroku zarządu z tej chwili (dryf wkurzenia i zaufania liczy się właśnie wtedy). Wejście zarządu
-    (`wejscie`) daje to samo, co widzi zarząd: zapasy i potrzeby zarządu, na których liczy się dzienny dryf. */
-function poranek(g: GraAi): DzienPrzebiegu {
+    (`wejscie`) daje to samo, co widzi zarząd: zapasy i potrzeby zarządu, na których liczy się dzienny dryf. Budowle to
+    stojące budowle poza obwodem (`budowleStojace`). */
+export function poranek(g: GraAi): DzienPrzebiegu {
   const st = g.sim.st;
   const i = wejscie(g);
   const ludnosc = populacja(st);
@@ -197,7 +202,7 @@ function poranek(g: GraAi): DzienPrzebiegu {
     dzien: dayOf(st.tick),
     ludnosc: ludnosc.razem,
     zarzad: ludnosc.zarzad,
-    budowle: st.things.filter((t) => Object.hasOwn(BUILDS, t.kind)).length,
+    budowle: budowleStojace(st.things),
     badania: liczbaZbadanych(st),
     jedzenie: i.stock.supplies + (i.stock.meals ?? 0),
     drewno: i.stock.wood,
@@ -455,6 +460,8 @@ async function glowny(o: Opcje): Promise<number> {
 
   const przebiegi: Przebieg[] = [];
   const bledyPrzebiegow: string[] = [];
+  /** przebiegi, które się nie udały (proces padł, limit czasu, zawieszone okno): ich dema werdykt pomija */
+  const bledne: BlednyPrzebieg[] = [];
   for (const demo of o.dema) {
     console.log(`\n${demo}`);
     console.log(naglowekTabeli(o.dni));
@@ -464,16 +471,19 @@ async function glowny(o: Opcje): Promise<number> {
       if ('blad' in r) {
         console.log(`${lewo(ziarno, 7)}BŁĄD przebiegu`);
         bledyPrzebiegow.push(`${demo} ${ziarno}: ${r.blad}`);
+        bledne.push({ demo, ziarno, powod: r.blad.slice(0, 100) });
         continue;
       }
       const p = r.wynik.przebieg;
       wDemie.push(p);
       przebiegi.push(p);
       console.log(wierszPrzebiegu(p, r.wynik.czasMs));
-      for (const opis of opisZawieszonych(r.wynik.zawieszone)) {
+      const zawieszone = opisZawieszonych(r.wynik.zawieszone);
+      for (const opis of zawieszone) {
         console.log(`       BŁĄD: ${opis}`);
         bledyPrzebiegow.push(`${demo} ${ziarno}: ${opis}`);
       }
+      if (zawieszone.length) bledne.push({ demo, ziarno, powod: 'zawieszone okno zarządu' });
     }
     for (const p of wDemie.filter((x) => !przezyl(x))) {
       console.log(
@@ -482,6 +492,11 @@ async function glowny(o: Opcje): Promise<number> {
       for (const linia of ostatniePoranki(p)) console.log(`  ${linia}`);
     }
     console.log(`\nprzeżyło ${wDemie.filter(przezyl).length} z ${o.ziarna.length}`);
+    const zleWDemie = bledne.filter((b) => b.demo === demo);
+    if (zleWDemie.length)
+      console.log(
+        `nie oceniono: ${zleWDemie.length} z ${o.ziarna.length} przebiegów z błędem (ziarna ${zleWDemie.map((b) => b.ziarno).join(', ')}), demo poza werdyktem`,
+      );
   }
   console.log(
     '\nlud10…: ludność o 6:00 w danym dniu, kamień: dzień pierwszego poranka z 10 osobami, budowle: stojące na koniec, "-": brak',
@@ -491,11 +506,11 @@ async function glowny(o: Opcje): Promise<number> {
     console.log('\nBłędy przebiegów:');
     for (const b of bledyPrzebiegow) console.log(`  - ${b}`);
   }
-  const w = werdykt(przebiegi);
-  console.log(
-    `\nWerdykt: ${w.ok ? 'przechodzi' : 'NIE PRZECHODZI'}${o.bezProgu ? ' (bez progu: nie wpływa na kod wyjścia)' : ''}`,
-  );
+  const w = werdykt(przebiegi, PROGI, bledne);
+  const wynikSlowem = w.ok ? 'przechodzi' : w.bledy.length ? 'NIE PRZECHODZI' : 'NIE OCENIONO';
+  console.log(`\nWerdykt: ${wynikSlowem}${o.bezProgu ? ' (bez progu: nie wpływa na kod wyjścia)' : ''}`);
   for (const b of w.bledy) console.log(`  - ${b}`);
+  for (const n of w.nieocenione) console.log(`  - ${n}`);
   if (w.uwagi.length) {
     console.log('Uwagi:');
     for (const u of w.uwagi) console.log(`  - ${u}`);

@@ -2,6 +2,8 @@
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 2). Funkcje oceny są czyste, więc testy składają
    syntetyczne przebiegi (`przebiegi`) i sprawdzają werdykt: przeżycie 45 dni w co najmniej 4 z 5 ziaren, pierwszy kamień
    ludności (10 osób) w paśmie dni, co najmniej jedna budowla na trzy dni, każde w co najmniej 4 z 5 przebiegów na demie.
+   Budowle liczą się bez kawałków siatki (zasieki, barykada), demo z błędnym przebiegiem nie jest oceniane, a przy
+   przebiegu krótszym niż dzień 15 kryterium kamienia jest pomijane.
    Uprząż (tools/bot-osada.ts) ma testy argumentów, tabeli i jednej gry (`zagraj`, kilka dób na prawdziwej symulacji);
    procesy równoległe i pełny pomiar to ręczne `npm run bot:osada`. */
 
@@ -19,6 +21,7 @@ import {
   ostatniePoranki,
   parsujArgumenty,
   parsujZiarna,
+  poranek as poranekGry,
   poranekTick,
   przygotujGre,
   streszczenieBledu,
@@ -26,7 +29,9 @@ import {
   zagraj,
 } from '../../tools/bot-osada.ts';
 import {
+  type BlednyPrzebieg,
   budowleNaKoniec,
+  budowleStojace,
   type DzienPrzebiegu,
   dzienKamienia,
   ludnoscWDniu,
@@ -35,6 +40,7 @@ import {
   przezyl,
   werdykt,
 } from '../../tools/osada-ocena.ts';
+import { demoWorld } from './sasiedzi-pomoc.ts';
 
 /** poranek z samymi liczbami, które liczy ocena (reszta spokojnie) */
 function poranek(dzien: number, ludnosc: number, budowle: number): DzienPrzebiegu {
@@ -227,6 +233,169 @@ describe('werdykt', () => {
     const w = werdykt([]);
     expect(w.ok).toBe(false);
     expect(w.bledy.length).toBeGreaterThan(0);
+  });
+});
+
+describe('budowle w ocenie: bez kawałków siatki', () => {
+  /** rzeczy gry danego rodzaju (tylko `kind` czyta ocena) */
+  const rzeczy = (kind: string, n: number) => Array.from({ length: n }, (_, k) => ({ id: k, kind }));
+
+  it('zasieki i barykada (obwód) nie liczą się, budowle domu i podwórka tak, meble i drewno nie', () => {
+    expect(budowleStojace(rzeczy('zasieki', 15))).toBe(0);
+    expect(budowleStojace(rzeczy('barykada', 15))).toBe(0);
+    expect(budowleStojace(rzeczy('warsztat', 3))).toBe(3);
+    expect(budowleStojace([...rzeczy('ogrodek', 2), ...rzeczy('koza_beczka', 1), ...rzeczy('wieza', 1)])).toBe(4);
+    // mieszanka: z siatką liczy się tylko to, co poza obwodem
+    expect(budowleStojace([...rzeczy('zasieki', 9), ...rzeczy('magazyn', 2), ...rzeczy('barykada', 4)])).toBe(2);
+    // meble, drewno, sterty i rzeczy spoza gry to nie budowle
+    expect(
+      budowleStojace([...rzeczy('lozko', 3), ...rzeczy('drewno', 2), ...rzeczy('koza', 1), ...rzeczy('???', 1)]),
+    ).toBe(0);
+    expect(budowleStojace([])).toBe(0);
+  });
+
+  it('piętnaście zasieków nie spełnia kryterium budowli przy 45 dniach, tyle samo budowli poza obwodem tak', () => {
+    const zRzeczy = (kind: string) => przebiegi({ dni: 45, budowle: budowleStojace(rzeczy(kind, 15)) });
+    const siatka = werdykt(zRzeczy('zasieki'));
+    expect(siatka.ok).toBe(false);
+    expect(siatka.bledy.join(' ')).toContain('budowle');
+    expect(siatka.bledy.join(' ')).toContain('ma 0 z 15');
+    expect(werdykt(zRzeczy('barykada')).ok).toBe(false);
+    expect(werdykt(zRzeczy('magazyn')).ok).toBe(true);
+    expect(werdykt(zRzeczy('lozka_pietrowe')).bledy).toEqual([]);
+  });
+
+  it('poranek liczy budowle ze stanu gry bez kawałków siatki', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    expect(poranekGry(g).budowle).toBe(0);
+    const rzecz = (id: number, kind: string) => ({
+      id,
+      kind,
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    g.sim.st.things.push(...Array.from({ length: 15 }, (_, k) => rzecz(9000 + k, 'zasieki')));
+    expect(poranekGry(g).budowle).toBe(0);
+    g.sim.st.things.push(...Array.from({ length: 15 }, (_, k) => rzecz(9100 + k, k % 2 ? 'magazyn' : 'ogrodek')));
+    expect(poranekGry(g).budowle).toBe(15);
+  });
+});
+
+describe('werdykt: demo z błędnym przebiegiem', () => {
+  const zle = (demo: string, ziarno: number, powod = 'proces padł'): BlednyPrzebieg => ({ demo, ziarno, powod });
+
+  it('demo z błędnym przebiegiem nie jest oceniane: „nie oceniono” zamiast werdyktu z pozostałych przebiegów', () => {
+    // cztery pozostałe przebiegi dema przymorze padają w dniu 20: ocena z nich byłaby porażką, a ona nie jest ocena dema
+    const w = werdykt(przebiegi({ demo: 'przymorze', ile: 4, dozyly: 0 }), PROGI, [
+      zle('przymorze', 15, 'limit czasu'),
+    ]);
+    expect(w.nieocenione).toHaveLength(1);
+    expect(w.nieocenione[0]).toContain('przymorze');
+    expect(w.nieocenione[0]).toContain('nie oceniono');
+    expect(w.nieocenione[0]).toContain('ziarno 15');
+    expect(w.nieocenione[0]).toContain('limit czasu');
+    // żadnego błędu z liczenia pozostałych przebiegów tego dema
+    expect(w.bledy).toEqual([]);
+    // werdykt jako całość nie przechodzi, skoro czegoś nie zmierzono
+    expect(w.ok).toBe(false);
+  });
+
+  it('pozostałe dema oceniane są normalnie, nawet gdy jedno jest nieocenione', () => {
+    const w = werdykt(
+      [
+        ...przebiegi({ demo: 'przymorze', ile: 4 }),
+        ...przebiegi({ demo: 'lanciego', dozyly: 2 }),
+        ...przebiegi({ demo: 'zielonki' }),
+      ],
+      PROGI,
+      [zle('przymorze', 15)],
+    );
+    expect(w.nieocenione.map((x) => x.split(':')[0])).toEqual(['przymorze']);
+    // lanciego (2 z 5) pada na przeżyciu, zielonki są w porządku
+    expect(w.bledy).toHaveLength(1);
+    expect(w.bledy[0]).toContain('lanciego');
+    expect(w.bledy.join(' ')).not.toContain('zielonki');
+    expect(w.ok).toBe(false);
+  });
+
+  it('demo, w którym nie udał się żaden przebieg, też jest nieocenione, a jego kolejność idzie po ocenionych', () => {
+    const w = werdykt(przebiegi({ demo: 'zielonki' }), PROGI, [zle('lanciego', 11), zle('lanciego', 12, 'okno')]);
+    expect(w.nieocenione).toHaveLength(1);
+    expect(w.nieocenione[0]).toContain('lanciego');
+    expect(w.nieocenione[0]).toContain('2 przebiegów');
+    expect(w.nieocenione[0]).toContain('ziarno 11: proces padł');
+    expect(w.nieocenione[0]).toContain('ziarno 12: okno');
+    expect(w.bledy).toEqual([]);
+  });
+
+  it('bez błędnych przebiegów nic się nie zmienia: pusta lista nieocenionych i ten sam werdykt', () => {
+    const p = przebiegi({ dozyly: 4 });
+    expect(werdykt(p).nieocenione).toEqual([]);
+    expect(werdykt(p).ok).toBe(true);
+    expect(werdykt(p, PROGI, []).ok).toBe(true);
+  });
+
+  it('same błędne przebiegi bez żadnego udanego to nie „brak przebiegów”, tylko nieocenione dema', () => {
+    const w = werdykt([], PROGI, [zle('przymorze', 11)]);
+    expect(w.ok).toBe(false);
+    expect(w.bledy).toEqual([]);
+    expect(w.nieocenione).toHaveLength(1);
+    // pusto i bez błędnych dalej jest porażką
+    expect(werdykt([]).bledy.length).toBeGreaterThan(0);
+  });
+});
+
+describe('werdykt: przebieg krótszy niż dzień 15', () => {
+  it('przy --dni poniżej dnia 15 kryterium kamienia jest pomijane z uwagą', () => {
+    // 10 dni: brak kamienia nie jest błędem, bo przebieg nie dociera do dnia 15; budowle: floor(10 / 3) = 3
+    const w = werdykt(przebiegi({ dni: 10, kamien: null, budowle: 3 }));
+    expect(w.ok).toBe(true);
+    expect(w.bledy).toEqual([]);
+    expect(w.uwagi.join(' ')).toContain('przymorze');
+    expect(w.uwagi.join(' ')).toContain('kamienia');
+    expect(w.uwagi.join(' ')).toContain('pominięte');
+    // tyle samo przy spóźnionym kamieniu, którego krótki przebieg też nie umie ocenić
+    expect(werdykt(przebiegi({ dni: 10, kamien: 20, budowle: 3 })).ok).toBe(true);
+  });
+
+  it('pozostałe kryteria dalej obowiązują w krótkim przebiegu', () => {
+    // 10 dni, ale trzy z pięciu dożyły: porażka na przeżyciu
+    const przezycie = werdykt(przebiegi({ dni: 10, dozyly: 3, kamien: null, budowle: 3 }));
+    expect(przezycie.ok).toBe(false);
+    expect(przezycie.bledy.join(' ')).toContain('przeżyło 3 z 5');
+    expect(przezycie.bledy.join(' ')).not.toContain('kamień');
+    // 10 dni i 2 budowle (cel 3): porażka na budowlach
+    const budowle = werdykt(przebiegi({ dni: 10, kamien: null, budowle: 2 }));
+    expect(budowle.ok).toBe(false);
+    expect(budowle.bledy.join(' ')).toContain('budowle');
+  });
+
+  it('dolna granica dnia kamienia: 14 dni jest jeszcze pomijane, 15 dni już ocenia kamień', () => {
+    expect(werdykt(przebiegi({ dni: 14, kamien: null, budowle: 4 })).ok).toBe(true);
+    const pelny = werdykt(przebiegi({ dni: 15, kamien: null, budowle: 5 }));
+    expect(pelny.ok).toBe(false);
+    expect(pelny.bledy.join(' ')).toContain('kamień');
+    expect(pelny.uwagi.join(' ')).not.toContain('pominięte');
+    // pełne 45 dni jak dotąd
+    expect(werdykt(przebiegi({ dni: 45, kamien: null })).ok).toBe(false);
+  });
+
+  it('pomijanie dotyczy tylko dema z krótkimi przebiegami', () => {
+    const w = werdykt([
+      ...przebiegi({ demo: 'przymorze', dni: 10, kamien: null, budowle: 3 }),
+      ...przebiegi({ demo: 'lanciego', dni: 45, kamien: null }),
+    ]);
+    expect(w.ok).toBe(false);
+    expect(w.bledy.join(' ')).toContain('lanciego');
+    expect(w.bledy.join(' ')).not.toContain('przymorze');
+    expect(w.uwagi.join(' ')).toContain('przymorze');
   });
 });
 
