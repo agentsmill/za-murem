@@ -136,7 +136,7 @@ export function werdykt(p: readonly Przebieg[], progi: Progi = PROGI, bledne: re
     const zleWDemie = bledne.filter((x) => x.demo === demo);
     if (zleWDemie.length) {
       const opis = zleWDemie.map((x) => `ziarno ${x.ziarno}: ${x.powod}`).join(', ');
-      nieocenione.push(`${demo}: nie oceniono, bo ${zleWDemie.length} przebiegów nie udało się (${opis})`);
+      nieocenione.push(`${demo}: nie oceniono (przebiegi z błędem: ${opis})`);
       continue;
     }
     const grupa = p.filter((x) => x.demo === demo);

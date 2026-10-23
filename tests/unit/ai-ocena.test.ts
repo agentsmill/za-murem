@@ -299,6 +299,7 @@ describe('werdykt: demo z błędnym przebiegiem', () => {
     expect(w.nieocenione).toHaveLength(1);
     expect(w.nieocenione[0]).toContain('przymorze');
     expect(w.nieocenione[0]).toContain('nie oceniono');
+    expect(w.nieocenione[0]).toContain('przebiegi z błędem');
     expect(w.nieocenione[0]).toContain('ziarno 15');
     expect(w.nieocenione[0]).toContain('limit czasu');
     // żadnego błędu z liczenia pozostałych przebiegów tego dema
@@ -329,7 +330,7 @@ describe('werdykt: demo z błędnym przebiegiem', () => {
     const w = werdykt(przebiegi({ demo: 'zielonki' }), PROGI, [zle('lanciego', 11), zle('lanciego', 12, 'okno')]);
     expect(w.nieocenione).toHaveLength(1);
     expect(w.nieocenione[0]).toContain('lanciego');
-    expect(w.nieocenione[0]).toContain('2 przebiegów');
+    expect(w.nieocenione[0]).toContain('przebiegi z błędem');
     expect(w.nieocenione[0]).toContain('ziarno 11: proces padł');
     expect(w.nieocenione[0]).toContain('ziarno 12: okno');
     expect(w.bledy).toEqual([]);
