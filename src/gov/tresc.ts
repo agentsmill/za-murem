@@ -24,7 +24,9 @@
    zgonie kogoś z imieniem (zarząd albo mieszkaniec z osobą; dane karty `{ id, name, f, cause, cialo? }`) w trzech
    wyborach: pochować pod trzepakiem (w domu w ogrodzie; wszystkim nastrój „Pożegnaliśmy: Imię” +2 na dobę, kopie
    `doSprawdzenia()` za −10 odpoczynku), pożegnać przy kozie (nastrój +1) albo bez ceremonii (wkurzenie +1). W trybie
-   zombie `cialo` (dobite albo nie) idzie do tekstu; bez ciała zamiast grobu tabliczka. */
+   zombie `cialo` (dobite albo nie) idzie do tekstu; bez ciała zamiast grobu tabliczka.
+   Kroki łańcuchów kart (src/gov/watki.ts) to też `GEventDef`; host dostaje od nich `hak(id, d?)` i `hakDane(id)`, którymi
+   wybór na karcie ustawia i czyta fakty zwalniające następny krok. */
 
 import { przyczynaEn } from '../content/data.en.ts';
 import { LAW, type LawPath } from '../content/data.ts';
@@ -316,6 +318,12 @@ export interface GovHost extends EventHost, GoscHost {
   wyrzuc(id: string): void;
   /** osoba zarządu idzie sprawdzić kafelek (numer kafelka mapy), stoi tam 10 minut gry i wraca do zajęć */
   sprawdz(id: string, tile: number): void;
+  /** Hak łańcucha kart (src/gov/watki.ts): zapisuje fakt `id` z minutą gry i danymi `d` (zwykły JSON, `Tx` w środku wolno).
+      Wybór na karcie kroku ustawia nim hak, od którego liczy się odstęp następnego kroku; id z przestrzenią łańcucha
+      (`swiatlo.dali`). Ponowne ustawienie przesuwa czas. */
+  hak(id: string, d?: unknown): void;
+  /** hak o danym id (kopia: minuta gry i dane) albo null, gdy go nie ma; do tekstów i wyborów dalszych kroków */
+  hakDane(id: string): { t: number; d?: unknown } | null;
   /** wpis do kroniki: zdanie w obu językach albo polski wpis z 0.3 (angielski daje EVENTS_EN z warianty.en.ts) */
   log(txt: string | Tx, big?: boolean): void;
   /** skutek na rano: zmiana zapasów i linia do raportu */

@@ -732,6 +732,12 @@ export interface GovState {
       człowieka; dodatni wraca jako gość, ujemny w zwykłym trybie idzie z szabrownikami. Pole od pierwszego wpisu, gra bez
       gości i stary zapis go nie mają. */
   znajomi?: Znajomy[];
+  /** łańcuchy kart i wątki sezonu (src/gov/watki.ts): `wybrane` to id łańcuchów wybranych na tę grę (do trzech, z ziarna
+      zarządu przy pierwszym wydarzeniu; puste: jeszcze nie wybierano), `haki` to fakty ustawiane wyborami na kartach
+      (id → minuta gry `t` i zwykłe dane JSON `d`; silnik dopisuje hak o id każdego rozstrzygniętego kroku), `krok` to numer
+      ostatniego rozpoczętego kroku łańcucha (równy liczbie kroków: łańcuch skończony albo cicho zakończony). Pole od
+      pierwszego wyboru wątków albo haka; gra bez łańcuchów i stary zapis go nie mają. */
+  watki?: { wybrane: string[]; haki: Record<string, { t: number; d?: unknown }>; krok: Record<string, number> };
 }
 
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy

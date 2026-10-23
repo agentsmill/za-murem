@@ -48,7 +48,15 @@
    karta (z `gid` w danych) otwiera się w `goscTick`, gdy grupa stoi pod bramą. W odróżnieniu od gościa z klocków taka wizyta
    zajmuje miejsce karty (to stare karty z puli, nie dodatkowe): po planie nie losuje się drugiej, odstęp do następnej
    liczy się od tego losowania, więc liczba kart na dobę zostaje jak przed wizytami. `gdzie` takiej karty to kafelek grupy
-   (przycisk „Pokaż”). */
+   (przycisk „Pokaż”).
+   Łańcuchy kart (src/gov/watki.ts): przy pierwszym `eventTick` z niepustą listą pasujących łańcuchów zarząd wybiera wątki
+   sezonu, `porzadkuj` co sekundę kończy po cichu łańcuch, którego rozpoczęty krok przepadł (gość nie doszedł do bramy), a
+   losowanie `pickGovEvent` ma dwa dodatki: krok z dojrzałym hakiem wypada przed zwykłą pulą z szansą 0,6 (jedna liczba
+   z ziarna zarządu, tylko gdy taki krok jest dostępny: jego pora dnia, tryb, waga i, dla kroku z gościem, wolne miejsce
+   wizyty), a pierwsze kroki wybranych łańcuchów wchodzą do puli z wagą 1. Kroki to karty jak inne (ten sam odstęp,
+   `activate`, okno, wybór, `GEventDef.gosc` przez `planujKarte`); wybór zamykający kartę kroku rozstrzyga go
+   (`rozstrzygnijKrok`), a `GovHost.hak` ustawia hak, który zwalnia następny. Bez łańcuchów nic z tego niczego nie losuje
+   ani nie zapisuje. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -71,6 +79,18 @@ import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Pu
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
+import {
+  hakDane,
+  jestKrok,
+  krokiGotowe,
+  krokPoId,
+  porzadkuj,
+  rozpocznijKrok,
+  rozstrzygnijKrok,
+  SZANSA_KROKU,
+  hak as ustawHak,
+  wybierzWatki,
+} from './watki.ts';
 import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte, planujPowrot } from './wizyta.ts';
 import { POWROT_EVENT, zapamietaj } from './znajomi.ts';
 
@@ -196,6 +216,8 @@ export const M1_EVENTS: GEventDef[] = [
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
 byId.set('sasiadka', byId.get('dym')!);
+/** definicja karty o tym id: zwykła pula albo krok łańcucha (src/gov/watki.ts) */
+const defOf = (id: string): GEventDef | undefined => byId.get(id) ?? krokPoId(id);
 
 /** to samo co w wejściu, ale z własnymi obiektami w środku */
 const kopiaOsoby = (p: GovPerson): GovPerson => ({
@@ -333,6 +355,8 @@ export function makeHost(
     addSick: (n) => {
       fx.sick += n;
     },
+    hak: (id, d) => ustawHak(st, id, gameMin(i), d),
+    hakDane: (id) => hakDane(st, id),
     log: (txt, big) => {
       if (typeof txt !== 'string') return logGov(st, i, txt, !!big, fx);
       let line = drewno(txt);
@@ -491,21 +515,48 @@ function activate(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
   return { id: e.id, d };
 }
 
-/** losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first */
+/** wydarzenie przychodzi; krok łańcucha dostaje przy tym numer w swoim łańcuchu (`rozpocznijKrok`), więc nie wypadnie drugi raz
+    i następny krok czeka na jego rozstrzygnięcie */
+function start(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
+  const ev = activate(st, h, e);
+  if (ev && jestKrok(e)) rozpocznijKrok(st, e);
+  return ev;
+}
+
+/** Losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first. Kroki łańcuchów: krok
+    z dojrzałym hakiem, który pasuje teraz (pora, tryb, waga, wolna wizyta dla kroku z gościem), wypada przed pulą z szansą
+    `SZANSA_KROKU` (jedna liczba z ziarna zarządu, tylko gdy taki krok jest; z kilku ten, który czeka najdłużej), a pierwsze
+    kroki wybranych łańcuchów, które pasują, wchodzą do puli z wagą 1 (warunek dostępności to `w(h) > 0`). */
 function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): ActiveEvent | null {
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
-  const pool = M1_EVENTS.filter(
-    (e) => e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
-  )
-    .map((e) => [e, e.w(h)] as const)
-    .filter((x) => x[1] > 0);
+  // krok łańcucha wypada, jeśli pasuje do pory, trybu i wagi, a krok z gościem ma gdzie go zaplanować (obcy w grze, wolna wizyta)
+  const dostepny = (k: GEventDef) =>
+    k.when.includes(pora) &&
+    (!first || k.first) &&
+    fitsMode(st, k) &&
+    k.w(h) > 0 &&
+    (!k.gosc || (h.goscie() !== null && !h.goscAktywny()));
+  const gotowe = krokiGotowe(st, h.t, st.mode ?? 'zwykly').filter(dostepny);
+  const dojrzale = gotowe.filter((k) => k.nr > 1);
+  if (dojrzale.length && h.rng() < SZANSA_KROKU)
+    for (const k of dojrzale) {
+      const ev = start(st, h, k);
+      if (ev) return ev;
+    }
+  const pool = [
+    ...M1_EVENTS.filter(
+      (e) =>
+        e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
+    ).map((e) => [e, e.w(h)] as const),
+    ...gotowe.filter((k) => k.nr === 1).map((k) => [k, 1] as const),
+  ].filter((x) => x[1] > 0);
   const tot = pool.reduce((a, x) => a + x[1], 0);
   if (!tot) return null;
   let r = h.rng() * tot;
   for (const [e, w] of pool) {
     r -= w;
-    if (r <= 0) return activate(st, h, e);
+    if (r <= 0) return start(st, h, e);
   }
   return null;
 }
@@ -569,14 +620,18 @@ export const nextGap = (st: GovState, screen: number): number =>
 /** harmonogram: nowe wydarzenie, gdy minął odstęp, jest pora dnia z pulą i nic nie czeka na decyzję; pierwszego
     dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
 export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boolean): void {
+  // wątki sezonu raz na grę, przy pierwszym wywołaniu (także w starym zapisie bez `watki`); bez łańcuchów nic nie robi
+  wybierzWatki(st, st.mode ?? 'zwykly');
   // okno z zapisu, którego gra już nie zna (zmieniona pula), znika zamiast blokować grę
-  if (st.ev.active && !byId.has(st.ev.active.id)) st.ev.active = null;
+  if (st.ev.active && !defOf(st.ev.active.id)) st.ev.active = null;
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
   if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
   const quiet = calm(st, i);
   // gość: wizyta idzie co sekundę, także gdy coś czeka (karta, której gość odszedł, znika); karta gościa pod bramą
   // przychodzi, gdy nic innego nie czeka na decyzję
   const gosc = goscTick(st, i, fx, busy);
+  // łańcuch, którego krok przepadł razem z gościem, kończy się po cichu (po `goscTick`, który zwalnia przepadłą wizytę)
+  porzadkuj(st, i);
   if (st.ev.active || busy) return;
   if (gosc) {
     show(st, i, fx, gosc);
@@ -618,7 +673,7 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
     // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
     // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
-    const def = byId.get(ev.id);
+    const def = defOf(ev.id);
     if (def?.gosc && planujKarte(st, i, fx, def, h, ev.d)) return;
   }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
@@ -634,7 +689,7 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
   if (!ev) return;
   st.ev.active = ev;
   st.ev.when = i.screen;
-  const def = byId.get(ev.id)!;
+  const def = defOf(ev.id)!;
   const h = makeHost(st, i, fx);
   logGov(st, i, def.title(h, ev.d), false, fx, def.gdzie?.(h, ev.d));
 }
@@ -645,7 +700,7 @@ export function eventView(
   i: GovInput,
 ): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[]; gdzie?: Punkt } | null {
   const ev = st.ev.active;
-  const def = ev && byId.get(ev.id);
+  const def = ev && defOf(ev.id);
   if (!ev || !def) return null;
   const h = makeHost(st, i, emptyEffects());
   const gdzie = def.gdzie?.(h, ev.d);
@@ -662,7 +717,7 @@ export function eventView(
 export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): boolean {
   const ev = st.ev.active;
   if (!ev) return false;
-  const def = byId.get(ev.id);
+  const def = defOf(ev.id);
   if (!def) {
     st.ev.active = null;
     return false;
@@ -675,6 +730,8 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
   logGov(st, i, txCat(def.title(h, ev.d), ': ', c.label, '.'), false, fx);
   c.run();
   if (c.zostaje) return true;
+  // karta kroku łańcucha zamknięta wyborem: krok rozstrzygnięty (od teraz liczy się odstęp następnego bez haka)
+  rozstrzygnijKrok(st, def.id, h.t);
   decision(st, i, 'wydarzenie');
   // odstęp liczy się od decyzji, żeby wydarzenia nie przychodziły jedno za drugim
   st.ev.next = Math.max(st.ev.next, i.screen + nextGap(st, i.screen));
