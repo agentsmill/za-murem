@@ -7,7 +7,7 @@
 
 import type { Dom, EndingId, LawPath, TechDom } from '../content/data.ts';
 import type { ActiveEvent } from '../content/events.ts';
-import type { Person } from '../content/people.ts';
+import type { Person, Wyglad } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
@@ -422,8 +422,9 @@ export interface RaidPlan {
   /** ilu szabrowników przychodzi (1–3, z siły) */
   people?: number;
   /** znajomy, który dołącza do napadu (src/gov/znajomi.ts, `wrogDoNapadu`): jeden z szabrowników dostaje jego wygląd
-      (`look`), a raport rano mówi, kto to był (imię i epitet w obu językach) */
-  znajomy?: { id: string; imie: Tx; epitet: Tx; look: number };
+      (`look`) i postać PixelLab (`wyglad`: płeć, wiek i ziarno z `wygladZnajomego`, te same co u gościa), a raport rano mówi,
+      kto to był (imię i epitet w obu językach) */
+  znajomy?: { id: string; imie: Tx; epitet: Tx; look: number; wyglad: Wyglad };
 }
 
 /** wynik napadu dla symulacji: co się stało, gdzie, przy jakiej sile i obronie, co zabrali */

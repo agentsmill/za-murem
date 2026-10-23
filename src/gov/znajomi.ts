@@ -32,7 +32,7 @@
    `tekstPowrotu`) rozpoznaje znajomego po imieniu, epitecie i tym, co się stało, i zapowiada dar. Nic tu nie losuje, a angielski
    nie ma polskich słów (imiona zostają, bo są zmyślone). */
 
-import { type Person, g as plec } from '../content/people.ts';
+import { type Person, g as plec, type Wyglad, wygladZnajomego } from '../content/people.ts';
 import { type Tx, tx } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import { type Gosc, KTO, type KtoId } from './goscie.ts';
@@ -378,9 +378,16 @@ export function liniaWsrod(z: Znajomy, wariant: 'wsrod' | 'to' = 'wsrod'): Tx {
       );
 }
 
-/** Znajomy w planie napadu (`RaidPlan.znajomy`): imię i nazwisko, epitet i wygląd. */
-export function wPlanieNapadu(z: Znajomy): { id: string; imie: Tx; epitet: Tx; look: number } {
-  return { id: z.id, imie: tx(z.osoba.name, z.osoba.name), epitet: epitet(z), look: z.look };
+/** Znajomy w planie napadu (`RaidPlan.znajomy`): imię i nazwisko, epitet, wygląd pionka (`look`) i postać (`wyglad`, ta sama
+    funkcja z płci, wieku, wyglądu i imienia co u gościa w symulacji, żeby szabrownik miał twarz gościa). */
+export function wPlanieNapadu(z: Znajomy): { id: string; imie: Tx; epitet: Tx; look: number; wyglad: Wyglad } {
+  return {
+    id: z.id,
+    imie: tx(z.osoba.name, z.osoba.name),
+    epitet: epitet(z),
+    look: z.look,
+    wyglad: wygladZnajomego(z.look, z.osoba),
+  };
 }
 
 // ---------------------------------------------------------------- karta powrotu

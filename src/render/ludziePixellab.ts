@@ -7,8 +7,16 @@
    wybór postaci i pamięć komórek. Przejścia między staniem a leżeniem (upadek przy śmierci, kładzenie się, wstawanie:
    art/animacjePozy.ts, PRZEJSCIA) wybierają klatkę z czasu od startu przejścia; start i kierunek zna widok
    (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. Pies i kot nie dostają tu postaci (null): mają własny atlas
-   rysowany kodem (art/zwierzeta.ts). */
+   rysowany kodem (art/zwierzeta.ts).
 
+   Człowiek z historią zarządu (gość, znajomy; `PionekLudzi.wyglad`, w grze `Pawn.wyglad`) ma postać i wersję kolorystyczną
+   z własnych danych: płci, wieku i ziarna z `wygladZnajomego` (content/people.ts), bez numeru osoby ani numeru pionka. Dzięki
+   temu gość pod bramą, ten sam człowiek po przyjęciu do osiedla albo do zarządu, powracający gość i szabrownik, który idzie
+   z napadem jako znajomy (pionek bez osoby), wyglądają tak samo. Postać wybiera się zawsze z obsady mieszkańców (zarząd ma
+   cztery własne), także po awansie do zarządu: awans nie zmienia twarzy. Pionki bez pola (zarząd, mieszkańcy z generatora,
+   zwykli szabrownicy) wybierają postać jak dotąd. */
+
+import type { Wyglad } from '../content/people.ts';
 import { jestZwierzeciem } from '../sim/zwierzeta.ts';
 import {
   kluczAnimacji,
@@ -38,6 +46,8 @@ export interface PionekLudzi {
   /** indeks w osobach gry albo −1 */
   person: number;
   look: number;
+  /** człowiek z historią zarządu: postać i wersja z tych danych, nie z osoby ani z numeru pionka (patrz nagłówek) */
+  wyglad?: Wyglad;
 }
 
 export interface OsobaLudzi {
@@ -124,6 +134,14 @@ export class LudziePixellab {
     if (jestZwierzeciem(p.kind)) return null;
     const znana = this.postacie.get(p.id);
     if (znana !== undefined) return znana;
+    // gość i znajomy: postać z jego danych, z obsady mieszkańców (po awansie do zarządu ta sama)
+    if (p.wyglad) {
+      const z = this.mieszkancy
+        ? postacDlaOsoby(this.pula, { f: p.wyglad.f, age: p.wyglad.age, zarzad: false }, p.wyglad.los)
+        : null;
+      this.postacie.set(p.id, z);
+      return z;
+    }
     const zarzad = p.kind === 'core';
     let postac = this.postacOsoby(p.person, osoby, zarzad);
     if (!postac && !zarzad && this.mieszkancy && !osoby[p.person]) postac = postacDlaWygladu(this.pula, p.look);
@@ -143,7 +161,8 @@ export class LudziePixellab {
     for (const p of pionki) {
       if (p.kind !== 'core') continue;
       const postac = this.postacPionka(p, osoby);
-      if (!postac) continue;
+      // gość awansowany do zarządu zostaje z postacią z mieszkańców: nie liczy się do wersji zarządu
+      if (!postac?.zarzad) continue;
       const g = grupy.get(postac.id);
       if (g) g.lista.push(p);
       else grupy.set(postac.id, { postac, lista: [p] });
@@ -170,6 +189,8 @@ export class LudziePixellab {
       mieszkańcy po osobie (pionek bez osoby po numerze pionka). */
   wersjaPionka(p: PionekLudzi, postac: PostacLudzi): number {
     if (postac.zarzad) return this.wersjeZarzadu.get(p.id) ?? 0;
+    // gość i znajomy: wersja z ziarna wyglądu, jak postać (ta sama u gościa, powracającego, przyjętego i szabrownika)
+    if (p.wyglad) return skrot(p.wyglad.los ^ 0x2f6b) % (this.rampy.length + 1);
     return skrot((p.person >= 0 ? p.person : p.id + 7919) ^ 0x2f6b) % (this.rampy.length + 1);
   }
 

@@ -10,6 +10,7 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
+import { type Wyglad, wygladZnajomego } from '../src/content/people.ts';
 import { mnogaPl, type Tx } from '../src/core/jezyk.ts';
 import type { GameMode } from '../src/gov/typy.ts';
 import type { Znajomy } from '../src/gov/znajomi.ts';
@@ -2885,6 +2886,44 @@ const SHOTS: Shot[] = [
           if (st.n === 0) throw new Error('szabrownicy się nie pojawili');
           console.log(`  szabrownicy: ${st.n}, z wyglądem znajomego ${st.ten}, do napadu ${st.za} kroków`);
           if (st.ten !== 1) throw new Error(`wygląd znajomego ma ${st.ten} szabrowników zamiast jednego`);
+          // ten sam człowiek jako gość: osobna wizyta Henryka (plan jak od zarządu), a jego pionek stawiamy obok szabrownika
+          // ze znajomego, żeby na zrzucie widać było dwie takie same twarze; postać z widoku musi być ta sama
+          await page.evaluate(
+            ([osoba, look]) => {
+              const sim = window.zm!.sim!;
+              sim.st.cmds.push({
+                t: 'gosc',
+                ids: [],
+                plan: {
+                  id: 'g99',
+                  strona: 'n',
+                  looks: [look],
+                  osoby: [
+                    {
+                      id: 'g99p0',
+                      ...osoba,
+                      prof: 'Hydraulik',
+                      skills: {},
+                      traits: [],
+                      home: -1,
+                      assign: null,
+                      sick: false,
+                      dead: false,
+                      gone: false,
+                    },
+                  ],
+                },
+              } as never);
+              sim.step();
+            },
+            [HENRYK_WROG.osoba, HENRYK_WROG.look] as const,
+          );
+          const wzorzec = wygladZnajomego(HENRYK_WROG.look, HENRYK_WROG.osoba);
+          const fig = await figury(page, HENRYK_WROG.osoba.name, wzorzec);
+          if (!fig) throw new Error('widok bez postaci PixelLab (?grafika=kod): zrzut nie sprawdzi twarzy');
+          console.log(`  postać gościa ${fig.gosc}, szabrownika ${fig.szabrownik}, wzorca ${fig.wzorzec}`);
+          if (!fig.gosc || fig.gosc === 'kod' || fig.gosc !== fig.szabrownik || fig.gosc !== fig.wzorzec)
+            throw new Error(`gość, szabrownik ze znajomego i wzorzec mają różne postacie: ${JSON.stringify(fig)}`);
           // po ciemku nie widać ich bez światła: ognisko obok miejsca, gdzie czekają pod siatką
           await page.evaluate((look) => {
             const zm = window.zm!;
@@ -2908,7 +2947,15 @@ const SHOTS: Shot[] = [
               owner: -1,
             });
             const on = st.pawns.find((p) => p.kind === 'szabrownik' && p.look === look)!;
-            zm.setCam(on.x, on.y, 3.2);
+            // gość o tym samym wyglądzie stoi tuż obok (bez własnej drogi, na jedną klatkę zrzutu)
+            const gosc = st.pawns.find((p) => p.kind === 'gosc' && p.look === look);
+            if (gosc) {
+              gosc.x = on.x + 1.3;
+              gosc.y = on.y;
+              gosc.path = [];
+              gosc.pi = 0;
+            }
+            zm.setCam(on.x + 0.6, on.y, 3.2);
           }, HENRYK_WROG.look);
           await waitIdle(page);
           await frames(page, 4);
@@ -2970,6 +3017,16 @@ const SHOTS: Shot[] = [
             throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
           if (!tekst.includes('Pod bramą znowu stoi Henryk Kowalski, '))
             throw new Error('karta nie rozpoznaje znajomego');
+          // twarz powracającego z widoku to ta sama funkcja danych co u gościa sprzed lat i u szabrownika ze znajomego
+          const fig = await figury(
+            page,
+            HENRYK_DOBRY.osoba.name,
+            wygladZnajomego(HENRYK_DOBRY.look, HENRYK_DOBRY.osoba),
+          );
+          if (!fig) throw new Error('widok bez postaci PixelLab (?grafika=kod): zrzut nie sprawdzi twarzy');
+          console.log(`  postać powracającego ${fig.gosc}, wzorca ${fig.wzorzec}`);
+          if (!fig.gosc || fig.gosc === 'kod' || fig.gosc !== fig.wzorzec)
+            throw new Error(`powracający i wzorzec mają różne postacie: ${JSON.stringify(fig)}`);
           const foot = await page.evaluate(() =>
             [...document.querySelectorAll('#sheet .sheet-foot button')].map(
               (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
@@ -8253,6 +8310,41 @@ async function doPowrotu(page: Page, ile = 800): Promise<number> {
     await answerFirst(page, p);
   }
   throw new Error(`przez ${ile / 2} godzin gry znajomy nie wrócił pod bramę`);
+}
+
+/** Postać PixelLab pionków z widoku gry (id postaci i wersja kolorystyczna, jak je wybiera `LudziePixellab`): gościa o danym
+    imieniu i nazwisku, szabrownika z polem `wyglad` (ze znajomego) i pionka-wzorca z wyglądem `wzorzec` (to, co dostałby
+    człowiek o tych danych w każdym pionku). null: widok nie ma postaci PixelLab (grafika z kodu). Pionki wybierane po numerach,
+    bo widok pamięta wybór po numerze pionka. */
+async function figury(
+  page: Page,
+  imie: string,
+  wzorzec: Wyglad,
+): Promise<{ gosc: string | null; szabrownik: string | null; wzorzec: string } | null> {
+  return page.evaluate(
+    ([imie, wzorzec]) => {
+      const zm = window.zm!;
+      const st = zm.sim!.st;
+      type Dane = {
+        postacPionka(p: unknown, osoby: unknown): { id: string } | null;
+        wersjaPionka(p: unknown, po: unknown): number;
+      };
+      const dane = (zm.view as unknown as { ludzie?: { dane: Dane } }).ludzie?.dane;
+      if (!dane) return null;
+      const fig = (p: unknown) => {
+        const po = dane.postacPionka(p, st.people);
+        return po ? `${po.id}:${dane.wersjaPionka(p, po)}` : 'kod';
+      };
+      const gosc = st.pawns.find((p) => p.kind === 'gosc' && st.people[p.person]?.name === imie);
+      const sz = st.pawns.find((p) => p.kind === 'szabrownik' && p.wyglad);
+      return {
+        gosc: gosc ? fig(gosc) : null,
+        szabrownik: sz ? fig(sz) : null,
+        wzorzec: fig({ id: 987654, kind: 'szabrownik', person: -1, look: 9, wyglad: wzorzec }),
+      };
+    },
+    [imie, wzorzec] as const,
+  );
 }
 
 /** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */

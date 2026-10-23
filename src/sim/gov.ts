@@ -46,7 +46,9 @@
    częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
 
    Znajomi (src/gov/znajomi.ts): `RaidPlan.znajomy` niesie wygląd ujemnego znajomego, z którym szabrownicy przychodzą na
-   napad; `planRaid` zapisuje go w `Raid.znajomy`, a pierwszy szabrownik dostaje ten wygląd (`spawnRaid`). Mieszkaniec
+   napad; `planRaid` zapisuje go w `Raid.znajomy`, a pierwszy szabrownik dostaje ten wygląd (`spawnRaid`: `look` dla kodu,
+   `Pawn.wyglad` dla postaci PixelLab, tak samo jak gość z planu, więc to ta sama twarz). `GovInput.napadWystawiony` mówi, czy
+   szabrownicy z planu zostali wystawieni (nie było skąd podejść: nie). Mieszkaniec
    w `lokatorzy` ma `look`, wygląd swojego pionka, żeby zarząd zapamiętał go przy wyrzuceniu.
 
    Pies i kot (src/sim/zwierzeta.ts): `GovInput.zwierzeta` to wpis symulacji o zwierzętach (`SimState.zwierzeta`: pies żyje albo
@@ -514,7 +516,7 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
       true,
       fx.raid.people ?? 0,
       fx.raid.attack ?? 0,
-      fx.raid.znajomy?.look,
+      fx.raid.znajomy ? { look: fx.raid.znajomy.look, wyglad: fx.raid.znajomy.wyglad } : undefined,
     );
   const res = raidOutcome(st, fx);
   const loot: Loot = { wood: 0, supplies: 0, scrap: 0 };

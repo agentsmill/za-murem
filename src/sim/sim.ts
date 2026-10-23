@@ -30,7 +30,7 @@
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
-import { makePerson, type Person } from '../content/people.ts';
+import { makePerson, type Person, type Wyglad, wygladZnajomego } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { GoscRozkaz, PlanGoscia, ZwierzetaStan } from '../gov/typy.ts';
 import { IN, type Interior } from '../world/interior.ts';
@@ -730,6 +730,12 @@ export interface Pawn {
   /** zarząd odsypia za dnia (po nocnej warcie albo po pobudce na posiłek): głodny najpierw je, potem śpi, dopóki
       siły poniżej REST_UNTIL */
   nap?: boolean;
+  /** człowiek z historią zarządu: gość z planu (`wystawGoscia`) i szabrownik, który idzie z napadem jako znajomy
+      (`Raid.znajomy`). Płeć, wiek i ziarno wyglądu, z których widok wybiera postać PixelLab i jej wersję kolorystyczną
+      (`wygladZnajomego` w content/people.ts), więc ten sam człowiek ma tę samą twarz jako gość, po przyjęciu do osiedla
+      albo do zarządu (pionek zostaje ten sam), jako powracający gość i jako szabrownik. Reszta pionków nie ma pola
+      (wybór postaci jak dotąd). Render tylko czyta; kod rysuje po `look`. */
+  wyglad?: Wyglad;
 }
 
 /** Rzecz na mapie: meble z wnętrza (kopiowane przy starcie, żeby dało się je kiedyś przestawić albo spalić),
@@ -929,9 +935,10 @@ export interface Raid {
   /** ile mają wynieść (z zarządu; bez zarządu tyle, ile uniosą) i ile już wynieśli */
   loot: Loot;
   took: Loot;
-  /** wygląd znajomego z planu zarządu (RaidPlan.znajomy.look): pierwszy szabrownik dostaje go zamiast zwykłego stroju;
-      pole jest tylko wtedy, gdy zarząd wysłał znajomego, więc napad bez niego ma ten sam stan co dotąd */
-  znajomy?: number;
+  /** znajomy z planu zarządu (RaidPlan.znajomy): pierwszy szabrownik dostaje jego numer wyglądu `look` (kod) i `wyglad`
+      (postać PixelLab: płeć, wiek, ziarno) zamiast zwykłego stroju; pole jest tylko wtedy, gdy zarząd wysłał znajomego,
+      więc napad bez niego ma ten sam stan co dotąd */
+  znajomy?: { look: number; wyglad: Wyglad };
   /** kafelek, z którego przyszli i do którego wracają, i kafelek za siatką, pod którym czekają (−1: jeszcze nie) */
   from: number;
   spot: number;
@@ -1545,7 +1552,7 @@ export function planRaid(
   gov: boolean,
   people = 0,
   attack = 0,
-  znajomy?: number,
+  znajomy?: { look: number; wyglad: Wyglad },
 ): void {
   const zero = (): Loot => ({ wood: 0, supplies: 0, scrap: 0 });
   const n = Math.max(0, Math.min(5, Math.round(people)));
@@ -1561,7 +1568,7 @@ export function planRaid(
     took: zero(),
     from: -1,
     spot: -1,
-    ...(znajomy !== undefined ? { znajomy } : {}),
+    ...(znajomy !== undefined ? { znajomy: { look: znajomy.look, wyglad: { ...znajomy.wyglad } } } : {}),
   };
 }
 
@@ -6750,6 +6757,7 @@ export class Sim {
       const at = starts[i] ?? start;
       const p = newPawn(st, this.w, 'gosc', st.people.length - 1, at, at, plan.looks[i] ?? 4);
       p.hp = GOSC_HP;
+      p.wyglad = wygladZnajomego(p.look, o);
       p.job = { ...this.newJob('gosc', -1, waits[i] ?? spot, false), what: 'ulica' };
       st.pawns.push(p);
       g.pawns.push(p.id);
@@ -8783,8 +8791,9 @@ export class Sim {
     for (let k = 0; k < r.n; k++) {
       // losowanie zostaje także dla znajomego z zarządu (pierwszy szabrownik ma jego wygląd), żeby reszta ciągu była ta sama
       const los = 16 + Math.floor(nextRandom(st.rng) * 4);
-      const look = k === 0 && r.znajomy !== undefined ? r.znajomy : los;
+      const look = k === 0 && r.znajomy !== undefined ? r.znajomy.look : los;
       const p = newPawn(st, this.w, 'szabrownik', -1, starts[k] ?? r.from, r.from, look);
+      if (k === 0 && r.znajomy !== undefined) p.wyglad = { ...r.znajomy.wyglad };
       p.hp = STRANGER_HP;
       p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);
       st.pawns.push(p);

@@ -1258,8 +1258,12 @@ describe('szabrownik ze znajomego w symulacji', () => {
         imie: { pl: 'Henryk', en: 'Henryk' },
         epitet: { pl: 'ten', en: 'the' },
         look: 9,
+        wyglad: { f: false, age: 47, los: 4242 },
       });
       const szabrownicy = st.pawns.filter((p) => p.kind === 'szabrownik');
+      // postać PixelLab: tylko ten jeden niesie wygląd znajomego (płeć, wiek, ziarno), reszta zwykłe
+      expect(szabrownicy.filter((p) => p.wyglad !== undefined)).toHaveLength(1);
+      expect(szabrownicy.find((p) => p.look === 9)!.wyglad).toEqual({ f: false, age: 47, los: 4242 });
       expect(szabrownicy).toHaveLength(people);
       expect(
         szabrownicy.filter((p) => p.look === 9),
@@ -1298,7 +1302,13 @@ describe('szabrownik ze znajomego w symulacji', () => {
       expect(p.look).toBeGreaterThanOrEqual(16);
       expect(p.look).toBeLessThanOrEqual(19);
     }
-    const z = gra(3, { id: 'x', imie: { pl: 'X', en: 'X' }, epitet: { pl: 'x', en: 'x' }, look: 5 });
+    const z = gra(3, {
+      id: 'x',
+      imie: { pl: 'X', en: 'X' },
+      epitet: { pl: 'x', en: 'x' },
+      look: 5,
+      wyglad: { f: true, age: 30, los: 1 },
+    });
     // podmiana wyglądu nie zmienia ciągu liczb losowych symulacji
     expect(z.rng).toEqual(bez.rng);
     const stroje = (s: SimState) => s.pawns.filter((q) => q.kind === 'szabrownik').map((q) => q.look);
