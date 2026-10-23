@@ -10,8 +10,15 @@
    - tura: co 10 sekund przy ekranie od 7:00 do 21:00, gdy drewna jest poniżej 6 i nikt nie ścina, polecenie ścięcia
      drzewa najbliższego drzwiom siedziby (drzewa, do których nikt nie doszedł, idą do `pamiec.pominieteDrzewa`).
 
-   `silnik` to decydent, którego używa uprząż (`npm run bot:osada`); w zadaniu 1 jest równy silnikowi podstawowemu, kolejne
-   zadania składają go z warstw (zima, jedzenie, rozwój, okna zarządu) edycją tego pliku.
+   `silnik` to decydent, którego używa uprząż (`npm run bot:osada`): silnik podstawowy plus warstwy, które kolejne zadania
+   dokładają edycją tego pliku. Dziś jest to warstwa zimy (src/ai/zima.ts, zadanie 3):
+   - tura: ścinanie drzewa na opał jak w silniku podstawowym, ale już poniżej zapasu na dwie noce (`progDrewna`), nie
+     dopiero poniżej 6 sztuk; do tego `turaZimy` (pracownia, badanie kozy, koza z beczki w pokoju zarządu) co 30 sekund
+     przy ekranie (`CO_TIKOW_WARSTWY`), a licznik jej wywołań siedzi w pamięci (`PamiecSilnika.wywolania`);
+   - okno karty nocy: przygotowanie jak w silniku podstawowym (chorzy z warty, wartownik przy siatce), do tego dyżur przy
+     kozie (`dyzurNaKarcie`), potem zatwierdzenie; reszta okien jak w silniku podstawowym.
+   Warstwy idą w kolejności dopisywania i najwyżej raz na 30 sekund przy ekranie, poza oknami zarządu, które dostają
+   odpowiedź od razu. Silnik podstawowy niczego z warstw nie używa i dalej odtwarza `playWithGov` co do skrótu.
 
    Cała pamięć silnika siedzi w `GraAi.pamiec`, zwykłym JSON z zapisem gry: decydenci nie mają stanu w zamknięciach ani na
    poziomie modułu, więc wczytana gra decyduje tak samo jak bez przerwy, a dwie gry w jednym procesie się nie mieszają.
@@ -28,7 +35,8 @@ import { dryTreeOf } from '../sim/house.ts';
 import { commandFor } from '../sim/orders.ts';
 import { type Pawn, trunkOf } from '../sim/sim.ts';
 import { snapshot } from '../sim/snapshot.ts';
-import { type Decydent, type GraAi, odpowiedzDomyslna, type Rece } from './gra.ts';
+import { type Decydent, type GraAi, odpowiedzDomyslna, type Rece, wejscie } from './gra.ts';
+import { dyzurNaKarcie, type PamiecZimy, progDrewna, turaZimy } from './zima.ts';
 
 /** Pamięć silnika: zwykły JSON, wchodzi do zapisu i do skrótu gry. Warstwy dopisują swoje pola (opcjonalne, z wartością
     domyślną przy pierwszym użyciu), żeby zapis sprzed warstwy dalej się wczytywał. */
@@ -38,6 +46,10 @@ export interface PamiecSilnika {
   pominieteDrzewa: number[];
   /** drzewo z ostatniego polecenia ścinania (−1: brak) */
   zlecone: number;
+  /** ile razy ruszyła każda warstwa (klucz to jej nazwa: 'zima'); pole powstaje przy pierwszym użyciu */
+  wywolania?: Record<string, number>;
+  /** warstwa zimy (src/ai/zima.ts); pole powstaje przy pierwszym użyciu */
+  zima?: PamiecZimy;
 }
 
 export function nowaPamiec(): PamiecSilnika {
@@ -50,8 +62,10 @@ const ZDROWIE_WARTY = 40;
 const CO_SEKUND_DREWNO = 10;
 const DREWNO_OD_GODZINY = 7;
 const DREWNO_DO_GODZINY = 21;
-/** poniżej tylu sztuk drewna zarząd ścina drzewo na opał */
+/** poniżej tylu sztuk drewna zarząd ścina drzewo na opał (silnik podstawowy) */
 const DREWNA_MIN = 6;
+/** warstwy (zima, jedzenie, rozwój) idą najwyżej raz na tyle ticków: 30 sekund przy ekranie */
+const CO_TIKOW_WARSTWY = 30 * TICKS_PER_SECOND;
 
 /** zarząd na miejscu (bez wyprawy) */
 const rdzen = (g: GraAi): Pawn[] => g.sim.st.pawns.filter((p) => p.kind === 'core' && !p.away);
@@ -90,8 +104,9 @@ function najblizszeDrzewo(g: GraAi, pominiete: readonly number[]): number {
   return najlepsze;
 }
 
-/** drewno na opał: gdy zostaje mało, następne drzewo */
-function turaDrewna(g: GraAi, r: Rece): void {
+/** drewno na opał: gdy zostaje mało (poniżej progu `prog`, domyślnie DREWNA_MIN), następne drzewo; próg liczy się dopiero
+    po przejściu bramek czasu, więc koszt jego wyliczenia płaci się tylko co CO_SEKUND_DREWNO sekund za dnia */
+function turaDrewna(g: GraAi, r: Rece, prog: (g: GraAi) => number = () => DREWNA_MIN): void {
   const st = g.sim.st;
   if (st.tick % (TICKS_PER_SECOND * CO_SEKUND_DREWNO)) return;
   const godzina = hourOf(st.tick);
@@ -103,7 +118,7 @@ function turaDrewna(g: GraAi, r: Rece): void {
   if (pam.zlecone >= 0 && !ktosScina && !st.felled.includes(pam.zlecone) && !pam.pominieteDrzewa.includes(pam.zlecone))
     pam.pominieteDrzewa.push(pam.zlecone);
   pam.zlecone = -1;
-  if (drewno >= DREWNA_MIN || ktosScina) return;
+  if (drewno >= prog(g) || ktosScina) return;
   const k = najblizszeDrzewo(g, pam.pominieteDrzewa);
   const zarzad = rdzen(g);
   const kto = zarzad.find((p) => p.job?.t !== 'sleep' && p.job?.t !== 'guard') ?? zarzad[0];
@@ -112,9 +127,9 @@ function turaDrewna(g: GraAi, r: Rece): void {
   pam.zlecone = k;
 }
 
-/** karta nocy z wartą: chorych z warty zdjąć, a gdy nikt nie stoi, najbardziej wypoczętego zdrowego dać na pierwszy
-    posterunek; potem zatwierdzić */
-function kartaZWarta(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
+/** karta nocy: chorych z warty zdjąć, a gdy nikt nie stoi, najbardziej wypoczętego zdrowego dać na pierwszy posterunek
+    (bez zatwierdzania; zatwierdza ten, kto woła) */
+function kartaPrzygotuj(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
   const karta = p.card;
   // przydział na żywo z zarządu (p.assign to kopia sprzed zmian), zmiany z tej samej karty widać od razu
   const przydzial = g.gov.night?.assign ?? {};
@@ -128,6 +143,11 @@ function kartaZWarta(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): voi
     const posterunek = karta.posts[0]?.key;
     if (najlepsza && posterunek) r.przydziel(najlepsza.id, `warta:${posterunek}`);
   }
+}
+
+/** karta nocy z wartą (silnik podstawowy): przygotowanie, potem zatwierdzenie */
+function kartaZWarta(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): void {
+  kartaPrzygotuj(g, p, r);
   r.zatwierdzNoc();
 }
 
@@ -147,5 +167,40 @@ export const silnikPodstawowy: Decydent = {
   tura: turaDrewna,
 };
 
-/** Decydent, którego używa uprząż: w zadaniu 1 równy silnikowi podstawowemu, kolejne zadania składają go z warstw. */
-export const silnik: Decydent = silnikPodstawowy;
+/** Warstwa idzie najwyżej raz na 30 sekund przy ekranie (co CO_TIKOW_WARSTWY ticków; `tura` woła się raz na sekundę), a licznik
+    jej wywołań ląduje w pamięci silnika (do sprawdzania kosztu: doba to najwyżej 32 wywołania). */
+function uruchomWarstwe(g: GraAi, r: Rece, nazwa: string, warstwa: (g: GraAi, r: Rece) => void): void {
+  if (g.sim.st.tick % CO_TIKOW_WARSTWY) return;
+  const wywolania = (g.pamiec.wywolania ??= {});
+  wywolania[nazwa] = (wywolania[nazwa] ?? 0) + 1;
+  warstwa(g, r);
+}
+
+/** próg ścinania drzewa w silniku z warstwą zimy: zapas na dwie noce przy obecnej liczbie palenisk */
+function progDrewnaZimy(g: GraAi): number {
+  return progDrewna(wejscie(g));
+}
+
+/** okno zarządu silnika z warstwą zimy: karta nocy z dyżurem przy kozie, reszta jak w silniku podstawowym */
+function oknoSilnika(g: GraAi, p: Prompt, r: Rece): void {
+  if (p.k !== 'karta') {
+    oknoPodstawowe(g, p, r);
+    return;
+  }
+  kartaPrzygotuj(g, p, r);
+  dyzurNaKarcie(g, p, r);
+  r.zatwierdzNoc();
+}
+
+/** tura silnika: drewno co 10 sekund za dnia (z progiem na dwie noce), warstwy co 30 sekund */
+function turaSilnika(g: GraAi, r: Rece): void {
+  turaDrewna(g, r, progDrewnaZimy);
+  uruchomWarstwe(g, r, 'zima', turaZimy);
+}
+
+/** Decydent, którego używa uprząż: silnik podstawowy plus warstwa zimy (kolejne zadania dokładają jedzenie, rozwój i okna). */
+export const silnik: Decydent = {
+  start: samouczek,
+  okno: oknoSilnika,
+  tura: turaSilnika,
+};
