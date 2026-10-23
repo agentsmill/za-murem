@@ -20,6 +20,7 @@ import {
   krokSciezki,
   licznikiStartu,
   nowyStanSciezki,
+  type StanSciezki,
   stanZZapisu,
   widokSciezki,
   zaliczony,
@@ -442,6 +443,97 @@ describe('silnik ścieżki: rozdziały na atrapie', () => {
     krokA();
     expect(widokA().rozdzial!.cele[0]).toEqual({ key: 'a', text: 'cel a', how: 'jak a', done: false, okno: 'karta' });
     expect(widokA().rozdzial!.cele[1]).toEqual({ key: 'b', text: 'cel b', how: 'jak b', done: false });
+  });
+});
+
+/* ---------- „koniec” z wersji bez późniejszych rozdziałów ---------- */
+
+describe('silnik ścieżki: „koniec” zapisany, zanim dopisano późniejsze rozdziały', () => {
+  /** stan zapisany przez wersję, która znała tylko r0 i r1: oba rozstrzygnięte (jeden cel r0 przepadł), potem „koniec” */
+  const zapisR1 = (): StanSciezki => ({
+    ...nowyStanSciezki(),
+    rozdzial: 'koniec',
+    od: 111,
+    zrobione: { 'r0.a': 5, 'r1.c': 9, 'r1.d': 9 },
+    przepadle: ['r0.b'],
+  });
+
+  it('otwiera pierwszy rozdział dopisany po ostatnim rozstrzygniętym, od chwili kroku, i rusza normalnie dalej', () => {
+    const g = nowaGra('przymorze');
+    const f = flagi();
+    g.gov.reports.push({} as NightReport);
+    g.gov.laws.signed = { u_ognisko: true };
+    for (let k = 0; k < 200; k++) g.sim.step();
+    g.sciezka = zapisR1();
+    const { krokA, widokA } = silnik(g, atrapa(f));
+    expect(krokA().rozdzial).toBe('r2');
+    expect(g.sciezka.od).toBe(g.sim.st.tick);
+    expect(g.sciezka.start).toEqual(licznikiStartu(g.sim.st, g.gov));
+    expect(g.sciezka.start).toMatchObject({ raporty: 1, uchwaly: 1 });
+    expect(widokA().rozdzial?.k).toBe('r2');
+    expect(widokA().rozdzial?.cele.map((c) => c.key)).toEqual(['e']);
+    // zapisane wpisy zostają bez zmian
+    expect(g.sciezka.zrobione).toEqual({ 'r0.a': 5, 'r1.c': 9, 'r1.d': 9 });
+    expect(g.sciezka.przepadle).toEqual(['r0.b']);
+    // dalej jak zwykle: cel nowego rozdziału zalicza się, a po ostatnim rozdziale znów „koniec”
+    f.e = true;
+    for (let k = 0; k < 20; k++) g.sim.step();
+    expect(krokA().rozdzial).toBe('koniec');
+    expect(g.sciezka.zrobione['r2.e']).toBe(g.sim.st.tick);
+    expect(widokA().rozdzial).toBeNull();
+  });
+
+  it('rozdział, którego cele gra już spełnia, zalicza je w tym samym kroku i od razu się zamyka', () => {
+    const g = nowaGra('przymorze');
+    const f = flagi();
+    f.e = true;
+    g.sciezka = zapisR1();
+    const { krokA } = silnik(g, atrapa(f));
+    expect(krokA().rozdzial).toBe('koniec');
+    expect(g.sciezka.zrobione['r2.e']).toBe(g.sim.st.tick);
+    expect(g.sciezka.od).toBe(g.sim.st.tick);
+  });
+
+  it('po wszystkich rozdziałach „koniec” zostaje „końcem”: stan wczytany nie otwiera niczego', () => {
+    const g = nowaGra('przymorze');
+    const pelny: StanSciezki = {
+      ...zapisR1(),
+      zrobione: { ...zapisR1().zrobione, 'r2.e': 40 },
+    };
+    g.sciezka = pelny;
+    const { krokA, widokA } = silnik(g, atrapa(flagi()));
+    for (let k = 0; k < 3; k++) expect(krokA()).toEqual(pelny);
+    expect(widokA()).toEqual({ okazja: null, rozdzial: null, drogi: null });
+  });
+
+  it('„koniec” bez żadnego zapisanego wpisu (stan ustawiony ręcznie do zrzutu) zostaje „końcem”', () => {
+    const g = nowaGra('przymorze');
+    g.sciezka = { ...nowyStanSciezki(), rozdzial: 'koniec', od: 10 };
+    const { krokA } = silnik(g, atrapa(flagi()));
+    expect(krokA()).toEqual({ ...nowyStanSciezki(), rozdzial: 'koniec', od: 10 });
+  });
+
+  it('pomija rozdział z `jest` fałszywym i czeka na własny warunek otwarcia (`otwiera`) późniejszego rozdziału', () => {
+    const g = nowaGra('przymorze');
+    const f = flagi();
+    const def = atrapa(f, { jest: () => false });
+    g.sciezka = { ...nowyStanSciezki(), rozdzial: 'koniec', zrobione: { 'r0.a': 5 }, przepadle: ['r0.b'] };
+    const { krokA } = silnik(g, def);
+    // r1 nie istnieje w tej grze, więc po r0 otwiera się r2
+    expect(krokA().rozdzial).toBe('r2');
+    // r2 z własnym warunkiem otwarcia czeka na niego w „końcu”
+    g.sciezka = { ...nowyStanSciezki(), rozdzial: 'koniec', zrobione: { 'r0.a': 5, 'r1.c': 9, 'r1.d': 9 } };
+    def[2] = { ...def[2], otwiera: () => f.otwarcie };
+    expect(krokA().rozdzial).toBe('koniec');
+    f.otwarcie = true;
+    expect(krokA().rozdzial).toBe('r2');
+  });
+
+  it('wpisy z okazji nie udają rozstrzygniętego rozdziału: sam wpis okazji nie wznawia ścieżki od początku', () => {
+    const g = nowaGra('przymorze');
+    g.sciezka = { ...nowyStanSciezki(), rozdzial: 'koniec', zrobione: { 'o2.wymiana': 5 } };
+    const { krokA } = silnik(g, atrapa(flagi()));
+    expect(krokA().rozdzial).toBe('koniec');
   });
 });
 

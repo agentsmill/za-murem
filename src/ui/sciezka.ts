@@ -19,7 +19,10 @@
    prawdziwy, choćby poprzedni nie był skończony: R1 otwiera się po zamknięciu pierwszego raportu, także gdy samouczek
    z R0 nie jest skończony (został pominięty), i w grze wczytanej ze starego stanu „pierwszy dzień”, w której raport jest
    już zamknięty. Rozdział z `jest` fałszywym jest pomijany (R3 istnieje tylko z modułem pracy ludzi), a po ostatnim
-   rozdziale stan to „koniec”. Cel, który wygrał z terminem w tym samym kroku, jest zaliczony; cel przepadły nie wraca.
+   rozdziale stan to „koniec”. „Koniec” zapisany, zanim dopisano późniejsze rozdziały (serwer testowy kończył ścieżkę na
+   R1, zanim doszło R2), nie zostaje na zawsze: krok otwiera pierwszy rozdział po ostatnim rozstrzygniętym i ścieżka
+   rusza dalej; bez żadnego wpisu (stan ustawiony ręcznie do zrzutu) „koniec” zostaje. Cel, który wygrał z terminem
+   w tym samym kroku, jest zaliczony; cel przepadły nie wraca.
    Zaliczenie jest trwałe, przepadnięcie też. `widokSciezki(stan, odczyt)` robi z zapisanego stanu to, co rysuje okienko
    (tytuł, cele z tekstem, podpowiedzią, dopiskiem „czeka” i znacznikiem przepadnięcia, bieżący cel); niczego nie
    zalicza, więc przed nim woła się krok. Odczyt jest migawką z jednej chwili: kto zmienia stan gry, buduje nowy.
@@ -293,13 +296,24 @@ const skonczony = (d: DefRozdzialu, s: StanSciezki, o: OdczytCelow): boolean =>
     return zaliczony(s, klucz) || przepadly(s, klucz);
   });
 
+/** Numer ostatniego rozdziału z `rozdzialy`, w którym coś już rozstrzygnięto (wpis w `zrobione` albo `przepadle` z kluczem
+    tego rozdziału), albo −1. Wpisy okazji ('o2.wymiana') i rozdziałów bez definicji się nie liczą. Po tym numerze widać, do
+    którego rozdziału doszła wersja, która zapisała stan. */
+const ostatniRozstrzygniety = (s: StanSciezki, rozdzialy: readonly DefRozdzialu[]): number => {
+  const wpisy = [...Object.keys(s.zrobione), ...s.przepadle];
+  for (let k = rozdzialy.length - 1; k >= 0; k--) if (wpisy.some((w) => w.startsWith(`${rozdzialy[k].k}.`))) return k;
+  return -1;
+};
+
 /** Krok ścieżki: nowy stan z odczytu gry (wejście i odczyt zostają nietknięte). Zalicza cele otwartego rozdziału, których
     warunek jest prawdziwy, i oznacza przepadłe (zaliczenie wygrywa z terminem, a rozstrzygnięty cel nie zmienia się już
     nigdy). Gdy rozdział jest skończony, otwiera następny: zapisuje tick otwarcia i liczniki `start` z tej chwili, a cele
     nowego rozdziału, które gra już spełnia, zalicza od razu, w tym samym kroku (może to zamknąć i ten rozdział). Rozdział
-    z `otwiera` otwiera się po swoim warunku, choćby poprzedni nie był skończony. Po ostatnim rozdziale stan to „koniec”.
-    Stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian. `rozdzialy` pozwala podstawić inne definicje
-    (testy zasad); w grze zawsze `ROZDZIALY`. */
+    z `otwiera` otwiera się po swoim warunku, choćby poprzedni nie był skończony. Po ostatnim rozdziale stan to „koniec”;
+    „koniec” zapisany przez wersję, która nie znała późniejszych rozdziałów (zapis po R1, zanim doszło R2), otwiera w tym
+    kroku pierwszy rozdział po ostatnim rozstrzygniętym, od chwili kroku, i ścieżka rusza dalej jak zwykle (zob.
+    `ostatniRozstrzygniety`). Stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian. `rozdzialy` pozwala
+    podstawić inne definicje (testy zasad); w grze zawsze `ROZDZIALY`. */
 export function krokSciezki(
   s: StanSciezki,
   o: OdczytCelow,
@@ -307,6 +321,18 @@ export function krokSciezki(
 ): StanSciezki {
   const t = kopia(s);
   const tick = o.st.tick;
+  // „koniec” zapisany, zanim dopisano późniejsze rozdziały (serwer testowy po R1 miał go bez R2): ścieżka rusza od
+  // pierwszego rozdziału po ostatnim rozstrzygniętym, który istnieje w tej grze. Bez żadnego wpisu (stan ustawiony ręcznie
+  // do zrzutu) i po ostatnim rozdziale „koniec” zostaje
+  if (t.rozdzial === 'koniec') {
+    const ostatni = ostatniRozstrzygniety(t, rozdzialy);
+    const dalej = ostatni < 0 ? undefined : rozdzialy.slice(ostatni + 1).find((n) => n.jest?.(o) !== false);
+    if (dalej && (dalej.otwiera ? dalej.otwiera(o) : true)) {
+      t.rozdzial = dalej.k;
+      t.od = tick;
+      t.start = licznikiStartu(o.st, o.gov);
+    }
+  }
   // każdy obieg zostawia otwarty późniejszy rozdział niż poprzedni, więc kończy się najwyżej po jednym na rozdział
   for (let obieg = 0; obieg <= rozdzialy.length; obieg++) {
     const k = rozdzialy.findIndex((d) => d.k === t.rozdzial);
