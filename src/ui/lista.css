@@ -1,0 +1,230 @@
+/* Lista „moich ludzi” (src/ui/lista.ts): pasek chipów pod górnym paskiem gry, na prawo od celów dnia i na lewo od
+   przycisków przybliżenia, więc nie nachodzi na pasek, cele, kartę osoby (lewy dół), minimapę (prawy dół) ani przyciski.
+   Przy otwartym panelu budowy (#app.build-open) albo pracy (#app.praca-open) kończy się przed nim, a przy panelu Pracy na
+   oknach do 940 px i na telefonie chowa się (nie ma wtedy miejsca obok panelu). Komunikat o przybyszach
+   stoi w tym samym miejscu pod paskiem, więc lista schodzi pod niego (--lista-dy mierzy lista.ts). Do 640 px (telefon)
+   chipy leżą w rzędzie pod celami dnia na całą szerokość, mniejsze, a rząd zawija się dopiero od ośmiu osób.
+   Pojemnik nie łapie wskaźnika: między chipami klik i przeciąganie trafiają w mapę. */
+
+.lista {
+  position: absolute;
+  top: calc(var(--top-h, 56px) + 16px + var(--lista-dy, 0px));
+  /* cele dnia mają 300 px od lewej krawędzi plus 8 px odstępu; przyciski przybliżenia 38 px od prawej plus odstęp */
+  left: 316px;
+  right: 60px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+.app.build-open .lista {
+  right: calc(var(--build-w, 310px) + 68px);
+}
+.app.praca-open .lista {
+  right: calc(var(--praca-w, 430px) + 68px);
+}
+/* po drugiej nocy lista celów znika i lista ludzi sięga lewej krawędzi, jak pasek u góry */
+#goals[hidden] ~ .lista {
+  left: 8px;
+}
+/* Panel Pracy (430 px) zostawia liście ludzi za mało miejsca: z lewej 316 px celów dnia, z prawej 498 px panelu i przycisków
+   przybliżenia, więc poniżej 940 px mieści się mniej niż dwa chipy i lista wchodziłaby na panel. Na telefonie arkusz Pracy
+   sięga prawie pod pasek (praca.css), więc też nie ma tam dla niej miejsca. Lista chowa się razem z celami dnia i kartą
+   osoby; osoby da się wtedy wybrać z tabeli panelu albo z mapy, a po zamknięciu panelu lista wraca. */
+@media (max-width: 940px) {
+  .app.praca-open .lista {
+    display: none;
+  }
+}
+
+/* chip: portret z ramką stanu, kolumna znaczników obok niego i imię pod spodem */
+.lp {
+  --ton: var(--seam);
+  pointer-events: auto;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: start;
+  column-gap: 4px;
+  row-gap: 2px;
+  margin: 0;
+  padding: 3px 4px 2px;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  background: rgb(31 35 38 / 0.92);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+.lp:hover {
+  border-color: var(--ink-dim);
+}
+.lp[aria-pressed="true"] {
+  border-color: var(--lamp);
+  background: rgb(52 44 27 / 0.95);
+}
+.lp[data-ton="mid"] {
+  --ton: rgb(230 165 64 / 0.65);
+}
+.lp[data-ton="bad"] {
+  --ton: var(--bad);
+}
+
+/* portret: obraz 20 × 20 px powiększony dwa razy bez wygładzania; ramka ma kolor stanu */
+.lp-ik {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  background: #1d2023;
+  border: 2px solid var(--ton);
+  border-radius: 4px;
+}
+.lp-img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+}
+.lp[data-spi] .lp-img {
+  filter: brightness(0.72) saturate(0.85);
+}
+.lp[data-poza] {
+  opacity: 0.62;
+}
+.lp[data-poza] .lp-img {
+  filter: grayscale(0.7);
+}
+
+/* znaczniki w kolumnie obok portretu, po trzy w kolumnie (więcej zaczyna drugą kolumnę) */
+.lp-mk {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, 13px);
+  gap: 1px 2px;
+  align-content: start;
+}
+.lp-mk:empty {
+  display: none;
+}
+.mk {
+  --mk: #8fb0e8;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 13px;
+  min-width: 13px;
+  color: var(--mk);
+  font: 700 10px / 13px var(--f-sign);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mk svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+.mk b {
+  font-weight: 700;
+}
+.mk-mid {
+  --mk: var(--lamp);
+}
+.mk-bad {
+  --mk: var(--bad);
+}
+.mk-sen,
+.mk-wyprawa {
+  --mk: #a6b3c9;
+}
+
+.lp-nm {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  max-width: 72px;
+  overflow: hidden;
+  font: 700 13px / 1.15 var(--f-sign);
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp[aria-pressed="true"] .lp-nm {
+  color: var(--lamp);
+}
+
+/* śledzenie kamery: celownik w rogu chipa i przerywany obrys */
+.lp-sl {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: none;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  color: #1d1a14;
+  background: var(--lamp);
+  border-radius: 50%;
+}
+.lp[data-sledzi] {
+  outline: 1px dashed var(--lamp);
+  outline-offset: 2px;
+}
+.lp[data-sledzi] .lp-sl {
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .lista {
+    top: calc(var(--top-h, 0px) + var(--goals-h, 0px) + 24px + var(--lista-dy, 0px));
+    left: 8px;
+    right: 8px;
+    gap: 4px;
+  }
+  /* szuflada budowy jest na telefonie od dołu, więc prawa strona zostaje wolna (przy panelu Pracy lista się chowa) */
+  .app.build-open .lista {
+    right: 8px;
+  }
+  .lp {
+    padding: 2px 3px 1px;
+    column-gap: 3px;
+    row-gap: 1px;
+  }
+  .lp-ik {
+    width: 34px;
+    height: 34px;
+  }
+  .lp-img {
+    width: 30px;
+    height: 30px;
+  }
+  .lp-mk {
+    grid-template-rows: repeat(3, 11px);
+  }
+  .mk {
+    height: 11px;
+    min-width: 11px;
+    font-size: 9px;
+    line-height: 11px;
+  }
+  .mk svg {
+    width: 11px;
+    height: 11px;
+  }
+  .lp-nm {
+    max-width: 54px;
+    font-size: 11px;
+  }
+}

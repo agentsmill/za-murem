@@ -5,7 +5,8 @@
    Kwadrat miasta obok domu (scena z `poczatek` i `brzeg`, zob. scene.ts i szew.ts) rysuje się tak, jakby leżał w jednej
    scenie z sąsiadami: szum, wzory fasad i dachów liczą się od współrzędnych miasta (początek kwadratu w pikselach),
    krawężniki, cienie terenu i kafelki Wanga przy krawędzi patrzą na teren sąsiada, a budynek przecięty szwem nie ma
-   w tym miejscu attyki, krawędzi dachu ani fasady (ciągnie się dalej u sąsiada). Współrzędne miasta są ujemne w kwadratach
+   w tym miejscu attyki, krawędzi dachu ani fasady (ciągnie się dalej u sąsiada), a rząd kominów i anteny liczą się z ramki
+   całego budynku (WorldBuilding.ramka), więc kawałki po obu stronach szwu mają jeden rząd. Współrzędne miasta są ujemne w kwadratach
    na zachód i północ od domu, więc wzory z resztą z dzielenia (okna, linie parkingu, pasy blachy, rzędy upraw) liczą ją
    funkcją `mod` (zawsze nieujemna), a nie `%`. Bez tych pól rysunek jest taki jak zawsze. */
 
@@ -400,7 +401,13 @@ function onRoof(sc: ChunkScene, bid: number, px: number, py: number, margin: num
 function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
   const b = sc.w.buildings[bid];
   const st = sc.styles[bid];
-  const horiz = b.x1 - b.x0 >= b.y1 - b.y0;
+  // ramka budynku: przecięty granicą okna budynek w kwadracie obok domu ma ramkę całego budynku (WorldBuilding.ramka), więc
+  // rząd kominów i anteny liczą się z niej i kawałki po obu stronach szwu mają jeden rząd (każdy rysuje te, które leżą na
+  // jego dachu: onRoof); numer anten idzie wtedy z ziarna stylu (z klucza budynku), a nie z numeru w kwadracie. Dom i
+  // budynek w całości w oknie liczą z kafelków i z numeru jak zawsze.
+  const ram = b.ramka ?? b;
+  const sid = b.ramka ? st.seed : bid;
+  const horiz = ram.x1 - ram.x0 >= ram.y1 - ram.y0;
   const box = (x: number, y: number, w: number, h: number, top: string, side: string) => {
     ctx.fillStyle = 'rgba(16,20,28,0.35)';
     ctx.fillRect(x + 4, y - 4, w, h);
@@ -410,17 +417,17 @@ function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
     ctx.fillRect(x, y, w, h - 4);
   };
   // rząd kominów wentylacyjnych co ~5 m w osi dachu
-  const midY = ((b.y0 * TILE + (b.y1 + 1) * TILE - st.facade) / 2) | 0;
-  const midX = (((b.x0 + b.x1 + 1) * TILE) / 2) | 0;
+  const midY = ((ram.y0 * TILE + (ram.y1 + 1) * TILE - st.facade) / 2) | 0;
+  const midX = (((ram.x0 + ram.x1 + 1) * TILE) / 2) | 0;
   if (horiz) {
-    for (let x = b.x0 * TILE + 80; x < (b.x1 + 1) * TILE - 80; x += 160) {
+    for (let x = ram.x0 * TILE + 80; x < (ram.x1 + 1) * TILE - 80; x += 160) {
       if (!onRoof(sc, bid, x, midY, 24)) continue;
       box(x - 8, midY - 10, 16, 20, '#8b7f74', '#5f564e');
       ctx.fillStyle = '#2b2622';
       ctx.fillRect(x - 4, midY - 7, 8, 5);
     }
   } else {
-    for (let y = b.y0 * TILE + 80; y < (b.y1 + 1) * TILE - st.facade - 40; y += 160) {
+    for (let y = ram.y0 * TILE + 80; y < (ram.y1 + 1) * TILE - st.facade - 40; y += 160) {
       if (!onRoof(sc, bid, midX, y, 24)) continue;
       box(midX - 8, y - 10, 16, 20, '#8b7f74', '#5f564e');
       ctx.fillStyle = '#2b2622';
@@ -439,12 +446,12 @@ function roofDetails(ctx: Ctx2D, sc: ChunkScene, bid: number): void {
     ctx.fillRect(hx + 4, hy + 4, 16, 12);
   }
   // anteny i talerze satelitarne
-  const n = 2 + Math.floor(h2(bid, 5, 6) * 4);
+  const n = 2 + Math.floor(h2(sid, 5, 6) * 4);
   for (let k = 0; k < n; k++) {
-    const x = (b.x0 + 1 + h2(bid, k, 7) * (b.x1 - b.x0 - 1)) * TILE;
-    const y = (b.y0 + 1 + h2(bid, k, 8) * (b.y1 - b.y0 - 1)) * TILE;
+    const x = (ram.x0 + 1 + h2(sid, k, 7) * (ram.x1 - ram.x0 - 1)) * TILE;
+    const y = (ram.y0 + 1 + h2(sid, k, 8) * (ram.y1 - ram.y0 - 1)) * TILE;
     if (!onRoof(sc, bid, x, y, 20)) continue;
-    if (h2(bid, k, 9) < 0.5) {
+    if (h2(sid, k, 9) < 0.5) {
       ctx.fillStyle = 'rgba(16,20,28,0.35)';
       ctx.fillRect(x + 2, y - 16, 2, 18);
       ctx.fillStyle = '#3a3836';

@@ -97,6 +97,7 @@ import {
   rnd,
   stockNow,
 } from './wspolne.ts';
+import { ludnoscOf } from './zwyciestwo.ts';
 
 /** pierwsze wydarzenie po tylu sekundach przy ekranie (samouczek ma swoje decyzje) */
 export const FIRST_EVENT = 70;
@@ -228,7 +229,9 @@ const kopiaLokatora = (l: GovLokator): GovLokator => ({
   needs: { ...l.needs },
 });
 
-/** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; z wydarzeniem ev wpisy do kroniki
+/** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; `pop()` to ludność pod zarządem
+    z `ludnoscOf` (pole `GovInput.ludnosc`, a bez niego zarząd i mieszkańcy), ta sama liczba co w drogach do zwycięstwa;
+    z wydarzeniem ev wpisy do kroniki
     z jego wyborów mają drewno zamiast opału i zwroty według miejsca, a z danymi i numerem wyboru (pick) polski wpis
     z 0.3 dostaje angielski z EVENTS_EN */
 export function makeHost(
@@ -304,7 +307,7 @@ export function makeHost(
       i.know?.[d as TechDom] ??
       Math.max(0, ...i.people.map((p) => p.skills[d] ?? 0)) + Math.min(2, st.books[d as TechDom] ?? 0),
     rule: () => true,
-    pop: () => i.people.length + (i.residents ?? 0),
+    pop: () => ludnoscOf(i),
     cap: () => i.cap ?? i.people.length + (i.residents ?? 0) + 4,
     alive: () => people.filter((p) => !fx.leave.includes(p.id) && !fx.wyrzuc?.includes(p.id)),
     spec: (id) => people.find((p) => p.id === id),

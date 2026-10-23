@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { tr, tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { BLOK, wordsOf } from '../../src/gov/miejsce.ts';
+import { KOZA_KEY } from '../../src/gov/noc.ts';
 import type { GovState } from '../../src/gov/typy.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { nazwaTech, PIECZARKI_PLON, TECH_BY } from '../../src/sim/badania.ts';
@@ -36,11 +37,12 @@ import {
   TECH_NAMES,
   workText,
 } from '../../src/ui/budowa.ts';
-import { DAY2_WOOD, goalsDay2, isDay2 } from '../../src/ui/cele.ts';
 import { aptAt, aptCard, aptView, DAMAGE_NAME, WHY_TEXT } from '../../src/ui/mieszkania.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
 import { arriving, comingText } from '../../src/ui/przybycie.ts';
+import { krokSciezki, nowyStanSciezki } from '../../src/ui/sciezka.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { celeR1, odczytZ } from './sciezka-pomoc.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'] as const;
 /** badania budowli z technologii (BUILDS[k].tech) z danych, zanim któryś test ustawi własne: afterEach je przywraca,
@@ -669,39 +671,68 @@ describe('cele drugiego dnia', () => {
     gov.reports.push({} as GovState['reports'][number]);
     return gov;
   };
-  it('po pierwszym raporcie: przeszukać, pierwsza budowla (dowolna), obwód, drewno na noc', () => {
-    const { st } = fresh();
-    expect(isDay2(newGov(1))).toBe(false);
+  /** plan nocy z atrapy: drewno na karcie, czy zatwierdzona i czy ktoś ma dyżur przy kozie (dzień 2, po otwarciu rozdziału) */
+  const noc = (o: { confirmed: boolean; have: number; koza: boolean }): GovState['night'] =>
+    ({
+      day: 2,
+      confirmed: o.confirmed,
+      card: { wood: { have: o.have, need: 10, until: '6:00' } },
+      assign: o.koza ? { s1: KOZA_KEY } : { s1: 'sen' },
+    }) as unknown as GovState['night'];
+  it('po pierwszym raporcie: przeszukać, pierwsza budowla (dowolna), obwód, drewno na noc i dyżur przy kozie', () => {
+    const { w, st } = fresh();
+    // drugi dzień otwiera się po zamknięciu pierwszego raportu, nie wcześniej
+    expect(krokSciezki(nowyStanSciezki(), odczytZ(st, w, newGov(1))).rozdzial).toBe('r0');
     const gov = day2();
-    expect(isDay2(gov)).toBe(true);
-    const o = { touch: false, wood: 3, woodReady: false, holes: 2 };
-    let g = goalsDay2(st, gov, o);
-    expect(g.map((x) => x.key)).toEqual(['przeszukaj', 'budowla', 'obwod', 'drewno2']);
+    expect(krokSciezki(nowyStanSciezki(), odczytZ(st, w, gov)).rozdzial).toBe('r1');
+    const holes = snapshot(st, w).fence.holes.length;
+    expect(holes).toBeGreaterThan(0);
+    let g = celeR1(st, w, gov);
+    expect(g.map((x) => x.key)).toEqual(['przeszukaj', 'budowla', 'obwod', 'drewno2', 'dyzur']);
     expect(g.every((x) => !x.done)).toBe(true);
-    // podpowiedź wskazuje dwie budowle, które biorą najmniej materiału
-    const cheap = (Object.keys(BUILDS) as BuildKind[]).sort((a, b) => total(a) - total(b)).slice(0, 2);
+    // podpowiedź wskazuje dwie budowle, które biorą najmniej materiału spośród tych do postawienia: pieczarkarnia i koza
+    // z beczki są tańsze, ale menu budowy ukrywa je do badania, więc podpowiedź ich nie poleca
+    const cheap = (Object.keys(BUILDS) as BuildKind[])
+      .filter((k) => !BUILDS[k].tech)
+      .sort((a, b) => total(a) - total(b))
+      .slice(0, 2);
     for (const k of cheap) expect(g[1].how).toContain(`${BUILDS[k].name.toLowerCase()} (${costText(BUILDS[k].cost)})`);
+    for (const k of Object.keys(TECH0) as BuildKind[]) expect(g[1].how).not.toContain(BUILDS[k].name.toLowerCase());
     expect(g[2].how).toContain(`Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)})`);
-    expect(g[2].how).toContain('Otwartych dziur: 2.');
+    expect(g[2].how).toContain(`Otwartych dziur: ${holes}.`);
+    // drewno na noc liczy się tak jak na karcie nocy: zapas razem z tym w kozie z potrzebą na dziesięć godzin
+    const zapas = Math.floor(snapshot(st, w).stock.wood);
     expect(g[3].how).toBe(
-      `Drewna na zapas: 3 z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
+      `Drewna ${zapas} z 10, razem z tym w kozie: tyle zje noc od 20:00 do 6:00 przy dyżurze, sztuka na godzinę. Prawy przycisk na drzewie: „Ściąć drzewo”; za dnia brama stoi otwarta.`,
     );
     // dowolna gotowa budowla zalicza „pierwszą budowlę”, ale nie obwód
     const empty = st.apts.find((a) => a.state === 'puste')!;
     empty.searched.push(5);
     st.things.push({ ...st.things[0], id: 9001, kind: 'magazyn' });
-    g = goalsDay2(st, gov, o);
-    expect(g.map((x) => x.done)).toEqual([true, true, false, false]);
-    // zasieki i zapas drewna: wszystko
+    g = celeR1(st, w, gov);
+    expect(g.map((x) => x.done)).toEqual([true, true, false, false, false]);
+    // drewno i dyżur przepadają z kartą nocy zatwierdzoną bez zapasu i bez dyżuru (obwód czeka dalej, bez terminu)
+    gov.night = noc({ confirmed: true, have: 3, koza: false });
+    g = celeR1(st, w, gov);
+    expect(g.find((x) => x.key === 'drewno2')).toMatchObject({ done: true, missed: true });
+    expect(g.find((x) => x.key === 'dyzur')).toMatchObject({ done: true, missed: true });
+    expect(g.find((x) => x.key === 'obwod')).toMatchObject({ done: false });
+    // zasieki, zapas drewna na karcie nocy (karta otwarta) i dyżur przy kozie (karta zatwierdzona): wszystko
     st.things.push({ ...st.things[0], id: 9002, kind: 'zasieki' });
-    g = goalsDay2(st, gov, { ...o, woodReady: true });
-    expect(g.every((x) => x.done)).toBe(true);
-    // obwód bez zasieków liczy się, gdy wszystkie dziury załatane; drewno przepada z kartą nocy
+    gov.night = noc({ confirmed: false, have: 10, koza: false });
+    g = celeR1(st, w, gov);
+    expect(g.map((x) => x.done)).toEqual([true, true, true, true, false]);
+    gov.night = noc({ confirmed: true, have: 10, koza: true });
+    g = celeR1(st, w, gov);
+    expect(g.every((x) => x.done && !x.missed)).toBe(true);
+    // obwód bez zasieków liczy się, gdy wszystkie dziury załatane
     st.things = st.things.filter((t) => t.kind !== 'zasieki');
-    expect(goalsDay2(st, gov, { ...o, holes: 0 }).find((x) => x.key === 'obwod')?.done).toBe(true);
-    gov.night = { confirmed: true } as GovState['night'];
-    const late = goalsDay2(st, gov, o).find((x) => x.key === 'drewno2')!;
-    expect(late).toMatchObject({ done: true, missed: true });
+    gov.night = null;
+    expect(celeR1(st, w, gov).find((x) => x.key === 'obwod')?.done).toBe(false);
+    const sim = new Sim(w, st);
+    sim.push({ t: 'mend', ids: [], n: holes });
+    sim.step();
+    expect(celeR1(st, w, gov).find((x) => x.key === 'obwod')?.done).toBe(true);
   });
 });
 

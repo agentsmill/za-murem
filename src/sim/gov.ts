@@ -5,10 +5,13 @@
    przez kolejkę poleceń w stanie, więc działa od następnego kroku i nie gubi się przy zapisie. Nowa osoba zarządu
    (`fx.join`) i przyjęci mieszkańcy (`fx.residents`) czekają za bramą i dochodzą do siedziby w pracy 'arrive'.
 
-   Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to zarząd i mieszkańcy
-   siedziby, a `teren.przylaczone` to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu. Trzeci
-   odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest z tabel mieszkańców, a nie ze stanu
-   gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane w src/main.ts).
+   Odczyt dla dróg do zwycięstwa (src/gov/zwyciestwo.ts) idzie w tym samym `govInput`: `ludnosc` to `populacja(st).razem`
+   z odczytu symulacji (zarząd, także na wyprawie, i mieszkańcy siedziby; bez sąsiadów i gości), a `teren.przylaczone`
+   to budynki, które wspólny płot (`SimState.plot`, M2 fala 2) dołączył do obwodu; obok niego `teren.mozliwe` mówi, ile
+   budynków w okolicy da się w ogóle otoczyć (`doOtoczenia` w src/sim/sasiedzi.ts, raz na świat; zero na Przymorzu, gdzie
+   każdy sąsiad stoi za jezdnią). Trzeci odczyt, `ludnosc2021` (ilu ludzi mieszkało w kwadracie domu w 2021 roku), jest
+   z tabel mieszkańców, a nie ze stanu gry, więc dokłada go gra (`ludnoscSpisu2021` w src/sim/osiedle.ts, wołane
+   w src/main.ts).
 
    Mieszkańcy siedziby z osobą z generatora mieszkańców (pionki `resident`, bez sąsiadów) wchodzą jako `lokatorzy`,
    w kolejności pionków, z tymi polami osoby, które zarząd czyta (`GovLokator`); bez generatora pola nie ma.
@@ -17,9 +20,12 @@
    dla ramy zwycięstwa), książki, techDone i wiedzę osady z src/sim/badania.ts (ta sama co na tablicy),
    a skutki książki z wydarzeń (GovEffects.books) trafiają na półkę osady przez dodajKsiazke. Odkrycia (research.at)
    i książki znalezione w przeszukaniach (bookLog) wchodzą jako `odkrycia` i `znaleziska`, z których zarząd pisze
-   kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Kozy z beczek i kocioł
+   kronikę (src/gov/znaleziska.ts); bez badań i książek tych pól nie ma. Tą samą drogą idą do kroniki polecenia, które
+   przepadły po trzech przerwaniach przez wroga (`przerwane` z SimState.przerwane, razem z tym, kto przerwał ostatni raz:
+   szwendacz, szabrownik albo wrogi człowiek). Kozy z beczek i kocioł
    wchodzą do karty nocy jako `paleniska` (waga drewna z PALENISKA), a stojąca wieża jako `wieza`, liczba jej miejsc
-   (posterunek karty).
+   (posterunek karty). W `badania` pole `koncowa` mówi, że zbadana jest fabryka bieżącego trybu (`koncowaZbadana`), a nie
+   sama sieć.
 
    Tryb zombie: `horde.przy` to prawdziwy szwendacz najbliżej siatki (do 3 m od jej kafelka, `szwendaczPrzySiatce`),
    z którego karta „Szwendacz” bierze miejsce na mapie; liczone na całkowitych kwadratach odległości kafelków, bez
@@ -92,6 +98,7 @@ import { dayOf, minutesAt, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
 import { frontTile, houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
+import { doOtoczenia } from './sasiedzi.ts';
 import {
   addCore,
   addResidents,
@@ -118,7 +125,7 @@ import {
   wyprowadz,
   Z_OSOBA,
 } from './sim.ts';
-import { type SimPerson, snapshot } from './snapshot.ts';
+import { populacja, type SimPerson, snapshot } from './snapshot.ts';
 import { modeOf } from './tryb.ts';
 import { hordeSize } from './zombie.ts';
 
@@ -304,16 +311,12 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
       nazwa: nazwaTech(o.id),
       dzialanie: zombie ? (TECH_BY[o.id].dzialanieZombie ?? TECH_BY[o.id].dzialanie) : TECH_BY[o.id].dzialanie,
     }));
-  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca
+  // kto wychodzi bramą (wyrzucony, odchodzący), dla zarządu już go nie ma: ani osoby, ani mieszkańca; liczba mieszkańców
+  // z odczytu (`populacja` w src/sim/snapshot.ts) już go pomija, tu znika jeszcze z listy osób i lokatorów
   const odchodza = new Set<number>();
-  let odchodzacyMieszkancy = 0;
-  for (const p of st.pawns)
-    if (p.job?.t === 'odejscie') {
-      odchodza.add(p.id);
-      if (p.kind === 'resident') odchodzacyMieszkancy++;
-    }
+  for (const p of st.pawns) if (p.job?.t === 'odejscie') odchodza.add(p.id);
   const people = s.people.filter((p) => !odchodza.has(p.pawn));
-  const residents = s.residents - odchodzacyMieszkancy;
+  const residents = s.residents;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
   // wygląd pionka mieszkańca (numer stroju i postać PixelLab: pole gościa albo wybór widoku dla osoby z generatora) idzie do
@@ -377,15 +380,18 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
         }
       : {}),
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
+    ...(st.obcy?.werbunek ? { werbunek: zwerbowani(st) } : {}),
     ...(st.obcy ? { goscie: goscieOdczyt(st, w) } : {}),
     // pies i kot: wpis o zwierzęciu, które symulacja już wystawiła (albo zabiła); bez wpisu zarząd z flagą dog albo cat prosi o nie
     ...(st.zwierzeta ? { zwierzeta: { ...st.zwierzeta } } : {}),
     dead: zmarli(st, zombie),
-    // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (tu ich liczba
-    // dla dróg), a przyłączone budynki to te, które wspólny płot już dołączył do obwodu (plan w toku się nie liczy).
-    // Pole `ludnosc2021` dokłada gra (main.ts)
-    ludnosc: people.length + residents,
-    teren: { przylaczone: st.plot?.bids.length ?? 0 },
+    // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
+    // sama liczba, którą czyta EventHost.pop(); kto wychodzi bramą, już się nie liczy), a przyłączone budynki to te, które
+    // wspólny płot już dołączył do obwodu (plan w toku się nie liczy). `mozliwe` to ile budynków w okolicy da się w ogóle
+    // otoczyć (cecha świata, liczona raz na świat poza stanem gry, więc skrót symulacji jej nie widzi). Pole
+    // `ludnosc2021` dokłada gra (main.ts)
+    ludnosc: populacja(st).razem,
+    teren: { przylaczone: st.plot?.bids.length ?? 0, mozliwe: doOtoczenia(w) },
     // badania: jedna wiedza i jedne książki dla tablicy i dla wydarzeń zarządu (src/sim/badania.ts)
     badania: {
       pracownia: st.things.some((t) => t.kind === 'pracownia'),
@@ -400,6 +406,8 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     // odkrycia i książki z przeszukań do kroniki (src/gov/znaleziska.ts); gra bez badań i książek nie ma tych pól
     ...(odkryte.length ? { odkrycia: odkryte } : {}),
     ...(st.bookLog?.length ? { znaleziska: st.bookLog.map((k) => ({ ...k })) } : {}),
+    // polecenia, które przepadły po kilku przerwaniach przez szwendaczy, do kroniki; bez takich przerwań pola nie ma
+    ...(st.przerwane?.length ? { przerwane: st.przerwane.map((k) => ({ ...k })) } : {}),
     // kozy z beczek i kocioł: dyżur przy kozie dokłada do wszystkich, a wyliczenie drewna na noc liczy każde
     ...(palenisk > 0 ? { paleniska: palenisk } : {}),
     // stoi wieża: karta nocy dostaje posterunek „Warta na wieży” (src/gov/noc.ts) dla tylu osób, ile kafelków ma jej
@@ -420,6 +428,18 @@ export function lawsFrom(l: LawEffects): Partial<Laws> {
 }
 
 const clamp100 = (v: number) => (v < 0 ? 0 : v > 100 ? 100 : v);
+
+/** Zwerbowani wędrowcy (id `w1`, `w2`…) po kolei: osoby z `st.people`, a dokąd trafili, mówi pionek (mieszkaniec albo
+    zarząd; po śmierci zarządu zostaje zarząd). Lista tylko rośnie, bo osoby ze stanu nie znikają. */
+function zwerbowani(st: SimState): NonNullable<GovInput['werbunek']> {
+  const out: { first: string; f: boolean; dokad: 'zarzad' | 'mieszkaniec' }[] = [];
+  st.people.forEach((o, k) => {
+    if (!/^w\d+$/.test(o.id)) return;
+    const mieszka = st.pawns.some((p) => p.kind === 'resident' && p.person === k);
+    out.push({ first: o.first, f: o.f, dokad: mieszka ? 'mieszkaniec' : 'zarzad' });
+  });
+  return out;
+}
 
 /** pionek zarządu osoby o id z generatora (s1, s2…) */
 function pawnOf(st: SimState, id: string): Pawn | undefined {

@@ -25,6 +25,7 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   // wędrowcy (NAPISY w src/sim/wedrowcy.ts)
   'Wieści ze świata': 'News from outside',
   'Napadliśmy na wędrowca': 'We robbed a wanderer',
+  'Nowa osoba w zarządzie': 'New person on the board',
   // sąsiednie budynki (M2 fala 2, src/sim/sim.ts)
   'Okradliśmy sąsiadów': 'We robbed the neighbours',
   'Zabiłem sąsiada': 'I killed a neighbour',

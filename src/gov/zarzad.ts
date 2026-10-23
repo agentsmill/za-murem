@@ -31,7 +31,7 @@ import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, se
 import { FIRST_LAWS, PRZYCZYNA } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
-import { wiesci } from './wiesci.ts';
+import { przyjeciaZUlicy, wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
 import { znaleziska } from './znaleziska.ts';
@@ -139,6 +139,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   zwierzeta(st, i, fx);
   znaleziska(st, i);
   wiesci(st, i, fx);
+  przyjeciaZUlicy(st, i, fx);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   // drogi do zwycięstwa (bez wlaczZwyciestwo nic); w przegranej grze nikt już nie wygrywa

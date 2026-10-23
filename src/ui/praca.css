@@ -1,0 +1,389 @@
+/* Panel Pracy (src/ui/panelpracy.ts, treść z src/ui/praca.ts) i ustawienia pracy na karcie osoby (src/ui/karta.ts).
+   Panel jest tą samą szafką co panel budowy (klasa .buildpanel daje położenie, ramkę, nagłówek i przewijanie
+   w .bp-body), tu tylko szerokość, tabela osób i kolumn, progi zapasu i odsunięcie przycisków mapy przez
+   #app.praca-open. Do 640 px (telefon 390×844) to arkusz od dołu na całą szerokość: dziewięć kolumn po 30 px,
+   nagłówek tabeli przyklejony do góry przewijanego .bp-body, przewijanie w pionie przy dwunastu osobach. */
+
+.app {
+  --praca-w: 430px;
+}
+.buildpanel.pracapanel {
+  width: min(var(--praca-w), calc(100% - 16px));
+  /* tabela z cyframi na całkiem ciemnym tle: mapa pod panelem nie prześwituje między wierszami */
+  background: rgb(31 35 38);
+  border-top-color: var(--good);
+}
+.pracapanel .bp-kicker {
+  color: var(--good);
+}
+
+/* ---------- progi zapasów ---------- */
+.pr-zapas {
+  margin: 0 0 8px;
+}
+.pr-h {
+  margin: 0 0 4px;
+  font: 700 12px var(--f-sign);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.pr-progi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 6px;
+}
+.pr-prog {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 3px 4px;
+  padding: 4px 6px 5px;
+  background: var(--slab-deep);
+  border: 1px solid var(--seam);
+  border-radius: 5px;
+}
+.pr-prog-k {
+  grid-column: 1 / -1;
+  font: 600 12px / 1 var(--f-sign);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.pr-step {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font: 700 17px / 1 var(--f-sign);
+  color: var(--ink);
+  background: var(--slab-raised);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.pr-step:hover:not(:disabled) {
+  border-color: var(--ink-dim);
+}
+.pr-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pr-v {
+  min-width: 2.1em;
+  text-align: center;
+  font: 700 16px / 1 var(--f-sign);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- wiersz o wybranej kolumnie ---------- */
+.pr-info {
+  margin: 0 0 6px;
+  min-height: 2.6em;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--ink-dim);
+}
+.pr-info b {
+  color: var(--ink);
+}
+.pr-opis {
+  display: block;
+  font-size: 12px;
+}
+
+/* ---------- ostrzeżenie trybu zombie nad tabelą (na telefonie podpowiedź z say() chowa się pod panelem) ---------- */
+.pr-uwaga {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--lamp);
+}
+.pr-uwaga-i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--lamp);
+  color: rgb(31 35 38);
+  font: 700 11px / 14px var(--f-sign);
+  text-align: center;
+}
+
+/* ---------- tabela osób i rodzajów ---------- */
+.pr-tab {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.pr-col-k {
+  width: 32px;
+}
+.pr-tab thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0;
+  background: rgb(31 35 38);
+  border-bottom: 1px solid var(--line);
+}
+.pr-kol {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 96px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px 4px 0 0;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.pr-kol:hover {
+  color: var(--ink);
+}
+.pr-kol-t {
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  /* nazwa czytana od dołu do góry: wąska kolumna, długa nazwa */
+  writing-mode: vertical-rl;
+  transform: translateX(-50%) rotate(180deg);
+  white-space: nowrap;
+  font: 700 13px / 1 var(--f-sign);
+  letter-spacing: 0.06em;
+}
+.pr-kol.sel {
+  color: #1c1c1c;
+  background: var(--lamp);
+}
+.pr-n {
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  transform: translateX(-50%);
+  min-width: 18px;
+  padding: 1px 2px;
+  text-align: center;
+  font: 700 13px / 1 var(--f-sign);
+  font-variant-numeric: tabular-nums;
+  color: var(--lamp);
+  background: #1c1c1c;
+  border-radius: 3px;
+}
+.pr-tab tbody th.pr-os {
+  position: relative;
+  padding: 3px 30px 3px 0;
+  text-align: left;
+  font-weight: 400;
+  border-bottom: 1px solid var(--seam);
+}
+.pr-im {
+  display: block;
+  font: 700 16px / 1.1 var(--f-sign);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-zaw {
+  display: block;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-out {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  transform: translateY(-50%);
+  color: var(--ink-dim);
+  background: var(--slab-deep);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.pr-out:hover {
+  border-color: var(--ink-dim);
+}
+.pr-out[aria-pressed="true"] {
+  color: #1d1a14;
+  background: var(--lamp);
+  border-color: var(--lamp);
+}
+.pr-td {
+  padding: 2px 1px;
+  text-align: center;
+  border-bottom: 1px solid var(--seam);
+}
+.pr-c {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  font: 700 16px / 1 var(--f-sign);
+  color: var(--ink);
+  background: var(--slab-deep);
+  border: 1px solid var(--seam);
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pr-c:hover {
+  border-color: var(--ink-dim);
+}
+/* 1 najważniejsze: bursztyn; im dalej, tym ciszej; puste: kreskowana ramka */
+.pr-c.p1 {
+  color: #ffe2a0;
+  background: #5b4412;
+  border-color: var(--lamp);
+}
+.pr-c.p2 {
+  color: #f0cf8a;
+  background: #3d3519;
+  border-color: #6b5a2c;
+}
+.pr-c.p3 {
+  color: var(--ink);
+  background: var(--slab-raised);
+}
+.pr-c.p4 {
+  color: var(--ink-dim);
+  background: var(--slab-deep);
+}
+.pr-c.p0 {
+  background: transparent;
+  border-style: dashed;
+}
+/* stałe zajęcie: obwódka i gwiazdka w rogu */
+.pr-c.stale {
+  box-shadow: inset 0 0 0 1px var(--lamp);
+}
+.pr-c.stale::after {
+  content: "★";
+  position: absolute;
+  top: 0;
+  right: 2px;
+  font: 400 9px / 1 var(--f-body);
+  color: var(--lamp);
+}
+.pr-tab tbody tr:hover th,
+.pr-tab tbody tr:hover td {
+  background: rgb(255 255 255 / 0.03);
+}
+
+/* ---------- przyciski mapy i minimapa odsuwają się od panelu ---------- */
+.app.praca-open .mapctl {
+  right: calc(var(--praca-w) + 16px);
+}
+.app.praca-open .placebar {
+  left: calc((100% - var(--praca-w)) / 2);
+}
+.app.praca-open .minimapa {
+  display: none;
+}
+
+/* ---------- karta osoby: stałe zajęcie i „za siatkę” ---------- */
+.card .doing .sam {
+  color: var(--ink-dim);
+}
+.pk {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: stretch;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+/* etykieta nad listą, a przełącznik obok: dwa wiersze karty mniej */
+.pk-row {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 1px;
+}
+.pk-k {
+  font: 600 12px / 1 var(--f-sign);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.pk-sel {
+  padding: 1px 4px;
+  font: 600 14px var(--f-sign);
+  color: var(--ink);
+  background: var(--slab-raised);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.pk-out {
+  align-self: end;
+  justify-self: start;
+  padding: 3px 8px;
+  line-height: 1.15;
+  text-align: left;
+  white-space: normal;
+}
+.pk-warn {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--lamp);
+}
+
+/* wąskie okno i telefon: arkusz od dołu na całą szerokość, wyższy niż szuflada budowy (12 wierszy tabeli) */
+@media (max-width: 640px) {
+  .buildpanel.pracapanel {
+    width: auto;
+    max-height: min(74vh, 640px);
+  }
+  .pracapanel .bp-body {
+    padding: 0 8px 8px;
+  }
+  .pr-info {
+    min-height: 2.6em;
+  }
+  /* karta z ustawieniami pracy jest wyższa: na niskim telefonie nie wychodzi nad górny pasek, tylko przewija się */
+  .card {
+    max-height: calc(100dvh - var(--top-h, 120px) - var(--attrib-h, 21px) - 40px);
+    overflow-y: auto;
+  }
+  .app.praca-open .mapctl,
+  .app.praca-open .hint,
+  .app.praca-open .placebar,
+  .app.praca-open .goals,
+  .app.praca-open .card {
+    display: none;
+  }
+  .pr-col-k {
+    width: 30px;
+  }
+  .pk-sel {
+    min-height: 32px;
+    font-size: 16px;
+  }
+  .pk-out {
+    min-height: 40px;
+  }
+  .pk {
+    margin-top: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pracapanel {
+    animation: none;
+  }
+}

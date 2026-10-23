@@ -61,8 +61,9 @@ import {
   playWithGov,
 } from '../tests/unit/gov-play.ts';
 import { mockBlock, mockHouse } from '../tests/unit/interior-mock.ts';
-import { type M2Log, m2Player } from '../tests/unit/m2-play.ts';
+import { type Player as M2Gracz, type M2Log, m2Player } from '../tests/unit/m2-play.ts';
 import { miastoPlayer, okolicaZGeo } from '../tests/unit/miasto-play.ts';
+import { przelacznik } from '../tests/unit/praca-pomoc.ts';
 import { type SasiedziLog, sasiedziPlayer } from '../tests/unit/sasiedzi-play.ts';
 import { pomiarBadan } from './bot-badania.ts';
 import {
@@ -324,12 +325,18 @@ for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const entered = raided.filter((n) => n.raid!.outcome === 'wtargnięcie');
   const repelled = raided.filter((n) => n.raid!.outcome === 'odparty');
   const quiet = nights.filter((n) => !n.raid);
-  // zgodność: wynik i łup jak w raporcie, tylu szabrowników, ilu wynika z siły, uśpiona warta przysypia na ekranie
+  // zgodność: wynik i łup jak w raporcie (gdy ktoś zabił szabrownika, jego łup został na podwórku, więc wyniesione
+  // jest najwyżej tyle, ile w raporcie), tylu szabrowników, ilu wynika z siły, uśpiona warta przysypia na ekranie
   const mismatch = nights.filter(
     (n) =>
       (n.report === 'brak') !== !n.raid ||
       (n.raid && n.report !== n.raid.outcome) ||
-      (n.report === 'wtargnięcie' && JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen)) ||
+      (n.report === 'wtargnięcie' &&
+        (n.killed
+          ? n.raid!.took.wood > n.stolen.wood ||
+            n.raid!.took.supplies > n.stolen.supplies ||
+            n.raid!.took.scrap > n.stolen.scrap
+          : JSON.stringify(n.raid!.took) !== JSON.stringify(n.stolen))) ||
       (n.raid && n.result && n.raid.n !== n.result.people) ||
       (n.result && n.result.dozing !== n.result.slept),
   ).length;
@@ -417,10 +424,16 @@ for (const [name, list] of [
   console.log(
     `  ${name.padEnd(21)} kuchnia o 6:00 średnio ${f1(mean(k6(list)))}°C (od ${f1(Math.min(...k6(list)))} do ${f1(Math.max(...k6(list)))}), koza paliła się przez ${Math.round(100 * mean(list.map((n) => n.fire)))}% nocy 22–6`,
   );
+// Od poprawki kozy z beczki (a524c0f, kozaStand staje też na kafelku z meblem) wieczorne ładowanie zawsze się udaje:
+// bez dyżuru w kozie ląduje komplet (KOZA_CAP, sztuka pali się godzinę), więc pali się około połowy nocy 22–6 i gaśnie
+// koło 2:00, a różnica rano to wychłodzenie kuchni przez ostatnie cztery godziny, około 3°C (na 15 nocach pula
+// wydarzeń przesuwa ją o kilka dziesiątych). Sprawdzamy więc to, do czego jest dyżur: z nim koza pali się całą noc
+// i rano jest ciepło, bez niego gaśnie przed świtem, a kuchnia o 6:00 jest wyraźnie zimniejsza.
 const warm = mean(k6(withDuty));
 const cold = mean(k6(without));
-if (warm < 18 || cold > warm - 3) {
-  console.log('  BŁĄD: z dyżurem rano nie jest wyraźnie cieplej niż bez niego');
+const ogien = (list: NightLog[]) => mean(list.map((n) => n.fire));
+if (warm < 18 || ogien(withDuty) < 0.9 || ogien(without) > 0.75 || cold > warm - 2) {
+  console.log('  BŁĄD: z dyżurem koza nie pali się całą noc albo rano nie jest wyraźnie cieplej niż bez niego');
   fail = true;
 }
 
@@ -514,9 +527,23 @@ function cover(decisions: Decision[], until: number) {
     gap,
   };
 }
-const m2Runs = (search: boolean) =>
+/** Fala 1 M2 mierzy grę w obrębie siatki: przełącznik „może wychodzić za siatkę” (w trybie zwykłym domyślnie włączony,
+    decyzja Mateusza 19.10.2026) wyłączony każdemu z zarządu, także przyjętym później. Z nim automat sam szabruje
+    i nosi łup zza siatki, więc wariant „bez przeszukiwania” niczego by nie porównywał; `zaSiatke` puszcza grę z nim
+    (linia do wglądu, bez progu). */
+const m2Runs = (search: boolean, zaSiatke = false) =>
   GOV_SEEDS.map((seed) => {
-    const { player, log } = m2Player({ search, furniture: true });
+    const m2 = m2Player({ search, furniture: true });
+    const log = m2.log;
+    let wZarzadzie = -1;
+    const player: M2Gracz = (sim, w, screen, order) => {
+      const core = sim.st.pawns.filter((p) => p.kind === 'core');
+      if (!zaSiatke && core.length !== wZarzadzie) {
+        wZarzadzie = core.length;
+        przelacznik(sim, core, false);
+      }
+      m2.player(sim, w, screen, order);
+    };
     const w = govWorld;
     const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player, ...zAdresu(w) });
     return {
@@ -530,7 +557,7 @@ const m2Runs = (search: boolean) =>
   });
 const range = (a: number[]) => `${f1(mean(a))} (${Math.min(...a)}–${Math.max(...a)})`;
 const m2Line = (name: string, runs: ReturnType<typeof m2Runs>) => {
-  const sum = (k: keyof Omit<M2Log, 'built'>) => f1(mean(runs.map((r) => r.log[k])));
+  const sum = (k: keyof Omit<M2Log, 'built' | 'plans'>) => f1(mean(runs.map((r) => r.log[k])));
   console.log(
     `  ${name}: budowle do końca dnia 2: ${range(runs.map((r) => r.by(2)))}, dnia 3: ${range(runs.map((r) => r.by(3)))}, dnia 5: ${range(runs.map((r) => r.by(5)))}`,
   );
@@ -555,6 +582,7 @@ const m2With = m2Runs(true);
 const m2Without = m2Runs(false);
 m2Line('z przeszukiwaniem', m2With);
 m2Line('bez przeszukiwania', m2Without);
+m2Line('z przeszukiwaniem i przełącznikiem „za siatkę” jak w grze (bez progu)', m2Runs(true, true));
 console.log(`  (${Math.round(performance.now() - t2)} ms)`);
 // cel z docs/M2-fala-1.md: przy przeszukiwaniu 2–3 budowle do trzeciego dnia, bez niego nie; decyzja co minutę
 const by3 = m2With.map((r) => r.by(3));
@@ -783,7 +811,7 @@ if (ZWYCIESTWO) {
       .join('; ')}`,
   );
   console.log(
-    `  pozostałe drogi (technologia, teren, lek, cuda) czekają na projekty, na których stoją: kamieni zaliczonych ${kolejnosc
+    `  pozostałe drogi (technologia, teren, lek, cuda): ten gracz nie buduje pracowni ani wspólnego płotu, a lek i cuda czekają na projekty, na których stoją; kamieni zaliczonych ${kolejnosc
       .filter((d) => d !== 'ludnosc')
       .map((d) => `${d} ${zwRuns.reduce((a, r) => a + ostatni(r).kamienie[kolejnosc.indexOf(d)], 0)}`)
       .join(', ')}`,

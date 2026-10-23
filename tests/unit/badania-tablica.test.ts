@@ -2,7 +2,8 @@
    dla tablicy (`snapshot().tablica`), układ kartek w kolumnach er, treść z `tablicaHtml` (kartki ze stanami, sznurki,
    technologia końcowa, szczegóły z przyciskiem „Badać”, pasek obsady i półka z książkami, oba języki) i warunek samego
    otwarcia tablicy (`czyOtworzycSama`). Stan z createSim na Przymorzu, osoby i umiejętności ustawione ręcznie, żeby
-   wynik nie zależał od losowania fachów. */
+   wynik nie zależał od losowania fachów. Tablica w trybie zwykłym ma 28 z 29 kartek: fabryka humanoidów jest tylko
+   w trybie zombie (`naTablicy`); łańcuch fabryki w obu trybach sprawdza badania-fabryka.test.ts. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -98,6 +99,9 @@ function kartkaHtml(html: string, id: string): string {
   return m[0];
 }
 const ile = (html: string, wzor: RegExp) => (html.match(wzor) ?? []).length;
+/** technologie, które tablica pokazuje w danym trybie gry: bez tych z innym `tryb` (fabryka drugiego trybu) */
+const naTablicy = (mode: 'zwykly' | 'zombie' = 'zwykly') =>
+  TECHS.filter((t) => t.tryb === undefined || t.tryb === mode);
 
 /** „14 / 33”: zapisany postęp t_spawanie i jej koszt zaokrąglony w górę, jak na kartce (mnożnik ery 2 daje ułamek) */
 const SPAWANIE = `14 / ${Math.ceil(kosztTech('t_spawanie'))}`;
@@ -234,11 +238,11 @@ describe('tablica badań: układ kartek', () => {
 describe('tablica badań: kartki', () => {
   it('jedna kartka na technologię, klasa i znacznik stanu, kolumna na erę z nagłówkiem', () => {
     const html = tablica(stan());
-    expect(ile(html, /class="tb-kartka/g)).toBe(TECHS.length);
-    for (const t of TECHS) expect(ile(html, new RegExp(`data-tech="${t.id}"`, 'g'))).toBe(1);
+    expect(ile(html, /class="tb-kartka/g)).toBe(naTablicy().length);
+    for (const t of naTablicy()) expect(ile(html, new RegExp(`data-tech="${t.id}"`, 'g'))).toBe(1);
     const st = stan();
     const stany = Object.fromEntries(snapshot(st, w).tablica!.kartki.map((k) => [k.id, k.stan]));
-    for (const t of TECHS) {
+    for (const t of naTablicy()) {
       const k = kartkaHtml(html, t.id);
       expect(k).toContain(`data-stan="${stany[t.id]}"`);
       expect(k).toMatch(new RegExp(`class="tb-kartka [^"]*\\b${stany[t.id]}\\b`));
@@ -248,7 +252,7 @@ describe('tablica badań: kartki', () => {
 
   it('nazwa technologii jest na jej kartce', () => {
     const html = tablica(stan());
-    for (const t of TECHS) expect(kartkaHtml(html, t.id)).toContain(tr(nazwaTech(t.id)));
+    for (const t of naTablicy()) expect(kartkaHtml(html, t.id)).toContain(tr(nazwaTech(t.id)));
   });
 
   it('zbadane mają pieczątkę „ZROBIONE”, inne jej nie mają', () => {
@@ -286,7 +290,7 @@ describe('tablica badań: kartki', () => {
 
   it('odwrócone: tylko tytuł i „Do tego trzeba prądu”', () => {
     const html = tablica(stan());
-    const odwrocone = TECHS.filter((t) => !t.dziala);
+    const odwrocone = naTablicy().filter((t) => !t.dziala);
     expect(odwrocone.length).toBeGreaterThan(10);
     for (const t of odwrocone) {
       const k = kartkaHtml(html, t.id);
@@ -326,12 +330,20 @@ describe('tablica badań: kartki', () => {
     expect(html.slice(html.indexOf('<footer'))).toContain(', stoi');
   });
 
-  it('technologia końcowa jest wyróżniona: złota pinezka i dopisek „Cel”', () => {
+  it('technologia końcowa (fabryka bieżącego trybu) jest wyróżniona: złota pinezka i dopisek „Cel”, a sieć już nie', () => {
     const html = tablica(stan());
-    const k = kartkaHtml(html, 't_siec');
+    const k = kartkaHtml(html, 't_fabryka_bio');
     expect(k).toMatch(/class="tb-kartka [^"]*\bkoncowa\b/);
     expect(k).toContain('class="tb-cel">Cel<');
+    expect(k).toContain('--pin:#d4a017');
     expect(ile(html, /class="tb-cel"/g)).toBe(1);
+    expect(kartkaHtml(html, 't_siec')).not.toContain('tb-cel');
+    expect(html).not.toContain('data-tech="t_fabryka_hum"');
+    // w trybie zombie celem jest fabryka humanoidów, też jedna
+    const zombie = tablica(stan(), null, 'zombie');
+    expect(kartkaHtml(zombie, 't_fabryka_hum')).toContain('class="tb-cel">Cel<');
+    expect(ile(zombie, /class="tb-cel"/g)).toBe(1);
+    expect(zombie).not.toContain('data-tech="t_fabryka_bio"');
   });
 
   it('wybrana kartka ma zaznaczenie, reszta nie', () => {
@@ -346,7 +358,7 @@ describe('tablica badań: kartki', () => {
 describe('tablica badań: sznurki', () => {
   it('jeden sznurek na każdą parę wymaganie–technologia, od wymagania do kartki', () => {
     const html = tablica(stan());
-    const pary = TECHS.flatMap((t) => t.req.map((r) => [r, t.id] as const));
+    const pary = naTablicy().flatMap((t) => t.req.map((r) => [r, t.id] as const));
     expect(pary.length).toBeGreaterThan(15);
     expect(ile(html, /<path class="tb-nic/g)).toBe(pary.length);
     for (const [od, do_] of pary) expect(html).toContain(`data-od="${od}" data-do="${do_}"`);
@@ -492,15 +504,21 @@ describe('tablica badań: szczegóły wybranej kartki', () => {
     expect(sz2).not.toContain('data-akcja="badaj"');
   });
 
-  it('odwrócona: „Do tego trzeba prądu” bez przycisku; technologia końcowa opisuje sieć i dopisuje prąd', () => {
+  it('odwrócona: „Do tego trzeba prądu” bez przycisku; sieć i fabryka opisują swoją rzecz i dopisują prąd, cel ma tylko fabryka', () => {
     const html = tablica(stan(), 't_panele');
     expect(html.slice(html.indexOf('class="tb-szczegoly'), html.indexOf('<footer'))).toContain('Do tego trzeba prądu');
     const sz = tablica(stan(), 't_siec');
     const s = sz.slice(sz.indexOf('class="tb-szczegoly'), sz.indexOf('<footer'));
     expect(s).toContain('Sieć z aluminium zamiast miedzi');
     expect(s).toContain('Do tego trzeba prądu');
-    expect(s).toContain('Cel');
+    expect(s).not.toContain('Cel');
     expect(s).not.toContain('data-akcja="badaj"');
+    const fz = tablica(stan(), 't_fabryka_bio');
+    const f = fz.slice(fz.indexOf('class="tb-szczegoly'), fz.indexOf('<footer'));
+    expect(f).toContain('Fabryka biorobotów odpornych na bakterię miedzi');
+    expect(f).toContain('Do tego trzeba prądu');
+    expect(f).toContain('Cel');
+    expect(f).not.toContain('data-akcja="badaj"');
   });
 
   it('w trybie zombie szczegóły sieci biorą opis dzialanieZombie', () => {
@@ -638,6 +656,9 @@ describe('tablica badań: tryb gry', () => {
   it('technologia z polem `tryb` innym niż bieżący nie ma kartki ani sznurków', () => {
     const t = TECH_BY.t_okna;
     const mialo = Object.hasOwn(t, 'tryb');
+    // bez t_okna i bez fabryki humanoidów (z innym trybem już z danych): 29 − 2
+    const wTrybieZwyklym = naTablicy().length - 1;
+    expect(wTrybieZwyklym).toBe(27);
     t.tryb = 'zombie';
     try {
       const st = stan();
@@ -646,7 +667,7 @@ describe('tablica badań: tryb gry', () => {
       expect(html).not.toContain('data-tech="t_okna"');
       expect(html).not.toContain('data-od="t_okna"');
       expect(html).not.toContain('data-do="t_okna"');
-      expect(ile(html, /class="tb-kartka/g)).toBe(TECHS.length - 1);
+      expect(ile(html, /class="tb-kartka/g)).toBe(wTrybieZwyklym);
       const zombie = tablicaHtml(b, { wybrana: null, mode: 'zombie' });
       expect(zombie).toContain('data-tech="t_okna"');
     } finally {

@@ -8,7 +8,8 @@
    - `planWyprawySheet(cel, i, st, wybrani, odmowa?)`: okno planu. `wybrani` to id osób z zarządu (`GovPerson.id`).
      Każda osoba jest przyciskiem (`data-act="wp-osoba"`, w `data-arg` id, `aria-pressed` mówi, czy jest wybrana).
      Niezdolna jest wyszarzona (`disabled`) z powodem i nie liczy się do wybranych, choćby podano jej id. Przycisk
-     „Wyślij wyprawę” (`data-act="wyslij"`, w `data-arg` klucz miejsca) jest aktywny dokładnie wtedy, gdy
+     „Wyślij wyprawę” (po angielsku „Send a supply run”, tak samo jak na karcie miejsca w src/ui/miasto.ts;
+     `data-act="wyslij"`, w `data-arg` klucz miejsca) jest aktywny dokładnie wtedy, gdy
      `wyslijWyprawe` dla `kogoWyslac` by się udało. Podsumowanie liczy `podgladWyprawy` dla wysyłanych osób i zmienia się
      z ich liczbą (więcej osób, krótsze przeszukanie, większy udźwig, mniejsze ryzyko). `odmowa` (powód z nieudanego
      `wyslijWyprawe`) pokazuje się w oknie nad podsumowaniem, a okno zostaje otwarte.
@@ -126,7 +127,7 @@ function stanHtml(
 const stopka = (cel: Cel, mozna: boolean): string =>
   `<button type="button" class="btn ghost" data-act="wp-wroc">${L('Wróć do mapy', 'Back to the map')}</button><button type="button" class="btn go" data-act="wyslij" data-arg="${esc(
     cel.klucz,
-  )}"${mozna ? '' : ' disabled'}>${L('Wyślij wyprawę', 'Send the supply run')}</button>`;
+  )}"${mozna ? '' : ' disabled'}>${L('Wyślij wyprawę', 'Send a supply run')}</button>`;
 
 /** Okno planu wyprawy do `cel` dla zarządu `st` i wejścia `i`; `wybrani` to id wybranych osób, `odmowa` powód
     z nieudanego `wyslijWyprawe` (okno zostaje otwarte). Zamykane bez decyzji (Esc, klik obok). */

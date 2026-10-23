@@ -43,6 +43,9 @@ export interface M2Opts {
 export interface M2Log {
   /** gotowe budowle z tickiem ukończenia */
   built: { kind: BuildKind; tick: number }[];
+  /** rodzaje budowli w kolejności poleceń `build` (kolejność ukończenia zależy też od automatu pracy ludzi, który
+      sam zaczyna inne plany, i od materiałów) */
+  plans: BuildKind[];
   placed: number;
   searched: number;
   dismantled: number;
@@ -68,7 +71,7 @@ const EVERY = 5;
 const KEEP = new Set(['lozko', 'wersalka']);
 
 export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
-  const log: M2Log = { built: [], placed: 0, searched: 0, dismantled: 0, repaired: 0, claimed: 0 };
+  const log: M2Log = { built: [], plans: [], placed: 0, searched: 0, dismantled: 0, repaired: 0, claimed: 0 };
   const seen = new Set<number>();
   const placed = new Set<BuildKind>();
   /** cele, których nie dało się zacząć (nieosiągalne): klucz 'rodzaj:cel' */
@@ -185,6 +188,7 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
       if (!at) continue;
       placed.add(k);
       log.placed++;
+      log.plans.push(k);
       order(
         { t: 'build', ids: free[0] ? [free[0].id] : [], kind: k, x: at.x, y: at.y, rot: at.rot },
         `budowa: ${BUILDS[k].name}`,

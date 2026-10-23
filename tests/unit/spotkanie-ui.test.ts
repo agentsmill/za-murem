@@ -18,9 +18,9 @@ import { wordsOfWorld } from '../../src/gov/miejsce.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { type Gospodarstwo, nowyBudynek, szabrownicy, wybory, znaniBudynki } from '../../src/sim/sasiedzi.ts';
 import { kartaBudynku, widokBudynku } from '../../src/ui/budynek.ts';
-import { goalsDay2 } from '../../src/ui/cele.ts';
 import { spotkanieSheet, zdanieNapisu } from '../../src/ui/spotkanie.ts';
 import { core, demoWorld, doorWhere, newGame, until } from './sasiedzi-pomoc.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 const dom = (over: Partial<Gospodarstwo> = {}): Gospodarstwo => ({
   osoby: [
@@ -307,9 +307,10 @@ describe('cel drugiego dnia: przeszukanie u sąsiadów też się liczy', () => {
     ] as const) {
       const sim = newGame(key);
       const gov = newGov(1);
-      const o = { touch: false, wood: 0, woodReady: false, holes: 0, words: wordsOfWorld(w) };
-      const goal = () => goalsDay2(sim.st, gov, o).find((g) => g.key === 'przeszukaj')!;
+      const goal = () => celeR1(sim.st, w, gov, { words: wordsOfWorld(w) }).find((g) => g.key === 'przeszukaj')!;
       expect(goal().done).toBe(false);
+      // podpowiedź zaczyna od zaznaczenia osoby: bez niej prawy przycisk w pomieszczeniu niczego nie daje
+      expect(goal().how, key).toMatch(/^Zaznaczcie kogoś z (zarządu|komitetu) i prawy przycisk w .*„Przeszukać …”/);
       const { bid } = doorWhere(w, 'zwykly', () => true, key === 'zielonki' ? ['dom'] : ['blok']);
       sim.st.sasiedzi = { budynki: [nowyBudynek(w, 'zwykly', bid, null)], spotkanie: null, nr: 0, napis: null, n: 0 };
       sim.st.sasiedzi.budynki[0].przeszukane.push(0);

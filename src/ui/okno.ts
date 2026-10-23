@@ -1,9 +1,20 @@
 /* Jedno okno na raz nad grą (zamiast natywnego confirm): tabliczka z tytułem, treść i przyciski.
-   Kliknięcia przycisków z data-act i zmiany list wyboru idą do obsługi podanej przy otwarciu. */
+   Kliknięcia przycisków z data-act i zmiany list wyboru idą do obsługi podanej przy otwarciu. `sheetHtml(s)` składa
+   wnętrze tabliczki z czterech części `Sheet` (nagłówek, tytuł, treść, przyciski) i, gdy okno ma `cel`, linię „Cel: …”
+   ścieżki celów tuż pod nagłówkiem; to czysta funkcja, więc da się ją sprawdzić w Node bez DOM. */
 
 import type { Sheet } from './okna.ts';
+import { liniaCelu } from './tekst.ts';
 
 export type SheetHandler = (act: string, arg: string, el: HTMLElement) => void;
+
+/** Wnętrze tabliczki okna: nagłówek (mały napis i tytuł), linia „Cel: …” pod nim (tylko gdy okno ma `cel`), treść
+    i przyciski. Części `kicker`, `title`, `body` i `foot` to gotowy HTML; `cel` to zwykły tekst i jest uciekany. */
+export function sheetHtml(s: Sheet): string {
+  return `<header class="sheet-head"><small class="sheet-kicker">${s.kicker}</small><h2 class="sheet-title" id="sheetTitle">${s.title}</h2></header>${
+    s.cel ? liniaCelu(s.cel, 'sheet-cel') : ''
+  }<div class="sheet-body">${s.body}</div>${s.foot ? `<footer class="sheet-foot">${s.foot}</footer>` : ''}`;
+}
 
 export class Modal {
   private handler: SheetHandler | null = null;
@@ -51,9 +62,7 @@ export class Modal {
     this.closable = !!s.closable;
     this.tone = s.tone;
     this.sheet.className = `sheet ${s.tone}`;
-    this.sheet.innerHTML = `<header class="sheet-head"><small class="sheet-kicker">${s.kicker}</small><h2 class="sheet-title" id="sheetTitle">${s.title}</h2></header><div class="sheet-body">${s.body}</div>${
-      s.foot ? `<footer class="sheet-foot">${s.foot}</footer>` : ''
-    }`;
+    this.sheet.innerHTML = sheetHtml(s);
     this.root.hidden = false;
     this.sheet.scrollTop = 0;
     // fokus na samym oknie, nie na pierwszym przycisku: żaden wybór nie jest podpowiadany (Tab przechodzi dalej)

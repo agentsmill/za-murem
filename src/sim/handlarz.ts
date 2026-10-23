@@ -4,6 +4,7 @@
    i rozbiórce jest go za dużo, a deski i jedzenie są wąskim gardłem. Napisy w obu językach: menu, opisy prac
    i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd). */
 
+import type { Person } from '../content/people.ts';
 import { nextRandom, type RngState } from '../core/rng.ts';
 import type { Mat } from './budowle.ts';
 import { START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
@@ -39,6 +40,13 @@ export interface Obcy {
   slawa?: { lvl: number; until: number };
   /** posiłki handlarza zaplanowane na tick at, n ludzi */
   zemsta?: { at: number; n: number };
+  /** Rozmowa z wędrowcem (po „Zagadać”), jeden wędrowiec naraz, do zaproszenia (docs/superpowers/specs/
+      2026-10-19-praca-ludzi-design.md, część B): id jego pionka, osoba z ziarna świata i numeru (id puste, dostaje je
+      przyjęty), czy idzie do rodziny (cel), czy ukrywa ugryzienie (tryb zombie) i czy zarząd pytał o rękę. Powstaje
+      na końcu rozmowy, znika, gdy wędrowiec odchodzi albo zostaje. */
+  rozmowa?: { id: number; osoba: Person; cel: boolean; ugryziony: boolean; pytali?: true };
+  /** ilu wędrowców zwerbowano do tej pory: z tego numery id osób, `w1`, `w2`… (osobno od liczników `s…`) */
+  werbunek?: number;
 }
 
 /** czeka pod bramą 3 godziny gry, ale nie dłużej niż do 18:00; wymiana to 5 minut targowania się */
