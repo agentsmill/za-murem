@@ -74,6 +74,7 @@ Koniec drogi to obraz Mateusza z 19.10.2026 (sesja badań): „Mam generator fuz
 - Kamienie: pracownia postawiona; pierwsze badanie; era 3; sieć bez miedzi włączona; generator fuzji postawiony; fabryka uruchomiona.
 - Kontrakt z badaniami: w drzewie flaga `koncowa` (teraz przy fabryce) i numer ery przy każdej technologii; odczyt dla zarządu `GovInput.badania` (`pracownia`, `zbadane`, `era`, `koncowa`, `siecWlaczona`) dostaje `fuzja` (stoi generator) i `fabryka` (fabryka uruchomiona). Bakteriofaga i leku w drzewie nie ma (to fabuła).
 - Szczegóły budowli (miejsce, rozmiar, koszt, czas budowy), nazwy w obu językach i tekst epilogu rozpisuje plan `docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md`.
+- Etapy (19.10.2026): etap 1 jest zrobiony (łańcuch w erze 6 na tablicy badań, nowe id `t_fuzja`, `t_superserwer`, `t_fabryka_bio` i `t_fabryka_hum`, sześć kamieni drogi z odczytu badań, „co dalej” przy dwóch pierwszych, od drugiego „Wkrótce: ery 3–6 czekają na prąd.”, epilog fabryki w obu trybach). Etap 2 czeka na prąd w erach 3–6 z projektu gospodarki: budowle generatora i fabryki, „Uruchomić fabrykę” z potwierdzeniem i `GovInput.badania.fabryka`, okna nocą po włączeniu sieci; do tego czasu w zwykłej grze drogi nie da się wygrać.
 
 ### 2. Terytorialna: „Za Murem”
 

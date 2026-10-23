@@ -14,12 +14,12 @@ import type { World } from '../world/world.ts';
 import {
   BRAK_MIEJSCA,
   kartka,
-  koncowaZbadana,
   kosztDoPokazania,
   kosztTech,
   nazwaTech,
   postepDoPokazania,
   siecWlaczona,
+  siecZbadana,
   TECH_BY,
   wolneMiejsca,
 } from './badania.ts';
@@ -62,6 +62,7 @@ import {
   FURNITURE_ACC,
   isEnemy,
   KOZA_POST,
+  okazjaWerbunku,
   PATCH_COST,
   type Pawn,
   SIATKA_POST,
@@ -71,6 +72,7 @@ import {
   STAY_FIRE,
   STAY_MEAL,
   STAY_YARD,
+  szansaZaproszenia,
   type Thing,
   trunkOf,
   WIEZA_POST,
@@ -160,6 +162,28 @@ function dismantleEn(kind: string | undefined): { base: string; ing: string } {
 
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
 
+/** Po rozmowie z wędrowcem, który jeszcze stoi przy siatce: w trybie zombie „Zapytać o rękę” (raz), potem zaproszenie
+    z szansą w procentach. Przy pełnym zarządzie zaproszenie dotyczy mieszkańca i jest wyszarzone, gdy brak wolnego
+    łóżka; w domu jednorodzinnym (mieszkańcy bez mieszkań) przy pełnym zarządzie zaproszenia nie ma wcale. Kto już
+    wędrowca zaprasza, tego nie pytamy drugi raz. */
+function werbunekAt(st: SimState, w: World, core: number[], near: Pawn): MenuItem[] {
+  const r = st.obcy?.rozmowa;
+  if (near.job?.phase !== 1 || near.job.what !== 'zagadany' || !r || r.id !== near.id) return [];
+  if (st.pawns.some((q) => q.job?.t === 'zapros' && q.job.target === near.id)) return [];
+  const out: MenuItem[] = [];
+  if (modeOf(st) === 'zombie' && !r.pytali)
+    out.push({ cmd: { t: 'reka', ids: core, target: near.id }, label: tr(OBCY.zapytacORege), quick: false });
+  const ok = okazjaWerbunku(st, w);
+  const cmd = { t: 'zapros', ids: core, target: near.id } as const;
+  if (ok.dokad === 'dom') return out;
+  if (ok.dokad === 'brak') out.push({ cmd, label: tr(OBCY.zaprosicBez), quick: false, off: tr(OBCY.brakLozka) });
+  else {
+    const n = Math.round(100 * szansaZaproszenia(st, w, ok));
+    out.push({ cmd, label: tr(ok.dokad === 'zarzad' ? OBCY.zaprosic(n) : OBCY.zaprosicMieszkanca(n)), quick: false });
+  }
+  return out;
+}
+
 /** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
     Drewno poza składem: zanieść do składu. Koza, koza z beczki, kocioł albo ognisko, gdy jest skąd wziąć drewno:
     dołożyć. Drzewo: ściąć, od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie
@@ -228,6 +252,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   if (near?.kind === 'wedrowiec') {
     if (near.job?.phase === 1 && near.job.what !== 'zagadany')
       out.push({ cmd: { t: 'talk', ids: core, target: near.id }, label: tr(OBCY.zagadac), quick: false });
+    out.push(...werbunekAt(st, w, core, near));
     out.push({ cmd: { t: 'mug', ids: core, target: near.id }, label: tr(OBCY.napasc), quick: false, confirm: true });
   } else if (near?.kind === 'obcy' && (near.job?.phase ?? 4) < 2)
     out.push({ cmd: { t: 'shoo', ids: core, target: near.id }, label: tr(OBCY.przegonic), quick: false });
@@ -458,9 +483,10 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   // pracownia: zarząd do stołu i tablica badań (Badać: <nazwa>, Tablica badań albo Wybrać badanie)
   const lab = things.find((t) => t.kind === 'pracownia');
   if (lab) out.push(...pracowniaItems(st, core, lab.id));
-  // pracownia po zbadaniu technologii końcowej: włączyć sieć (raz; nieodwracalne i zaczyna epilog, więc z potwierdzeniem,
-  // którego okno to `siecSheet` w src/ui/okna.ts; sam epilog robi rama zwycięstwa)
-  if (things.some((t) => t.kind === 'pracownia') && koncowaZbadana(st) && !siecWlaczona(st))
+  // pracownia po zbadaniu sieci bez miedzi (jeszcze przed fabryką): włączyć sieć (raz; nieodwracalne, więc z potwierdzeniem,
+  // którego okno to `siecSheet` w src/ui/okna.ts). To czwarty kamień drogi technologii (`siecWlaczona` w odczycie dla ramy
+  // zwycięstwa); epilog daje dopiero fabryka
+  if (things.some((t) => t.kind === 'pracownia') && siecZbadana(st) && !siecWlaczona(st))
     out.push({
       cmd: { t: 'siec', ids: core },
       label: L('Włączyć sieć', 'Switch on the grid'),
@@ -883,6 +909,16 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return tr(OBCY.scavenge[Math.min(3, j.phase)]);
     case 'talk':
       return tr(walking ? OBCY.idzieZagadac : OBCY.rozmawia);
+    case 'zapros':
+      return tr(
+        j.what === 'reka'
+          ? walking
+            ? OBCY.idzieZapytac
+            : OBCY.pytaORege
+          : walking
+            ? OBCY.idzieZaprosic
+            : OBCY.zaprasza,
+      );
     case 'mug':
       return tr(OBCY.idzieNapasc);
     case 'shoo':

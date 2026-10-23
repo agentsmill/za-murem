@@ -16,7 +16,7 @@ import { gateTiles } from '../../src/sim/perimeter.ts';
 import { createSim, type Job, Sim, STAY_MEAL } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu, buildPanelHtml } from '../../src/ui/budowa.ts';
-import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
+import { goalsOf } from '../../src/ui/cele.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { aptCard, aptState, aptView } from '../../src/ui/mieszkania.ts';
 import {
@@ -34,6 +34,7 @@ import { comingText } from '../../src/ui/przybycie.ts';
 import { govFence } from '../../src/ui/siatka.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { pl } from './po-angielsku.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 /** słowa z bloku, których w domu nie ma w tekstach interfejsu, także mieszkanie i mieszkańcy (w domu jednorodzinnym
     lokum komitetu to dom, a ludzie to sąsiedzi); łóżka piętrowe to nazwa łóżek, więc bez „piętr” */
@@ -156,11 +157,12 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
   it('samouczek i cele drugiego dnia', () => {
     const { sim } = game('zielonki');
     const gov = newGov(1);
-    const goals = [15, 21].flatMap((hour) =>
+    const goals: { key: string; text: string; how: string }[] = [15, 21].flatMap((hour) =>
       [false, true].flatMap((touch) => goalsOf(sim.st, gov, { touch, kitchen: 9, hour, words })),
     );
     expect(goals.find((g) => g.key === 'rozkaz')?.text).toBe('Wyślijcie go do suchego drzewa w ogrodzie.');
-    goals.push(...goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words }));
+    for (const touch of [false, true]) goals.push(...celeR1(sim.st, sim.w, gov, { touch, words }));
+    expect(goals.map((g) => g.key)).toContain('dyzur');
     for (const g of goals) expect(`${g.text} ${g.how}`).not.toMatch(BLOKOWE);
   });
 
@@ -205,23 +207,22 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
     expect(help).toContain(
       'Klik w dom pokazuje jego kartę: co w nim już przeszukane. Prawy przycisk w domu: Przeszukać.',
     );
-    expect(help).toContain('W wersji 0.4 są noce za siatką, budowa, dom do przeszukania, przybysze i tryb zombie.');
+    expect(help).toContain(
+      'W wersji 0.4 są noce za siatką, budowa, dom do przeszukania, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
+    );
   });
 
   it('cel drugiego dnia: dom komitetu do przeszukania, pierwsze pomieszczenie zalicza cel', () => {
     const { sim, w } = game('zielonki');
     const core = sim.st.pawns.find((p) => p.kind === 'core')!;
     const gov = newGov(1);
-    const goal = (touch: boolean) =>
-      goalsDay2(sim.st, gov, { touch, wood: 0, woodReady: false, holes: 0, words }).find(
-        (g) => g.key === 'przeszukaj',
-      )!;
+    const goal = (touch: boolean) => celeR1(sim.st, w, gov, { touch, words }).find((g) => g.key === 'przeszukaj')!;
     expect([goal(false).text, goal(false).how]).toEqual([
       'Przeszukajcie dom.',
-      'Kliknijcie dom: karta pokaże, co w nim już przeszukane. Potem prawy przycisk w domu: „Przeszukać”.',
+      'Zaznaczcie kogoś z komitetu i prawy przycisk w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: klik w dom, kiedy nikt nie jest zaznaczony.',
     ]);
     expect(goal(true).how).toBe(
-      'Stuknijcie dom: karta pokaże, co w nim już przeszukane. Potem przytrzymajcie palec w domu: „Przeszukać”.',
+      'Stuknijcie kogoś z komitetu i przytrzymajcie palec w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: stuknięcie w dom, kiedy nikt nie jest zaznaczony.',
     );
     expect(goal(false).done).toBe(false);
     // dom ma jedno mieszkanie, komitetu: każde jego pomieszczenie da się przeszukać, zająć nie ma czego
@@ -345,14 +346,11 @@ describe('w bloku po staremu (Przymorze)', () => {
 
   it('cel drugiego dnia i pomoc: puste mieszkania, mieszkanie zarządu bez przeszukiwania', () => {
     const { sim, w } = game('przymorze');
-    const goal = (touch: boolean) =>
-      goalsDay2(sim.st, null, { touch, wood: 0, woodReady: false, holes: 0, words }).find(
-        (g) => g.key === 'przeszukaj',
-      )!;
+    const goal = (touch: boolean) => celeR1(sim.st, w, null, { touch, words }).find((g) => g.key === 'przeszukaj')!;
     expect([goal(false).text, goal(false).how, goal(true).how]).toEqual([
       'Przeszukajcie puste mieszkanie.',
-      'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
-      'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
+      'Zaznaczcie kogoś z zarządu i prawy przycisk w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: klik w mieszkanie, kiedy nikt nie jest zaznaczony.',
+      'Stuknijcie kogoś z zarządu i przytrzymajcie palec w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: stuknięcie w mieszkanie, kiedy nikt nie jest zaznaczony.',
     ]);
     const core = sim.st.pawns.find((p) => p.kind === 'core')!;
     const home = sim.st.apts.find((a) => a.state === 'zarzad')!.apt;
@@ -365,7 +363,9 @@ describe('w bloku po staremu (Przymorze)', () => {
       'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
     );
     expect(help).toContain('Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.');
-    expect(help).toContain('budowa, puste mieszkania do przeszukania i naprawy, przybysze i tryb zombie.');
+    expect(help).toContain(
+      'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
+    );
     expect(helpSheet(true, false, words).body).toContain(
       'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
     );

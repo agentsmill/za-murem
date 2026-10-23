@@ -2,19 +2,25 @@
    „Technologie ery 1 i 2”, „Ery 3–5”, „Dane”, „Wiedza”, „Tempo” i „Stan, polecenia, determinizm”). Bierze 24 technologie
    z `TECH` i `ERAS` w src/content/data.ts (nazwa, era, dziedzina, poziom, koszt, wymagania; tamte tablice zostają bajt
    w bajt dla testu zgodności z 0.3) i dokłada to, czego w nich nie ma: czy technologia działa w nowej grze, jakie
-   budowle odblokowuje, opis działania w obu językach oraz szóstą erę z technologią końcową „Sieć bez miedzi”.
+   budowle odblokowuje, opis działania w obu językach oraz szóstą erę: „Sieć bez miedzi”, Generator fuzji, Superserwer AI
+   i fabrykę bieżącego trybu (Fabryka biorobotów w zwykłej grze, Fabryka humanoidów w trybie zombie) jako cel drzewka.
 
    Dane. Technologia z `dziala: false` nie ma jeszcze działania i na tablicy leży odwrócona; projekt prądu odwraca
-   kartkę z powrotem przez dopisanie działania tutaj. Jej `dzialanie` to „Do tego trzeba prądu.”, poza technologią
-   końcową, która opisuje swoją sieć (dopisek o prądzie pokazuje tablica ze stanu kartki). Ery i kolumny tablicy
-   wynikają z `ERY`, nie z liczby 5. Budowle są identyfikatorami `BuildKind` jako napisami, bo nowe rodzaje dochodzą
-   dopiero z budowlami.
+   kartkę z powrotem przez dopisanie działania tutaj. Jej `dzialanie` to „Do tego trzeba prądu.”, poza pięcioma
+   technologiami ery 6 (sieć, generator, serwer i dwie fabryki), które opisują swoją rzecz (dopisek o prądzie pokazuje
+   tablica ze stanu kartki). Łańcuch ery 6 to `t_siec` → `t_fuzja` → `t_superserwer` → fabryka; `t_superserwer`, a nie
+   `t_serwer`, bo `t_serwer` to „Serwer z odzysku” z ery 5, wymaganie `t_model`. Celem drzewka (`koncowa`) są tylko
+   fabryki, każda z polem `tryb`, więc w każdym trybie jest dokładnie jeden cel. Ery i kolumny tablicy wynikają z `ERY`,
+   nie z liczby 5. Budowle są identyfikatorami `BuildKind` jako napisami, bo nowe rodzaje dochodzą dopiero z budowlami.
 
    Odczyty stanu. Pola `research` i `books` w `SimState` (src/sim/sim.ts) są opcjonalne i powstają dopiero przy
    pierwszym użyciu. Odczyty (`wiedza`, `kartka`, `tempoOsoby`, `kosztTech` i reszta) tylko czytają stan, niczego do
    niego nie dopisują, nie losują i nie znają języka bieżącego (napisy to `Tx`); jedyne wyjątki to opisane niżej
    książki: `dodajKsiazke` dopisuje `st.books`, a `ksiazkaZ` losuje z własnego generatora. Z sim.ts moduł importuje
-   wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd.
+   wyłącznie typ `SimState`, żeby sim.ts mógł importować stąd. Z src/sim/praca.ts bierze krzywą umiejętności
+   (`tempoPoziomu`), a praca.ts bierze stąd `badaniaDom` i `badaniaWidoczne` do wpisu `badania` (rodzaj pracy
+   „Badania”): to import w obie strony, bezpieczny, bo żaden z modułów nie woła drugiego przy wczytaniu, tylko w
+   funkcjach.
    `wiedza` to jedna wiedza osady dla tablicy i zarządu (`znajacy` wylicza, kto ją daje, do szczegółów kartki),
    `kartka` to stan jednej kartki tablicy, `tempoOsoby` to postęp na godzinę gry jednej siedzącej osoby. Dodawanie
    postępu w kroku, pracownia i polecenia `research` i `study` są w `Sim` (src/sim/sim.ts: chooseResearch,
@@ -38,9 +44,10 @@
    `SimState.bookLog` (pisze go `Sim.znajdzKsiazke`).
 
    Odczyt dla warunków zwycięstwa. `liczbaZbadanych`, `eraBadan`, `koncowaZbadana` i `siecWlaczona` składają
-   `GovInput.badania` (src/sim/gov.ts) dla ramy zwycięstwa. Sieć włącza polecenie `siec` w pracowni (menu pracowni w
-   orders.ts, `Sim.wlaczSiec`): tylko po zbadaniu technologii końcowej przy stojącej pracowni, a znacznik
-   (`st.research.siec`) powstaje dopiero wtedy i zostaje, także po rozbiórce pracowni. */
+   `GovInput.badania` (src/sim/gov.ts) dla ramy zwycięstwa; `koncowaZbadana` mówi, czy zbadana jest fabryka bieżącego
+   trybu (fabryka drugiego trybu w `techDone` się nie liczy). Sieć włącza polecenie `siec` w pracowni (menu pracowni w
+   orders.ts, `Sim.wlaczSiec`): tylko po zbadaniu samej sieci (`siecZbadana`, jeszcze przed fabryką) przy stojącej
+   pracowni, a znacznik (`st.research.siec`) powstaje dopiero wtedy i zostaje, także po rozbiórce pracowni. */
 
 import type { TechDef, TechDom } from '../content/data.ts';
 import { BOOKS, ERAS, TECH, TECH_DOMS } from '../content/data.ts';
@@ -48,9 +55,21 @@ import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import { tx } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
-import { DZIALANIE_EN, NAZWY_ERY_EN, NAZWY_TECH_EN, PRAD_EN, SIEC_EN, SIEC_ZOMBIE_EN } from './badania.en.ts';
+import {
+  DZIALANIE_EN,
+  FABRYKA_BIO_EN,
+  FABRYKA_HUM_EN,
+  FUZJA_EN,
+  NAZWY_ERY_EN,
+  NAZWY_TECH_EN,
+  PRAD_EN,
+  SERWER_AI_EN,
+  SIEC_EN,
+  SIEC_ZOMBIE_EN,
+} from './badania.en.ts';
+import { tempoPoziomu } from './praca.ts';
 import type { SimState } from './sim.ts';
-import type { GameMode } from './tryb.ts';
+import { type GameMode, modeOf } from './tryb.ts';
 
 export interface TechNowa {
   id: string;
@@ -66,9 +85,9 @@ export interface TechNowa {
   odblokowuje: readonly string[];
   /** czy technologia coś robi w nowej grze; bez tego jest odwrócona kartką, której nie da się wybrać */
   dziala: boolean;
-  /** technologia końcowa drzewka: dokładnie jedna, do niej prowadzą wszystkie ery */
+  /** cel drzewka (fabryka): w każdym trybie dokładnie jedna taka technologia, do niej prowadzą wszystkie ery */
   koncowa?: true;
-  /** tryb gry, w którym technologia jest dostępna; brak: oba */
+  /** tryb gry, w którym technologia jest dostępna; brak: oba (dziś mają go tylko dwie fabryki) */
   tryb?: GameMode;
   dzialanie: Tx;
   /** opis w trybie zombie, jeśli różni się od `dzialanie` (dziś tylko sieć, która w tym trybie jest cicha); UI w trybie
@@ -76,24 +95,46 @@ export interface TechNowa {
   dzialanieZombie?: Tx;
 }
 
-/** to, czego potrzebuje kartka od wpisu z 0.3; sieć końcowa ma wpis w tej samej postaci */
+/** to, czego potrzebuje kartka od wpisu z 0.3; technologie ery 6 mają wpisy w tej samej postaci */
 type Wpis = Pick<TechDef, 'name' | 'era' | 'dom' | 'lvl' | 'cost' | 'req'>;
 
-const ID_KONCOWA = 't_siec';
-/** koszt bazowy technologii końcowej; w 0.3 jej nie ma, a 150 leży nad najdroższą stamtąd (model językowy, 110) */
+const ID_SIEC = 't_siec';
+/** koszt bazowy sieci; w 0.3 jej nie ma, a 150 leży nad najdroższą stamtąd (model językowy, 110) */
 const KOSZT_BAZOWY_SIECI = 150;
-const ERA_KONCOWA = 6;
+/** era, w której leży łańcuch bez miedzi: sieć, generator, serwer i fabryka (ostatnia z `ERY`) */
+const ERA_BEZ_MIEDZI = 6;
 
-/** wpisy wszystkich technologii: 24 z 0.3 w kolejności data.ts i sieć końcowa na końcu */
+/** wpisy wszystkich technologii: 24 z 0.3 w kolejności data.ts i łańcuch ery 6 na końcu: sieć, generator fuzji,
+    superserwer AI i dwie fabryki (docs/superpowers/plans/2026-10-19-warunki-zwyciestwa-technologia.md, zadanie 1).
+    Koszty bazowe 160, 170 i 200 stoją nad siecią (150), a mnożnik ery 6 daje 480, 510 i 600 punktów. Identyfikator
+    serwera to `t_superserwer`, bo `t_serwer` jest już w `TECH` jako „Serwer z odzysku” (era 5, wymaganie `t_model`). */
 const WPISY: Readonly<Record<string, Wpis>> = {
   ...TECH,
-  [ID_KONCOWA]: {
+  [ID_SIEC]: {
     name: 'Sieć bez miedzi',
-    era: ERA_KONCOWA,
+    era: ERA_BEZ_MIEDZI,
     dom: 'elek',
     lvl: 4,
     cost: KOSZT_BAZOWY_SIECI,
     req: ['t_model', 't_pompy', 't_hydro', 't_druk', 't_drony'],
+  },
+  t_fuzja: { name: 'Generator fuzji', era: ERA_BEZ_MIEDZI, dom: 'elek', lvl: 4, cost: 160, req: [ID_SIEC] },
+  t_superserwer: { name: 'Superserwer AI', era: ERA_BEZ_MIEDZI, dom: 'it', lvl: 4, cost: 170, req: ['t_fuzja'] },
+  t_fabryka_bio: {
+    name: 'Fabryka biorobotów',
+    era: ERA_BEZ_MIEDZI,
+    dom: 'bud',
+    lvl: 4,
+    cost: 200,
+    req: ['t_superserwer'],
+  },
+  t_fabryka_hum: {
+    name: 'Fabryka humanoidów',
+    era: ERA_BEZ_MIEDZI,
+    dom: 'bud',
+    lvl: 4,
+    cost: 200,
+    req: ['t_superserwer'],
   },
 };
 
@@ -131,15 +172,42 @@ const DZIALAJA: Readonly<Record<string, { odblokowuje?: readonly string[]; pl: s
   t_ambu: { pl: 'Zdrowie wraca 1,6× szybciej (rany po walce, wychłodzenie, głód).' },
 };
 
+// `maWlasnyOpis` porównuje po tożsamości z tą stałą: domyślny opis odwróconej kartki musi jej używać, a nie równej kopii
 const PRAD: Tx = tx('Do tego trzeba prądu.', PRAD_EN);
 
 const SIEC_PL =
   'Sieć z aluminium zamiast miedzi, światłowodu i ogniw zalanych żywicą: prąd, którego bakteria nie ruszy.';
 
-/** technologia końcowa opisuje sieć, a nie „Do tego trzeba prądu”: ten dopisek pokazuje tablica ze stanu odwróconej
-    kartki; w trybie zombie ta sama sieć jest dodatkowo cicha (projekt warunków zwycięstwa) */
+/** technologie ery 6 opisują swoją rzecz, a nie „Do tego trzeba prądu”: ten dopisek pokazuje tablica ze stanu
+    odwróconej kartki (`maWlasnyOpis`); w trybie zombie ta sama sieć jest dodatkowo cicha (projekt warunków zwycięstwa) */
 const SIEC: Tx = tx(SIEC_PL, SIEC_EN);
 const SIEC_ZOMBIE: Tx = tx(`${SIEC_PL} W tym trybie jest też cicha, bo hałas ściąga stado.`, SIEC_ZOMBIE_EN);
+const FUZJA: Tx = tx(
+  'Generator fuzji: mała gwiazda w kontenerze po paczkomacie. Prąd dla serwera i fabryki.',
+  FUZJA_EN,
+);
+const SERWER_AI: Tx = tx(
+  'Superserwer AI z dawnego centrum danych. Sam pisze sobie regulamin, ale fabrykę poprowadzi.',
+  SERWER_AI_EN,
+);
+const FABRYKA_BIO: Tx = tx(
+  'Fabryka biorobotów odpornych na bakterię miedzi. Bioroboty położą nowe linie w całym mieście.',
+  FABRYKA_BIO_EN,
+);
+const FABRYKA_HUM: Tx = tx(
+  'Fabryka humanoidalnych żołnierzy. Wyjdą z bramy i oczyszczą miasto ze szwendaczy.',
+  FABRYKA_HUM_EN,
+);
+
+/** to, czego nie mają wpisy z 0.3, a mają technologie ery 6: własny opis (sieć także opis na tryb zombie), cel drzewka
+    (`koncowa`, tylko fabryki) i tryb gry (`tryb`), który w drugim trybie odwraca kartkę fabryki i chowa ją z tablicy */
+const DODATKI_ERY_6: Readonly<Record<string, Pick<TechNowa, 'dzialanie' | 'dzialanieZombie' | 'koncowa' | 'tryb'>>> = {
+  [ID_SIEC]: { dzialanie: SIEC, dzialanieZombie: SIEC_ZOMBIE },
+  t_fuzja: { dzialanie: FUZJA },
+  t_superserwer: { dzialanie: SERWER_AI },
+  t_fabryka_bio: { dzialanie: FABRYKA_BIO, koncowa: true, tryb: 'zwykly' },
+  t_fabryka_hum: { dzialanie: FABRYKA_HUM, koncowa: true, tryb: 'zombie' },
+};
 
 function techNowa(id: string, w: Wpis): TechNowa {
   const d = DZIALAJA[id];
@@ -156,15 +224,17 @@ function techNowa(id: string, w: Wpis): TechNowa {
 }
 
 export const TECHS: readonly TechNowa[] = Object.entries(WPISY).map(
-  ([id, w]): TechNowa =>
-    id === ID_KONCOWA
-      ? { ...techNowa(id, w), koncowa: true, dzialanie: SIEC, dzialanieZombie: SIEC_ZOMBIE }
-      : techNowa(id, w),
+  ([id, w]): TechNowa => ({ ...techNowa(id, w), ...DODATKI_ERY_6[id] }),
 );
 
 export const TECH_BY: Readonly<Record<string, TechNowa>> = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 
-/** ery 1–5 z `ERAS` (polskie nazwy bajt w bajt) i era 6 technologii końcowej; tablica bierze kolumny stąd */
+/** czy technologia ma własny opis działania, a nie domyślne „Do tego trzeba prądu”: mają go technologie z `DZIALAJA` i
+    pięć z ery 6 (sieć, generator, serwer i fabryki). Odwrócona kartka z własnym opisem (dziś tylko ery 6) dostaje na
+    tablicy dopisek o prądzie pod opisem, a kartka z domyślnym opisem ma go już jako opis. */
+export const maWlasnyOpis = (t: Pick<TechNowa, 'dzialanie'>): boolean => t.dzialanie !== PRAD;
+
+/** ery 1–5 z `ERAS` (polskie nazwy bajt w bajt) i era 6 sieci bez miedzi i fabryki; tablica bierze kolumny stąd */
 export const ERY: readonly { nr: number; nazwa: Tx }[] = [...ERAS.slice(1), 'Bez miedzi'].map((pl, i) => ({
   nr: i + 1,
   nazwa: tx(pl, NAZWY_ERY_EN[i + 1]),
@@ -183,7 +253,7 @@ function wpis(id: string): Wpis {
   return WPISY[id];
 }
 
-/** koszt badania: koszt z `TECH` (dla sieci końcowej 150) razy mnożnik jej ery */
+/** koszt badania: koszt z `TECH` (dla ery 6 koszt bazowy z `WPISY`: 150, 160, 170 i 200) razy mnożnik jej ery */
 export function kosztTech(id: string): number {
   const w = wpis(id);
   return w.cost * KOSZT_ERY[w.era];
@@ -223,20 +293,16 @@ export function nazwaEry(nr: number): Tx {
     wobec 16 przy 1,1), bo Przymorze jest już za szybkie, więc zostaje 1,1. Tabele: docs/POSTEP.md. */
 export const TEMPO_BAZOWE = 1.1;
 
-/** mnożnik tempa pracy według poziomu umiejętności: bez umiejętności dzisiejsze tempo, umiejętność tylko przyspiesza
-    (decyzja integratora i sesji pracy ludzi, 19.10.2026). To kopia `tempoPoziomu` (`1 + TEMPO_KROK * poziom`,
-    `TEMPO_KROK = 0.1`) z gałęzi `praca-ludzi` (src/sim/praca.ts), a nie `tempoPracy`, która ma jeszcze bramkę
-    pierwszego dnia, niepotrzebną badaniom. Przy scaleniu gałęzi ustępuje oryginałowi. */
-export const krzywaUmiejetnosci = (poziom: number): number => 1 + 0.1 * poziom;
-
 /** postęp na godzinę gry jednej siedzącej osoby w badaniu z dziedziny `dom`: tempo bazowe, krzywa umiejętności osoby
-    w tej dziedzinie i cechy z 0.3 (pracowity ×1,1, leniwy ×0,9, Mistrz Excela ×1,05). Badać może każdy, także bez
-    umiejętności; próg wiedzy dotyczy osady (`wiedza`), nie siedzącego. */
+    w tej dziedzinie (`tempoPoziomu` z src/sim/praca.ts: `1 + 0,1 · poziom`, bez umiejętności dzisiejsze tempo, wspólna
+    z pracą ludzi; bramki pierwszego dnia, którą ma `tempoPracy`, badania nie mają) i cechy z 0.3 (pracowity ×1,1,
+    leniwy ×0,9, Mistrz Excela ×1,05, nałożone tylko tutaj, raz). Badać może każdy, także bez umiejętności; próg wiedzy
+    dotyczy osady (`wiedza`), nie siedzącego. */
 export function tempoOsoby(o: Pick<Person, 'skills' | 'traits'>, dom: TechDom): number {
   const cecha = (c: string, mnoznik: number): number => (o.traits.includes(c) ? mnoznik : 1);
   return (
     TEMPO_BAZOWE *
-    krzywaUmiejetnosci(o.skills[dom] ?? 0) *
+    tempoPoziomu(o.skills[dom] ?? 0) *
     cecha('pracowity', 1.1) *
     cecha('leniwy', 0.9) *
     cecha('excel', 1.05)
@@ -356,9 +422,20 @@ export function odkrycia(st: Pick<SimState, 'research'>): { id: string; tick: nu
     .sort((a, b) => a.tick - b.tick || (a.id < b.id ? -1 : 1));
 }
 
-/** czy technologia końcowa drzewka jest zbadana */
+/** czy cel drzewka jest zbadany: fabryka bieżącego trybu, czyli technologia z `koncowa`, której `tryb` nie ma albo jest
+    trybem gry (`modeOf`; zapis sprzed trybów to zwykła gra). Fabryka drugiego trybu wpisana w `techDone` prawdy nie
+    daje. */
 export function koncowaZbadana(st: SimState): boolean {
-  return TECHS.some((t) => t.koncowa === true && !!st.techDone?.includes(t.id));
+  const mode = modeOf(st);
+  return TECHS.some(
+    (t) => t.koncowa === true && (t.tryb === undefined || t.tryb === mode) && !!st.techDone?.includes(t.id),
+  );
+}
+
+/** czy sieć bez miedzi (`t_siec`) jest zbadana; od niej, a nie od fabryki, zależy „Włączyć sieć” (menu pracowni,
+    `Sim.wlaczSiec`), więc sieć da się włączyć na drodze do fabryki */
+export function siecZbadana(st: SimState): boolean {
+  return !!st.techDone?.includes(ID_SIEC);
 }
 
 /** przy stole pracowni siedzą najwyżej dwie osoby naraz (każda dodaje swój postęp) */

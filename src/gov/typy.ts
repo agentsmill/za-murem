@@ -269,6 +269,9 @@ export interface GovInput {
   dead?: { id: string; name: string; cause: string; tick: number; f?: boolean; min?: number; cialo?: Cialo }[];
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry, po kolei; lista tylko rośnie, bez pola: żadnej */
   napady?: readonly { kto: 'handlarz' | 'wedrowiec'; tick: number }[];
+  /** zwerbowani wędrowcy (id `w…`) od początku gry, po kolei: imię, płeć i dokąd trafili (zarząd albo mieszkaniec);
+      lista tylko rośnie, bez pola: nikt */
+  werbunek?: readonly { first: string; f: boolean; dokad: 'zarzad' | 'mieszkaniec' }[];
   /** goście z klocków (src/gov/goscie.ts) w symulacji, po kolei, od najstarszego; lista tylko rośnie. Pole jest (choćby
       puste) tylko w grze z obcymi (`SimOpts.obcy`), bez niego zarząd nie planuje gości */
   goscie?: readonly GovGosc[];
@@ -294,12 +297,26 @@ export interface GovInput {
       na kształt siatki; strony, których świat nie ma, nie występują, a bez pola karta bierze największą dziurę (albo
       nie pozwala sprawdzić). `koza`: wolny kafelek przed kozą zarządu we wnętrzu jego mieszkania, bez kozy brak */
   strony?: { garaze?: number; blok?: number; koza?: number };
-  /** teren: ile budynków wspólny płot dołączył do naszego obwodu; bez pola droga terenu nie ma jak liczyć kamieni */
-  teren?: { przylaczone: number };
+  /** teren: `przylaczone` to ile budynków wspólny płot dołączył do naszego obwodu (bez pola droga terenu nie ma jak liczyć
+      kamieni). `mozliwe` to ile budynków w okolicy (z drzwiami na zewnątrz, do 150 m od drzwi siedziby) da się w ogóle
+      otoczyć wspólnym płotem z pierwotnej siatki, liczone raz na świat (`doOtoczenia` w src/sim/sasiedzi.ts) i takie samo
+      przed płotem i po nim. Zero znaczy, że na tej mapie płot nie dosięga żadnego sąsiada (np. każdy stoi za jezdnią):
+      droga terenu mówi wtedy „Wkrótce” zamiast „co dalej”. Bez pola `mozliwe` zarząd zakłada, że się da. */
+  teren?: { przylaczone: number; mozliwe?: number };
   /** badania (src/sim/badania.ts): czy stoi pracownia, ile technologii z drzewka jest zbadanych (identyfikatory spoza
-      drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy technologia końcowa jest zbadana i czy sieć jest
-      już włączona (polecenie `siec` w pracowni); bez pola zarząd zakłada grę bez badań. Czyta je rama zwycięstwa. */
-  badania?: { pracownia: boolean; zbadane: number; era: number; koncowa: boolean; siecWlaczona: boolean };
+      drzewka się nie liczą), najwyższa era wśród nich (0: nic), czy zbadana jest technologia końcowa, czyli fabryka
+      bieżącego trybu (`koncowa`), i czy sieć jest już włączona (polecenie `siec` w pracowni); `fabryka`: fabryka
+      uruchomiona (etap 2, po prądzie z projektu gospodarki), dziś żaden odczyt go nie ustawia, a bez niego droga
+      technologii kończy się przed szóstym kamieniem; bez pola `badania` zarząd zakłada grę bez badań. Czyta je rama
+      zwycięstwa (kamienie drogi „Prąd bez miedzi”, razem z `techDone`). */
+  badania?: {
+    pracownia: boolean;
+    zbadane: number;
+    era: number;
+    koncowa: boolean;
+    siecWlaczona: boolean;
+    fabryka?: boolean;
+  };
   /** książki osady według dziedziny, z symulacji (w wiedzy liczą się najwyżej 2 na dziedzinę); bez pola: żadnych */
   books?: Partial<Record<TechDom, number>>;
   /** zbadane technologie z tickiem ukończenia, od najstarszej, z nazwą i działaniem w obu językach; zarząd dopisuje do
@@ -310,6 +327,11 @@ export interface GovInput {
       z dziedziny, poszła na drewno. Zarząd dopisuje do kroniki wpisy z tickiem nowszym niż `GovState.czytane`.
       Książki z wydarzenia „książki” tu nie trafiają: wydarzenie ma własny wpis. Bez pola: żadnych. */
   znaleziska?: readonly { tick: number; dom: TechDom; tytul: string; podpalka?: boolean }[];
+  /** polecenia, które przepadły, bo wróg przerywał je trzy razy (dziennik symulacji `SimState.przerwane`), po kolei:
+      tick, imię osoby, klucz tego, co robiła (klucz komendy, przy wraku 'wreck:szukaj' albo 'wreck:rozbierz') i kto
+      przerwał ostatni raz (`kto`: 'zombie', 'szabrownik' albo 'wrogi' człowiek; bez pola szwendacze). Zarząd dopisuje do
+      kroniki wpisy z tickiem nowszym niż `GovState.czytane` (src/gov/znaleziska.ts). Bez pola: żadnych. */
+  przerwane?: readonly { tick: number; imie: string; co: string; kto?: 'zombie' | 'szabrownik' | 'wrogi' }[];
   /** zbadane technologie (identyfikatory z src/sim/badania.ts); EventHost.tech czyta stąd, bez pola żadna */
   techDone?: readonly string[];
   /** wiedza osady w dziedzinach, ta sama co na tablicy badań (najlepsza osoba zarządu albo lokatora siedziby na
@@ -510,7 +532,7 @@ export interface NightCard {
   people: NightCardPerson[];
   advice: Tx;
   /** koza zarządu na noc (bez kozy brak): drewno w zapasie razem z tym w kozie, ile zje do 6:00 przy dyżurze
-      od zatwierdzenia karty (2 sztuki na godzinę) i do której godziny starczy ognia ('6:00' to do rana) */
+      od zatwierdzenia karty (sztuka na godzinę) i do której godziny starczy ognia ('6:00' to do rana) */
   wood?: { have: number; need: number; until: string };
 }
 
@@ -685,6 +707,8 @@ export interface GovState {
   pogrzebN?: number;
   /** ile napaści z GovInput.napady osiedle już policzyło (pole od pierwszej napaści) */
   napadN?: number;
+  /** ilu zwerbowanych z GovInput.werbunek zarząd już zapisał w kronice (pole od pierwszego) */
+  werbunekN?: number;
   /** mapa miasta: stan odwiedzonych miejsc; pole od `wlaczMiasto` (opcja `miasto`), bez niego zarząd gra na TARGETS */
   miasto?: StanMiasta;
   /** wyprawy dzienne w drodze; pole od pierwszego wyjścia z mapy miasta */
@@ -692,8 +716,9 @@ export interface GovState {
   /** warunki zwycięstwa: kamienie milowe dróg, zwycięstwa, licznik celu ludności i kolejka epilogów w oknie; pole od
       `wlaczZwyciestwo` (src/gov/zwyciestwo.ts), bez niego zarząd nie liczy dróg i stan zostaje jak przed nimi */
   zwyciestwo?: StanZwyciestwa;
-  /** tick ostatniego odkrycia albo znaleziska książki (GovInput.odkrycia, znaleziska), które zarząd już wpisał do
-      kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań i książek go nie ma */
+  /** tick ostatniego odkrycia, znaleziska książki albo przepadłego polecenia (GovInput.odkrycia, znaleziska, przerwane),
+      które zarząd już wpisał do kroniki; pole powstaje przy pierwszym takim wpisie, więc gra bez badań, książek
+      i przerwanych poleceń go nie ma */
   czytane?: number;
   /** goście z klocków (src/gov/wizyta.ts): `n` ile gości zarząd już zaplanował (id `g<n>`), `czytane` ile pierwszych
       wpisów `GovInput.goscie` to wizyty już zakończone i rozliczone, `aktywny` to jedyna wizyta, którą zarząd

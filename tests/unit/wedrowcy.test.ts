@@ -9,6 +9,7 @@ import { wreckStage } from '../../src/sim/surowce.ts';
 import { CREW_SEARCH_TICKS } from '../../src/sim/wedrowcy.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 import { pl } from './po-angielsku.ts';
+import { wylaczAutomat } from './praca-pomoc.ts';
 
 const w = mockBlockM2();
 const size = w.size;
@@ -155,6 +156,9 @@ describe('Wędrowcy', () => {
 describe('Obce ekipy', () => {
   it('dwie osoby przeszukują nieprzeszukany wrak, łup przepada, wrak przeszukany; w tym czasie zarząd go nie zacznie', () => {
     const sim = game(3, 10, 'obcy');
+    // automat pracy ludzi (w zwykłym trybie za dnia także za siatką) ściąłby w tym czasie drzewo i dołożył stertę, a test
+    // liczy tylko łup ekipy
+    wylaczAutomat(sim);
     const st = sim.st;
     sim.step();
     const crew = kind(st, 'obcy');

@@ -16,7 +16,7 @@ import { gateTiles } from '../../src/sim/perimeter.ts';
 import { createSim, type Job, Sim, STAY_MEAL } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu, buildPanelHtml } from '../../src/ui/budowa.ts';
-import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
+import { goalsOf } from '../../src/ui/cele.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { aptCard, aptState, aptView } from '../../src/ui/mieszkania.ts';
 import {
@@ -33,13 +33,15 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { comingText } from '../../src/ui/przybycie.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 beforeEach(() => ustawJezyk('en'));
 afterEach(() => ustawJezyk('pl'));
 
-/** słowa z bloku, których w domu nie ma w angielskich tekstach interfejsu (siedziba w domu to dom komitetu, nie mieszkanie) */
+/** słowa z bloku, których w domu nie ma w angielskich tekstach interfejsu (siedziba w domu to dom komitetu, nie mieszkanie);
+    „Research board” to tablica badań ze słowniczka, a nie zarząd, więc „board” po „research” wolno, tak jak „garden gate” */
 const BLOKOWE =
-  /co-op|\bboard\b|general meeting|\bestate\b|carpet rack|stairwell|\bblocks?\b|\bflats?\b|pavilion|common room|service charge|\bresidents?\b|(?<!garden )\bgate\b/i;
+  /co-op|(?<!research )\bboard\b|general meeting|\bestate\b|carpet rack|stairwell|\bblocks?\b|\bflats?\b|pavilion|common room|service charge|\bresidents?\b|(?<!garden )\bgate\b/i;
 
 function game(key: string) {
   const { w, seed } = demoWorld(key);
@@ -119,13 +121,21 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
   it('samouczek i cele drugiego dnia', () => {
     const { sim } = game('zielonki');
     const gov = newGov(1);
-    const goals = [15, 21].flatMap((hour) =>
+    const goals: { key: string; text: string; how: string }[] = [15, 21].flatMap((hour) =>
       [false, true].flatMap((touch) => goalsOf(sim.st, gov, { touch, kitchen: 9, hour, words, wordsEn: e })),
     );
     expect(goals.find((g) => g.key === 'rozkaz')?.text).toBe('Send them to the dead tree in the garden.');
-    const day2 = goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words, wordsEn: e });
+    const day2 = celeR1(sim.st, sim.w, gov, { touch: false, words, wordsEn: e });
     expect(day2.find((g) => g.key === 'przeszukaj')?.text).toBe('Search the house.');
-    goals.push(...day2);
+    // najpierw zaznaczyć kogoś, potem prawy przycisk w pokoju domu; karta domu tylko pokazuje, co już przeszukane
+    expect(day2.find((g) => g.key === 'przeszukaj')?.how).toBe(
+      'Select someone from the committee and right-click inside a room of the house: “Search the …”. To see what has been searched, click the house while nobody is selected and read its card.',
+    );
+    const touchDay2 = celeR1(sim.st, sim.w, gov, { touch: true, words, wordsEn: e });
+    expect(touchDay2.find((g) => g.key === 'przeszukaj')?.how).toBe(
+      'Tap someone from the committee and press and hold inside a room of the house: “Search the …”. To see what has been searched, tap the house while nobody is selected and read its card.',
+    );
+    goals.push(...day2, ...touchDay2);
     for (const g of goals) expect(`${g.text} ${g.how}`).not.toMatch(BLOKOWE);
   });
 
@@ -154,6 +164,9 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
     expect(visible(aptCard(v, false, words, e))).not.toMatch(BLOKOWE);
     expect(aptCard(v, false, words, e)).toContain('<h2>The house</h2>');
     expect(helpSheet(false, false, words, e).body).toContain('Building and searching the house');
+    expect(helpSheet(false, false, words, e).body).toContain(
+      'Version 0.4 has nights behind the fence, building, a house to search, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.',
+    );
     const sheet = buildPanelHtml(
       buildMenu({}, (kind) => kind !== 'magazyn', words, e),
       { tab: null, kind: null },
@@ -189,10 +202,26 @@ describe('po angielsku w bloku (Przymorze)', () => {
     expect(eventSheet(event(), words, e).kicker).toBe('On the estate');
     expect(lawSheet(law(3), words, e).title).toBe('Board resolution');
     expect(helpSheet(false, false, words, e).body).toContain('You are the board of a housing co-op in 2051.');
+    expect(helpSheet(false, false, words, e).body).toContain(
+      'Version 0.4 has nights behind the fence, building, empty flats to search and repair, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.',
+    );
     expect(comingText(1, words, e)).toBe('1 person is coming in from the gate');
     const { sim, w } = game('przymorze');
     const core = sim.st.pawns.find((p) => p.kind === 'core')!;
     const labels = commandsAt(sim.st, w, [core.id], gateTiles(w)[0]).map((m) => m.label);
     expect(labels).toContain('Keep watch at the gate');
+  });
+
+  it('cel przeszukania: zaznaczyć osobę z zarządu, potem prawy przycisk w pustym mieszkaniu', () => {
+    const { sim, w } = game('przymorze');
+    const day2 = (touch: boolean) =>
+      celeR1(sim.st, w, null, { touch, words, wordsEn: e }).find((g) => g.key === 'przeszukaj')!;
+    expect(day2(false).text).toBe('Search an empty flat.');
+    expect(day2(false).how).toBe(
+      'Select someone from the board and right-click inside an empty flat: “Search the …”. To see which flats are empty, click a flat while nobody is selected and read its card.',
+    );
+    expect(day2(true).how).toBe(
+      'Tap someone from the board and press and hold inside an empty flat: “Search the …”. To see which flats are empty, tap a flat while nobody is selected and read its card.',
+    );
   });
 });

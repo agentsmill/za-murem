@@ -120,7 +120,7 @@ describe('t_okna: heatStep z dodatkiem do temperatury bazowej', () => {
 });
 
 describe('koza z beczki: pali drewno i grzeje swój pokój', () => {
-  it('pół godziny na sztukę jak koza zarządu, pokój cieplejszy niż u bliźniaka bez niej, światło w pokoju', () => {
+  it('godzina na sztukę jak koza zarządu, pokój cieplejszy niż u bliźniaka bez niej, światło w pokoju', () => {
     const z = gra();
     const bez = gra();
     const beczka = rzecz(z.st, 'koza_beczka', ...BECZKA, { fuel: full('koza_beczka') });
@@ -128,8 +128,8 @@ describe('koza z beczki: pali drewno i grzeje swój pokój', () => {
       z.sim.step();
       bez.sim.step();
     }
-    // godzina to 2 sztuki z 4: 800 z 1600 ticków ognia
-    expect(beczka.fuel).toBe(full('koza_beczka') - 2 * BURN_TICKS);
+    // godzina to sztuka z 4: 800 z 3200 ticków ognia
+    expect(beczka.fuel).toBe(full('koza_beczka') - BURN_TICKS);
     expect(z.st.temps[POKOJ] - bez.st.temps[POKOJ]).toBeGreaterThan(4);
     expect(z.sim.boost[POKOJ]).toBeGreaterThan(0);
     expect(z.sim.light[POKOJ]).toBe(1);
@@ -144,13 +144,13 @@ describe('koza z beczki: pali drewno i grzeje swój pokój', () => {
     expect(z.sim.light[POKOJ]).toBe(0);
   });
 
-  it('wagi drewna: koza i koza z beczki jedna, kocioł trzy; koza zarządu pali jak dawniej (sztuka w pół godziny)', () => {
+  it('wagi drewna: koza i koza z beczki jedna, kocioł trzy; koza zarządu pali sztukę na godzinę', () => {
     expect(PALENISKA).toEqual({ koza: 1, koza_beczka: 1, kociol: 3 });
     const z = gra();
     const koza = kozaZarzadu(z.st);
     koza.fuel = full('koza');
     for (let k = 0; k < TICKS_PER_HOUR; k++) z.sim.step();
-    expect(koza.fuel).toBe(full('koza') - 2 * BURN_TICKS);
+    expect(koza.fuel).toBe(full('koza') - BURN_TICKS);
   });
 });
 
@@ -164,10 +164,10 @@ describe('kocioł: wszystkie pokoje naszych mieszkań, drewno trzy razy szybciej
     for (let k = 0; k < TICKS_PER_HOUR; k++) z.sim.step();
     const beczkaZjadla = full('koza_beczka') - beczka.fuel;
     const kociolZjadl = full('kociol') - kociol.fuel;
-    expect(beczkaZjadla).toBe(2 * BURN_TICKS);
+    expect(beczkaZjadla).toBe(BURN_TICKS);
     expect(kociolZjadl).toBe(3 * beczkaZjadla);
-    // w sztukach drewna: 2 i 6 na godzinę
-    expect(kociolZjadl / BURN_TICKS).toBe(6);
+    // w sztukach drewna: 1 i 3 na godzinę
+    expect(kociolZjadl / BURN_TICKS).toBe(3);
   });
 
   it('grzeje wszystkie pomieszczenia naszego mieszkania, a cudze mieszkanie najwyżej przez drzwi klatki', () => {
@@ -337,16 +337,17 @@ describe('karta nocy: nightWood i GovInput.paleniska', () => {
   });
 
   it('bez pola i z jednym paleniskiem liczy jak dziś', () => {
-    expect(nightWood(at(22, 20))).toEqual({ have: 20, need: 16, until: '6:00' });
+    expect(nightWood(at(22, 20))).toEqual({ have: 20, need: 8, until: '6:00' });
     expect(nightWood(at(22, 20, 1))).toEqual(nightWood(at(22, 20)));
-    expect(nightWood(at(20, 8))).toEqual({ have: 8, need: 20, until: '0:00' });
+    expect(nightWood(at(20, 4))).toEqual({ have: 4, need: 10, until: '0:00' });
   });
 
   it('z paleniska: 3 potrzeba trzy razy więcej drewna i starcza na trzy razy krócej', () => {
-    expect(nightWood(at(22, 60, 3))).toEqual({ have: 60, need: 3 * 16, until: '6:00' });
-    expect(nightWood(at(22, 20, 3))).toEqual({ have: 20, need: 48, until: '1:00' });
+    expect(nightWood(at(22, 60, 3))).toEqual({ have: 60, need: 3 * 8, until: '6:00' });
+    expect(nightWood(at(22, 9, 3))).toEqual({ have: 9, need: 24, until: '1:00' });
+    expect(nightWood(at(22, 9))).toEqual({ have: 9, need: 8, until: '6:00' });
     expect(nightWood(at(22, 20, 3)).need).toBe(3 * nightWood(at(22, 20)).need);
-    expect(WOOD_PER_HOUR).toBe(2);
+    expect(WOOD_PER_HOUR).toBe(1);
   });
 
   it('govInput niesie liczbę palenisk dopiero, gdy stoją nowe (koza zarządu 1, beczka 1, kocioł 3)', () => {

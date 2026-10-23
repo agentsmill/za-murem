@@ -41,6 +41,7 @@ import {
   reportSheet,
 } from '../../src/ui/okna.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
+import { nowyStanSciezki, stanZZapisu, zalicz, zdarzenieUi } from '../../src/ui/sciezka.ts';
 import { govFence, govLight } from '../../src/ui/siatka.ts';
 import { deg, esc, num, pct, signed } from '../../src/ui/tekst.ts';
 import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSave } from '../../src/ui/zapis.ts';
@@ -235,10 +236,13 @@ describe('cele pierwszego dnia', () => {
     expect(currentGoal(goalsOf(st, null, o))?.how).toContain('W kuchni teraz 9°C');
     st.tut.step = TUT_STEPS.length;
     const gov = newGov(1);
-    // drewno na noc: postęp w podpowiedzi, zaliczone raz osiągnięte, przepada z kartą nocy
+    // drewno na wieczór: postęp w podpowiedzi (3 sztuki to ogień do snu, spalony mebel idzie najpierw do kozy),
+    // zaliczone raz osiągnięte, przepada z kartą nocy
     const wood = currentGoal(goalsOf(st, gov, { ...o, wood: 2 }))!;
     expect(wood.key).toBe('drewno');
-    expect(wood.how).toContain('Drewna na zapas: 2 z 6');
+    expect(wood.text).toBe('Przygotujcie drewno na wieczór.');
+    expect(wood.how).toContain('Drewna na zapas: 2 z 3, czyli ogień do snu.');
+    expect(wood.how).toContain('trafi najpierw do kozy, reszta na skład');
     expect(currentGoal(goalsOf(st, gov, { ...o, wood: 1, woodReady: true }))?.key).toBe('noc');
     gov.night = { confirmed: true } as GovState['night'];
     const lapsed = goalsOf(st, gov, o).find((x) => x.key === 'drewno')!;
@@ -349,7 +353,7 @@ describe('okna zarządu', () => {
     expect(r.body).toContain('drewno 4');
     expect(r.body).toContain('+1,5');
     expect(r.body).toContain('−1');
-    expect(burnSheet('mebloscianka', 'Anna Nowak', false).body).toContain('Da 6 sztuk drewna, około 3 h ognia');
+    expect(burnSheet('mebloscianka', 'Anna Nowak', false).body).toContain('Da 6 sztuk drewna, około 6 h ognia');
     expect(burnSheet('krzeslo', null, true).body).toContain('łagodzi to o połowę');
   });
 });
@@ -389,7 +393,7 @@ describe('dyżur przy kozie', () => {
   it('karta nocy, posterunek w symulacji, pasek i raport rano o kuchni', () => {
     const { sim, w, seed } = fresh();
     sim.st.tick = tickAt(20);
-    // od 20:00 do 6:00 koza zje 20 sztuk (2 na godzinę); 40 w zapasie, bo szabrownicy mogą część wynieść
+    // od 20:00 do 6:00 koza zje 10 sztuk (sztuka na godzinę); 40 w zapasie, bo szabrownicy mogą część wynieść
     const wood = emptyEffects();
     wood.stock.wood = 40;
     applyGov(sim.st, w, wood);
@@ -403,16 +407,16 @@ describe('dyżur przy kozie', () => {
     const koza = who.options.find((o) => o.key === KOZA_KEY)!;
     expect(optionShort(koza, false)).toBe('Czuwa przy kozie');
     expect(optionDetail(koza)).toBe('Nie śpi i pilnuje ognia w kozie, drewna starczy do rana.');
-    expect(p.card.wood).toEqual({ have: 40, need: 20, until: '6:00' });
+    expect(p.card.wood).toEqual({ have: 40, need: 10, until: '6:00' });
     // pas „Koza w nocy”: bez dyżuru zgaśnie, z dyżurem do rana; dyżur nie odstrasza szabrowników
     const none = Object.fromEntries(p.card.people.map((c) => [c.id, 'sen']));
     const duty = { ...none, [who.id]: KOZA_KEY };
     const names = { [who.id]: who.name };
     expect(nightSheet(p.card, none, nightOdds(gov, i, p.card, none)).body).toContain(
-      '<small class="odd-k">Koza w nocy</small><b class="odd-v">zgaśnie</b><em class="odd-note">nikt nie czuwa · drewno 40 szt., noc zje 20 (2 na godzinę)',
+      '<small class="odd-k">Koza w nocy</small><b class="odd-v">zgaśnie</b><em class="odd-note">nikt nie czuwa · drewno 40 szt., noc zje 10 (1 na godzinę)',
     );
     expect(oddsHtml(p.card, duty, nightOdds(gov, i, p.card, duty), names)).toContain(
-      `<b class="odd-v">do rana</b><em class="odd-note">czuwa ${esc(who.name)} · drewno 40 szt., noc zje 20`,
+      `<b class="odd-v">do rana</b><em class="odd-note">czuwa ${esc(who.name)} · drewno 40 szt., noc zje 10`,
     );
     expect(nightOdds(gov, i, p.card, duty).now).toBe(nightOdds(gov, i, p.card, none).now);
     // zatwierdzenie: osoba idzie do kozy (posterunek 'koza' w odczycie), pasek o tym mówi
@@ -522,6 +526,8 @@ describe('zapis gry', () => {
     const back = readSave(store)!;
     expect(back.sim).toEqual(sim.st);
     expect(back.gov).toEqual(gov);
+    // zapis bez stanu ścieżki celów (sprzed ścieżki) wczytuje się jak dotąd, bez pola
+    expect('cele' in back).toBe(false);
     expect(saveLabel(back)).toBe(`${data.name}, dzień 1, 15:00`);
     // wczytany stan daje tę samą symulację
     const again = new Sim(sim.w, back.sim);
@@ -544,6 +550,29 @@ describe('zapis gry', () => {
     };
     expect(writeSave(save, full)).toBe(false);
     expect(writeSave(save, null)).toBe(false);
+  });
+  it('stan ścieżki celów jedzie w zapisie obok stanu gry i nie zmienia jego przebiegu', () => {
+    const { sim, seed } = fresh();
+    const { data } = demo('przymorze');
+    const gov = newGov(seed);
+    const cele = zalicz(zdarzenieUi(nowyStanSciezki(), 'lista', 40), 'r0.drewno', 41);
+    const save: Save = { v: 1, at: 1, data, seed, sim: sim.st, gov, screen: 12.5, cele };
+    const store = memory();
+    expect(writeSave(save, store)).toBe(true);
+    const back = readSave(store)!;
+    expect(back.cele).toEqual(cele);
+    expect(back.sim).toEqual(sim.st);
+    expect(back.gov).toEqual(gov);
+    // ścieżka czyta stan gry i niczego w nim nie zapisuje: wczytana symulacja przebiega tak samo
+    const again = new Sim(sim.w, back.sim);
+    for (let k = 0; k < 200; k++) {
+      sim.step();
+      again.step();
+    }
+    expect(again.hash()).toBe(sim.hash());
+    // stan ścieżki z zapisu to ten sam stan, a zapis bez niego (stary) zaczyna od pierwszego dnia
+    expect(stanZZapisu(back.cele, back.sim, back.gov)).toEqual(cele);
+    expect(stanZZapisu(undefined, back.sim, back.gov)).toEqual(nowyStanSciezki());
   });
   it('odcisk świata: ten sam dla tego samego osiedla, inny dla innego', () => {
     const a = worldKey(demo('przymorze').w);

@@ -360,8 +360,9 @@ a.btn {
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
-/* Budowa i Menu przy prawej krawędzi także wtedy, gdy zawiną się do następnego wiersza (długa nazwa osiedla) */
-#btnBuild {
+/* Praca, Budowa i Menu przy prawej krawędzi także wtedy, gdy zawiną się do następnego wiersza (długa nazwa osiedla):
+   odstęp do prawej bierze pierwszy z nich (Praca; „Mapa miasta” z miasto.css przejmuje go, gdy jest w pasku) */
+#btnPraca {
   margin-left: auto;
 }
 /* licznik klatek tylko na szerokim ekranie: przy 1440 px pasek z materiałami i budową mieści się w jednym
@@ -586,17 +587,19 @@ a.btn {
 
 @media (max-width: 640px) {
   .top {
-    padding: 5px 8px;
-    gap: 6px 8px;
+    padding: 5px 6px;
+    gap: 6px 6px;
   }
   /* na telefonie 390 px: szyld, zegar i (gdy stoi pracownia) ikona „Badania” w pierwszym wierszu (zegar dopełnia wiersz,
-     niżej), tempo, alarm, budowa i menu razem w drugim, stan pod nimi; kolejność w wierszu z order */
+     niżej), tempo, alarm, praca, budowa i menu razem w drugim (dlatego odstępy i boki przycisków ciaśniejsze niż na
+     komputerze: z „Pracą” brakowało 19 px i „Menu” spadało do trzeciego wiersza), stan pod nimi (order w .stats);
+     kolejność w wierszu z order */
   .top .btn {
-    padding: 6px 6px;
+    padding: 6px 5px;
     font-size: 13px;
   }
   .speed {
-    gap: 3px;
+    gap: 2px;
   }
   .top .sign {
     order: -3;
@@ -631,6 +634,11 @@ a.btn {
   }
   .fps,
   .top .season {
+    display: none;
+  }
+  /* przycisk „Praca” (margin-left: auto) odsuwa swoją grupę do prawej, a pusty .spacer brał jeszcze po odstępie z obu
+     stron i wypychał „Menu” do trzeciego wiersza */
+  .spacer {
     display: none;
   }
   .mapctl {
@@ -719,7 +727,22 @@ a.btn {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--lamp);
-  cursor: default;
+  cursor: pointer;
+}
+/* nagłówek zwija i rozwija okienko, na telefonie i na komputerze (aria-expanded mówi, w którym stanie jest); strzałka
+   na końcu. Zwinięte okienko ma w HTML tylko bieżący cel (celeHtml w src/ui/sciezka.ts), więc CSS niczego nie chowa. */
+.goals-head::after {
+  content: "▴";
+  margin-left: 6px;
+  color: var(--ink-dim);
+}
+.goals-head[aria-expanded="false"]::after {
+  content: "▾";
+}
+/* all: unset zdejmuje też obrys fokusu, a nagłówek obsługuje się i klawiaturą */
+.goals-head:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
 }
 .goals-n {
   margin-left: auto;
@@ -785,6 +808,45 @@ a.btn {
   font-weight: 400;
   font-size: 13px;
   color: var(--lamp);
+}
+/* cel, którego teraz nie da się ruszyć (karta nocy dopiero o 20:00): ciemniejszy tekst i przerywane kółko, a krótki
+   dopisek pod nim zostaje czytelny (kontrast tekstu 4,5 : 1, bez przezroczystości, która psułaby dopisek) */
+.goal.czeka {
+  --tone: #858a85;
+}
+.goal.czeka::before {
+  border-style: dashed;
+}
+.goal-czeka {
+  display: block;
+  margin-top: 1px;
+  font-weight: 400;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-dim);
+}
+/* postęp drogi do zwycięstwa po ostatnim rozdziale („12 z 25”) */
+.goal-postep {
+  display: block;
+  margin-top: 1px;
+  font-weight: 400;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+/* okazja (zdarzenie w grze: handlarz, napad, stado, ugryzienie…): blok nad rozdziałem, z bursztynowym paskiem z lewej */
+.goals-okazja {
+  margin: 2px 0 8px -4px;
+  padding: 3px 6px 4px 7px;
+  border-left: 3px solid var(--lamp);
+  border-radius: 0 3px 3px 0;
+  background: rgb(230 165 64 / 0.1);
+}
+.goals-okazja .goals-head {
+  color: var(--ink);
+}
+.goals-okazja .goal-list {
+  margin-top: 2px;
 }
 
 .treemark {
@@ -1191,6 +1253,24 @@ a.btn {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* linia „Cel: …” ścieżki celów pod nagłówkiem okna (karta nocy, uchwała, spotkanie): jedna linia z bursztynowym
+   paskiem z lewej, poza przewijaną treścią */
+.sheet-cel {
+  margin: 8px 10px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--lamp);
+  border-radius: 0 3px 3px 0;
+  background: rgb(230 165 64 / 0.1);
+  font-size: 14px;
+  line-height: 1.3;
+}
+.sheet-cel b {
+  margin-right: 4px;
+  font: 700 12px / 1.3 var(--f-sign);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lamp);
+}
 .sheet-body {
   padding: 12px 14px 4px;
   overflow-y: auto;
@@ -1562,20 +1642,6 @@ a.btn {
     top: calc(var(--top-h, 96px) + 14px);
     width: calc(100% - 66px);
     padding: 4px 8px 6px;
-  }
-  .goals:not(.open) .goal-list > :not(.now) {
-    display: none;
-  }
-  .goals-head {
-    cursor: pointer;
-  }
-  .goals-head::after {
-    content: "▾";
-    margin-left: 6px;
-    color: var(--ink-dim);
-  }
-  .goals.open .goals-head::after {
-    content: "▴";
   }
   .goal {
     font-size: 13px;
@@ -2163,6 +2229,20 @@ a.btn {
 .tb-pauza {
   font: 700 13px / 1.2 var(--f-sign);
   letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lamp);
+}
+/* linia „Cel: …” ścieżki celów obok „Gra stoi” (tablica zasłania okienko celów) */
+.tb-linia-celu {
+  padding-left: 8px;
+  border-left: 3px solid var(--lamp);
+  font: 500 14px / 1.2 var(--f-body);
+  color: var(--ink);
+}
+.tb-linia-celu b {
+  margin-right: 4px;
+  font: 700 12px / 1.2 var(--f-sign);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--lamp);
 }

@@ -124,7 +124,7 @@ describe('odkrycieSheet: karta Odkrycie', () => {
     expect(`${s.kicker}${s.title}${s.body}${s.foot}`).not.toMatch(/Odkrycie|Postaw|Dalej|Następne/);
   });
 
-  it('technologia końcowa w trybie zombie opisuje cichą sieć', () => {
+  it('sieć bez miedzi w trybie zombie opisuje cichą sieć', () => {
     expect(odkrycieSheet('t_siec', 'zombie').body).toContain('cicha');
     expect(odkrycieSheet('t_siec').body).not.toContain('cicha');
   });

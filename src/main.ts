@@ -4,16 +4,20 @@
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
-   raport), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa miasta”, klawisz M i minimapa w rogu ekranu
-   (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem wypraw dziennych (src/ui/wyprawa.ts: wybór osób,
-   podsumowanie, potwierdzenie), tablica badań (src/ui/badania.ts: warstwa na pełnym ekranie z pauzą, przycisk
-   „Badania”, klawisz T, samo otwarcie po postawieniu pracowni, ?badania=demo do zrzutów), karta „Odkrycie” po
-   ukończeniu badania (w kolejce okien jak spotkanie z sąsiadami, przyciski „Postaw <budowla>”, „Następne badanie”,
-   „Dalej”), podpowiedź o książce znalezionej w przeszukaniu, znaczek NOWE w menu budowy (pamięć przeglądarki,
-   src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie. ?kwadraty=3x3 (albo lista „1,0;0,-1”,
-   src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych dema (public/demo/<klucz>-kwadraty.json),
-   z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania, symulacja i polecenia znają sam dom
-   (`dodajKwadraty`, window.zm.kwadraty). */
+   raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału i okazji co odświeżenie
+   okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, stan w zapisie `Save.cele`;
+   zdarzenia samego interfejsu (lista ludzi, karty mieszkańca i budynku, ekran dróg) idą do stanu ścieżki przez
+   `zdarzenieUi`; linia „Cel: …” w oknach karty nocy, uchwały, spotkania i na tablicy badań z `celWOknie`;
+   `window.zm.cele()` i `window.zm.rozdzial(k)` do zrzutów), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa
+   miasta”, klawisz M i minimapa w rogu ekranu (src/ui/minimapa.ts), gra stoi przy otwartym oknie) z wysyłaniem
+   wypraw dziennych (src/ui/wyprawa.ts: wybór osób, podsumowanie, potwierdzenie), tablica badań (src/ui/badania.ts:
+   warstwa na pełnym ekranie z pauzą, przycisk „Badania”, klawisz T, samo otwarcie po postawieniu pracowni,
+   ?badania=demo do zrzutów), karta „Odkrycie” po ukończeniu badania (w kolejce okien jak spotkanie z sąsiadami,
+   przyciski „Postaw <budowla>”, „Następne badanie”, „Dalej”), podpowiedź o książce znalezionej w przeszukaniu, znaczek
+   NOWE w menu budowy (pamięć przeglądarki, src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie.
+   ?kwadraty=3x3 (albo lista „1,0;0,-1”, src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych
+   dema (public/demo/<klucz>-kwadraty.json), z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania,
+   symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -75,7 +79,8 @@ import {
   opcjaMieszkancow,
   stanyM2,
 } from './sim/osiedle.ts';
-import { type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
+import { RODZAJE, ZARZAD_MAX } from './sim/praca.ts';
+import { doOtoczenia, type WyborSpotkania, wybory } from './sim/sasiedzi.ts';
 import { addResidents, alarmOn, createSim, Sim, type SimState } from './sim/sim.ts';
 import { type SimPerson, type SimSnapshot, type SimStock, snapshot } from './sim/snapshot.ts';
 import { NAPISY } from './sim/surowce.ts';
@@ -107,8 +112,9 @@ import {
   TECH_NAMES,
 } from './ui/budowa.ts';
 import { kartaBudynku, widokBudynku } from './ui/budynek.ts';
-import { currentGoal, DAY2_WOOD, goalsDay2, goalsOf, isDay2, markTree, NIGHT_WOOD } from './ui/cele.ts';
+import { markTree } from './ui/cele.ts';
 import { Druzyna } from './ui/druzyna.ts';
+import { oddajFokusPoKliknieciu } from './ui/fokus.ts';
 import {
   dotyczy,
   edytorImienia,
@@ -126,6 +132,7 @@ import {
 } from './ui/imiona.ts';
 import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
+import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
 import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
@@ -146,10 +153,12 @@ import {
   optionDetail,
   optionText,
   reportSheet,
+  type Sheet,
   siecSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
+import { PracaPanel } from './ui/panelpracy.ts';
 import { renderStats, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
@@ -159,11 +168,29 @@ import {
   przyjmijPietro,
   SelektorPieter,
 } from './ui/pietra.ts';
+import { Portrety } from './ui/portrety.ts';
+import { nalozPolecenia, nalozPraceOsoby, widokPracy, ZA_SIATKE_ZOMBIE } from './ui/praca.ts';
 import { arriving, comingText } from './ui/przybycie.ts';
+import {
+  type Cel,
+  celeHtml,
+  celWOknie,
+  type KluczRozdzialu,
+  krokSciezki,
+  licznikiStartu,
+  nowyStanSciezki,
+  type OdczytCelow,
+  type OknoCelu,
+  type StanSciezki,
+  stanZZapisu,
+  type WidokSciezki,
+  widokSciezki,
+  type ZdarzenieUi,
+  zdarzenieUi,
+} from './ui/sciezka.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
-import { esc } from './ui/tekst.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
@@ -221,6 +248,8 @@ declare global {
       fly: (x: number, y: number, zoom: number, ms: number) => void;
       /** panel budowy (do testów): czy otwarty, zakładka i wybrana budowla */
       buildPanel: () => { open: boolean; tab: string | null; kind: string | null };
+      /** panel Pracy (do testów i zrzutów): czy otwarty i wybrana kolumna */
+      pracaPanel: () => { open: boolean; kol: string | null };
       /** tryb stawiania (do testów): plan pod kursorem, czy wolno, ile dozwolonych miejsc i pierwsze z nich */
       placing: () => {
         kind: BuildKind;
@@ -250,6 +279,13 @@ declare global {
       grafika: () => Record<'teren' | 'blok' | 'dach' | 'strop' | 'trzepak' | 'budynki' | 'ludzie', boolean> | null;
       /** drogi do zwycięstwa tak, jak je widzi ekran dróg z Menu (`ocenDrogi`); pusto bez gry */
       zwyciestwo: () => PostepDrogi[];
+      /** widok ścieżki celów (okazja, rozdział, drogi po ostatnim rozdziale) po kroku ścieżki na stanie z tej chwili; null
+          bez gry */
+      cele: () => WidokSciezki | null;
+      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick i liczniki „od otwarcia”);
+          zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten jest
+          skończony */
+      rozdzial: (k: KluczRozdzialu) => void;
       /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
           nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
       wygraj: (droga: Droga) => string | null;
@@ -279,6 +315,10 @@ const view = new GameView();
 let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
 let gov: GovState | null = null;
+/** stan ścieżki celów (src/ui/sciezka.ts): otwarty rozdział, cele zaliczone i przepadłe, także te, których nie widać
+    już w stanie gry (drewno, które koza zje); liczy go `renderGoals` co odświeżenie okienka. Nowy przy nowej grze,
+    z zapisu przy wznowieniu, do zapisu w `Save.cele` */
+let sciezka: StanSciezki = nowyStanSciezki();
 let loaded: Loaded | null = null;
 let seed = 0;
 /** widok pięter obecnej gry (?pietra=1 albo pole zapisu): ustawia go `enter`, czyta `save` */
@@ -313,7 +353,12 @@ const selektorPieter = new SelektorPieter(
   { btn: $<HTMLButtonElement>('btnFloor'), list: $('floorList'), note: $('floorNote') },
   (L) => wybierzPietro(L),
   // lista pięter nie zasłania panelu budowy (spec), więc odsuwa się od jego lewej krawędzi
-  () => (buildPanel.open ? $('buildPanel').getBoundingClientRect() : null),
+  () =>
+    buildPanel.open
+      ? $('buildPanel').getBoundingClientRect()
+      : pracaPanel.open
+        ? $('pracaPanel').getBoundingClientRect()
+        : null,
 );
 
 /** wybór piętra (lista kafelka, PageUp i PageDown, zm.pietro, powrót na parter): przełącza widok tylko przy zmianie
@@ -351,7 +396,7 @@ function odswiezPietra(): void {
   selektorPieter.odswiez(
     pietraLista,
     pietro,
-    podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty, panelBudowy: buildPanel.open }),
+    podpowiedzPietra({ pietro, cutOn: view.section, zarzadUkryty, panelBudowy: buildPanel.open || pracaPanel.open }),
   );
 }
 
@@ -372,6 +417,9 @@ function zablokowanyKlik(sx: number, sy: number, widocznyPionek = false, prawy =
     angielsku wordsE */
 let words: Words = wordsOf(BLOK);
 let wordsE: WordsEn = wordsEn(BLOK);
+/** ile osób liczył zarząd, gdy gra się zaczęła albo wczytała (pionki rdzenia), do zdania „Jak grać” o starcie; przed grą
+    nic, wtedy pomoc mówi o czterech osobach, jak panel „Wasz zarząd” */
+let zarzadStart: number | undefined;
 /** id handlarza z ostatniej klatki (−1: nie ma), żeby napis o jego przyjściu pokazał się raz */
 let traderSeen = -1;
 /** tick ostatniej pokazanej wieści (st.obcy.wiesc) */
@@ -399,6 +447,49 @@ let hintUntil = 0;
 let powrotyCzekaja: Tx[] = [];
 const modal = new Modal($('modal'), $('sheet'));
 const ctx = new ContextMenu($('ctx'));
+
+/* ---------- lista „moich ludzi” (src/ui/lista.ts): chipy z portretem i znacznikami stanu; klik zaznacza jak klik w pionka
+   na mapie i wiezie kamerę, drugi klik prowadzi ją za osobą; klawisze E i Q przełączają ludzi ---------- */
+const portrety = new Portrety({
+  ludzie: () => {
+    const dane = view.postacieLudzi;
+    const img = view.grafika?.ludzie?.img;
+    return dane && img ? { dane, img } : null;
+  },
+  pionek: (id) => sim?.st.pawns.find((p) => p.id === id),
+  osoby: () => sim?.st.people ?? [],
+});
+const lista = new ListaLudzi({
+  el: $('lista'),
+  wybrani: selected,
+  wybierz: (pawn, dodaj) => {
+    // cel ścieżki „sprawdźcie, kto ma siły”: wybór z listy klikiem albo klawiszami Q i E (oba idą tędy)
+    zdarzenie('lista');
+    // jak klik w pionka na mapie; Shift dokłada osobę albo ją zdejmuje
+    if (dodaj && selected.has(pawn)) selected.delete(pawn);
+    else {
+      if (!dodaj) selected.clear();
+      selected.add(pawn);
+    }
+    selectedChanged();
+  },
+  pozycja: (id) => {
+    const p = sim?.st.pawns.find((q) => q.id === id);
+    return p && !p.away ? { x: p.x, y: p.y } : null;
+  },
+  kamera: view.cam,
+  przytnij: () => view.clampCam(),
+  kafelek: TILE,
+  przerwijLot: () => {
+    fly = null;
+  },
+  lotTrwa: () => fly !== null,
+  portret: (id) => portrety.url(id),
+  ponizej: () => {
+    const n = $('arrive');
+    return n.hidden ? null : n;
+  },
+});
 
 /** okno, które jest otwarte, do narysowania od nowa po zmianie języka (ustawiają je funkcje otwierające okna) */
 let sheetAgain: (() => void) | null = null;
@@ -527,6 +618,7 @@ poZmianieJezyka(() => {
   siec.przerysuj();
   if (!sim) return;
   buildPanel.refresh(true);
+  pracaPanel.refresh(true);
   hqAria();
   ctx.close();
   selektorPieter.zamknij();
@@ -620,6 +712,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     saved,
   );
   console.info(`świat ${Math.round(performance.now() - t0)} ms, budynków ${world.buildings.length}`);
+  // liczba budynków do otoczenia płotem (`GovInput.teren.mozliwe`) liczy się raz na świat: tu, pod ekranem ładowania,
+  // a nie w pierwszej sekundzie gry
+  doOtoczenia(world);
   // okolica dla zarządu: punkty z `geo` (metry od adresu bez obrotu świata, w przeciwieństwie do `world.pois`). Nazwa
   // z osobą albo adresem odpada (pusta), bo filtr zamieniłby ją na polski opis kategorii, który wszedłby do angielskich
   // tekstów celu; bez tabel imion (dane === null) albo poza gminami z tabelami (szablon krajowy, np. adres poza Polską)
@@ -639,7 +734,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   const stale = !!saved && saved.world !== worldKey(world);
   if (stale) saved = undefined;
   // zarząd z panelu „Wasz zarząd”: bez ruszania go 4 osoby z siedziby (z generatora, bez tabel z ziarna adresu)
-  const opcje = druzyna?.opcje() ?? { core: 4 };
+  // ?zarzad=N: tyle osób zarządu do pomiarów (npm run perf -- --zarzad=12), także ponad 5 z panelu
+  const zarzadN = Math.floor(Number(params.get('zarzad')));
+  const opcje = zarzadN >= 1 ? { core: Math.min(zarzadN, ZARZAD_MAX) } : (druzyna?.opcje() ?? { core: 4 });
   // mieszkańcy siedziby z generatora, zanim powstaną symulacja i scena (obie czytają stany mieszkań ze świata): nowa gra
   // dostaje stany mieszkań i osoby z generatora, wznowiony zapis z osobami z generatora stany mieszkań z zapisu
   // i budynek siedziby do imion i historii (bez nowego createSim), zapis sprzed kroku 5 nic
@@ -728,6 +825,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   placing = null;
   buildPanel.hide();
   buildPanel.reset();
+  pracaPanel.hide();
+  pracaPanel.reset();
+  lastSnap = null;
   // tablica badań: nowa gra nie dziedziczy wyboru ani otwarcia; wczytana gra z już stojącą pracownią nie otwiera jej
   // sama (gracz widzi przycisk „Badania”)
   $('tablica').hidden = true;
@@ -739,9 +839,14 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   aptFocus = -1;
   budFocus = -1;
   residentFocus = -1;
+  lista.reset();
+  portrety.reset();
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
   gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  // ścieżka celów: z zapisu (zapis bez pola albo z polem o złym kształcie zaczyna od pierwszego dnia, a po pierwszym
+  // raporcie od drugiego), nowa gra od początku
+  sciezka = saved ? stanZZapisu(saved.cele, st, gov) : nowyStanSciezki();
   powrotyCzekaja = [];
   // mapa miasta w nowej grze i w starym zapisie (bez losowania; wyprawa nocna w drodze kończy się po staremu)
   if (opcjaMiasto) wlaczMiasto(gov);
@@ -759,6 +864,10 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   govAt = screen;
   loaded = data;
   hqName = world.buildings[world.hq]?.name ?? '';
+  // „Jak grać” mówi o zarządzie ze startu gry, nie zawsze o czterech: nowa gra ma tu rdzeń jeszcze sprzed pierwszego
+  // przyjęcia (tyle, ile dał panel „Wasz zarząd”, `opcje.core`, albo długość własnej drużyny), wczytany zapis rdzeń z chwili
+  // wczytania (zapis nie trzyma liczby ze startu)
+  zarzadStart = st.pawns.filter((p) => p.kind === 'core').length || undefined;
   words = wordsOfWorld(world);
   wordsE = wordsEnOfWorld(world);
   hqAria();
@@ -1060,7 +1169,7 @@ function showPrompt(p: Prompt) {
       decided();
     });
   else if (p.k === 'uchwala')
-    modal.show(lawSheet(p, words, wordsE), (act, arg) => {
+    modal.show(zCelem(lawSheet(p, words, wordsE), 'uchwala'), (act, arg) => {
       if (act === 'law') applyFx(signLaw(g, input(), arg));
       else if (act === 'law-skip') applyFx(signLaw(g, input(), null));
       else return;
@@ -1088,7 +1197,8 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
   const names = Object.fromEntries(card.people.map((c) => [c.id, c.name]));
   const i = input();
   const assign = () => g.night?.assign ?? p.assign;
-  modal.show(nightSheet(card, assign(), nightOdds(g, i, card, assign()), words, wordsE), (act, arg, el) => {
+  const sheet = nightSheet(card, assign(), nightOdds(g, i, card, assign()), words, wordsE);
+  modal.show(zCelem(sheet, 'karta'), (act, arg, el) => {
     if (act === 'select') {
       const id = el.dataset.id ?? '';
       if (!setNight(g, id, arg)) {
@@ -1180,6 +1290,7 @@ function askNowaGra(droga: Droga) {
 /** ekran „Drogi do zwycięstwa” (z Menu): gra stoi, „Wróć” wraca do Menu, zamknięcie wraca do gry albo do decyzji, która czeka */
 function showDrogi() {
   if (!sim || !gov) return;
+  zdarzenie('drogi');
   sheetAgain = showDrogi;
   modal.show(
     drogiSheet(ocenDrogi(gov, input())),
@@ -1216,6 +1327,7 @@ function save(): boolean {
     world: worldKey(sim.w),
     ...(siec.stan ? { siec: siec.stan } : {}),
     ...(pietraGry ? { pietra: true } : {}),
+    cele: sciezka,
   };
   const ok = writeSave(s);
   // gra z sąsiadami: także do chmury (najwyżej raz na minutę)
@@ -1282,14 +1394,17 @@ function showMeet() {
   pauseGame();
   ctx.close();
   modal.show(
-    spotkanieSheet({
-      sp,
-      g,
-      wybory: wybory(sp, g, k),
-      jedzenie: k.jedzenie,
-      budynek: sim.w.buildings[b.bid].name,
-      dom: sim.w.buildings[b.bid].cls === 'dom',
-    }),
+    zCelem(
+      spotkanieSheet({
+        sp,
+        g,
+        wybory: wybory(sp, g, k),
+        jedzenie: k.jedzenie,
+        budynek: sim.w.buildings[b.bid].name,
+        dom: sim.w.buildings[b.bid].cls === 'dom',
+      }),
+      'spotkanie',
+    ),
     (act, arg) => {
       if (act !== 'meet' || !sim) return;
       meetChosen = { nr, runda };
@@ -1374,7 +1489,7 @@ function renderBadania() {
   const stara = el.querySelector<HTMLElement>('.tb-wrap');
   const [x, y] = [stara?.scrollLeft ?? 0, stara?.scrollTop ?? 0];
   const fokus = el.contains(document.activeElement) && document.activeElement?.classList.contains('tb-kartka');
-  el.innerHTML = tablicaHtml(b, { wybrana: badaniaWybrana, mode: modeOf(sim.st) });
+  el.innerHTML = tablicaHtml(b, { wybrana: badaniaWybrana, mode: modeOf(sim.st), cel: celOkna('tablica') });
   const nowa = el.querySelector<HTMLElement>('.tb-wrap');
   if (nowa) {
     nowa.scrollLeft = x;
@@ -1704,6 +1819,7 @@ function frame(now: number, dtMs: number) {
   if (keys.has('KeyA') || keys.has('ArrowLeft')) view.cam.x -= pan;
   if (keys.has('KeyD') || keys.has('ArrowRight')) view.cam.x += pan;
   view.clampCam();
+  lista.krok(dtMs);
   // stały krok symulacji
   const mult = SPEEDS[speed];
   const dt = Math.min(dtMs, 100) / 1000;
@@ -1752,13 +1868,55 @@ function frame(now: number, dtMs: number) {
 }
 
 let cardHtml = '';
+/** czyją kartę pokazuje `cardHtml` (język i pionek; pusty: bez klucza, karta zawsze przerysowywana w całości) */
+let cardKey = '';
 /** historia rozwinięta na karcie tej osoby (pionek); inna osoba na karcie to historia znowu w jednej linijce */
 let storyOf = -1;
-/** karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą */
-function setCard(html: string) {
-  if (html === cardHtml) return;
+/** Karta przerysowana tylko po zmianie treści, inaczej dymki z opisem cech nigdy się nie pokażą. Lista stałego zajęcia
+    (`select` w bloku `.pk`) nie może znikać spod ręki, gdy jest w użyciu (otwarta, po Esc albo po Tabie): wtedy przy tej
+    samej osobie (`key`) przerysowuje się wszystko poza blokiem `.pk`, więc potrzeby i opis pracy dalej się odświeżają.
+    Blok dogania stan, gdy lista straci fokus (słuchacz `focusout` niżej). */
+function setCard(html: string, key = '') {
+  if (html === cardHtml && key === cardKey) return;
+  const card = $('card');
+  const f = document.activeElement;
+  const pk = key && key === cardKey && f instanceof HTMLSelectElement && card.contains(f) ? f.closest('.pk') : null;
+  if (pk?.parentElement === card) {
+    const nowa = document.createElement('template');
+    nowa.innerHTML = html;
+    const pkNowy = [...nowa.content.children].find((c) => c.classList.contains('pk'));
+    if (pkNowy) {
+      while (card.firstChild !== pk) card.firstChild?.remove();
+      while (pk.nextSibling) pk.nextSibling.remove();
+      while (nowa.content.firstChild !== pkNowy) card.insertBefore(nowa.content.firstChild!, pk);
+      pkNowy.remove();
+      card.append(...nowa.content.childNodes);
+      cardHtml = html;
+      return;
+    }
+  }
+  card.innerHTML = html;
   cardHtml = html;
-  $('card').innerHTML = html;
+  cardKey = key;
+}
+// lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
+$('card').addEventListener('focusout', (e) => {
+  if (e.target instanceof HTMLSelectElement) cardHtml = '';
+});
+
+/** ostatni odczyt symulacji z `hud` (panel Pracy bierze z niego widok, a po kliknięciu, gdy symulacja zdążyła zrobić
+    krok, liczy nowy) */
+let lastSnap: SimSnapshot | null = null;
+/** odczyt na tę chwilę: ten z `hud`, a gdy symulacja poszła dalej, świeży */
+function snapNow(): SimSnapshot | null {
+  if (!sim) return null;
+  if (!lastSnap || lastSnap.tick !== sim.st.tick) lastSnap = snapshot(sim.st, sim.w);
+  return lastSnap;
+}
+/** osoba z ustawieniami pracy z poleceniami, które jeszcze czekają w kolejności symulacji (gra na pauzie nie wykonuje
+    kroków, a karta ma się zmienić od razu) */
+function withPendingWork(p: SimPerson, cmds: SimState['cmds']): SimPerson {
+  return { ...p, praca: { ...p.praca, ...nalozPraceOsoby(p.praca, p.osoba, cmds) } };
 }
 
 /** co osoba robi tej nocy według karty nocy (propozycja albo zatwierdzony przydział), a bez karty posterunek
@@ -1792,7 +1950,9 @@ function hud(now: number) {
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   lastStock = snap.stock;
+  lastSnap = snap;
   buildPanel.refresh();
+  pracaPanel.refresh();
   // koza wygasła po samouczku, a drewna nie ma: decyzja gracza (drzewo albo mebel), więc ostrzeżenie wisi,
   // dopóki problem trwa (w dzień, kiedy zarząd nie śpi), i ma pierwszeństwo przed zwykłymi podpowiedziami
   const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
@@ -1825,6 +1985,7 @@ function hud(now: number) {
   odswiezPietra();
   alarmButton(st);
   renderGoals(snap);
+  lista.odswiez(snap.people);
   // przyjęci idą zza bramy: komunikat z przyciskiem „Pokaż”, dopóki ktoś jeszcze idzie
   const coming = arriving(st).length;
   $('arrive').hidden = !coming;
@@ -1880,92 +2041,106 @@ function hud(now: number) {
     );
   else
     setCard(
-      personCard(sel[0], st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
+      personCard(withPendingWork(sel[0], st.cmds), st.tick, tonight(sel[0]), storyOf === sel[0].pawn, {
         imie: imionaWGrze(siec.stan),
         words,
         wordsEn: wordsE,
         en: sel[0].ref ? angielscy?.get(sel[0].ref) : undefined,
+        widoczne: snap.praca.widoczne,
+        zombie: snap.mode === 'zombie',
       }),
+      `${jezyk()}:${sel[0].pawn}`,
     );
 }
 
 let goalsHtml = '';
-/** zapas drewna na noc był choć raz (cel się nie cofa, kiedy koza zje drewno); drugi dzień osobno */
-let woodReady = false;
-let woodReady2 = false;
+/** Odczyt gry dla ścieżki celów z tej chwili (src/ui/sciezka.ts). Wejście zarządu liczy się dopiero wtedy, gdy któryś cel je
+    czyta (drewno na noc bierze z niego liczbę palenisk), i najwyżej raz na odczyt. */
+function odczytCelow(snap: SimSnapshot): OdczytCelow {
+  const s = sim!;
+  let wejscie: GovInput | null | undefined;
+  return {
+    st: s.st,
+    w: s.w,
+    snap,
+    gov,
+    get input() {
+      wejscie ??= gov ? input() : null;
+      return wejscie;
+    },
+    touch: touchUI,
+    words,
+    wordsEn: wordsE,
+    zaznaczony: snap.people.some((p) => selected.has(p.pawn)),
+  };
+}
+/** Krok ścieżki na odczycie z tej chwili i jej widok: zaliczenia i przepadnięcia trafiają do stanu ścieżki, a ten do
+    zapisu, więc przeładowanie strony niczego nie cofa. Woła go okienko celów, linia celu w oknach i `window.zm.cele()`. */
+function widokCelow(snap: SimSnapshot): WidokSciezki {
+  const o = odczytCelow(snap);
+  sciezka = krokSciezki(sciezka, o);
+  return widokSciezki(sciezka, o);
+}
+/** Zdarzenie samego interfejsu, które nie zostawia śladu w stanie gry (lista ludzi, karta mieszkańca, karta budynku, ekran
+    dróg): do stanu ścieżki z tickiem symulacji. Warunki celów czytają je dopiero z następnym krokiem ścieżki. */
+function zdarzenie(k: ZdarzenieUi) {
+  if (sim) sciezka = zdarzenieUi(sciezka, k, sim.st.tick);
+}
+/** Linia „Cel: …” okna, które zasłania okienko celów (karta nocy, uchwała, tablica badań, spotkanie z sąsiadami): tekst
+    celu ze ścieżki, który dotyczy tego okna, a gdy żaden nie dotyczy (albo drużyna jest jeszcze bez domu), nic. */
+function celOkna(okno: OknoCelu): string | undefined {
+  const snap = sim && !siec.bezDomu() ? snapNow() : null;
+  return (snap && celWOknie(widokCelow(snap), okno)) || undefined;
+}
+/** okno z linią celu (`Sheet.cel`), gdy bieżący cel ścieżki dotyczy tego okna; sygnatury funkcji okien bez zmian */
+function zCelem(s: Sheet, okno: OknoCelu): Sheet {
+  const cel = celOkna(okno);
+  return cel ? { ...s, cel } : s;
+}
+/** Czy okienko celów jest rozwinięte. Wybór gracza (klik w nagłówek) wygrywa; bez niego okienko jest rozwinięte na
+    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px, jak w CSS). */
+let celeOtwarte: boolean | null = null;
+const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia('(max-width: 640px)').matches;
+/** Okienko celów ze ścieżki: widok z `widokCelow` (otwarty rozdział, a nad nim okazja) albo cele „Bez domu” gry z sąsiadami,
+    narysowane przez `celeHtml`; po ostatnim rozdziale bez dróg do zwycięstwa okienko się chowa. */
 function renderGoals(snap: SimSnapshot) {
   const el = $('goals');
   if (!sim) return;
-  // gra z sąsiadami, drużyna bez domu: najpierw dojść do wolnej klatki
+  let widok: WidokSciezki;
   if (siec.bezDomu()) {
-    const own = siec.cele(snap.people.some((p) => selected.has(p.pawn)));
-    const now = own.find((g) => !g.done);
-    el.hidden = false;
-    const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>${L('Bez domu', 'Homeless')}</span><b class="goals-n">${own.filter((g) => g.done).length}/${own.length}</b></button><ol class="goal-list">${own
-      .map(
-        (g, k) =>
-          `<li class="goal${g.done ? ' done' : g === now ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${g === now ? `<small class="goal-how">${esc(g.how)}</small>` : ''}</li>`,
-      )
-      .join('')}</ol>`;
-    if (html !== goalsHtml) {
-      goalsHtml = html;
-      el.innerHTML = html;
-    }
-    return;
-  }
-  const wood = snap.stock.woodSklad + snap.stock.woodLoose + snap.stock.woodCarried;
-  if (wood >= NIGHT_WOOD && sim.st.tut.step >= TUT_STEPS.length) woodReady = true;
-  let list = goalsOf(sim.st, gov, {
-    touch: touchUI,
-    kitchen: snap.kitchen,
-    hour: snap.hour,
-    selected: snap.people.some((p) => selected.has(p.pawn)),
-    wood,
-    woodReady,
-    words,
-    wordsEn: wordsE,
-  });
-  let cur = currentGoal(list);
-  let title = L('Pierwszy dzień', 'Day one');
-  // po pierwszej nocy cele drugiego dnia: przeszukać, warsztat, obwód, drewno na noc
-  if (!cur && isDay2(gov)) {
-    if (wood >= DAY2_WOOD) woodReady2 = true;
-    list = goalsDay2(sim.st, gov, {
-      touch: touchUI,
-      wood,
-      woodReady: woodReady2,
-      holes: snap.fence.holes.length,
-      words,
-      wordsEn: wordsE,
-    });
-    cur = currentGoal(list);
-    title = L('Drugi dzień', 'Day two');
-  }
-  // po drugiej nocy lista znika
-  if (!cur) {
-    el.hidden = true;
-    return;
-  }
-  el.hidden = false;
-  const done = list.filter((g) => g.done).length;
-  const html = `<button type="button" class="goals-head" aria-expanded="${el.classList.contains('open')}"><span>${title}</span><b class="goals-n">${done}/${list.length}</b></button><ol class="goal-list">${list
-    .map(
-      (g, k) =>
-        `<li class="goal${g.missed ? ' missed' : g.done ? ' done' : g === cur ? ' now' : ''}" data-n="${k + 1}">${esc(g.text)}${
-          g === cur ? `<small class="goal-how">${esc(g.how)}</small>` : ''
-        }</li>`,
-    )
-    .join('')}</ol>`;
-  if (html === goalsHtml) return;
+    // gra z sąsiadami, drużyna bez domu: najpierw dojść do wolnej klatki
+    const cele: Cel[] = siec
+      .cele(snap.people.some((p) => selected.has(p.pawn)))
+      .map((g, k) => ({ key: `bez-domu-${k + 1}`, text: g.text, how: g.how, done: g.done }));
+    const rozdzial = {
+      k: 'r0' as const,
+      tytul: L('Bez domu', 'Homeless'),
+      cele,
+      biezacy: cele.find((g) => !g.done) ?? null,
+    };
+    widok = { okazja: null, rozdzial, drogi: null };
+  } else widok = widokCelow(snap);
+  const html = celeHtml(widok, { otwarte: celeRozwiniete(), touch: touchUI });
+  el.hidden = !html;
+  if (!html || html === goalsHtml) return;
   goalsHtml = html;
   el.innerHTML = html;
 }
-// na telefonie lista celów zwija się do bieżącego celu
+// nagłówek zwija i rozwija okienko (domyślnie na telefonie zwinięte do bieżącego celu, na komputerze rozwinięte)
 $('goals').addEventListener('click', (e) => {
-  if (!(e.target as HTMLElement).closest('.goals-head')) return;
-  $('goals').classList.toggle('open');
+  const glowa = (e.target as HTMLElement).closest('.goals-head');
+  if (!glowa) return;
+  const glowy = [...$('goals').querySelectorAll('.goals-head')];
+  const k = glowy.indexOf(glowa);
+  celeOtwarte = !celeRozwiniete();
   goalsHtml = '';
-  if (sim) renderGoals(snapshot(sim.st, sim.w));
+  if (sim) renderGoals(snapNow() ?? snapshot(sim.st, sim.w));
+  // Enter i spacja z klawiatury (`detail` 0) zostawiają fokus na nagłówku, który HTML okienka właśnie wymienił, jak na
+  // innych przyciskach (src/ui/fokus.ts); po kliknięciu myszą fokusu nie ma, więc spacja dalej zatrzymuje grę
+  if (e instanceof MouseEvent && e.detail === 0) {
+    const nowe = $('goals').querySelectorAll<HTMLElement>('.goals-head');
+    nowe[Math.min(Math.max(k, 0), nowe.length - 1)]?.focus({ preventScroll: true });
+  }
 });
 
 /** miejsce etykiety suchego drzewa, liczone raz dla świata i układu ekranu (etykieta jedzie z mapą i nie
@@ -2009,9 +2184,12 @@ function placeMarker() {
   // komunikat o przybyszach stoi pod paskiem (na telefonie pod listą celów): napis, który na niego wchodzi, idzie pod spód
   const notice = $('arrive');
   const n = notice.hidden ? null : notice.getBoundingClientRect();
+  // lista „moich ludzi” stoi w tym samym miejscu pod paskiem: napis idzie pod nią
+  const l = lista.obrys;
   const under = (left: number) => {
     const t = g && left < g.right ? Math.max(bar, g.bottom) : bar;
-    return n && left < n.right && left + markW > n.left ? Math.max(t, n.bottom) : t;
+    const dalej = n && left < n.right && left + markW > n.left ? Math.max(t, n.bottom) : t;
+    return l && left < l.right && left + markW > l.left ? Math.max(dalej, l.bottom) : dalej;
   };
   let top = under(x0);
   // poza ekranem (punkt, w który celuje ogonek): przy krawędzi ze strzałką, napis wyśrodkowany w cx
@@ -2100,7 +2278,7 @@ function showMenu() {
 function showHelp() {
   sheetAgain = showHelp;
   modal.show(
-    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words, wordsE),
+    helpSheet(touchUI, !!sim && modeOf(sim.st) === 'zombie', words, wordsE, { osob: zarzadStart }),
     (a) => {
       if (a === 'help-back') showMenu();
     },
@@ -2188,7 +2366,17 @@ $('card').addEventListener('click', (e) => {
   const sel = st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
   if (sel.length !== 1) return;
   const p = sel[0];
-  if (b.dataset.card === 'story') {
+  if (b.dataset.card === 'zasiatke') {
+    // przełącznik „może wychodzić za siatkę”: od stanu z czekającymi poleceniami, żeby na pauzie przełączał tam i z powrotem
+    const snap = snapNow();
+    const kto = snap?.people.find((q) => q.pawn === p.id);
+    if (!snap || !kto) return;
+    const on = !withPendingWork(kto, st.cmds).praca.zaSiatke;
+    sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on });
+    if (on && snap.mode === 'zombie') say(tr(ZA_SIATKE_ZOMBIE), 5000);
+    hud(performance.now());
+    pracaPanel.refresh();
+  } else if (b.dataset.card === 'story') {
     // historia z drużyny: jedna linijka albo cała, od razu na karcie
     storyOf = storyOf === p.id ? -1 : p.id;
     hud(performance.now());
@@ -2223,6 +2411,21 @@ $('card').addEventListener('click', (e) => {
       4000,
     );
   }
+});
+
+/** wybór stałego zajęcia na karcie osoby (lista rozwijana): pusty wybór zdejmuje je */
+$('card').addEventListener('change', (e) => {
+  const s = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-card="stale"]');
+  if (!s || !sim) return;
+  const sel = sim.st.pawns.filter((p) => p.kind === 'core' && selected.has(p.id));
+  if (sel.length !== 1) return;
+  const rodzaj = RODZAJE.find((r) => r === s.value) ?? null;
+  sim.push({ t: 'stale', ids: [], osoba: sel[0].person, rodzaj });
+  // lista traci fokus (słuchacz `focusout` przy setCard każe przerysować kartę w całości) i od razu pokazuje wybór
+  // z czekającego polecenia
+  s.blur();
+  hud(performance.now());
+  pracaPanel.refresh();
 });
 
 /* ---------- imiona gracza (src/ui/imiona.ts) ---------- */
@@ -2498,10 +2701,16 @@ const feedback = (w: Words): Record<MenuItem['cmd']['t'], [string, string]> => (
   otocz: ['', ''],
   trade: [HANDEL.poHandel.pl, HANDEL.poHandelWielu.pl],
   talk: [OBCY.poZagadac.pl, OBCY.poZagadacWielu.pl],
+  zapros: [OBCY.poZaprosic.pl, OBCY.poZaprosicWielu.pl],
+  reka: [OBCY.poRege.pl, OBCY.poRegeWielu.pl],
   mug: [OBCY.poNapasc.pl, OBCY.poNapascWielu.pl],
   shoo: [OBCY.poPrzegonic.pl, OBCY.poPrzegonicWielu.pl],
   rob: [HANDEL.poNapasc.pl, HANDEL.poNapascWielu.pl],
   obcy: ['', ''],
+  prio: ['', ''],
+  stale: ['', ''],
+  zasiatke: ['', ''],
+  prog: ['', ''],
   // goście z klocków: polecenia idą od zarządu, nie z menu
   gosc: ['', ''],
   goscrozkaz: ['', ''],
@@ -2561,10 +2770,16 @@ const feedbackEn = (e: WordsEn): Record<MenuItem['cmd']['t'], [string, string]> 
   otocz: ['', ''],
   trade: [HANDEL.poHandel.en, HANDEL.poHandelWielu.en],
   talk: [OBCY.poZagadac.en, OBCY.poZagadacWielu.en],
+  zapros: [OBCY.poZaprosic.en, OBCY.poZaprosicWielu.en],
+  reka: [OBCY.poRege.en, OBCY.poRegeWielu.en],
   mug: [OBCY.poNapasc.en, OBCY.poNapascWielu.en],
   shoo: [OBCY.poPrzegonic.en, OBCY.poPrzegonicWielu.en],
   rob: [HANDEL.poNapasc.en, HANDEL.poNapascWielu.en],
   obcy: ['', ''],
+  prio: ['', ''],
+  stale: ['', ''],
+  zasiatke: ['', ''],
+  prog: ['', ''],
   gosc: ['', ''],
   goscrozkaz: ['', ''],
   zwierze: ['', ''],
@@ -2732,6 +2947,8 @@ function focusTile(sx: number, sy: number) {
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
   budFocus = aptFocus < 0 && bid >= 0 && bid !== sim.w.hq ? bid : -1;
+  // karta cudzego budynku pokazuje się od razu (hud): ścieżka celów zapisuje to jako zdarzenie interfejsu
+  if (budFocus >= 0) zdarzenie('budynek');
 }
 /** mieszkaniec z osobą na karcie do odczytu (id pionka po kliknięciu w niego; na dotyku tylko bez zaznaczonych, bo
     z zaznaczonymi stuknięcie to polecenie) albo −1 */
@@ -2821,8 +3038,40 @@ const buildPanel = new BuildPanel($('buildPanel'), $('app'), {
 
 function openBuild() {
   if (!sim || modal.open) return;
-  if (!buildPanel.open) ctx.close();
+  if (!buildPanel.open) {
+    ctx.close();
+    pracaPanel.hide();
+  }
   buildPanel.toggle();
+}
+
+/** panel Pracy po prawej (przycisk „Praca” i klawisz P): nie-modalny jak panel budowy, razem z nim się nie otwiera.
+    Widok to odczyt symulacji z poleceniami, które jeszcze czekają w kolejności (pauza nie robi kroków), a zmiany
+    wychodzą poleceniami `prio`, `prog` i `zasiatke` do symulacji. */
+const pracaPanel = new PracaPanel($('pracaPanel'), $('app'), {
+  widok: (kol) => {
+    const snap = snapNow();
+    if (!snap || !sim) return null;
+    return nalozPolecenia(widokPracy(snap, { kol, zlecen: kol ? sim.ileZlecen(kol) : 0, touch: touchUI }), sim.st.cmds);
+  },
+  en: () => jezyk() === 'en',
+  touch: touchUI,
+  onPrio: (osoba, rodzaj, prio) => sim?.push({ t: 'prio', ids: [], osoba, rodzaj, prio }),
+  onProg: (co, n) => sim?.push({ t: 'prog', ids: [], co, n }),
+  onZaSiatke: (osoba, on) => {
+    sim?.push({ t: 'zasiatke', ids: [], osoba, on });
+    if (on && snapNow()?.mode === 'zombie') say(tr(ZA_SIATKE_ZOMBIE), 5000);
+  },
+  onClose: () => nextPrompt(),
+});
+
+function openPraca() {
+  if (!sim || modal.open) return;
+  if (!pracaPanel.open) {
+    ctx.close();
+    buildPanel.hide();
+  }
+  pracaPanel.toggle();
 }
 
 /** okno mapy miasta: przycisk „Mapa miasta” i klawisz M. Gra stoi, póki okno jest otwarte; zamknięcie (przycisk, Esc,
@@ -3026,6 +3275,8 @@ function placeGhost() {
 }
 
 $('btnBuild').addEventListener('click', () => openBuild());
+// fokus po kliknięciu myszą zdejmuje z przycisku wspólna obsługa paska (src/ui/fokus.ts, `oddajFokusPoKliknieciu`)
+$('btnPraca').addEventListener('click', () => openPraca());
 $('btnMiasto').addEventListener('click', () => openMiasto());
 $('btnResearch').addEventListener('click', () => openBadania());
 // „Pokaż” przy przybyszach: kamera od razu jedzie na środek grupy, bez zmiany przybliżenia
@@ -3232,6 +3483,7 @@ const endPointer = (e: PointerEvent) => {
       residentFocus = lok.id;
       aptFocus = -1;
       budFocus = -1;
+      zdarzenie('mieszkaniec');
     } else focusTile(e.offsetX, e.offsetY);
     return;
   }
@@ -3239,6 +3491,7 @@ const endPointer = (e: PointerEvent) => {
     residentFocus = lok.id;
     aptFocus = -1;
     budFocus = -1;
+    zdarzenie('mieszkaniec');
     return;
   }
   residentFocus = -1;
@@ -3312,6 +3565,9 @@ for (const t of ['gesturestart', 'gesturechange'])
   document.addEventListener(t, (e) => {
     if (!$('app').hidden) e.preventDefault();
   });
+// przycisk paska po kliknięciu myszą albo stuknięciu oddaje fokus (z klawiatury go zachowuje), bo niżej spacja i Enter
+// na przycisku w fokusie klikają go, a nie zatrzymują grę
+oddajFokusPoKliknieciu(document);
 window.addEventListener('keydown', (e) => {
   // klawisze gry tylko w grze, bez otwartego okna i nie na polach ani przyciskach (spacja ma działać na przyciskach)
   const tag = (e.target as HTMLElement).tagName;
@@ -3344,7 +3600,11 @@ window.addEventListener('keydown', (e) => {
     renderSpeed();
   }
   if (e.code === 'KeyB') openBuild();
+  if (e.code === 'KeyP') openPraca();
   if (e.code === 'KeyM') openMiasto();
+  // lista ludzi: E następna osoba, Q poprzednia (bez Ctrl, Cmd i Alt: to skróty przeglądarki)
+  if ((e.code === 'KeyE' || e.code === 'KeyQ') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey)
+    lista.przelacz(e.code === 'KeyE' ? 1 : -1);
   // widok pięter: PageUp o piętro wyżej, PageDown niżej
   if (pietraGry && (e.code === 'PageUp' || e.code === 'PageDown')) {
     e.preventDefault();
@@ -3355,6 +3615,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
     if (placing) cancelPlacing();
     else if (buildPanel.open) buildPanel.hide();
+    else if (pracaPanel.open) pracaPanel.hide();
     else if (imieEdit) zamknijImie();
     else {
       selected.clear();
@@ -3433,6 +3694,7 @@ if (attrib) bars.observe(attrib);
     speed: () => speed,
     fly: (x, y, zoom, ms) => flyTo(x * TILE, y * TILE, zoom, ms),
     buildPanel: () => ({ open: buildPanel.open, ...buildPanel.current }),
+    pracaPanel: () => ({ open: pracaPanel.open, kol: pracaPanel.column }),
     placing: () =>
       placing
         ? {
@@ -3454,6 +3716,17 @@ if (attrib) bars.observe(attrib);
     admit: (n) => (sim ? addResidents(sim.st, sim.w, n, true) : 0),
     siec: () => siec.podglad(),
     zwyciestwo: () => (sim && gov ? ocenDrogi(gov, input()) : []),
+    cele: () => {
+      const snap = sim ? snapNow() : null;
+      return snap ? widokCelow(snap) : null;
+    },
+    rozdzial: (k) => {
+      if (!sim) return;
+      // jak otwarcie rozdziału przez krok ścieżki: tick i liczniki „od otwarcia” z tej chwili
+      sciezka = { ...sciezka, rozdzial: k, od: sim.st.tick, start: licznikiStartu(sim.st, gov) };
+      const snap = snapNow();
+      if (snap) renderGoals(snap);
+    },
     wygraj: (droga) => {
       if (!sim || !gov || gov.over) return null;
       const i = input();

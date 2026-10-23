@@ -453,6 +453,9 @@ describe('szabrownicy', () => {
     pile(st, sklad[0], 10);
     pile(st, sklad[1], 10);
     st.tick = atHour(1, 22);
+    // stan z początku gry przesunięty na 22:00: siły jak przed 19.10.2026 (65), więc zarząd od razu kładzie się spać, a nie
+    // siedzi przy kozie i je (start 80 leży na progu snu nocnego, rest < 80); tu chodzi o napad, nie o zmęczenie
+    for (const p of st.pawns) if (p.needs) p.needs.rest = 65;
     const sim = new Sim(w, st);
     const hole = st.fence!.holes[0];
     if (guard) sim.push({ t: 'guard', ids: [st.pawns[0].id], post: `d${hole.id}` });

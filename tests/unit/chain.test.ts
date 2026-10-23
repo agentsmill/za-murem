@@ -6,6 +6,7 @@ import {
   BURN_TICKS,
   COOK_TICKS,
   createSim,
+  dryWood,
   GAS_START,
   type JobKind,
   MEAL,
@@ -17,6 +18,7 @@ import {
 } from '../../src/sim/sim.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { type MockWorld, mockBlock, mockHouse, plainBlock, trunkTile } from './interior-mock.ts';
+import { bezPrzelacznika } from './praca-pomoc.ts';
 
 const block = mockBlock();
 const house = mockHouse();
@@ -25,6 +27,12 @@ const atHour = (day: number, h: number) => Math.round(((day - 1) * 24 + h - STAR
 const core = (sim: Sim) => sim.st.pawns.filter((p) => p.kind === 'core');
 const tileOf = (sim: Sim, p: Pawn) => Math.floor(p.y) * sim.w.size + Math.floor(p.x);
 const kozaOf = (st: SimState) => st.things.find((t) => t.kind === 'koza')!;
+/** Zarząd może wychodzić za siatkę bez polecenia (praca ludzi, src/sim/praca.ts): stos drewna leżący poza podwórkiem
+    bezczynni noszą do składu tylko z tym przełącznikiem i tylko za dnia; testy z drewnem na ulicy włączają go jawnie,
+    chociaż w trybie zwykłym jest domyślnie włączony (wtedy polecenie niczego nie zapisuje), żeby nie zależały od domyślnej. */
+const wychodziZaSiatke = (sim: Sim): void => {
+  for (const p of core(sim)) sim.push({ t: 'zasiatke', ids: [], osoba: p.person, on: true });
+};
 const roomKind = (w: MockWorld, i: number) => w.interior.rooms[w.interior.room[i]]?.kind;
 const woodOn = (st: SimState, size: number, tiles: number[]) =>
   st.things.filter((t) => t.kind === 'drewno' && tiles.includes(t.y * size + t.x)).reduce((s, t) => s + t.n, 0);
@@ -99,7 +107,7 @@ describe('łańcuch drewna: polecenie, drewno, skład, koza, ciepło', () => {
     expect(sim.blocked[trunk]).toBe(0);
     expect(sim.st.things.some((t) => t.kind === 'pien' && t.y * w.size + t.x === trunk)).toBe(true);
     const wood = sim.st.things.filter((t) => t.kind === 'drewno').reduce((s, t) => s + t.n, 0);
-    expect(wood).toBe(woodFrom(w.trees[k]));
+    expect(wood).toBe(dryWood(w.trees[k]));
     const loaded = new Sim(w, JSON.parse(JSON.stringify(sim.st)));
     expect([...loaded.blocked]).toEqual([...sim.blocked]);
     // świat zostaje nietknięty (ten sam świat służy wielu symulacjom)
@@ -113,11 +121,16 @@ describe('łańcuch drewna: polecenie, drewno, skład, koza, ciepło', () => {
     expect(woodFrom({ ...t, kind: 2, r: 1.4 })).toBeLessThan(woodFrom({ ...t, r: 1.8 }));
   });
 
-  it('koza zjada drewno: suche drzewo starcza na kilka godzin, opał kończy się pierwszego wieczoru', () => {
+  it('koza zjada drewno: drzewo starcza na pół dnia, suche z samouczka na kilka godzin, opał kończy się pierwszego wieczoru', () => {
     for (const r of [2, 2.5, 3, 3.3]) {
-      const hours = (woodFrom({ ...block.trees[0], kind: 0, r }) * BURN_TICKS) / TICKS_PER_HOUR;
-      expect(hours).toBeGreaterThanOrEqual(3);
-      expect(hours).toBeLessThanOrEqual(5.5);
+      const t = { ...block.trees[0], kind: 0 as const, r };
+      const hours = (woodFrom(t) * BURN_TICKS) / TICKS_PER_HOUR;
+      expect(hours).toBeGreaterThanOrEqual(6);
+      expect(hours).toBeLessThanOrEqual(11);
+      // suche drzewo jest spróchniałe: połowa drewna, czyli zapas na start do pierwszego wieczoru
+      const dry = (dryWood(t) * BURN_TICKS) / TICKS_PER_HOUR;
+      expect(dry).toBeGreaterThanOrEqual(3);
+      expect(dry).toBeLessThanOrEqual(5.5);
     }
     const w = block;
     const sim = new Sim(w, createSim(w, 11, { core: 4 }));
@@ -165,10 +178,54 @@ describe('zarząd sam', () => {
     expect([...stands]).toEqual([front]);
   });
 
+  /** po samouczku, z drewnem w składzie, w ciepłym mieszkaniu i nikt nie marznie */
+  const warmHome = () => {
+    const st = createSim(w, 3, { core: 4 });
+    addWood(st, w.interior.sklad[0], w.size, 5);
+    st.tut.step = TUT_STEPS.length;
+    for (const r of w.interior.rooms) if (r.apt === w.interior.home) st.temps[r.id] = 20;
+    for (const p of st.pawns) if (p.needs) p.needs.warm = 90;
+    return st;
+  };
+
+  it('za dnia w ciepłym mieszkaniu, kiedy nikt nie marznie, nikt sam nie dokłada do kozy', () => {
+    const st = warmHome();
+    const sim = new Sim(w, st);
+    for (let k = 0; k < 600; k++) sim.step();
+    expect(kozaOf(st).fuel).toBe(0);
+    expect(core(sim).some((p) => p.job?.t === 'refuel')).toBe(false);
+  });
+
+  it('dokłada, kiedy ktoś zaczyna marznąć', () => {
+    const st = warmHome();
+    st.pawns.find((p) => p.kind === 'core')!.needs!.warm = 50;
+    const sim = new Sim(w, st);
+    for (let k = 0; k < 600 && kozaOf(st).fuel === 0; k++) sim.step();
+    expect(kozaOf(st).fuel).toBeGreaterThan(0);
+  });
+
+  it('wieczorem dokłada, żeby przed snem w mieszkaniu było ciepło', () => {
+    const st = warmHome();
+    st.tick = atHour(1, 19);
+    const sim = new Sim(w, st);
+    for (let k = 0; k < 600 && kozaOf(st).fuel === 0; k++) sim.step();
+    expect(kozaOf(st).fuel).toBeGreaterThan(0);
+  });
+
+  it('bez gazu sam rozpala kozę, żeby ugotować', () => {
+    const st = warmHome();
+    st.things.find((t) => t.kind === 'kuchenka')!.fuel = 0;
+    st.pawns[0].needs!.food = 40;
+    const sim = new Sim(w, st);
+    for (let k = 0; k < 2000 && !st.things.some((t) => t.kind === 'posilek'); k++) sim.step();
+    expect(st.things.some((t) => t.kind === 'posilek')).toBe(true);
+  });
+
   it('zanosi leżące drewno do składu', () => {
     const st = createSim(w, 3, { core: 4 });
     addWood(st, w.buildings[w.hq].entrances[0].out + 4 * w.size, w.size, 4);
     const sim = new Sim(w, st);
+    wychodziZaSiatke(sim);
     // minuta realna: drewno już w składzie albo w kozie, ale jeszcze się nie wypaliło
     for (let k = 0; k < 1200; k++) sim.step();
     const sklad = w.interior.sklad;
@@ -178,8 +235,10 @@ describe('zarząd sam', () => {
     expect(woodOn(st, w.size, sklad) > 0 || kozaOf(st).fuel > 0).toBe(true);
   });
 
-  it('sam nie ścina drzew i nie pali mebli', () => {
+  it('bez przełącznika „za siatkę” sam nie ścina drzew i nie pali mebli', () => {
     const sim = new Sim(w, createSim(w, 3, { core: 4 }));
+    // w trybie zwykłym przełącznik jest domyślnie włączony i zarząd sam ścina drzewa zza siatki; ten test sprawdza zarząd bez niego
+    bezPrzelacznika(sim);
     for (let k = 0; k < 2 * TICKS_PER_DAY; k++) sim.step();
     expect(sim.st.felled).toEqual([]);
     expect(sim.st.burned).toEqual([]);
@@ -413,6 +472,7 @@ describe('polecenia', () => {
     st.things = st.things.filter((t) => t.kind !== 'koza');
     addWood(st, w.buildings[w.hq].entrances[0].out + 6 * w.size, w.size, 5);
     const sim = new Sim(w, st);
+    wychodziZaSiatke(sim);
     const [p] = core(sim);
     const total = () => st.things.filter((t) => t.kind === 'drewno').reduce((s, t) => s + t.n, 0) + p.carry;
     for (let k = 0; k < 2000 && p.carry === 0; k++) sim.step();
@@ -451,20 +511,29 @@ describe('polecenia', () => {
 
   it('kilka osób na jedno drzewo: jedna ścina, reszta idzie obok i potem nosi drewno', () => {
     const sim = new Sim(w, createSim(w, 3, { core: 3 }));
+    // drzewo leży za siatką, a bezczynni noszą drewno zza siatki tylko z przełącznikiem (praca ludzi); ścinający z polecenia
+    // wnosi je i tak sam, pomocnicy tylko z przełącznikiem
+    wychodziZaSiatke(sim);
     const ids = core(sim).map((p) => p.id);
-    sim.push({ t: 'chop', ids, tree: w.dryTree });
+    // zwykłe drzewo najbliżej suchego: z suchego (połowa drewna) drwal zabrałby wszystko w jednym naręczu
+    const dry = w.trees[w.dryTree];
+    const k = w.trees
+      .map((t, i) => [i, Math.hypot(t.x - dry.x, t.y - dry.y)] as const)
+      .filter(([i]) => i !== w.dryTree && w.trees[i].kind === 0 && woodFrom(w.trees[i]) >= 8)
+      .sort((a, b) => a[1] - b[1])[0][0];
+    sim.push({ t: 'chop', ids, tree: k });
     sim.step();
     const [a, b, c] = core(sim);
     expect(a.job?.t).toBe('chop');
     expect([b.job?.t, c.job?.t]).toEqual(['go', 'go']);
-    const t = w.trees[w.dryTree];
+    const t = w.trees[k];
     for (const p of [b, c]) {
       const end = p.path[p.path.length - 1];
       expect(Math.hypot((end % w.size) + 0.5 - t.x, Math.floor(end / w.size) + 0.5 - t.y)).toBeLessThan(5);
     }
     // po ścięciu pomocnicy od razu biorą się do noszenia, zamiast stać godzinę tam, gdzie doszli:
     // po dwóch sekundach każdy stos ktoś już niesie albo po niego idzie
-    while (!sim.st.felled.includes(w.dryTree)) sim.step();
+    while (!sim.st.felled.includes(k)) sim.step();
     for (let k = 0; k < 2 * TICKS_PER_SECOND; k++) sim.step();
     expect(sim.st.things.filter((t) => t.kind === 'drewno' && t.by < 0)).toEqual([]);
     expect([b, c].some((p) => p.job?.t === 'haul')).toBe(true);
@@ -684,7 +753,7 @@ describe('poprawki z przeglądu kodu', () => {
     expect(st.felled).toEqual([w.dryTree]);
     expect(st.things.filter((t) => t.kind === 'pien')).toHaveLength(1);
     const wood = st.things.filter((t) => t.kind === 'drewno').reduce((x, t) => x + t.n, 0) + a.carry + b.carry;
-    expect(wood).toBe(woodFrom(w.trees[w.dryTree]));
+    expect(wood).toBe(dryWood(w.trees[w.dryTree]));
   });
 
   it('stuknięcie w koronę dalej od pnia to ruch, ścięcie zostaje w menu', () => {
@@ -781,6 +850,7 @@ describe('poprawki z przeglądu kodu', () => {
     addWood(st, pocket, w.size, 3);
     addWood(st, out + 9 * w.size, w.size, 2);
     const sim = new Sim(w2, st);
+    wychodziZaSiatke(sim);
     for (let k = 0; k < 1500; k++) sim.step();
     expect(woodOn(st, w.size, w.interior.sklad)).toBe(2);
   });

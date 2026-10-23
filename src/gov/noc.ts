@@ -18,7 +18,8 @@
    zarządu nie daje jej warty ani wyprawy.
 
    Propozycja zarządu przy braku jedzenia albo drewna (`propose`) posyła kogoś na wyprawę z miejsca tylko wtedy, gdy łup
-   tego miejsca zawiera to, czego brakuje; cel z TARGETS dostaje ją jak dotąd. Rada o braku jedzenia (`nightAdvice`)
+   tego miejsca zawiera to, czego brakuje; cel z TARGETS dostaje ją jak dotąd. W trybie zombie robi to tylko pierwszej
+   nocy (stado ma osiem głów), potem wyprawa wraca w stado, więc tylko karta ją oferuje. Rada o braku jedzenia (`nightAdvice`)
    przy miejscach nie porównuje „blisko” z „daleko”, tylko odsyła do ryzyka i łupu przy miejscu.
 
    Rozliczenie powrotu wyprawy (`rozliczWyprawe`) jest wspólne dla nocy i dla wyprawy dziennej z mapy miasta: bierze
@@ -100,11 +101,12 @@ export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
 export const CARD_DEADLINE = 22;
 export const MORNING = 6;
-/** dyżur przy kozie: posterunek jak w symulacji ('koza'); czuwający dokłada do rana, koza zjada około 2 sztuk
-    drewna na godzinę (noc 22–6 to 16, od karty o 20:00 to 20) */
+/** dyżur przy kozie: posterunek jak w symulacji ('koza'); czuwający dokłada do rana, koza zjada sztukę drewna
+    na godzinę (noc 22–6 to 8, od karty o 20:00 to 10); zarząd nie importuje symulacji, więc zgodność z BURN_TICKS
+    pilnuje test */
 export const KOZA = 'koza';
 export const KOZA_KEY = `warta:${KOZA}`;
-export const WOOD_PER_HOUR = 2;
+export const WOOD_PER_HOUR = 1;
 /** warta na wieży (badania, t_wieza): posterunek jak w symulacji ('wieza'); wartownik widzi całe podwórko, więc dokłada do
     obrony każdego innego posterunku połowę swojej wartości warty (defenseAt). Szabrownicy jej nie wybierają */
 export const WIEZA = 'wieza';
@@ -582,7 +584,11 @@ function propose(st: GovState, i: GovInput, card: NightCard, lastGuards: string[
   const lackFood = i.stock.supplies < i.people.length * 2;
   const lackWood = i.stock.wood < 4;
   const key = nightDay(i) === 1 ? 'wyprawa:blisko' : 'wyprawa:daleko';
-  if ((lackFood || lackWood) && free.length >= 2) {
+  // w trybie zombie po pierwszej nocy zarząd nikogo nie wysyła: wyprawa wraca o 5:00 (albo o 1:00), w stado pod siatką,
+  // a karta nadal ją oferuje z ryzykiem przy opcji. Dawne zmęczenie ograniczało je mimochodem (o 21:00 tylko co siódmy
+  // miał 40 sił na daleką drogę, dziś ponad połowa).
+  const stado = !!card.horde && nightDay(i) > 1;
+  if ((lackFood || lackWood) && free.length >= 2 && !stado) {
     const goer = free
       .filter((p) => card.people.find((c) => c.id === p.id)?.options.find((o) => o.key === key)?.ok)
       .sort((x, y) => y.needs.rest - x.needs.rest)[0];

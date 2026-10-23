@@ -5,7 +5,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LAW_CD } from '../../src/content/data.ts';
-import { KOZA_KEY, makeCard, nightAdvice, nightWood, raidersOf, watchersOf } from '../../src/gov/noc.ts';
+import {
+  CARD_HOUR,
+  KOZA_KEY,
+  makeCard,
+  nightAdvice,
+  nightWood,
+  raidersOf,
+  WOOD_PER_HOUR,
+  watchersOf,
+} from '../../src/gov/noc.ts';
 import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.ts';
 import type { GovEffects, GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
@@ -14,6 +23,9 @@ import { GOSC_EVENTS } from '../../src/gov/wizyta.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { confirmNight, govUpdate, loadGov, newGov, pending, saveGov, setNight, signLaw } from '../../src/gov/zarzad.ts';
+import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import { BURN_TICKS } from '../../src/sim/sim.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { pl } from './po-angielsku.ts';
 
@@ -517,6 +529,19 @@ describe('napad dla symulacji: siła w planie, jawny wynik, warta z menu', () =>
 });
 
 describe('dyżur przy kozie: karta, rada, raport rano', () => {
+  it('zarząd liczy drewno na noc tak, jak pali koza w symulacji', () => {
+    // zarząd nie importuje symulacji, więc ta sama liczba żyje w dwóch miejscach
+    expect(WOOD_PER_HOUR * BURN_TICKS).toBe(TICKS_PER_HOUR);
+    // cel drugiego dnia (R1 ścieżki) liczy potrzebę jak karta nocy o 20:00: dziesięć godzin palenia do 6:00 na każde
+    // palenisko, nie osiem godzin nocy 22–6 jak dawny DAY2_WOOD
+    for (const paleniska of [undefined, 1, 2, 3, 5]) {
+      const i = input({ hour: CARD_HOUR, minute: 0, ...(paleniska ? { paleniska } : {}) });
+      expect(potrzebaDrewna(i), `paleniska ${paleniska}`).toBe(nightWood(i).need);
+      expect(potrzebaDrewna(i)).toBe(10 * WOOD_PER_HOUR * (paleniska ?? 1));
+    }
+    expect(potrzebaDrewna(null)).toBe(10 * WOOD_PER_HOUR);
+  });
+
   /** pierwsza noc na atrapie: pierwsza osoba czuwa przy kozie, reszta śpi; posts: posterunki jak z symulacji
       (people[].post od zatwierdzenia do 6:00) */
   const kozaNight = (seed: number, posts: boolean, koza = true) => {
@@ -580,9 +605,9 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
       expect(pl(o?.label)).toBe('Czuwa przy kozie');
       expect(pl(o?.note)).toMatch(/^Nie śpi i pilnuje ognia w kozie, drewna/);
     }
-    // o 20:00 do 6:00 jest 10 godzin, po 2 sztuki na godzinę; w zapasie całe drewno
+    // o 20:00 do 6:00 jest 10 godzin, po sztuce na godzinę; w zapasie całe drewno
     expect(p.card.wood).toEqual(nightWood(atr.input()));
-    expect(p.card.wood!.need).toBe(20);
+    expect(p.card.wood!.need).toBe(10);
     expect(p.card.wood!.have).toBe(atr.input().stock.wood);
     // dyżur kosztuje noc snu: zarząd go nie wstawia sam, tylko o nim radzi
     expect(Object.values(p.assign)).not.toContain(KOZA_KEY);
@@ -603,10 +628,11 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
       kozaLit: true,
       stock: { ...base.stock, wood },
     });
-    expect(nightWood(at(22, 20))).toEqual({ have: 20, need: 16, until: '6:00' });
-    expect(nightWood(at(20, 8))).toEqual({ have: 8, need: 20, until: '0:00' });
-    expect(nightWood(at(21, 9))).toEqual({ have: 9, need: 18, until: '1:00' });
-    const i = at(20, 8);
+    // sztuka na godzinę: noc 22–6 to 8 sztuk, od 20:00 to 10
+    expect(nightWood(at(22, 20))).toEqual({ have: 20, need: 8, until: '6:00' });
+    expect(nightWood(at(20, 4))).toEqual({ have: 4, need: 10, until: '0:00' });
+    expect(nightWood(at(21, 4))).toEqual({ have: 4, need: 9, until: '1:00' });
+    const i = at(20, 4);
     const { card } = makeCard(newGov(2), i);
     const who = i.people[1];
     const sleep = Object.fromEntries(i.people.map((p) => [p.id, 'sen']));
@@ -619,7 +645,7 @@ describe('dyżur przy kozie: karta, rada, raport rano', () => {
     const fullCard = makeCard(newGov(2), full).card;
     expect(pl(nightAdvice(full, fullCard, { ...sleep, [who.id]: KOZA_KEY }))).not.toMatch(/kozie/);
     // bez drewna nie ma czego radzić o kozie
-    const none = at(20, 1);
+    const none = at(20, 0);
     expect(pl(nightAdvice(none, makeCard(newGov(2), none).card, sleep))).not.toMatch(/kozie/);
     // zimna kuchnia: rada mówi, ile stopni
     const cold = { ...at(20, 8), kitchen: 12, kozaLit: false };
