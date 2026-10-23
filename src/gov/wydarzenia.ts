@@ -40,6 +40,9 @@
    zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
    kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
    kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`.
+   Pamięć o znajomych (src/gov/znajomi.ts): wydarzenie `powrot` (`POWROT_EVENT`) działa jak `gosc`: wypadnięcie planuje powrót
+   znajomego jako gościa (`planujPowrot`) i od razu losuje jeszcze raz; wyrzucenie mieszkańca z osobą z generatora (`wyrzuc`)
+   zapisuje go jako znajomego `wyrzucony`, osoba zarządu, która odchodzi sama (kłótnia, „Niech idzie”), nie jest zapisywana.
    Karty z 0.3 z gościem (`GEventDef.gosc` z nakładek w warianty.ts: `uchodzcy`, `influencer`, `aktywisci`, `dzieci`,
    `krypto`, w domu `fachowiec`) idą tą samą drogą: gdy wypadną z puli, `planujKarte` wystawia ich grupę zamiast karty, a
    karta (z `gid` w danych) otwiera się w `goscTick`, gdy grupa stoi pod bramą. W odróżnieniu od gościa z klocków taka wizyta
@@ -51,7 +54,7 @@ import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { type Tx, tx, txCat } from '../core/jezyk.ts';
-import { rngOf } from '../core/rng.ts';
+import { hashString, rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { KOZA } from './noc.ts';
 import {
@@ -68,7 +71,8 @@ import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Pu
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
-import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte } from './wizyta.ts';
+import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte, planujPowrot } from './wizyta.ts';
+import { POWROT_EVENT, zapamietaj } from './znajomi.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
@@ -187,6 +191,7 @@ export const M1_EVENTS: GEventDef[] = [
   ...NEW_EVENTS,
   ...STREET_EVENTS,
   ...GOSC_EVENTS,
+  POWROT_EVENT,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
@@ -419,7 +424,27 @@ export function makeHost(
       if (!fx.awans?.includes(id)) (fx.awans ??= []).push(id);
     },
     wyrzuc: (id) => {
-      if (!fx.wyrzuc?.includes(id)) (fx.wyrzuc ??= []).push(id);
+      if (fx.wyrzuc?.includes(id)) return;
+      (fx.wyrzuc ??= []).push(id);
+      // wyrzucony mieszkaniec to znajomy (−2): idzie z szabrownikami; osoba zarządu, która odchodzi sama, nie
+      const l = lokatorzy.find((x) => x.id === id);
+      if (l)
+        zapamietaj(
+          st,
+          {
+            id: l.id,
+            osoba: { first: l.first, name: l.name, f: l.f, age: l.age },
+            prof: l.prof,
+            pion: l.pawn,
+            ...(l.wyglad ? { wyglad: l.wyglad } : {}),
+            look: l.look ?? 4 + (Number.parseInt(hashString(l.id), 16) % 12),
+            kto: 'lokator',
+            jak: 'wyrzucony',
+            dzien: i.day,
+          },
+          i.day,
+          { wizyta: `w${l.id}` },
+        );
     },
     sprawdz: (id, tile) => {
       (fx.sprawdz ??= []).push({ id, tile });
@@ -584,6 +609,10 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   // następna próba za RETRY sekund, jak po pustym losowaniu
   if (ev?.id === 'gosc') {
     planujGoscia(st, i, fx, pora);
+    ev = pickGovEvent(st, h, pora, firstNight(i));
+  } else if (ev?.id === 'powrot') {
+    // powrót znajomego: tak samo plan wizyty tego samego człowieka (src/gov/znajomi.ts), karta przychodzi pod bramą
+    planujPowrot(st, i, fx);
     ev = pickGovEvent(st, h, pora, firstNight(i));
   } else if (ev) {
     // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy

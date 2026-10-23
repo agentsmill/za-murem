@@ -10,8 +10,10 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
+import { type Wyglad, wygladZnajomego } from '../src/content/people.ts';
 import { mnogaPl, type Tx } from '../src/core/jezyk.ts';
 import type { GameMode } from '../src/gov/typy.ts';
+import type { Znajomy } from '../src/gov/znajomi.ts';
 import { DROGI, type Droga, nazwaDrogi } from '../src/gov/zwyciestwo.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
 import { LOOKI } from '../src/render/art/lookBudynku.ts';
@@ -2879,6 +2881,244 @@ const SHOTS: Shot[] = [
           const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, []);
           if (pl.length) throw new Error(`Polish letters on the English guest card: ${pl.join(', ')}`);
           await page.screenshot({ path: path.join(OUT, 'en-wyd-gosc.png') });
+        },
+      },
+      {
+        // znajomy wśród szabrowników (Przymorze): zarząd pamięta Henryka Kowalskiego, złapanego na kradzieży (ujemny wpis
+        // w GovState.znajomi). Szukamy ziarna, przy którym pierwszej nocy szabrownicy przychodzą; wtedy plan napadu niesie
+        // znajomego, jeden z szabrowników ma jego wygląd (wyd-powrot-szabrownicy.png), a poranny raport ma linię
+        // „Wśród nich był Henryk Kowalski, …” (końcowy wyd-powrot.png)
+        name: 'wyd-powrot',
+        query: '',
+        run: async (page, base) => {
+          let wybrane = 0;
+          for (let seed = 1; seed <= 60 && !wybrane; seed++) {
+            await page.goto(`${base}?demo=przymorze&speed=0&godzina=19.5&cam=hq,1.3&seed=${seed}`);
+            await waitIdle(page);
+            await page.evaluate((z) => {
+              window.zm!.gov!.znajomi = [z];
+            }, HENRYK_WROG);
+            await page.evaluate(() => window.zm!.govTick());
+            await page.click('#sheet [data-act="law-skip"]');
+            await page.evaluate(() => window.zm!.ff(31));
+            await page.click('#sheet [data-act="night-go"]');
+            const plan = await page.evaluate(() => {
+              const r = window.zm!.gov!.night?.raid;
+              return r ? { come: r.come, znajomy: r.znajomy ?? null } : null;
+            });
+            if (plan?.come && plan.znajomy) wybrane = seed;
+          }
+          if (!wybrane) throw new Error('w 60 grach pierwszej nocy nie przyszli szabrownicy z znajomym');
+          console.log(`  ziarno ${wybrane}: napad ze znajomym w planie`);
+          // szabrownicy podchodzą pod siatkę: jeden z nich ma wygląd Henryka
+          const stoja = async () =>
+            page.evaluate((look) => {
+              const zm = window.zm!;
+              const st = zm.sim!.st;
+              const sz = st.pawns.filter((p) => p.kind === 'szabrownik');
+              return {
+                n: sz.length,
+                ten: sz.filter((p) => p.look === look).length,
+                faza: st.raid?.phase ?? -1,
+                za: st.raid ? st.raid.at - st.tick : 0,
+              };
+            }, HENRYK_WROG.look);
+          let st = await stoja();
+          // do kilku minut przed napadem, kiedy stoją już pod siatką
+          for (let k = 0; k < 120 && (st.n === 0 || st.faza < 1 || st.za > 60); k++) {
+            const p = await page.evaluate(() => window.zm!.ff(5));
+            if (p) await answerFirst(page, p);
+            st = await stoja();
+          }
+          if (st.n === 0) throw new Error('szabrownicy się nie pojawili');
+          console.log(`  szabrownicy: ${st.n}, z wyglądem znajomego ${st.ten}, do napadu ${st.za} kroków`);
+          if (st.ten !== 1) throw new Error(`wygląd znajomego ma ${st.ten} szabrowników zamiast jednego`);
+          // ten sam człowiek jako gość: osobna wizyta Henryka (plan jak od zarządu), a jego pionek stawiamy obok szabrownika
+          // ze znajomego, żeby na zrzucie widać było dwie takie same twarze; postać z widoku musi być ta sama
+          await page.evaluate(
+            ([osoba, look]) => {
+              const sim = window.zm!.sim!;
+              sim.st.cmds.push({
+                t: 'gosc',
+                ids: [],
+                plan: {
+                  id: 'g99',
+                  strona: 'n',
+                  looks: [look],
+                  osoby: [
+                    {
+                      id: 'g99p0',
+                      ...osoba,
+                      prof: 'Hydraulik',
+                      skills: {},
+                      traits: [],
+                      home: -1,
+                      assign: null,
+                      sick: false,
+                      dead: false,
+                      gone: false,
+                    },
+                  ],
+                },
+              } as never);
+              sim.step();
+            },
+            [HENRYK_WROG.osoba, HENRYK_WROG.look] as const,
+          );
+          const wzorzec = wygladZnajomego(HENRYK_WROG.look, HENRYK_WROG.osoba);
+          const fig = await figury(page, HENRYK_WROG.osoba.name, wzorzec);
+          if (!fig) throw new Error('widok bez postaci PixelLab (?grafika=kod): zrzut nie sprawdzi twarzy');
+          console.log(`  postać gościa ${fig.gosc}, szabrownika ${fig.szabrownik}, wzorca ${fig.wzorzec}`);
+          if (!fig.gosc || fig.gosc === 'kod' || fig.gosc !== fig.szabrownik || fig.gosc !== fig.wzorzec)
+            throw new Error(`gość, szabrownik ze znajomego i wzorzec mają różne postacie: ${JSON.stringify(fig)}`);
+          // po ciemku nie widać ich bez światła: ognisko obok miejsca, gdzie czekają pod siatką
+          await page.evaluate((look) => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const st = sim.st;
+            const spot = st.raid!.spot;
+            // dwa kafelki obok, żeby dym ogniska nie zasłaniał szabrownika
+            const x = (spot % sim.w.size) + 2;
+            const y = Math.floor(spot / sim.w.size) + 1;
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'ognisko',
+              x,
+              y,
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 0,
+              fuel: 100000,
+              by: -1,
+              owner: -1,
+            });
+            const on = st.pawns.find((p) => p.kind === 'szabrownik' && p.look === look)!;
+            // gość o tym samym wyglądzie stoi tuż obok (bez własnej drogi, na jedną klatkę zrzutu)
+            const gosc = st.pawns.find((p) => p.kind === 'gosc' && p.look === look);
+            if (gosc) {
+              gosc.x = on.x + 1.3;
+              gosc.y = on.y;
+              gosc.path = [];
+              gosc.pi = 0;
+            }
+            zm.setCam(on.x + 0.6, on.y, 3.2);
+          }, HENRYK_WROG.look);
+          await waitIdle(page);
+          await frames(page, 4);
+          await page.screenshot({ path: path.join(OUT, 'wyd-powrot-szabrownicy.png') });
+          // rano: raport z linią o znajomym
+          for (let k = 0; k < 60; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(30));
+            if (p === 'raport') break;
+            if (p) await answerFirst(page, p);
+          }
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          console.log(`  raport: ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          if (!tekst.includes('Wśród nich był Henryk Kowalski, ')) throw new Error('raport bez linii o znajomym');
+        },
+      },
+      {
+        // powrót znajomego jako gość (Przymorze, obcy włączeni): zarząd pamięta, że Henryk Kowalski spał kiedyś u nas przy
+        // ogniu (dodatni wpis). Po dwóch dobach wraca pod bramę: ten sam człowiek i wygląd, karta rozpoznaje go po imieniu
+        // i epitecie, ma „Pokaż”. Zrzuty: karta (wyd-powrot-gosc-karta.png), po „Pokaż” kamera jedzie do gościa (końcowy
+        // wyd-powrot-gosc.png)
+        name: 'wyd-powrot-gosc',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate((z) => {
+            window.zm!.gov!.znajomi = [z];
+          }, HENRYK_DOBRY);
+          const krok = await doPowrotu(page);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const a = zm.gov!.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const pionki = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            const mow = pionki[0];
+            return {
+              godzina: document.getElementById('hTime')?.textContent ?? '',
+              faza: wpis.faza,
+              pionki: pionki.length,
+              osoby: a.gosc.osoby.length,
+              wraca: a.gosc.wraca,
+              imie: mow ? st.people[mow.person].name : null,
+              look: mow?.look ?? -1,
+              dar: a.gosc.porcje !== undefined ? 'jedzenie' : a.gosc.osoby.length > 1 ? 'rodzenstwo' : 'wiadomosc',
+            };
+          });
+          const tekst = await sheetText(page);
+          console.log(
+            `  powrót po ${krok} krokach (${stan.godzina}): ${stan.imie}, wygląd ${stan.look}, dar ${stan.dar}, faza ${stan.faza}, ${stan.pionki} pionków`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          if (stan.faza !== 'brama') throw new Error(`karta powrotu, ale faza ${stan.faza}`);
+          if (stan.imie !== 'Henryk Kowalski' || stan.look !== HENRYK_DOBRY.look)
+            throw new Error(`pod bramą nie ten człowiek: ${stan.imie}, wygląd ${stan.look}`);
+          if (stan.pionki !== stan.osoby)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          if (!tekst.includes('Pod bramą znowu stoi Henryk Kowalski, '))
+            throw new Error('karta nie rozpoznaje znajomego');
+          // twarz powracającego z widoku to ta sama funkcja danych co u gościa sprzed lat i u szabrownika ze znajomego
+          const fig = await figury(
+            page,
+            HENRYK_DOBRY.osoba.name,
+            wygladZnajomego(HENRYK_DOBRY.look, HENRYK_DOBRY.osoba),
+          );
+          if (!fig) throw new Error('widok bez postaci PixelLab (?grafika=kod): zrzut nie sprawdzi twarzy');
+          console.log(`  postać powracającego ${fig.gosc}, wzorca ${fig.wzorzec}`);
+          if (!fig.gosc || fig.gosc === 'kod' || fig.gosc !== fig.wzorzec)
+            throw new Error(`powracający i wzorzec mają różne postacie: ${JSON.stringify(fig)}`);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-powrot-gosc-karta.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await frames(page, 3);
+          await gosciNarysowani(page, 'powracający pod bramą po „Pokaż”');
+        },
+      },
+      {
+        // ta sama karta powrotu po angielsku (en-wyd-powrot-gosc.png): epitet i dar bez polskich liter poza imionami
+        name: 'en-wyd-powrot-gosc',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate((z) => {
+            window.zm!.gov!.znajomi = [z];
+          }, HENRYK_DOBRY);
+          const krok = await doPowrotu(page);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const imiona = await page.evaluate(() => window.zm!.gov!.goscie!.aktywny!.gosc.osoby.map((o) => o.name));
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          console.log(`  buttons: ${foot.join(' | ')}; choices: ${wyb.join(' | ')}`);
+          if (!tekst.includes('Henryk Kowalski, ')) throw new Error('the card does not recognise the returning guest');
+          if (!/ is back at /.test(tekst)) throw new Error('the card does not say the guest is back');
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, imiona);
+          if (pl.length) throw new Error(`Polish letters on the English return card: ${pl.join(', ')}`);
+          await page.screenshot({ path: path.join(OUT, 'en-wyd-powrot-gosc.png') });
         },
       },
       {
@@ -8123,6 +8363,75 @@ async function doKarty(page: Page, id: string, ile = 300, kto = ''): Promise<num
     await answerFirst(page, p);
   }
   throw new Error(`przez ${ile / 2} godzin gry nie wypadła karta „${id}”${kto ? ` dla „${kto}”` : ''}`);
+}
+
+/** Znajomi do zrzutów powrotu (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 4): Henryk Kowalski, który
+    dawno temu spał u nas przy ogniu (dodatni, wraca jako gość), i ten sam człowiek złapany na kradzieży (ujemny, idzie
+    z szabrownikami). Wygląd 9 jak w planie gościa (4–15). */
+const HENRYK = {
+  id: 'g0p0',
+  osoba: { first: 'Henryk', name: 'Henryk Kowalski', f: false, age: 47 },
+  prof: 'Hydraulik',
+  look: 9,
+  kto: 'wedrowiec',
+  dzien: 0,
+  wizyty: 1,
+  ostatnio: 0,
+} as const;
+const HENRYK_DOBRY: Znajomy = { ...HENRYK, osoba: { ...HENRYK.osoba }, jak: 'nocleg', nastawienie: 2 };
+const HENRYK_WROG: Znajomy = { ...HENRYK, osoba: { ...HENRYK.osoba }, jak: 'zlapany', nastawienie: -2 };
+
+/** Przewija grę (po pół godziny gry), odpowiadając na okna zarządu, aż pod bramą stanie powracający gość: otwarta karta
+    `gosc` z gościem, który ma `wraca`. Zwraca liczbę kroków. Rzuca, gdy przez `ile` kroków powrót nie przyszedł. */
+async function doPowrotu(page: Page, ile = 800): Promise<number> {
+  for (let k = 0; k < ile; k++) {
+    const p = await page.evaluate(() => window.zm!.ff(30));
+    if (!p) continue;
+    if (p === 'wydarzenie') {
+      const wraca = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm.gov!.ev.active?.id === 'gosc' && !!zm.gov!.goscie?.aktywny?.gosc.wraca;
+      });
+      if (wraca) return k + 1;
+    }
+    await answerFirst(page, p);
+  }
+  throw new Error(`przez ${ile / 2} godzin gry znajomy nie wrócił pod bramę`);
+}
+
+/** Postać PixelLab pionków z widoku gry (id postaci i wersja kolorystyczna, jak je wybiera `LudziePixellab`): gościa o danym
+    imieniu i nazwisku, szabrownika z polem `wyglad` (ze znajomego) i pionka-wzorca z wyglądem `wzorzec` (to, co dostałby
+    człowiek o tych danych w każdym pionku). null: widok nie ma postaci PixelLab (grafika z kodu). Pionki wybierane po numerach,
+    bo widok pamięta wybór po numerze pionka. */
+async function figury(
+  page: Page,
+  imie: string,
+  wzorzec: Wyglad,
+): Promise<{ gosc: string | null; szabrownik: string | null; wzorzec: string } | null> {
+  return page.evaluate(
+    ([imie, wzorzec]) => {
+      const zm = window.zm!;
+      const st = zm.sim!.st;
+      type Dane = {
+        postacPionka(p: unknown, osoby: unknown): { id: string } | null;
+        wersjaPionka(p: unknown, po: unknown): number;
+      };
+      const dane = (zm.view as unknown as { ludzie?: { dane: Dane } }).ludzie?.dane;
+      if (!dane) return null;
+      const fig = (p: unknown) => {
+        const po = dane.postacPionka(p, st.people);
+        return po ? `${po.id}:${dane.wersjaPionka(p, po)}` : 'kod';
+      };
+      const gosc = st.pawns.find((p) => p.kind === 'gosc' && st.people[p.person]?.name === imie);
+      const sz = st.pawns.find((p) => p.kind === 'szabrownik' && p.wyglad);
+      return {
+        gosc: gosc ? fig(gosc) : null,
+        szabrownik: sz ? fig(sz) : null,
+        wzorzec: fig({ id: 987654, kind: 'szabrownik', person: -1, look: 9, wyglad: wzorzec }),
+      };
+    },
+    [imie, wzorzec] as const,
+  );
 }
 
 /** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */

@@ -51,6 +51,12 @@
    pionki powstają i ruszają od następnego kroku, a zapis niczego nie gubi. Plan idzie jako kopia osób, bo kolejka jest
    częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
 
+   Znajomi (src/gov/znajomi.ts): `RaidPlan.znajomy` niesie wygląd ujemnego znajomego, z którym szabrownicy przychodzą na
+   napad; `planRaid` zapisuje go w `Raid.znajomy`, a pierwszy szabrownik dostaje ten wygląd (`spawnRaid`: `look` dla kodu,
+   `Pawn.wyglad` dla postaci PixelLab, tak samo jak gość z planu, więc to ta sama twarz). `GovInput.napadWystawiony` mówi, czy
+   szabrownicy z planu zostali wystawieni (nie było skąd podejść: nie). Mieszkaniec
+   w `lokatorzy` ma `look`, wygląd swojego pionka, żeby zarząd zapamiętał go przy wyrzuceniu.
+
    Pies i kot (src/sim/zwierzeta.ts): `GovInput.zwierzeta` to wpis symulacji o zwierzętach (`SimState.zwierzeta`: pies żyje albo
    zginął, kot żyje), a `fx.zwierze` idzie do kolejki poleceń jako 'zwierze'. Zwierząt nie liczy żaden odczyt ludzi: ani `people`,
    `lokatorzy`, `residents`, `ludnosc`, ani `dead`.
@@ -60,6 +66,7 @@
    zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
+import { type Wyglad, wygladMieszkanca } from '../content/people.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type {
@@ -205,7 +212,7 @@ function kafelekKozy(st: SimState, w: World): number | undefined {
 }
 
 /** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
-const lokatorZarzadu = (p: SimPerson): GovLokator => ({
+const lokatorZarzadu = (p: SimPerson, look?: number, wyglad?: Wyglad): GovLokator => ({
   pawn: p.pawn,
   id: p.id,
   name: p.name,
@@ -219,6 +226,8 @@ const lokatorZarzadu = (p: SimPerson): GovLokator => ({
   asleep: p.asleep,
   inside: p.inside,
   tile: p.tile,
+  ...(look !== undefined ? { look } : {}),
+  ...(wyglad !== undefined ? { wyglad } : {}),
 });
 
 /** Zmarli z zarządu i mieszkańcy (`GovInput.dead`), po kolei, z tym, czego potrzebuje pogrzeb: płeć `f` zmarłego, który
@@ -310,7 +319,17 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
   const residents = s.residents;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
-  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);
+  // wygląd pionka mieszkańca (numer stroju i postać PixelLab: pole gościa albo wybór widoku dla osoby z generatora) idzie do
+  // zarządu, który zapamięta go, gdy wyrzuci mieszkańca (`Znajomy.look`, `Znajomy.wyglad`)
+  const pionki = new Map(st.pawns.map((q) => [q.id, q]));
+  const lokatorzy = s.lokatorzy
+    .filter((l) => mieszkancy.has(l.pawn))
+    .map((l) => {
+      const q = pionki.get(l.pawn);
+      const osoba = q && q.person >= 0 ? st.people[q.person] : undefined;
+      const wyglad = q?.wyglad ? { ...q.wyglad } : osoba ? wygladMieszkanca(q!.person, osoba) : undefined;
+      return lokatorZarzadu(l, q?.look, wyglad);
+    });
   return {
     tick: s.tick,
     day: s.day,
@@ -323,6 +342,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     kozaLit: s.kozaLit,
     people: people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
     ...(lokatorzy.length ? { lokatorzy } : {}),
+    ...(st.raid ? { napadWystawiony: st.raid.spot >= 0 } : {}),
     stock: {
       wood: s.stock.wood,
       woodSklad: s.stock.woodSklad,
@@ -518,7 +538,16 @@ function give(st: SimState, w: World, k: keyof Loot, n: number): void {
 export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   const cmd = (c: SimState['cmds'][number]) => st.cmds.push(c);
   // napad: plan na tę noc, a w minucie napadu rozstrzygnięcie (łup wyniosą szabrownicy, nie znika od razu)
-  if (fx.raid) planRaid(st, tickOfMinute(fx.raid.at), fx.raid.post, true, fx.raid.people ?? 0, fx.raid.attack ?? 0);
+  if (fx.raid)
+    planRaid(
+      st,
+      tickOfMinute(fx.raid.at),
+      fx.raid.post,
+      true,
+      fx.raid.people ?? 0,
+      fx.raid.attack ?? 0,
+      fx.raid.znajomy ? { look: fx.raid.znajomy.look, wyglad: fx.raid.znajomy.wyglad } : undefined,
+    );
   const res = raidOutcome(st, fx);
   const loot: Loot = { wood: 0, supplies: 0, scrap: 0 };
   if (res && st.raid) {

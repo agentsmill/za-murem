@@ -57,7 +57,7 @@
 
 import { PROFS, type TechDom } from '../content/data.ts';
 import { bledyOsoby, druzynaDoGry, type OsobaDruzyny, osobaDoGry } from '../content/druzyna.ts';
-import { makePerson, type Person } from '../content/people.ts';
+import { makePerson, type Person, type Wyglad, wygladZnajomego } from '../content/people.ts';
 import { hashString, mulberry, nextRandom, pick, type RngState, rngOf } from '../core/rng.ts';
 import type { GoscRozkaz, PlanGoscia, ZwierzetaStan } from '../gov/typy.ts';
 import { IN, type Interior } from '../world/interior.ts';
@@ -884,6 +884,12 @@ export interface Pawn {
   /** zarząd odsypia za dnia (po nocnej warcie albo po pobudce na posiłek): głodny najpierw je, potem śpi, dopóki
       siły poniżej REST_UNTIL */
   nap?: boolean;
+  /** człowiek z historią zarządu: gość z planu (`wystawGoscia`) i szabrownik, który idzie z napadem jako znajomy
+      (`Raid.znajomy`). Płeć, wiek i ziarno wyglądu, z których widok wybiera postać PixelLab i jej wersję kolorystyczną
+      (`wygladZnajomego` w content/people.ts), więc ten sam człowiek ma tę samą twarz jako gość, po przyjęciu do osiedla
+      albo do zarządu (pionek zostaje ten sam), jako powracający gość i jako szabrownik. Reszta pionków nie ma pola
+      (wybór postaci jak dotąd). Render tylko czyta; kod rysuje po `look`. */
+  wyglad?: Wyglad;
   /** polecenie gracza, które przeżywa walkę odruchową (WZNOW_PROBY, Sim.przerwij i wznow); pola nie ma, gdy pionek nie
       wykonuje polecenia (praca skończona, pilna potrzeba, nowe polecenie, brak polecenia) */
   polecenie?: Polecenie;
@@ -932,6 +938,8 @@ export interface Thing {
   until?: number;
   /** zepsuty mebel ze świata (w pustym mieszkaniu): z rozbiórki połowa materiału */
   broken?: boolean;
+  /** zwłoki człowieka z `Pawn.wyglad` (gość, znajomy): ten sam wygląd, żeby leżał w tej samej postaci i wersji co żywy pionek */
+  wyglad?: Wyglad;
   /** zasieki i barykada: łata dziury albo wytrzymałość kafelka siatki sprzed nich (wraca przy rozbiórce) */
   prev?: number;
   /** zwłoki: numer wpisu w state.dead (osobno od owner, bo numery pionków i wpisów się pokrywają) */
@@ -1118,6 +1126,10 @@ export interface Raid {
   /** ile mają wynieść (z zarządu; bez zarządu tyle, ile uniosą) i ile już wynieśli */
   loot: Loot;
   took: Loot;
+  /** znajomy z planu zarządu (RaidPlan.znajomy): pierwszy szabrownik dostaje jego numer wyglądu `look` (kod) i `wyglad`
+      (postać PixelLab: płeć, wiek, ziarno) zamiast zwykłego stroju; pole jest tylko wtedy, gdy zarząd wysłał znajomego,
+      więc napad bez niego ma ten sam stan co dotąd */
+  znajomy?: { look: number; wyglad: Wyglad };
   /** kafelek, z którego przyszli i do którego wracają, i kafelek za siatką, pod którym czekają (−1: jeszcze nie) */
   from: number;
   spot: number;
@@ -1735,10 +1747,31 @@ export function campfireSpotOk(st: SimState, w: World, at: number): boolean {
 
 /** napad zaplanowany na tick at przy posterunku post ('brama' / 'd<id>'); gov: rozstrzyga zarząd; people i attack
     z planu zarządu (0: nieznane, wtedy 1–3 szabrowników losowanych przy pojawieniu się) */
-export function planRaid(st: SimState, at: number, post: string, gov: boolean, people = 0, attack = 0): void {
+export function planRaid(
+  st: SimState,
+  at: number,
+  post: string,
+  gov: boolean,
+  people = 0,
+  attack = 0,
+  znajomy?: { look: number; wyglad: Wyglad },
+): void {
   const zero = (): Loot => ({ wood: 0, supplies: 0, scrap: 0 });
   const n = Math.max(0, Math.min(5, Math.round(people)));
-  st.raid = { at, post, n, attack, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
+  st.raid = {
+    at,
+    post,
+    n,
+    attack,
+    phase: 0,
+    outcome: '',
+    gov,
+    loot: zero(),
+    took: zero(),
+    from: -1,
+    spot: -1,
+    ...(znajomy !== undefined ? { znajomy: { look: znajomy.look, wyglad: { ...znajomy.wyglad } } } : {}),
+  };
 }
 
 /** Wartownicy (pionki), którzy według zarządu zasnęli: przysypiają tam, gdzie stoją (warta w fazie 4, bez lampy
@@ -7828,6 +7861,7 @@ export class Sim {
       const at = starts[i] ?? start;
       const p = newPawn(st, this.w, 'gosc', st.people.length - 1, at, at, plan.looks[i] ?? 4);
       p.hp = GOSC_HP;
+      p.wyglad = wygladZnajomego(p.look, o);
       p.job = { ...this.newJob('gosc', -1, waits[i] ?? spot, false), what: 'ulica' };
       st.pawns.push(p);
       g.pawns.push(p.id);
@@ -9330,6 +9364,7 @@ export class Sim {
     }
     const body = newThing(st, 'zwloki', x, y);
     body.n = p.look;
+    if (p.wyglad) body.wyglad = { ...p.wyglad };
     if (!odchodzil) body.dead = st.dead!.length - 1;
     body.until = tick + BODY_TICKS;
     // w trybie zombie każdy zmarły wstaje, chyba że ktoś go dobije
@@ -10510,8 +10545,11 @@ export class Sim {
     const waits = this.tilesAround(r.spot, r.n);
     const starts = this.tilesAround(r.from, r.n);
     for (let k = 0; k < r.n; k++) {
-      const look = 16 + Math.floor(nextRandom(st.rng) * 4);
+      // losowanie zostaje także dla znajomego z zarządu (pierwszy szabrownik ma jego wygląd), żeby reszta ciągu była ta sama
+      const los = 16 + Math.floor(nextRandom(st.rng) * 4);
+      const look = k === 0 && r.znajomy !== undefined ? r.znajomy.look : los;
       const p = newPawn(st, this.w, 'szabrownik', -1, starts[k] ?? r.from, r.from, look);
+      if (k === 0 && r.znajomy !== undefined) p.wyglad = { ...r.znajomy.wyglad };
       p.hp = STRANGER_HP;
       p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);
       st.pawns.push(p);

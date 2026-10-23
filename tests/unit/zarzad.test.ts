@@ -307,7 +307,11 @@ describe('wydarzenia', () => {
   });
 
   it('wydarzenia z 0.3 i nowe działają na hoście zarządu, skutki trafiają do zapasów', () => {
-    expect(M1_EVENTS.length).toBe(OLD_EVENTS.length + NEW_EVENTS.length + STREET_EVENTS.length + GOSC_EVENTS.length);
+    // karty z 0.3, nowe, ulicy, goście (gosc, zlapany) i powrót znajomego (powrot)
+    expect(M1_EVENTS.length).toBe(
+      OLD_EVENTS.length + NEW_EVENTS.length + STREET_EVENTS.length + GOSC_EVENTS.length + 1,
+    );
+    expect(M1_EVENTS.map((e) => e.id)).toContain('powrot');
     for (const def of M1_EVENTS) {
       for (let k = 0; k < 4; k++) {
         const gov = newGov(20 + k);

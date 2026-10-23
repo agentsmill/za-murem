@@ -1676,7 +1676,7 @@ Do decyzji Mateusza (przyjęte robocze ustalenia): grupę pod bramą przyjmuje s
 
 ## Następne
 
-- Wydarzenia (gałąź `wydarzenia`, plan `docs/superpowers/plans/2026-10-19-wydarzenia.md`): etapy 1–3 zbudowane (wpis wyżej); dalej etap 4 (pamięć o znajomych), etap 5 (wątki sezonu, 12 łańcuchów, narrator) i bramka końcowa ze spisem kart. Do rozstrzygnięcia przed bramką końcową: kontrola „Noc przy kozie” w `npm run bot` na granicy progu.
+- Wydarzenia (gałąź `wydarzenia`, plan `docs/superpowers/plans/2026-10-19-wydarzenia.md`): etapy 1–3 na serwerze testowym, etap 4 (pamięć o znajomych: powroty, znajomy wśród szabrowników z tą samą twarzą) zbudowany na gałęzi; dalej etap 5 (wątki sezonu, 12 łańcuchów, narrator) i bramka końcowa ze spisem kart. Kontrola „Noc przy kozie” liczy od 72543e9 udział nocy z ogniem i przechodzi.
 
 Rano 19.10.2026, po nocy z nocnym integratorem (dla Mateusza; szczegóły we wpisach „Noc integracji 19.10.2026” i niżej):
 - W `pelna-gra` c7771b3 (na origin, bez wdrożenia na serwer testowy i bez `main`): mapa miasta z dociągnięciami po przeglądzie, budynki publiczne z PixelLab w grze, kładzenie się, upadek i wstawanie z PixelLab, strop „Ciepły tynk” zatwierdzony przez Ciebie, warunki zwycięstwa etap 1 (Menu, „Drogi do zwycięstwa”: droga ludnościowa grywalna do epilogu z „Graj dalej”, reszta jako „Wkrótce”), piętra etap 1 za `?pietra=1`, miasto z kwadratów etap 1 zadania 1–5 (gra jeszcze tego nie woła) i fundament gry sieciowej etap 0 (`npm run determinizm`, pomiar pojemności, restart i kopie bazy w kodzie serwera). Każde scalenie po pełnej bramce; ostatnia na 1a14163: 3425 testów, lint, build, boty da4b24e0, dad44c81, 18b03936, e8b7d9d5 bez zmian, 303 zrzuty bez powtórek.
