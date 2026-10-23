@@ -6,7 +6,7 @@
    R2: `sily` (zdarzenie interfejsu `lista`), `ognisko` (zwykły: ognisko płonie po 18:00) albo `dzgnij` (zombie: polecenie
    ataku na szwendaczu przez siatkę), `uzbrojeni` (zwykły: broń u `min(2, osób)` osób) albo `dzidy` (zombie: karta nocy
    zatwierdzona po otwarciu rozdziału z `min(2, osób)` przydziałami `warta:siatka` u osób z dzidą). R4: `uchwala` (podpis
-   po otwarciu, czeka do zebrania), `wkurzenie` (raport po otwarciu z `dAnger < 0`, czeka do rana), `nowi` (ludność
+   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana), `nowi` (ludność
    większa niż przy otwarciu), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów bez R3, przejścia R2 → R4 → R5
@@ -598,49 +598,48 @@ describe.each(KOMBINACJE_ZWYKLE)('R4 uchwala: podpis sprzed otwarcia rozdziału 
 });
 
 describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
-  it('czeka do rana, raport z dAnger >= 0 nie zalicza (cel przestaje czekać), raport z dAnger < 0 zalicza trwale', () => {
+  it('to obserwacja: czeka do rana, a raport rano po otwarciu rozdziału zalicza cel, jakkolwiek zmieniło się wkurzenie', () => {
+    for (const dAnger of [2.1, 0, -0.1]) {
+      const g = poPierwszymRaporcie(key, mode);
+      // pierwszy raport w grze był przed otwarciem rozdziału i się nie liczy
+      expect(g.gov.reports).toHaveLength(1);
+      otworz(g, 'r4');
+      expect(g.sciezka.start.raporty).toBe(1);
+      expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+      ustawJezyk('en');
+      expect(cel(g, 'wkurzenie').czeka).toBe('waiting for morning');
+      ustawJezyk('pl');
+      g.gov.reports.push(raport(dAnger));
+      expect(cel(g, 'wkurzenie').done, `dAnger ${dAnger}`).toBe(true);
+      expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
+      expect(g.sciezka.zrobione).toHaveProperty(['r4.wkurzenie']);
+      // zaliczenie jest trwałe, także gdy raportów nie ma już na liście
+      g.gov.reports = [];
+      expect(cel(g, 'wkurzenie').done).toBe(true);
+    }
+  });
+
+  it('raport sprzed otwarcia rozdziału niczego nie zalicza, nawet gdy wkurzenie wtedy spadło', () => {
     const g = poPierwszymRaporcie(key, mode);
-    // pierwszy raport w grze był przed otwarciem rozdziału i się nie liczy
-    expect(g.gov.reports).toHaveLength(1);
+    g.gov.reports.push(raport(-3, 1));
     otworz(g, 'r4');
-    expect(g.sciezka.start.raporty).toBe(1);
     expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
-    ustawJezyk('en');
-    expect(cel(g, 'wkurzenie').czeka).toBe('waiting for morning');
-    ustawJezyk('pl');
-    // raport z dAnger równym 0 albo dodatnim: cel niezaliczony, ale już nie czeka (jest bieżący, jeśli nic przed nim)
-    g.gov.reports.push(raport(0));
-    expect(cel(g, 'wkurzenie').done).toBe(false);
-    expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
-    g.gov.reports.push(raport(2.1));
-    expect(cel(g, 'wkurzenie').done).toBe(false);
-    // spadek wkurzenia
-    g.gov.reports.push(raport(-0.1));
+  });
+
+  it('prawdziwy raport rano: przed nim cel czeka i nie jest zaliczony, po nim (okno raportu otwarte) jest zaliczony', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    otworz(g, 'r4');
+    graj(g, (x) => doba(x) === 3 && godzina(x) >= 5, {}, 3000);
+    expect(g.gov.reports).toHaveLength(1);
+    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+    expect(g.sciezka.zrobione).not.toHaveProperty(['r4.wkurzenie']);
+    const p = graj(g, () => false, { stoj: ['raport'] }, 600);
+    expect(p?.k).toBe('raport');
+    expect(g.gov.reports).toHaveLength(2);
+    expect(g.gov.reports[1].day).toBe(2);
+    // zaliczony przy samym raporcie, niezależnie od znaku zmiany wkurzenia
     expect(cel(g, 'wkurzenie').done).toBe(true);
     expect(g.sciezka.zrobione).toHaveProperty(['r4.wkurzenie']);
-    // kolejny raport ze wzrostem niczego nie cofa
-    g.gov.reports.push(raport(5));
-    expect(cel(g, 'wkurzenie').done).toBe(true);
-  });
-
-  it('raport ze spadkiem wkurzenia liczy się, choć po nim przyszedł gorszy, zanim okienko go obejrzało', () => {
-    const g = poPierwszymRaporcie(key, mode);
-    otworz(g, 'r4');
-    g.gov.reports.push(raport(-1), raport(3));
-    expect(cel(g, 'wkurzenie').done).toBe(true);
-  });
-
-  it('prawdziwy raport rano: cel zaliczony wtedy i tylko wtedy, gdy wkurzenie spadło', () => {
-    const g = poPierwszymRaporcie(key, mode);
-    otworz(g, 'r4');
-    const pierwszy = g.gov.reports[0];
-    graj(g, (x) => x.gov.reports.length >= 2 && !x.gov.report, {}, 2500);
-    const nowy = g.gov.reports[1];
-    expect(nowy.day).toBe(pierwszy.day + 1);
-    const wkurzenie = cele(g).find((c) => c.key === 'wkurzenie');
-    // rozdział mógł się zamknąć dopiero przy innych celach, więc patrzymy na zapis
-    expect(Object.hasOwn(g.sciezka.zrobione, 'r4.wkurzenie')).toBe(nowy.dAnger < 0);
-    if (nowy.dAnger >= 0) expect(wkurzenie?.czeka).toBeUndefined();
   });
 });
 
@@ -660,7 +659,7 @@ describe.each(KOMBINACJE_ZWYKLE)('R4 wkurzenie po dziesięciu raportach: %s %s',
     expect(g.gov.reports).toHaveLength(10);
     expect(g.gov.reports.at(-1)!.day).toBe(12);
     expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
-    expect(Object.hasOwn(g.sciezka.zrobione, 'r4.wkurzenie')).toBe(g.gov.reports.at(-1)!.dAnger < 0);
+    expect(g.sciezka.zrobione).toHaveProperty(['r4.wkurzenie']);
   });
 });
 
@@ -1324,7 +1323,7 @@ describe('teksty R4', () => {
         how: `Zebranie ${dom ? 'komitetu' : 'zarządu'} o ${LAW_HOUR}:${LAW_MINUTE}, kiedy minie półtorej doby od poprzedniej uchwały. Drogi porządku i wspólnoty się wykluczają: pierwsza uchwała z jednej zamyka drugą.`,
       });
       expect(slowa(g, false, 'wkurzenie')).toEqual({
-        text: 'Niech wkurzenie spadnie przez noc.',
+        text: 'Sprawdźcie rano w raporcie, jak zmieniło się wkurzenie.',
         how: `Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple, a wieczorem pali się ognisko; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu ${dom ? 'zebranie ulicy odwoła komitet' : 'walne odwoła zarząd'}.`,
       });
       expect(slowa(g, false, 'nowi')).toEqual({
@@ -1337,13 +1336,34 @@ describe('teksty R4', () => {
         how: `${dom ? 'The street committee' : 'The board'} meets at 19:30 once a day and a half has passed since the last resolution. The Order and Community paths rule each other out: the first resolution on one closes the other.`,
       });
       expect(slowa(g, false, 'wkurzenie')).toEqual({
-        text: 'Get the anger down overnight.',
+        text: 'Check in the Morning report how the anger moved.',
         how: `The Morning report shows how trust and anger moved. Anger drops when people are fed and warm and a campfire burns in the evening; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger ${dom ? 'the street meeting votes the committee out' : 'the general meeting votes the board out'}.`,
       });
       expect(slowa(g, false, 'nowi')).toEqual({
         text: 'Take someone new in.',
         how: `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
       });
+      ustawJezyk('pl');
+    }
+  });
+
+  it('wkurzenie w trybie zombie: ta sama podpowiedź bez ogniska wieczorem (R2 każe unikać światła nocą)', () => {
+    for (const key of ['przymorze', 'zielonki'] as const) {
+      const dom = wDomu(key);
+      const g = wRozdziale(key, 'zombie', 'r4');
+      const tekst = 'Sprawdźcie rano w raporcie, jak zmieniło się wkurzenie.';
+      expect(slowa(g, false, 'wkurzenie')).toEqual({
+        text: tekst,
+        how: `Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu ${dom ? 'zebranie ulicy odwoła komitet' : 'walne odwoła zarząd'}.`,
+      });
+      expect(slowa(g, true, 'wkurzenie').how).toBe(slowa(g, false, 'wkurzenie').how);
+      expect(slowa(g, false, 'wkurzenie').how).not.toMatch(/ognisk/);
+      ustawJezyk('en');
+      expect(slowa(g, false, 'wkurzenie')).toEqual({
+        text: 'Check in the Morning report how the anger moved.',
+        how: `The Morning report shows how trust and anger moved. Anger drops when people are fed and warm; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger ${dom ? 'the street meeting votes the committee out' : 'the general meeting votes the board out'}.`,
+      });
+      expect(slowa(g, false, 'wkurzenie').how).not.toMatch(/campfire/);
       ustawJezyk('pl');
     }
   });

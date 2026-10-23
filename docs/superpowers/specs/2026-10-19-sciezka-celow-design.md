@@ -286,10 +286,11 @@ R4.1 `uchwala`: „Podpiszcie kolejną uchwałę.” / “Pass another resolutio
 - Warunek: podpisanych uchwał (`Object.keys(gov.laws.signed)`) więcej niż przy otwarciu rozdziału. Czeka, dopóki nie trwa zebranie (`gov.lawPending`). Okno: uchwała.
 - Uczy M31.
 
-R4.2 `wkurzenie`: „Niech wkurzenie spadnie przez noc.” / “Get the anger down overnight.”
-- Jak: „Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple, a wieczorem pali się ognisko; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu [walne] odwoła [zarząd].” / “The Morning report shows how trust and anger moved. Anger drops when people are fed and warm and a campfire burns in the evening; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger the general meeting votes [the board] out.”
-- Warunek: raport po otwarciu rozdziału z `dAnger < 0`. Czeka do ranka.
+R4.2 `wkurzenie`: „Sprawdźcie rano w raporcie, jak zmieniło się wkurzenie.” / “Check in the Morning report how the anger moved.”
+- Jak: „Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple, a wieczorem pali się ognisko; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu [walne] odwoła [zarząd].” / “The Morning report shows how trust and anger moved. Anger drops when people are fed and warm and a campfire burns in the evening; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger the general meeting votes [the board] out.” W trybie zombie bez fragmentu o ognisku („, a wieczorem pali się ognisko” / “ and a campfire burns in the evening”): R2 każe tam unikać światła nocą.
+- Warunek: poranny raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie (obserwacja jak R2.1). Raport po otwarciu rozpoznaje się po dniu nocy (raport za noc d powstaje o 6:00 dnia d + 1 i liczy się, gdy ta minuta jest ściśle po minucie otwarcia), a nie po numerze na liście: `gov.reports` ma najwyżej 10 wpisów. Czeka do ranka.
 - Uczy M32 (M09, M34, M36).
+- Zmiana integratora 24.10.2026: wkurzenie o 6:00 rośnie prawie każdej nocy także przy graczu z podpowiedzią, cel uczy odczytu raportu (do przejrzenia przez Mateusza).
 
 R4.3 `nowi`: „Przyjmijcie kogoś nowego.” / “Take someone new in.”
 - Jak: „Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od [bramy], a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.” / “Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from the gate, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.” Po scaleniu `wydarzenia`: „Gość pod [bramą] ma kartę z „Pokaż”: „Przyjąć do spółdzielni”.” (zadanie 13 planu).

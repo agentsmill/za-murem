@@ -15,7 +15,7 @@
    płonące po 18:00 z `gov.evening.campfire`; zombie: pionek zarządu bijący z polecenia szwendacza, `job.order`) i uzbrojonej
    warty (zwykły tryb: broń u `min(2, osób)` osób; zombie: karta nocy zatwierdzona po otwarciu rozdziału z `min(2, osób)`
    przydziałami `warta:siatka` u osób z dzidą, czeka do karty, bez terminu). R4 „Zarząd” (w domu „Komitet”) uczy uchwał
-   (podpis po otwarciu, czeka do zebrania), spadku wkurzenia (raport po otwarciu z `dAnger < 0`, czeka do rana), nowych ludzi
+   (podpis po otwarciu, czeka do zebrania), odczytu porannego raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie; czeka do rana), nowych ludzi
    (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu); wariant „ludzie” w bloku
    z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich
    budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu. R5 „Jedzenie” uczy mapy
@@ -450,15 +450,28 @@ const R4: DefRozdzialu = {
     },
     {
       key: 'wkurzenie',
-      tekst: () => L('Niech wkurzenie spadnie przez noc.', 'Get the anger down overnight.'),
-      jak: (o) =>
+      tekst: () =>
         L(
-          `Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple, a wieczorem pali się ognisko; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu ${o.words.walne} odwoła ${o.words.zarzad.krotko}.`,
-          `The Morning report shows how trust and anger moved. Anger drops when people are fed and warm and a campfire burns in the evening; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger ${o.wordsEn.walne} votes ${o.wordsEn.krotko} out.`,
+          'Sprawdźcie rano w raporcie, jak zmieniło się wkurzenie.',
+          'Check in the Morning report how the anger moved.',
         ),
-      // rozstrzyga raport rano: do pierwszego raportu po otwarciu rozdziału cel czeka, potem jest bieżący, aż raport pokaże spadek
+      jak: (o) => {
+        // w trybie zombie bez ogniska wieczorem: R2 każe tam unikać światła nocą
+        const ognisko = !zombieMode(o.st, o.gov);
+        return L(
+          `Raport rano pokazuje, jak zmieniło się zaufanie i wkurzenie. Wkurzenie spada, gdy ludzie są najedzeni i w cieple${
+            ognisko ? ', a wieczorem pali się ognisko' : ''
+          }; rośnie od zimna, głodu, palenia mebli, napadów i zgonów. Przy pełnym wkurzeniu ${o.words.walne} odwoła ${o.words.zarzad.krotko}.`,
+          `The Morning report shows how trust and anger moved. Anger drops when people are fed and warm${
+            ognisko ? ' and a campfire burns in the evening' : ''
+          }; it rises with cold, hunger, burnt furniture, raids and deaths. At full anger ${o.wordsEn.walne} votes ${o.wordsEn.krotko} out.`,
+        );
+      },
+      // obserwacja jak `sily`: zalicza poranny raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie (o 6:00 rośnie
+      // ono prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego, więc gracz nie ma na nie dźwigni); do raportu
+      // cel czeka
       czeka: (o, s) => (raportyPoOtwarciu(o, s).length ? null : L('czeka do rana', 'waiting for morning')),
-      zrobiony: (o, s) => raportyPoOtwarciu(o, s).some((r) => r.dAnger < 0),
+      zrobiony: (o, s) => raportyPoOtwarciu(o, s).length > 0,
     },
     {
       key: 'nowi',
