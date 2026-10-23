@@ -24,10 +24,10 @@
    poziomie modułu, więc wczytana gra decyduje tak samo jak bez przerwy, a dwie gry w jednym procesie się nie mieszają.
    Silnik czyta tylko stan swojej gry i działa tylko rękami; bez losowania, zegara, DOM i modułów Node.
 
-   Moduły gra.ts i silnik.ts importują się nawzajem (gra.ts bierze stąd `nowaPamiec`, silnik.ts z gra.ts `odpowiedzDomyslna`,
-   a warstwy z kolejnych zadań także `wejscie`). Cykl jest bezpieczny, bo obie strony używają importów tylko w ciele funkcji;
-   warstwy dopisywane do `silnik` mają więc być deklaracjami funkcji, a nie stałymi liczonymi przy ładowaniu modułu z
-   cudzych importów. */
+   Moduły gra.ts i silnik.ts importują się nawzajem (gra.ts bierze stąd `nowaPamiec`, silnik.ts z gra.ts `odpowiedzDomyslna`
+   i `wejscie`), a warstwy (zima.ts) importują gra.ts i są importowane przez silnik.ts. Cykl jest bezpieczny, bo wszystkie
+   strony używają importów tylko w ciele funkcji; warstwy dopisywane do `silnik` mają więc być deklaracjami funkcji, a nie
+   stałymi liczonymi przy ładowaniu modułu z cudzych importów. */
 
 import type { Prompt } from '../gov/typy.ts';
 import { hourOf, TICKS_PER_SECOND } from '../sim/clock.ts';
@@ -118,7 +118,7 @@ function turaDrewna(g: GraAi, r: Rece, prog: (g: GraAi) => number = () => DREWNA
   if (pam.zlecone >= 0 && !ktosScina && !st.felled.includes(pam.zlecone) && !pam.pominieteDrzewa.includes(pam.zlecone))
     pam.pominieteDrzewa.push(pam.zlecone);
   pam.zlecone = -1;
-  if (drewno >= prog(g) || ktosScina) return;
+  if (ktosScina || drewno >= prog(g)) return;
   const k = najblizszeDrzewo(g, pam.pominieteDrzewa);
   const zarzad = rdzen(g);
   const kto = zarzad.find((p) => p.job?.t !== 'sleep' && p.job?.t !== 'guard') ?? zarzad[0];

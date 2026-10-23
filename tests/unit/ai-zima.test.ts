@@ -1,11 +1,15 @@
 /* Warstwa zimy silnika osady AI (src/ai/zima.ts, src/ai/miejsca.ts, `silnik` w src/ai/silnik.ts), etap 1 osady AI
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 3). Powód warstwy: gry botów kończą się zimą w dniach
    15–18, bo zarząd śpi w pokoju, który koza z kuchni grzeje tylko przez drzwi (docs/ocena/2026-10-20-zima-w-grach-botow.md,
-   sekcje 3 i 7); ogrzany pokój zarządu daje 5–12 dni więcej. Pilnuje pięciu rzeczy:
-   - miejsc (`pokojZarzadu`, `miejsceNa`): pokój, w którym śpi zarząd, i pierwsze miejsce dla budowli (także tam, gdzie
-     koza z beczki nie ma gdzie stanąć, jak w sypialniach bez okna);
+   sekcje 3 i 7); ogrzany pokój zarządu daje 5–12 dni więcej. Pilnuje sześciu rzeczy:
+   - miejsc (`pokojZarzadu`, `miejsceNa`): pokój, w którym śpi zarząd, i pierwsze miejsce dla budowli: także tam, gdzie
+     koza z beczki nie ma gdzie stanąć (sypialnie Lanciego bez okna), z wolnym kafelkiem do stania przy obrysie (plan
+     zastawiony ze wszystkich stron stałby w grze do końca: Zielonki, ziarno 14) i z pomijaniem miejsc, które ktoś jeszcze
+     zajmie (pracownia nie zabiera kozie okna);
    - drogi do kozy: pracownia, badanie `t_kozy`, koza z beczki w pokoju zarządu do 9. dnia, także w domu jednorodzinnym
-     (Zielonki: zarząd w dwóch pokojach, bez klatki);
+     (Zielonki: zarząd w dwóch pokojach, bez klatki; w grze jak w przeglądarce, bo świat z adresu nie ma desek na pracownię);
+   - materiału: plan, któremu brakuje desek, dostaje rozbiórkę gruzu i śmieci, a sterta, do której nikt nie dojdzie, nie
+     jest zlecana w kółko;
    - drewna: `drewnoNaNoc` liczy jak karta nocy, a ścinanie na opał rusza już poniżej dwóch nocy (nie dopiero poniżej 6);
    - dyżuru przy kozie na karcie nocy: najbardziej wypoczęta osoba ze zdrowiem co najmniej 40, tylko gdy drewna starcza
      na noc i jest zimno, bez podwójnego przydziału i z poleceniem, gdy karta nie ma tej opcji;
