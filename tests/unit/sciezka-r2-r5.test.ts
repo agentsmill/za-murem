@@ -1363,7 +1363,7 @@ describe('teksty R2 (zwykły i zombie, blok i dom, mysz i dotyk, po polsku i po 
       expect(slowa(g, true, 'sily').how).toBe('Stuknijcie portret na liście pod paskiem: karta pokaże siły tej osoby.');
       expect(slowa(g, false, 'ognisko')).toEqual({
         text: 'Rozpalcie ognisko na podwórku.',
-        how: `Prawy przycisk na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (2 drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta ${dom ? 'przy furtce' : 'przy bramie'} też ma lampę.`,
+        how: `Prawy przycisk na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (2 drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta ${dom ? 'przy furtce' : 'przy bramie'} też ma lampę. Liczy się ognisko, które płonie wieczorem.`,
       });
       expect(
         slowa(g, true, 'ognisko').how.startsWith(
@@ -1386,7 +1386,7 @@ describe('teksty R2 (zwykły i zombie, blok i dom, mysz i dotyk, po polsku i po 
       );
       expect(slowa(g, false, 'ognisko')).toEqual({
         text: 'Light a campfire in the yard.',
-        how: `Right-click a free spot in the yard: “Light a campfire here” (2 wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at ${dom ? 'the garden gate' : 'the gate'} carries a lamp too.`,
+        how: `Right-click a free spot in the yard: “Light a campfire here” (2 wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at ${dom ? 'the garden gate' : 'the gate'} carries a lamp too. It counts when the fire is burning in the evening.`,
       });
       expect(
         slowa(g, true, 'ognisko').how.startsWith(

@@ -234,7 +234,7 @@ R2.1 `sily`: „Sprawdźcie, kto ma siły na noc.” / “Check who has the ener
 - Uczy M03, M08, nowy element: lista ludzi. Oba tryby.
 
 R2.2a `ognisko` (zwykły): „Rozpalcie ognisko na podwórku.” / “Light a campfire in the yard.”
-- Jak: „Prawy przycisk na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (2 drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta przy [bramie] też ma lampę.” / “Right-click a free spot in the yard: “Light a campfire here” (2 wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at the gate carries a lamp too.”
+- Jak: „Prawy przycisk na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (2 drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta przy [bramie] też ma lampę. Liczy się ognisko, które płonie wieczorem.” / “Right-click a free spot in the yard: “Light a campfire here” (2 wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at the gate carries a lamp too. It counts when the fire is burning in the evening.”
 - Warunek: `gov.evening.campfire` prawdziwe (ognisko płonie po 18:00) od otwarcia rozdziału.
 - Uczy M17, M29 (M22). Bez nowego elementu.
 

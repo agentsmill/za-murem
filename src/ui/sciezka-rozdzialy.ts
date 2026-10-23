@@ -360,8 +360,8 @@ const R2: DefRozdzialu = {
       tekst: () => L('Rozpalcie ognisko na podwórku.', 'Light a campfire in the yard.'),
       jak: (o) =>
         L(
-          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (${num(CAMPFIRE_WOOD, 0)} drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta ${o.words.brama.przy} też ma lampę.`,
-          `${o.touch ? 'Press and hold on' : 'Right-click'} a free spot in the yard: “Light a campfire here” (${num(CAMPFIRE_WOOD, 0)} wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at ${o.wordsEn.brama} carries a lamp too.`,
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na wolnym miejscu podwórka: „Rozpalić ognisko tutaj” (${num(CAMPFIRE_WOOD, 0)} drewna). Światło przy siatce płoszy szabrowników i pomaga warcie ich zobaczyć, a wieczór przy ogniu łagodzi wkurzenie. Warta ${o.words.brama.przy} też ma lampę. Liczy się ognisko, które płonie wieczorem.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} a free spot in the yard: “Light a campfire here” (${num(CAMPFIRE_WOOD, 0)} wood). Light by the fence scares looters off and helps the watch see them, and an evening by the fire takes the edge off the anger. A guard at ${o.wordsEn.brama} carries a lamp too. It counts when the fire is burning in the evening.`,
         ),
       // flagę zarządu ustawia ognisko, które płonie po 18:00; zeruje ją raport rano
       zrobiony: (o) => !!o.gov?.evening.campfire,
