@@ -16,6 +16,8 @@
    - determinizmu i kosztu: pamięć warstwy w JSON (zapis i wczytanie w połowie nie zmieniają przebiegu), warstwa najwyżej
      raz na 30 sekund przy ekranie. */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   type Decydent,
@@ -41,7 +43,12 @@ import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '
 import { houseOf } from '../../src/sim/house.ts';
 import type { Thing } from '../../src/sim/sim.ts';
 import { przygotujGre } from '../../tools/bot-osada.ts';
+import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
+
+const demoPrzymorze = JSON.parse(
+  fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'),
+);
 
 type Karta = Extract<Prompt, { k: 'karta' }>;
 
@@ -721,6 +728,48 @@ describe('dyżur przy kozie na karcie nocy', () => {
     const osoba = karta.card.people[0];
     const pionek = g.sim.st.pawns.find((p) => g.sim.st.people[p.person].id === osoba.id)!;
     expect(ruchy).toEqual([`polecenie:${JSON.stringify({ t: 'guard', ids: [pionek.id], post: 'koza' })}`]);
+  });
+
+  it('osoba na wyprawie ma na karcie tylko sen: dyżur dostaje następna z opcją przy kozie, choćby tamta była najbardziej wypoczęta', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const { ruchy, karta } = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
+      dorzucDrewno(gr);
+      ustawKarte(gr, p, [99, 90, 80, 70]);
+      // tak wygląda na karcie osoba poza domem: jedna opcja, sen (src/gov/noc.ts, `pozaDomem`)
+      p.card.people[0].options = p.card.people[0].options.filter((o) => o.key === 'sen');
+    });
+    expect(karta.card.people[0].options.map((o) => o.key)).toEqual(['sen']);
+    expect(ruchy).toEqual([`noc:${karta.card.people[1].id}=${KOZA_KEY}`]);
+  });
+
+  it('osoba wysłana na wyprawę o 19:00 jest o 20:00 poza domem: karta daje jej tylko sen, a dyżur idzie do innej', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11, { okolica: okolicaZGeo(demoPrzymorze.geo) });
+    grajDo(g, silnik, tickDnia(6, 19));
+    expect(hourOf(g.sim.st.tick)).toBe(19);
+    const i = wejscie(g);
+    const cel = najblizszeMiejsce(g.gov, i, 'spozywczy')!;
+    const wyjezdny = i.people[0].id;
+    // sama osoba wraca po trzech godzinach przeszukania, czyli po 20:00, więc dopiero o 6:00 następnego dnia
+    expect(zrobRece(g).wyslij(cel, [wyjezdny])).toBe(true);
+    let ludzie: string[] = [];
+    const a = przydzialPoOknie(g, tickDnia(6, 19) + 1, (gr, p) => {
+      dorzucDrewno(gr);
+      ludzie = p.card.people.map((o) => o.id);
+      const k = ludzie.indexOf(wyjezdny);
+      expect(p.card.people[k].options.map((o) => o.key)).toEqual(['sen']);
+      // najbardziej wypoczęta jest właśnie ta, której nie ma w domu
+      ustawKarte(
+        gr,
+        p,
+        ludzie.map((_, n) => (n === k ? 99 : 80 - n)),
+      );
+    });
+    expect(a[wyjezdny]).toBe('sen');
+    const dyzurni = Object.entries(a)
+      .filter(([, klucz]) => klucz === KOZA_KEY)
+      .map(([id]) => id);
+    expect(dyzurni).toHaveLength(1);
+    expect(dyzurni[0]).not.toBe(wyjezdny);
   });
 
   it('w prawdziwej grze dyżur trzyma ogień: koza z beczki pali się przez całą noc 10., a wartownik przy bramie dalej stoi', () => {
