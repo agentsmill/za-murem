@@ -19,6 +19,7 @@ import {
   podmienLancuchy,
   porzadkuj,
   sprawdzLancuch,
+  sprawdzLancuchy,
   WATKOW,
   wybierzWatki,
 } from '../../src/gov/watki.ts';
@@ -87,6 +88,23 @@ const A: Lancuch = {
 };
 /** dwa kroki bez haków: drugi po godzinie od rozstrzygnięcia pierwszego */
 const B: Lancuch = { id: 'b', tryby: OBA, kroki: [krok('b', 1), krok('b', 2, { po: 1 })] };
+
+/** łańcuch z gościem w kroku 2: pierwszy krok ustawia `g.start`, drugi planuje wizytę dziecka i po przyjęciu ustawia `g.dobrze` */
+const G: Lancuch = {
+  id: 'g',
+  tryby: OBA,
+  kroki: [
+    krok('g', 1, { daj: ['g.start'] }),
+    krok('g', 2, {
+      po: 0,
+      hak: 'g.start',
+      daj: ['g.dobrze'],
+      przy: (h) => h.przyjmijGosci(),
+      gosc: (h) => ({ osoby: [h.makePerson({})], kto: 'dziecko' }),
+    }),
+    krok('g', 3, { po: 1, hak: 'g.dobrze' }),
+  ],
+};
 
 const lancuchZ = (id: string, tryby: readonly GameMode[]): Lancuch => ({
   id,
@@ -158,6 +176,11 @@ function wpis(id: string, faza: FazaGoscia, n = 1): GovGosc {
   return { id, faza, tile: 1234, gdzie: { x: 34, y: 12 }, pawns: zywi.map((k) => 100 + k), zywi, ukradl: 0 };
 }
 
+/** kopia stanu przez zapis zarządu i klon atrapy */
+function przezZapis(s: Stan): Stan {
+  return { gov: loadGov(saveGov(s.gov)), atr: s.atr.clone(), goscie: s.goscie, fx: emptyEffects() };
+}
+
 // ---------------------------------------------------------------- wybór wątków
 
 describe('wybór wątków sezonu', () => {
@@ -227,6 +250,23 @@ describe('wybór wątków sezonu', () => {
     expect(wybierzWatki(gov, 'zombie')).toEqual([]);
     expect(gov.watki).toBeUndefined();
     expect(gov.rng.s).toBe(rng);
+  });
+
+  it('w grze bez obcych wątki wybiera się spośród łańcuchów bez kroku z gościem, więc żaden nie zajmie miejsca na zawsze', () => {
+    podmienLancuchy([G, B, lancuchZ('z1', ['zwykly'])]);
+    for (let seed = 1; seed <= 20; seed++) {
+      expect([...wybierzWatki(newGov(seed), 'zwykly', true)].sort(), `bez obcych, ziarno ${seed}`).toEqual(['b', 'z1']);
+      expect([...wybierzWatki(newGov(seed), 'zwykly')].sort(), `z obcymi, ziarno ${seed}`).toEqual(['b', 'g', 'z1']);
+    }
+    // pierwszy eventTick gry bez obcych (bez `goscie` w wejściu) wybiera tak samo i łańcuch z gościem się nie zaczyna
+    const s = stan({ seed: 4 });
+    expect(s.goscie).toBeUndefined();
+    podmienLancuchy([G]);
+    expect(losuj(s)).toBeNull();
+    expect(s.gov.watki).toBeUndefined();
+    podmienLancuchy([G, B]);
+    expect(losuj(s)).toBe('b_1');
+    expect(s.gov.watki?.wybrane).toEqual(['b']);
   });
 
   it('łańcuchy filtrowane według trybu: kroki innego trybu nie wypadają, nawet gdy ktoś dopisał je do wybranych', () => {
@@ -334,6 +374,37 @@ describe('przebieg łańcucha', () => {
     expect(krokiGotowe(gov, 1000 + 120, 'zwykly').map((k) => k.id)).toEqual(['a_2']);
     expect(hakDane(gov, 'a.dali')).toEqual({ t: 1000, d: { x: 1 } });
     expect(hakDane(gov, 'a.nie')).toBeNull();
+  });
+
+  it('dojrzałe kroki idą w kolejności dojrzewania (hak plus `po`), a remis rozstrzyga kolejność wybranych', () => {
+    const X: Lancuch = {
+      id: 'x',
+      tryby: OBA,
+      kroki: [krok('x', 1, { daj: ['x.a'] }), krok('x', 2, { po: 5, hak: 'x.a' })],
+    };
+    const Y: Lancuch = {
+      id: 'y',
+      tryby: OBA,
+      kroki: [krok('y', 1, { daj: ['y.a'] }), krok('y', 2, { po: 0, hak: 'y.a' })],
+    };
+    podmienLancuchy([X, Y]);
+    const stanZ = (wybrane: string[], tx0: number, ty0: number): GovState => {
+      const gov = newGov(1);
+      gov.watki = {
+        wybrane,
+        krok: { x: 1, y: 1 },
+        haki: { x_1: { t: tx0 }, 'x.a': { t: tx0 }, y_1: { t: ty0 }, 'y.a': { t: ty0 } },
+      };
+      return gov;
+    };
+    const ids = (gov: GovState, t: number) => krokiGotowe(gov, t, 'zwykly').map((k) => k.id);
+    // x: hak 0, dojrzewa po 300 minutach; y: hak 100, dojrzewa od razu, czyli w 100. minucie: y wcześniej mimo późniejszego haka
+    expect(ids(stanZ(['x', 'y'], 0, 100), 99)).toEqual([]);
+    expect(ids(stanZ(['x', 'y'], 0, 100), 150)).toEqual(['y_2']);
+    expect(ids(stanZ(['x', 'y'], 0, 100), 400)).toEqual(['y_2', 'x_2']);
+    // remis dojrzewania (x w 300, y w 300): kolejność z `wybrane`
+    expect(ids(stanZ(['x', 'y'], 0, 300), 400)).toEqual(['x_2', 'y_2']);
+    expect(ids(stanZ(['y', 'x'], 0, 300), 400)).toEqual(['y_2', 'x_2']);
   });
 
   it('krok bez haka liczy odstęp od rozstrzygnięcia poprzedniego i łańcuch nie prowadzi dwóch kroków naraz', () => {
@@ -448,11 +519,6 @@ describe('pierwszeństwo kroków', () => {
 // ---------------------------------------------------------------- zapis i wczytanie
 
 describe('zapis i wczytanie', () => {
-  /** kopia stanu przez zapis zarządu i klon atrapy */
-  function przezZapis(s: Stan): Stan {
-    return { gov: loadGov(saveGov(s.gov)), atr: s.atr.clone(), goscie: s.goscie, fx: emptyEffects() };
-  }
-
   /** gra do końca łańcucha A z odpowiedziami „Tak”; oddaje przebieg (minuta, id) */
   function dograj(s: Stan): { t: number; id: string }[] {
     const seria: { t: number; id: string }[] = [];
@@ -573,22 +639,6 @@ describe('pusta lista łańcuchów', () => {
 // ---------------------------------------------------------------- krok z gościem
 
 describe('krok z gościem', () => {
-  const G: Lancuch = {
-    id: 'g',
-    tryby: OBA,
-    kroki: [
-      krok('g', 1, { daj: ['g.start'] }),
-      krok('g', 2, {
-        po: 0,
-        hak: 'g.start',
-        daj: ['g.dobrze'],
-        przy: (h) => h.przyjmijGosci(),
-        gosc: (h) => ({ osoby: [h.makePerson({})], kto: 'dziecko' }),
-      }),
-      krok('g', 3, { po: 1, hak: 'g.dobrze' }),
-    ],
-  };
-
   /** stan z gośćmi (pusta lista), po kroku 1 i z krokiem 2 zaplanowanym jako wizyta: grupa idzie do bramy */
   function zPlanem(): Stan {
     podmienLancuchy([G]);
@@ -684,24 +734,89 @@ describe('krok z gościem', () => {
     expect(wizyta()?.kartaId).toBe('g_2');
   });
 
-  it('gra bez obcych: łańcuch, którego następny krok ma gościa, kończy się po cichu', () => {
+  it('zapis i wczytanie, gdy krok z gościem czeka na grupę: po wczytaniu grupa dochodzi i wszystko idzie tak samo', () => {
+    const s = zPlanem();
+    s.goscie = [wpis(gid(s), 'idzie')];
+    expect(losuj(s)).toBeNull();
+    const kopia = przezZapis(s);
+    expect(kopia.gov.goscie?.aktywny).toMatchObject({ kartaId: 'g_2', karta: false });
+    expect(kopia.gov.watki).toEqual(s.gov.watki);
+    const przebieg = (x: Stan): { t: number; id: string }[] => {
+      const seria: { t: number; id: string }[] = [];
+      // łańcuch żyje mimo wczytania (sprzątanie widzi wizytę w zapisie), grupa dochodzi, karta otwiera się z danymi i `gid`
+      expect(losuj(x)).toBeNull();
+      expect(x.gov.watki?.krok.g).toBe(2);
+      x.goscie = [wpis(gid(x), 'brama')];
+      expect(losuj(x)).toBe('g_2');
+      expect((x.gov.ev.active!.d as { gid: string }).gid).toBe(gid(x));
+      seria.push({ t: minuta(x), id: 'g_2' });
+      wybierz(x, 0);
+      x.goscie = [wpis(gid(x), 'poszedl')];
+      expect(losuj(x)).toBeNull();
+      const trzecia = czekajNaKarte(x, 60);
+      if (trzecia) seria.push(trzecia);
+      return seria;
+    };
+    const a = przebieg(s);
+    const b = przebieg(kopia);
+    expect(a.map((x) => x.id)).toEqual(['g_2', 'g_3']);
+    expect(b).toEqual(a);
+    expect(saveGov(kopia.gov)).toBe(saveGov(s.gov));
+  });
+
+  it('krok z gościem, któremu `gosc` nikogo nie wystawiło, nie otwiera się bez gościa, a łańcuch kończy się po cichu', () => {
+    const wystawienia: NonNullable<Krok['gosc']>[] = [() => null, () => ({ osoby: [], kto: 'dziecko' })];
+    for (const [n, gosc] of wystawienia.entries()) {
+      const Z: Lancuch = {
+        id: 'z',
+        tryby: OBA,
+        kroki: [krok('z', 1, { daj: ['z.a'] }), krok('z', 2, { hak: 'z.a', gosc }), krok('z', 3, { po: 1 })],
+      };
+      podmienLancuchy([Z]);
+      const s = stan({ seed: 4 });
+      s.goscie = [];
+      expect(losuj(s), `wariant ${n}`).toBe('z_1');
+      wybierz(s, 0);
+      // krok 2 zostaje wylosowany (jest rozpoczęty), ale żadna karta ani wizyta z niego nie powstaje
+      expect(czekajNaKarte(s, 80), `wariant ${n}`).toBeNull();
+      expect(s.gov.ev.done.z_2, `wariant ${n}`).toBe(true);
+      expect(s.gov.goscie?.aktywny).toBeUndefined();
+      expect(s.gov.ev.active).toBeNull();
+      expect(s.gov.log.some((w) => w.txt.pl === 'Krok 2')).toBe(false);
+      // łańcuch skończony po cichu: krok 3 nie wypadnie nigdy
+      expect(s.gov.watki?.krok.z).toBe(Z.kroki.length);
+      naprzod(s, 48);
+      expect(czekajNaKarte(s, 80)).toBeNull();
+    }
+  });
+
+  it('gra bez obcych, a łańcuch wybrany w grze z obcymi: następny krok z gościem kończy łańcuch po cichu', () => {
     podmienLancuchy([G]);
     const s = stan({ seed: 4 });
-    expect(s.goscie).toBeUndefined();
+    s.goscie = [];
     expect(losuj(s)).toBe('g_1');
     wybierz(s, 0);
+    // zapis z obcymi wczytany do gry bez obcych (wejście bez `goscie`)
+    s.goscie = undefined;
     expect(czekajNaKarte(s, 80)).toBeNull();
     expect(s.gov.watki?.krok.g).toBe(G.kroki.length);
-    // sam pierwszy krok z gościem w grze bez obcych w ogóle się nie zaczyna
-    const tylkoGosc: Lancuch = {
+    expect(s.gov.goscie?.aktywny).toBeUndefined();
+  });
+
+  it('gra bez obcych, a łańcuch z gościem niezaczęty (wybrany w grze z obcymi): kończy się po cichu zamiast zajmować miejsce', () => {
+    const pierwszyZGosciem: Lancuch = {
       id: 'h',
       tryby: OBA,
       kroki: [krok('h', 1, { gosc: () => ({ osoby: [], kto: 'dziecko' }) }), krok('h', 2, { po: 1 })],
     };
-    podmienLancuchy([tylkoGosc]);
-    const t = stan({ seed: 4 });
-    expect(czekajNaKarte(t, 40)).toBeNull();
-    expect(t.gov.watki?.krok.h).toBeUndefined();
+    podmienLancuchy([pierwszyZGosciem, B]);
+    const s = stan({ seed: 4 });
+    s.gov.watki = { wybrane: ['h', 'b'], haki: {}, krok: {} };
+    expect(s.goscie).toBeUndefined();
+    // łańcuch b wypada, łańcuch h kończy się, nie zaczynając
+    expect(losuj(s)).toBe('b_1');
+    expect(s.gov.watki?.krok.h).toBe(pierwszyZGosciem.kroki.length);
+    expect(s.gov.ev.done.h_1).toBeUndefined();
   });
 });
 
@@ -773,5 +888,19 @@ describe('hak i sprawdzanie łańcuchów', () => {
     expect(bledy.join('\n')).toContain('lancuch r zamiast q');
     expect(bledy.join('\n')).toContain('hak inny.hak poza przestrzenią q.');
     expect(sprawdzLancuch({ id: 'k', tryby: OBA, kroki: [krok('k', 1)] }).join()).toContain('1 kroków zamiast 2–4');
+  });
+
+  it('sprawdzLancuchy: to samo id kroku w dwóch łańcuchach, powtórzony łańcuch i id powtórzone w łańcuchu to usterki', () => {
+    expect(sprawdzLancuchy([A, B, G], new Set(M1_EVENTS.map((e) => e.id)))).toEqual([]);
+    // krok `b_2` w dwóch różnych łańcuchach (id kroku to id karty, więc musi być unikalne w całej grze)
+    const C: Lancuch = { id: 'c', tryby: OBA, kroki: [krok('c', 1), { ...krok('c', 2), id: 'b_2' }] };
+    const bledy = sprawdzLancuchy([A, B, C]);
+    expect(bledy).toEqual(['b_2: id zajęte przez kartę puli albo krok innego łańcucha']);
+    // pojedyncze sprawdzenie łańcucha C tego nie widzi: potrzebna jest cała lista
+    expect(sprawdzLancuch(C)).toEqual([]);
+    expect(sprawdzLancuchy([A, A]).join('\n')).toContain('a: łańcuch powtórzony na liście');
+    const D: Lancuch = { id: 'd', tryby: OBA, kroki: [krok('d', 1), { ...krok('d', 2), id: 'd_1' }] };
+    expect(sprawdzLancuch(D)).toEqual(['d_1: id powtórzone w łańcuchu d']);
+    expect(sprawdzLancuchy([B], new Set(['b_1'])).join()).toContain('b_1: id zajęte');
   });
 });

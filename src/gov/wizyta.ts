@@ -435,7 +435,8 @@ const KTO_KARTY: Record<Exclude<GoscKarty['kto'], KtoId>, KtoId> = {
  * z karty albo z ziarna zarządu, plan dla symulacji i wpis aktywnej wizyty z id karty i jej danymi, żeby `goscTick`
  * otworzył właśnie tę kartę, gdy grupa stanie pod bramą. Gość z takiej karty chce tylko tego, co karta (bez haczyka i bez
  * rzeczy), więc klocki mają wartości zerowe. false (nic nie zmienione): karta bez gościa tym razem (`gosc` oddało null),
- * gra bez obcych albo inna wizyta w toku; wtedy karta pokazuje się od razu, po staremu.
+ * gra bez obcych albo inna wizyta w toku; wtedy karta pokazuje się od razu, po staremu (krok łańcucha z gościem, src/gov/watki.ts,
+ * w ogóle się wtedy nie pokazuje: `eventTick` kończy jego łańcuch).
  */
 export function planujKarte(
   st: GovState,

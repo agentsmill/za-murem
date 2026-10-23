@@ -54,7 +54,8 @@
    losowanie `pickGovEvent` ma dwa dodatki: krok z dojrzałym hakiem wypada przed zwykłą pulą z szansą 0,6 (jedna liczba
    z ziarna zarządu, tylko gdy taki krok jest dostępny: jego pora dnia, tryb, waga i, dla kroku z gościem, wolne miejsce
    wizyty), a pierwsze kroki wybranych łańcuchów wchodzą do puli z wagą 1. Kroki to karty jak inne (ten sam odstęp,
-   `activate`, okno, wybór, `GEventDef.gosc` przez `planujKarte`); wybór zamykający kartę kroku rozstrzyga go
+   `activate`, okno, wybór, `GEventDef.gosc` przez `planujKarte`; krok z gościem, któremu `gosc` nikogo nie wystawiło, nie
+   otwiera się bez gościa, tylko kończy łańcuch); wybór zamykający kartę kroku rozstrzyga go
    (`rozstrzygnijKrok`), a `GovHost.hak` ustawia hak, który zwalnia następny. Bez łańcuchów nic z tego niczego nie losuje
    ani nie zapisuje. */
 
@@ -525,7 +526,7 @@ function start(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
 
 /** Losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first. Kroki łańcuchów: krok
     z dojrzałym hakiem, który pasuje teraz (pora, tryb, waga, wolna wizyta dla kroku z gościem), wypada przed pulą z szansą
-    `SZANSA_KROKU` (jedna liczba z ziarna zarządu, tylko gdy taki krok jest; z kilku ten, który czeka najdłużej), a pierwsze
+    `SZANSA_KROKU` (jedna liczba z ziarna zarządu, tylko gdy taki krok jest; z kilku ten, który dojrzał najwcześniej), a pierwsze
     kroki wybranych łańcuchów, które pasują, wchodzą do puli z wagą 1 (warunek dostępności to `w(h) > 0`). */
 function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): ActiveEvent | null {
   const fresh = (e: GEventDef) =>
@@ -621,7 +622,7 @@ export const nextGap = (st: GovState, screen: number): number =>
     dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
 export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boolean): void {
   // wątki sezonu raz na grę, przy pierwszym wywołaniu (także w starym zapisie bez `watki`); bez łańcuchów nic nie robi
-  wybierzWatki(st, st.mode ?? 'zwykly');
+  wybierzWatki(st, st.mode ?? 'zwykly', !i.goscie);
   // okno z zapisu, którego gra już nie zna (zmieniona pula), znika zamiast blokować grę
   if (st.ev.active && !defOf(st.ev.active.id)) st.ev.active = null;
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
@@ -674,7 +675,12 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
     // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
     const def = defOf(ev.id);
-    if (def?.gosc && planujKarte(st, i, fx, def, h, ev.d)) return;
+    if (def?.gosc) {
+      if (planujKarte(st, i, fx, def, h, ev.d)) return;
+      // krok łańcucha z gościem nigdy nie otwiera się bez gościa (`gosc` nie wystawiło nikogo): krok jest rozpoczęty, a że nie
+      // ma karty ani wizyty, `porzadkuj` zakończy łańcuch po cichu w następnym kroku
+      if (jestKrok(def)) return;
+    }
   }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
