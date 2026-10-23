@@ -1,12 +1,31 @@
 /* Odczyt stanu dla modułu zarządu (src/gov, karta nocy, uchwały) i dla interfejsu: ludzie zarządu z potrzebami,
    umiejętnościami i obecną pracą (people: tylko zarząd, z tego korzysta zarząd), mieszkańcy siedziby z osobą
-   z generatora mieszkańców (lokatorzy: tylko do kart w interfejsie), zapasy drewna i jedzenia, czas. Czysta funkcja
-   stanu i świata. Zwraca świeże obiekty (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji. */
+   z generatora mieszkańców (lokatorzy: do kart w interfejsie i, bez sąsiadów, do wejścia zarządu), zapasy drewna i jedzenia (drewno razem z ogniem
+   we wszystkich paleniskach naszych mieszkań), czas, badania dla tablicy korkowej (`tablica`, src/ui/badania.ts;
+   `GovInput.badania` to co innego: odczyt dla ramy zwycięstwa). Czysta funkcja stanu i świata. Zwraca świeże obiekty
+   (zwykły JSON), więc zmiany w wyniku nie ruszają symulacji.
+   Praca ludzi (src/sim/praca.ts) w odczycie: każda osoba niesie swój indeks w `st.people` (`osoba`, klucz ustawień),
+   znacznik `sam` (zajęcie, które zaczęła bez polecenia gracza) i ustawienia pracy w kolejności `RODZAJE`
+   (priorytety, stałe zajęcie, przełącznik „za siatkę”); cały odczyt ma progi zapasów i rodzaje widoczne w tej grze.
+   `populacja` liczy ludzi pod zarządem (zarząd, także na wyprawie, i mieszkańcy siedziby, bez sąsiadów i gości):
+   z niej bierze `GovInput.ludnosc` droga ludnościowa do zwycięstwa. */
 
-import type { Dom } from '../content/data.ts';
+import type { Dom, TechDom } from '../content/data.ts';
+import { TECH_DOMS } from '../content/data.ts';
 import type { Person } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { World } from '../world/world.ts';
+import {
+  badaniaDom,
+  badaniaWidoczne,
+  type Kartka,
+  kartka,
+  odkrycia,
+  PALENISKA,
+  TECHS,
+  tempoOsoby,
+  znajacy,
+} from './badania.ts';
 import { type AmmoKey, noAmmo, type WeaponId, weaponOf } from './bron.ts';
 import { BUILDS, type BuildKind, footprint, type Mat } from './budowle.ts';
 import {
@@ -25,6 +44,17 @@ import type { AptGame } from './mieszkania.ts';
 import type { Needs } from './needs.ts';
 import { jobText } from './orders.ts';
 import { durability, fenceShape } from './perimeter.ts';
+import {
+  type Priorytet,
+  type Progi,
+  priorytet,
+  progi,
+  RODZAJE,
+  type RodzajPracy,
+  staleZajecie,
+  WPISY,
+  zaSiatke,
+} from './praca.ts';
 import { LUP_MATS, uSasiada } from './sasiedzi.ts';
 import {
   AMPUTATE_WINDOW,
@@ -44,6 +74,8 @@ import { crowdNear } from './zombie.ts';
 export interface SimPerson {
   /** id pionka: do poleceń dla symulacji */
   pawn: number;
+  /** indeks osoby w `st.people`: klucz ustawień pracy ludzi (polecenia `prio`, `stale`, `zasiatke`) */
+  osoba: number;
   /** id osoby z generatora (s1, s2…) */
   id: string;
   name: string;
@@ -65,6 +97,14 @@ export interface SimPerson {
   moods: Mood[];
   /** bieżąca praca albo null, gdy bezczynny */
   job: JobKind | null;
+  /** Zajęcie bez polecenia gracza: osoba ma pracę (`job`) i zaczęła ją sama (`job.order === false`: praca z automatu,
+      a także sen, posiłek i grzanie się). Bezczynny i wykonujący polecenie mają `false`. */
+  sam: boolean;
+  /** Ustawienia pracy ludzi tej osoby (src/sim/praca.ts): priorytety rodzajów w kolejności `RODZAJE` (0 nie robi,
+      1 najważniejszy, 4 najmniej), stałe zajęcie albo null i przełącznik „może wychodzić za siatkę” (zarząd: ustawienie
+      gracza albo domyślne trybu, włączone w zwykłym i wyłączone w zombie). Ustawienia przyjmuje tylko zarząd, więc
+      u mieszkańca z osobą to wartości domyślne, a przełącznik zawsze wyłączony. */
+  praca: { prio: Priorytet[]; stale: RodzajPracy | null; zaSiatke: boolean };
   /** opis do karty osoby, np. „Rąbie suche drzewo.” */
   doing: string;
   asleep: boolean;
@@ -75,7 +115,7 @@ export interface SimPerson {
   carry: number;
   /** na wyprawie poza mapą */
   away: boolean;
-  /** posterunek warty tej nocy ('brama', 'd<id>', 'koza') albo null */
+  /** posterunek warty tej nocy ('brama', 'd<id>', 'koza', 'siatka', 'wieza') albo null */
   post: string | null;
   /** broń w rękach albo null (gołe ręce) i amunicja do niej w magazynie (null: broń bez amunicji) */
   weapon: WeaponId | null;
@@ -93,7 +133,7 @@ export interface SimStock {
   woodCarried: number;
   /** ogień w kozie zarządu, w godzinach gry */
   fireHours: number;
-  /** całe drewno w sztukach, razem z tym, co jest w kozie */
+  /** całe drewno w sztukach, razem z tym, co jest w ogniu: w kozie zarządu i w nowych paleniskach naszych mieszkań */
   wood: number;
   /** zapasy jedzenia (porcje) i ugotowane porcje w garnkach */
   supplies: number;
@@ -158,9 +198,37 @@ export interface SimLight {
   gateLamp: boolean;
 }
 
+/** badania dla tablicy korkowej (src/ui/badania.ts): bieżące badanie, stan każdej kartki, kto siedzi przy stole, kto
+    w osadzie zna dziedzinę, książki na półce i odkrycia; null bez pracowni i bez stanu badań */
+export interface SimBadania {
+  /** bieżące badanie (identyfikator technologii) albo null, gdy nic nie wybrano */
+  cur: string | null;
+  /** stan kartki każdej technologii, w kolejności `TECHS` */
+  kartki: Kartka[];
+  /** osoby siedzące przy stole (pionek w fazie siedzenia), z umiejętnością w dziedzinie bieżącego badania */
+  siedza: { id: number; name: string; prof: string; skill: number }[];
+  /** kto w osadzie zna dziedzinę (umiejętność co najmniej 1), od najlepszych: szczegóły kartki; dopisek do kontraktu
+      z planu badań, bez niego tablica nie powiedziałaby, kogo posadzić przy stole */
+  znaja: Partial<Record<TechDom, { name: string; prof: string; skill: number }[]>>;
+  /** książki na półce osady w każdej dziedzinie (najwyżej 2) */
+  ksiazki: Partial<Record<TechDom, number>>;
+  /** ukończone technologie z tickiem ukończenia, od najstarszej */
+  odkrycia: { id: string; tick: number }[];
+  /** czy stoi pracownia (po rozbiórce stan badań zostaje, a pracowni nie ma) */
+  pracownia: boolean;
+  /** punkty postępu na godzinę gry, które daje obecna obsada stołu w dziedzinie bieżącego badania (0 bez badania) */
+  tempo: number;
+  /** to samo dla każdej dziedziny: tempo obecnej obsady, gdyby badanie było z tej dziedziny (szacunek czasu na kartce
+      innej dziedziny niż bieżące badanie); `tempo` to wpis tej dziedziny, co bieżące badanie */
+  tempoDom: Partial<Record<TechDom, number>>;
+}
+
 export interface SimSnapshot {
   /** tryb gry */
   mode: GameMode;
+  /** praca ludzi w tej grze: progi zapasów (domyślne z poprawkami gracza; w trybie zombie dzidy domyślnie 12) i rodzaje pracy,
+      które w niej istnieją, w kolejności `RODZAJE` (kolumny panelu; `badania` dopiero, gdy gra ma badania) */
+  praca: { progi: Progi; widoczne: RodzajPracy[] };
   tick: number;
   day: number;
   hour: number;
@@ -177,11 +245,15 @@ export interface SimSnapshot {
   /** temperatura na zewnątrz i w kuchni zarządu (°C; null, gdy świat nie ma wnętrza) */
   outdoor: number;
   kitchen: number | null;
+  /** pali się koza zarządu albo któreś z nowych palenisk naszych mieszkań (koza z beczki, kocioł): karta nocy i raport
+      poranny nie mają mówić o zimnej kuchni przy palącym się kotle. Ogień samej kozy zarządu to `stock.fireHours`. */
   kozaLit: boolean;
   /** zarząd (pionki rdzenia), w kolejności pionków */
   people: SimPerson[];
-  /** mieszkańcy siedziby z osobą z generatora mieszkańców (opcja mieszkancy w createSim), w kolejności pionków; bez
-      opcji i w zapisie sprzed niej pusta lista. Zarząd ich nie widzi (govInput bierze people). */
+  /** mieszkańcy siedziby z osobą z generatora mieszkańców (opcja mieszkancy w createSim) i lokatorzy sąsiednich
+      budynków (pionki `sasiad` z osobą), w kolejności pionków; bez opcji i w zapisie sprzed niej pusta lista. Zarząd
+      dostaje z nich tylko mieszkańców siedziby (`GovInput.lokatorzy`: govInput zostawia pionki rodzaju `resident`),
+      lokatorów sąsiadów nie widzi. */
   lokatorzy: SimPerson[];
   stock: SimStock;
   /** spalone meble, po kolei */
@@ -202,6 +274,36 @@ export interface SimSnapshot {
   /** napad tej nocy albo ostatni: faza (0 czekają, 1 za siatką, 2 wchodzą albo uciekają, 3 po wszystkim),
       rozstrzygnięcie i co wynieśli; null: nie było */
   raid: { phase: number; outcome: string; took: { wood: number; supplies: number; scrap: number } } | null;
+  /** tablica badań (src/ui/badania.ts); null bez pracowni i bez stanu badań. Nazwa inna niż `GovInput.badania`, które
+      ma kształt odczytu dla ramy zwycięstwa */
+  tablica: SimBadania | null;
+}
+
+/** odczyt badań dla tablicy: stan kartek w trybie gry, obsada stołu i tempo jej pracy (w bieżącej dziedzinie i w każdej) */
+function badaniaOf(st: SimState): SimBadania | null {
+  if (!badaniaWidoczne(st)) return null;
+  const mode = modeOf(st);
+  const dom = badaniaDom(st);
+  const siedza: SimBadania['siedza'] = [];
+  const tempoDom: Partial<Record<TechDom, number>> = Object.fromEntries(TECH_DOMS.map((d) => [d, 0]));
+  for (const p of st.pawns) {
+    if (p.job?.t !== 'research' || p.job.phase !== 1) continue;
+    const o = st.people[p.person];
+    if (!o) continue;
+    siedza.push({ id: p.id, name: o.name, prof: o.prof, skill: dom ? (o.skills[dom] ?? 0) : 0 });
+    for (const d of TECH_DOMS) tempoDom[d] = (tempoDom[d] ?? 0) + tempoOsoby(o, d);
+  }
+  return {
+    cur: st.research?.cur ?? null,
+    kartki: TECHS.map((t) => kartka(st, t.id, mode)),
+    siedza,
+    znaja: Object.fromEntries(TECH_DOMS.map((d) => [d, znajacy(st, d)])),
+    ksiazki: { ...st.books },
+    odkrycia: odkrycia(st),
+    pracownia: st.things.some((t) => t.kind === 'pracownia'),
+    tempo: dom ? (tempoDom[dom] ?? 0) : 0,
+    tempoDom,
+  };
 }
 
 /** amunicja w magazynie do broni (null: broń bez amunicji) */
@@ -236,6 +338,7 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
   const tile = Math.floor(p.y) * size + Math.floor(p.x);
   return {
     pawn: p.id,
+    osoba: p.person,
     id: who.id,
     name: who.name,
     first: who.first,
@@ -250,6 +353,13 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
     needs: { ...p.needs! },
     moods: p.moods.map((m) => ({ ...m })),
     job: p.job ? p.job.t : null,
+    sam: !!p.job && p.job.order === false,
+    praca: {
+      prio: RODZAJE.map((r) => priorytet(st, p.person, r)),
+      stale: staleZajecie(st, p.person),
+      // przełącznik ma tylko zarząd (domyślnie włączony w trybie zwykłym, `zaSiatkeDomyslnie`); mieszkaniec z osobą nie wychodzi
+      zaSiatke: p.kind === 'core' && zaSiatke(st, p.person),
+    },
     doing: jobText(st, w, p),
     // śpi w łóżku albo przysypia na warcie
     asleep: (p.job?.t === 'sleep' && p.job.phase === 1) || (p.job?.t === 'guard' && p.job.phase === 4),
@@ -273,6 +383,21 @@ function personOf(st: SimState, w: World, p: Pawn, who: Person): SimPerson {
   };
 }
 
+/** Ludzie pod naszym zarządem: pionki `core` (także na wyprawie za mapą) i `resident` (mieszkańcy siedziby, z osobą
+    z generatora albo bez). Sąsiedzi z okolicznych budynków, szabrownicy, szwendacze, handlarz, wędrowcy, obce ekipy
+    i tłum się nie liczą, a kto wychodzi bramą (praca `odejscie` z wydarzeń), dla zarządu już nie istnieje. Z tego liczby
+    bierze `GovInput.ludnosc` (droga ludnościowa), więc nie ma drugiego sposobu liczenia ludności. Czysty odczyt. */
+export function populacja(st: SimState): { zarzad: number; mieszkancy: number; razem: number } {
+  let zarzad = 0;
+  let mieszkancy = 0;
+  for (const p of st.pawns) {
+    if (p.job?.t === 'odejscie') continue;
+    if (p.kind === 'core') zarzad++;
+    else if (p.kind === 'resident') mieszkancy++;
+  }
+  return { zarzad, mieszkancy, razem: zarzad + mieszkancy };
+}
+
 export function snapshot(st: SimState, w: World): SimSnapshot {
   const size = w.size;
   // łup we wnętrzach sąsiadów (M2 fala 2) nie jest jeszcze nasz: liczy się osobno
@@ -289,6 +414,11 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   const sklad = h ? h.sklad : [];
   let woodSklad = 0;
   let woodLoose = 0;
+  // drewno w ogniu: koza zarządu (fuel liczone niżej) i nowe paleniska naszych mieszkań (koza z beczki, kocioł według
+  // PALENISKA); zbiornik trzyma sztuki jak koza, więc sztuka to BURN_TICKS ognia niezależnie od wagi paleniska
+  let woodFire = 0;
+  // pali się któreś z nowych palenisk naszych mieszkań (razem z kozą zarządu daje `kozaLit`)
+  let noweLit = false;
   let supplies = 0;
   let meals = 0;
   let scrap = 0;
@@ -305,6 +435,10 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     else if (t.kind === 'posilek') meals += t.n;
     else if (t.kind === 'zlom') scrap += t.n;
     else if (t.kind === 'deski') boards += t.n;
+    else if (t.kind !== 'koza' && Object.hasOwn(PALENISKA, t.kind)) {
+      woodFire += Math.ceil(t.fuel / BURN_TICKS);
+      if (t.fuel > 0) noweLit = true;
+    }
   }
   const people: SimPerson[] = st.pawns
     .filter((p) => p.kind === 'core')
@@ -313,11 +447,18 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
   const lokatorzy: SimPerson[] = st.pawns
     .filter((p) => (p.kind === 'resident' || p.kind === 'sasiad') && p.person >= 0 && st.people[p.person])
     .map((p) => personOf(st, w, p, st.people[p.person]));
-  const woodCarried = people.reduce((a, p) => a + p.carry, 0);
+  // drewno w rękach zarządu i to, które zdjęto z rąk na czas przerwanego polecenia (Polecenie.niesie, do 3 godzin gry):
+  // jedno i drugie wciąż jest przy człowieku, więc zapasy i karta nocy go nie tracą
+  const woodCarried = st.pawns.reduce(
+    (a, p) => (p.kind === 'core' ? a + p.carry + (p.polecenie?.niesie?.drewno ?? 0) : a),
+    0,
+  );
   const fuel = koza?.fuel ?? 0;
   const hour = hourOf(tick);
+  const ludnosc = populacja(st);
   return {
     mode: modeOf(st),
+    praca: { progi: progi(st), widoczne: RODZAJE.filter((r) => WPISY[r].widoczny(st)) },
     tick,
     day: dayOf(tick),
     hour,
@@ -329,7 +470,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
     daylight: daylight(tick),
     outdoor: outdoorTemp(st.seed, tick),
     kitchen: kitchen >= 0 ? st.temps[kitchen] : null,
-    kozaLit: fuel > 0,
+    kozaLit: fuel > 0 || noweLit,
     people,
     lokatorzy,
     stock: {
@@ -337,7 +478,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       woodLoose,
       woodCarried,
       fireHours: fuel / TICKS_PER_HOUR,
-      wood: woodSklad + woodLoose + woodCarried + Math.ceil(fuel / BURN_TICKS),
+      wood: woodSklad + woodLoose + woodCarried + Math.ceil(fuel / BURN_TICKS) + woodFire,
       supplies,
       meals,
       gasCooks: Math.floor((stove?.fuel ?? 0) / COOK_TICKS),
@@ -371,7 +512,7 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       // warta przy bramie stoi z lampą
       gateLamp: st.pawns.some((p) => !p.away && p.job?.t === 'guard' && p.job.phase === 1 && p.job.target === 0),
     },
-    residents: st.pawns.filter((p) => p.kind === 'resident').length,
+    residents: ludnosc.mieszkancy,
     cap: st.cap,
     strangers: st.pawns.filter((p) => p.kind === 'szabrownik').length,
     zombies: zombieCounts(st, w),
@@ -408,5 +549,6 @@ export function snapshot(st: SimState, w: World): SimSnapshot {
       };
     }),
     raid: st.raid ? { phase: st.raid.phase, outcome: st.raid.outcome, took: { ...st.raid.took } } : null,
+    tablica: badaniaOf(st),
   };
 }

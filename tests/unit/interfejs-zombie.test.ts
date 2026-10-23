@@ -61,7 +61,7 @@ describe('interfejs trybu zombie', () => {
     expect(card()).toContain('12 naboi');
     expect(card()).toContain('data-card="arm"');
     infect(sim.st, p, true);
-    expect(card()).toMatch(/Ugryzion/);
+    expect(card()).toMatch(/Ugryzion[ay] w rękę albo nogę/);
     expect(card()).toContain('data-card="amputate"');
     for (let k = 0; k < AMPUTATE_WINDOW + 20; k++) sim.step();
     if (sim.st.pawns.includes(p)) expect(card()).not.toContain('data-card="amputate"');

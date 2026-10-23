@@ -1,14 +1,22 @@
 /* Budowle fali 1 M2 (grafika zastępcza): warsztat ze stołem z imadłem, kuchnia społeczna z kotłem,
-   regały magazynu, łóżka piętrowe, grządki ogródka i drut kolczasty zasieków. Do tego sterta śmieci
+   regały magazynu, łóżka piętrowe, grządki ogródka i drut kolczasty zasieków. Do tego pracownia (stół z lampą i półką
+   na książki) oraz budowle z technologii (docs/superpowers/specs/2026-10-19-badania-design.md): koza z beczki, kocioł
+   węzła, pieczarkarnia na regale, szklarnia z folii, barykada z wraków i wieża z rusztowań. Sterta śmieci
    z pustych mieszkań w trzech wielkościach i obróbka „zepsuty” dla dowolnego sprite'a mebla
    (pociemniały, popękany, obtłuczony, z drzazgami wokół). Te same bryły i raster co meble (bryly.ts),
    kotwica na środku dolnej krawędzi podstawy, rozmiar i kotwica zależą tylko od rodzaju i ustawienia.
    Ustawienie rot jak u mebli: ściana, przy której stoi (0 północ, 1 wschód, 2 południe, 3 zachód);
-   ogródek i zasieki tylko kładą się wzdłuż (rot 0 i 2) albo w poprzek (1 i 3). Czyste funkcje bez DOM. */
+   ogródek, szklarnia, zasieki, barykada i wieża tylko kładą się wzdłuż (rot 0 i 2) albo w poprzek (1 i 3). Rura kozy
+   z beczki skręca pod sufitem ku ścianie rot (stoi przy oknie, a okno bywa po każdej stronie). Koza z beczki i kocioł
+   mają klatki ognia jak koza zarządu (parametr fire 0..FIRE_FRAMES-1 w buildSprite: płomień w drzwiczkach, żar u dołu;
+   bez fire są zimne). Każdy rodzaj BuildKind ma własny przypadek w buildSprite (bez gałęzi domyślnej, która rysowałaby
+   zasieki). Czyste funkcje bez DOM. */
 
 import {
   type Box,
   box,
+  FIRE_FRAMES,
+  fireColor,
   HOLE,
   LIT,
   M,
@@ -24,7 +32,20 @@ import {
 import { h2, vnoise } from './hash.ts';
 import { C, mix, rgba, shade } from './palette.ts';
 
-export type BuildKind = 'warsztat' | 'kuchnia_spoleczna' | 'magazyn' | 'lozka_pietrowe' | 'ogrodek' | 'zasieki';
+export type BuildKind =
+  | 'warsztat'
+  | 'kuchnia_spoleczna'
+  | 'magazyn'
+  | 'lozka_pietrowe'
+  | 'ogrodek'
+  | 'zasieki'
+  | 'pracownia'
+  | 'koza_beczka'
+  | 'kociol'
+  | 'pieczarkarnia'
+  | 'szklarnia'
+  | 'barykada'
+  | 'wieza';
 export const BUILD_KINDS: readonly BuildKind[] = [
   'warsztat',
   'kuchnia_spoleczna',
@@ -32,6 +53,13 @@ export const BUILD_KINDS: readonly BuildKind[] = [
   'lozka_pietrowe',
   'ogrodek',
   'zasieki',
+  'pracownia',
+  'koza_beczka',
+  'kociol',
+  'pieczarkarnia',
+  'szklarnia',
+  'barykada',
+  'wieza',
 ];
 
 /** podstawa przy rot 0 w kafelkach (jak BUILDS w sim/budowle.ts): wzdłuż ściany × od ściany */
@@ -42,6 +70,13 @@ export const BUILD_BASE: Record<BuildKind, readonly [number, number]> = {
   lozka_pietrowe: [1, 2],
   ogrodek: [3, 2],
   zasieki: [1, 1],
+  pracownia: [2, 1],
+  koza_beczka: [1, 1],
+  kociol: [2, 1],
+  pieczarkarnia: [1, 1],
+  szklarnia: [3, 2],
+  barykada: [1, 1],
+  wieza: [2, 2],
 };
 
 const Q = {
@@ -66,6 +101,18 @@ const Q = {
   bottle: [0x3f6b3a, 0x6b4a22, 0x9fb3b9] as const,
   stew: 0x8a4a28,
   brick: C.brick0,
+  /** grzbiety książek na półce pracowni */
+  books: [0x7a2f2f, 0x2f4a6a, 0x5a6b3a, 0xb59a52, 0x6b4a32, 0xd8cfb8, 0x8a6a9a] as const,
+  cap: 0xe6dcc4,
+  capBrown: 0x9a7a52,
+  concrete: M.concrete,
+  /** lakier wraków: czerwony, niebieski, szary, żółty */
+  carBody: [0x8b3a32, 0x3f5f7f, 0x8a8c86, 0xb39a3e] as const,
+  glassD: 0x2a3438,
+  tire: 0x1f1f1f,
+  tireHi: 0x2e2e2e,
+  tin1: 0x9fa2a1,
+  tin2: 0x7f8283,
 } as const;
 
 /** słoje drewna na wierzchu i bokach */
@@ -351,6 +398,404 @@ function zasieki(seed: number): Box[] {
   return b;
 }
 
+// ---------------------------------------------------------------- pracownia
+
+/** koszulki książek w rzędzie: szerokość, wysokość (w pikselach półki) i kolor, ułożone od lewej do prawej */
+function ksiazki(
+  seed: number,
+  k: number,
+  szer: number,
+  wys: number,
+): { x0: number; x1: number; h: number; c: number }[] {
+  const out: { x0: number; x1: number; h: number; c: number }[] = [];
+  let x = 0;
+  for (let i = 0; x < szer; i++) {
+    // czasem przerwa między książkami (pochylona książka rysuje się jako krótsza)
+    if (h2(i, k, seed + 41) < 0.1) x += 2;
+    const w = 3 + Math.floor(h2(i, k, seed + 42) * 3);
+    const h = wys - Math.floor(h2(i, k, seed + 43) * 4);
+    out.push({ x0: x, x1: Math.min(szer, x + w), h, c: pick(Q.books, h2(i, k, seed + 44)) });
+    x += w;
+  }
+  return out;
+}
+
+/** pracownia 2×1 przy ścianie: stół z lampą, otwartą księgą i stosem książek, a nad nim półka na książki */
+function pracownia(seed: number): Box[] {
+  const r = rnd(seed, 1471);
+  const wood = pick(WOODS, r(1));
+  const legC = shade(wood, 0.8);
+  const b: Box[] = [];
+  for (const [x, y] of [
+    [4, 9],
+    [57, 9],
+    [4, 26],
+    [57, 26],
+  ])
+    b.push(box(x, y, 0, x + 3, y + 3, 13, legC));
+  b.push(box(5, 11, 3, 59, 28, 5, shade(wood, 0.9), { top: grain(shade(wood, 0.9), seed + 2) }));
+  // blat z plamami po kubkach
+  const top: Paint = (u, v) => {
+    if (Math.abs(Math.hypot(u - 22, v - 8) - 3) < 0.6) return shade(wood, 0.72);
+    return grain(wood, seed + 4)(u, v, 0, 0);
+  };
+  b.push(box(2, 7, 13, 62, 31, 16, wood, { top, front: grain(shade(wood, 0.92), seed + 5, 0.3) }));
+  // półka na książki na ścianie: dwa rzędy, boki, tył
+  const shelf = shade(wood, 0.85);
+  b.push(box(3, 0, 22, 61, 1, 47, shade(wood, 0.62)));
+  b.push(box(3, 0, 22, 5, 8, 47, shelf, { top: grain(shelf, seed + 6) }));
+  b.push(box(59, 0, 22, 61, 8, 47, shelf, { top: grain(shelf, seed + 7) }));
+  for (const z of [22, 34, 45]) b.push(box(3, 0, z, 61, 8, z + 2, shade(wood, 1.05), { top: grain(wood, seed + 8) }));
+  for (const [k, z0] of [
+    [0, 24],
+    [1, 36],
+  ] as const) {
+    const rzad = ksiazki(seed, k, 54, 10);
+    const spines: Paint = (u, v, _w, h) => {
+      const s = rzad.find((q) => u >= q.x0 && u < q.x1);
+      if (!s || v < h - s.h) return HOLE;
+      if (v === h - s.h + 2 || v === h - 3) return shade(s.c, 1.3); // opaska na grzbiecie
+      return u === s.x0 ? shade(s.c, 0.8) : s.c;
+    };
+    b.push(
+      box(5, 2, z0, 59, 7, z0 + 10, Q.paper, { front: spines, top: (u) => (u % 4 ? Q.paper : shade(Q.paper, 0.85)) }),
+    );
+  }
+  // otwarta księga i stos książek na blacie
+  const page: Paint = (u, v, w, h) => {
+    if (u === w >> 1 || u === 0 || v === 0 || u === w - 1 || v === h - 1) return Q.cardD;
+    return v % 2 === 0 && u > 1 && u < w - 2 && h2(u >> 2, v, seed + 9) < 0.85 ? 0x6a5f50 : Q.paper;
+  };
+  b.push(box(8, 16, 16, 24, 27, 17, Q.paper, { top: page, front: () => Q.paper }));
+  const cover = pick(Q.books, r(2));
+  b.push(box(30, 17, 16, 42, 27, 19, cover, { front: (_u, v) => (v === 0 || v === 2 ? Q.paper : cover) }));
+  b.push(
+    box(31, 18, 19, 41, 26, 21, pick(Q.books, r(3)), { front: (_u, v) => (v === 1 ? Q.paper : pick(Q.books, r(3))) }),
+  );
+  // lampa: żeliwna stopa, mosiężna łodyga i zielony klosz z ciepłym światłem pod spodem
+  const green = 0x2f6b46;
+  b.push(box(47, 20, 16, 53, 26, 18, M.iron, { round: true }));
+  b.push(box(49, 22, 18, 51, 24, 27, M.brass, { round: true }));
+  b.push(
+    box(44, 17, 27, 56, 29, 33, green, {
+      front: (u, v, _w, h) => (v >= h - 2 ? 0xffd27a | LIT : u === 0 ? shade(green, 1.25) : green),
+      top: (u, v) => ((u + v) % 7 === 0 ? shade(green, 1.25) : green),
+      round: true,
+    }),
+  );
+  return b;
+}
+
+// ---------------------------------------------------------------- koza z beczki
+
+/** koza z beczki 1×1: beczka z blachy z drzwiczkami, pokrywa z rurą, która idzie pod sufit i skręca ku ścianie rot;
+    fire >= 0 to klatka ognia: płomień za drzwiczkami i żar u dołu beczki */
+function kozaBeczka(seed: number, fire: number): Box[] {
+  const burning = fire >= 0;
+  const f = burning ? fire % FIRE_FRAMES : 0;
+  const r = rnd(seed, 1481);
+  const paint = pick([0x3f6a8f, 0x4f7a45, 0x9a3a2e, 0xa98438] as const, r(1));
+  const rim = shade(paint, 1.25);
+  const barrel: Paint = (u, v, _w, h) => {
+    if (v === 5 || v === h - 6) return shade(paint, 0.72); // obręcz
+    if (v === 6 || v === h - 5) return rim;
+    if (burning && v >= h - 4 && h2(u, v + f, 77) < 0.3) return M.ember; // żar prześwituje u dołu
+    if (h2(u, v, seed + 3) < 0.07 || (h2(u >> 1, v >> 1, seed + 4) < 0.05 && v > h / 2)) return M.rust;
+    return (u + v) % 9 === 0 ? shade(paint, 0.9) : paint;
+  };
+  const front: Paint = (u, v, w, h) => {
+    // drzwiczki do paleniska z uchwytem i szczeliną na ciąg; palące się pokazują płomień
+    if (u >= 5 && u <= 13 && v >= h - 19 && v <= h - 9) {
+      if (u === 5 || u === 13 || v === h - 19 || v === h - 9) return M.ironHi;
+      if (u === 12 && v === h - 14) return M.tin;
+      if (burning && u >= 6 && u <= 11 && v >= h - 18 && v <= h - 12) return fireColor(u, v, f);
+      return v === h - 11 ? M.ironDark : M.iron;
+    }
+    return barrel(u, v, w, h);
+  };
+  const lid: Paint = (u, v, w, h) => {
+    const d = ((u + 0.5 - w / 2) / (w / 2)) ** 2 + ((v + 0.5 - h / 2) / (h / 2)) ** 2;
+    if (d < 0.1) return M.ironDark; // otwór na rurę
+    if (d < 0.8) return d > 0.62 ? rim : shade(paint, 0.8);
+    return paint;
+  };
+  const pipe = { round: true };
+  return [
+    box(7, 9, 0, 25, 27, 27, paint, { front, back: barrel, left: barrel, right: barrel, top: lid, round: true }),
+    box(14, 16, 27, 18, 20, 40, M.pipe, pipe),
+    box(13, 15, 27, 19, 21, 29, M.ironHi),
+    box(14, 3, 36, 18, 20, 40, M.pipe, pipe),
+    box(12, 1, 33, 20, 3, 43, M.tin, { flat: true }),
+  ];
+}
+
+// ---------------------------------------------------------------- kocioł
+
+/** kocioł węzła 2×1: stalowy zbiornik z manometrem, palenisko z drzwiczkami, zbiornik wyrównawczy, rury z zaworami;
+    fire >= 0 to klatka ognia: płomień w drzwiczkach paleniska i żar w popielniku (zimny ma szczelinę ciemną) */
+function kociol(seed: number, fire: number): Box[] {
+  const burning = fire >= 0;
+  const f = burning ? fire % FIRE_FRAMES : 0;
+  const r = rnd(seed, 1491);
+  const tank = pick([0x7f8a8c, 0x6f8a86, 0x8a8f94] as const, r(1));
+  const red = 0xb2352b;
+  const b: Box[] = [box(3, 5, 0, 61, 29, 3, Q.concrete)];
+  // zbiornik główny: pasy, nity, manometr z czerwoną strzałką, tabliczka
+  const body: Paint = (u, v, w, h) => {
+    if (v % 14 === 6 || v % 14 === 7) return v % 14 === 6 ? shade(tank, 1.18) : shade(tank, 0.7); // pas spawu
+    if ((u === 1 || u === w - 2) && v % 14 === 3) return M.ironHi; // nity
+    if (burning && v >= h - 3 && h2(u, v + f, 80) < 0.35) return M.ember | LIT; // żar spod zbiornika
+    if (h2(u, v, seed + 3) < 0.05) return M.rust;
+    return tank;
+  };
+  const front: Paint = (u, v, w, h) => {
+    const cx = 11;
+    const cy = 12;
+    const d = Math.hypot(u + 0.5 - cx, v + 0.5 - cy);
+    if (d < 4.2) {
+      if (d > 3.2) return M.steelD;
+      if (u === cx && v >= cy - 3 && v <= cy) return red;
+      return Q.paper;
+    }
+    if (u >= 8 && u <= 15 && v >= 22 && v <= 25) return (u + v) % 2 ? M.brass : shade(M.brass, 0.8);
+    return body(u, v, w, h);
+  };
+  const lid: Paint = (u, v, w, h) => {
+    const d = ((u + 0.5 - w / 2) / (w / 2)) ** 2 + ((v + 0.5 - h / 2) / (h / 2)) ** 2;
+    return d < 0.12 ? M.ironDark : d > 0.8 ? shade(tank, 0.85) : shade(tank, 1.1);
+  };
+  b.push(box(7, 7, 3, 31, 28, 44, tank, { front, back: body, left: body, right: body, top: lid, round: true }));
+  // palenisko z drzwiczkami i szczeliną
+  const door: Paint = (u, v, w, h) => {
+    if (u > 2 && u < w - 3 && v > 4 && v < h - 3) {
+      if (u === 3 || u === w - 4 || v === 5 || v === h - 4) return M.ironHi;
+      if (v >= 7 && v <= 11 && u >= 5 && u <= w - 6) return burning ? fireColor(u, v, f) : M.ironDark;
+      return M.iron;
+    }
+    if (burning && v >= h - 3 && u > 3 && u < w - 4 && h2(u, v + f, 77) < 0.45) return M.ember | LIT; // żar w popielniku
+    return shade(Q.iron, 1.05);
+  };
+  // żar prześwituje też przez szczeliny w bokach i z tyłu paleniska, żeby było widać ogień, gdy kocioł stoi frontem od widza
+  // (przy ścianie od południa)
+  const bok: Paint = (u, v, _w, h) => (burning && v >= h - 5 && h2(u, v + f, 78) < 0.45 ? M.ember | LIT : Q.iron);
+  b.push(box(33, 9, 3, 47, 28, 21, Q.iron, { front: door, back: bok, left: bok, right: bok }));
+  // zbiornik wyrównawczy
+  b.push(
+    box(49, 12, 3, 60, 26, 25, red, {
+      round: true,
+      front: (_u, v) => (v % 9 === 4 ? shade(red, 0.75) : red),
+      top: (u, v, w, h) => (Math.hypot(u + 0.5 - w / 2, v + 0.5 - h / 2) < 3 ? M.ironDark : shade(red, 1.15)),
+    }),
+  );
+  // rury: komin w górę i ku ścianie, zasilanie i powrót z zaworami
+  const pipe = { round: true };
+  b.push(box(17, 16, 44, 21, 20, 58, M.pipe, pipe));
+  b.push(box(17, 1, 54, 21, 20, 58, M.pipe, pipe));
+  b.push(box(31, 11, 34, 49, 15, 38, M.pipe, pipe));
+  b.push(box(46, 22, 10, 56, 26, 14, M.pipe, pipe));
+  b.push(box(31, 21, 8, 47, 25, 12, M.pipe, pipe));
+  for (const [x, z] of [
+    [37, 38],
+    [41, 14],
+  ])
+    b.push(box(x, 9, z, x + 5, 16, z + 3, red, { flat: true }));
+  return b;
+}
+
+// ---------------------------------------------------------------- pieczarkarnia
+
+/** pieczarkarnia 1×1: niski regał z trzema skrzynkami podłoża, w nich kępy pieczarek, a na górnej skrzynce większe kapelusze */
+function pieczarkarnia(seed: number): Box[] {
+  const r = rnd(seed, 1501);
+  const wood = pick(WOODS, r(1));
+  const post = shade(wood, 0.8);
+  const b: Box[] = [];
+  for (const [x, y] of [
+    [3, 5],
+    [27, 5],
+    [3, 25],
+    [27, 25],
+  ])
+    b.push(box(x, y, 0, x + 2, y + 3, 28, post));
+  // skrzynki z podłożem: ciemny kompost, na nim białe i brązowe kapelusze
+  const bed =
+    (k: number): Paint =>
+    (u, v, w, h) => {
+      if (u === 0 || v === 0 || u === w - 1 || v === h - 1) return shade(wood, 0.9);
+      const q = h2(u >> 1, v >> 1, seed + 60 + k);
+      if (q < 0.26) return h2(u, v, seed + 70) < 0.5 ? Q.cap : shade(Q.cap, 0.85);
+      if (q < 0.36) return Q.capBrown;
+      return h2(u, v, seed + 71 + k) < 0.2 ? Q.soilHi : Q.soilD;
+    };
+  const side: Paint = (u, v) => (v === 0 ? shade(wood, 1.1) : u % 8 === 0 ? shade(wood, 0.7) : wood);
+  for (const [k, z] of [2, 11, 20].entries())
+    b.push(box(2, 4, z, 30, 29, z + 6, wood, { top: bed(k), front: side, back: side, left: side, right: side }));
+  // kępy kapeluszy na górnej skrzynce: trzonek i kapelusz
+  for (let i = 0; i < 6; i++) {
+    const x = 5 + (i % 3) * 8 + (i > 2 ? 3 : 0);
+    const y = 8 + (i > 2 ? 11 : 0);
+    const c = i % 3 === 1 ? Q.capBrown : Q.cap;
+    b.push(box(x + 1, y + 1, 26, x + 3, y + 3, 29, Q.cap, { opt: true }));
+    b.push(
+      box(x, y, 29, x + 5, y + 4, 31, c, {
+        round: true,
+        opt: true,
+        top: (u, v) => (u === 1 && v === 1 ? shade(c, 1.15) : c),
+      }),
+    );
+  }
+  return b;
+}
+
+// ---------------------------------------------------------------- szklarnia
+
+/** szklarnia 3×2 z folii: drewniany szkielet, dwuspadowy dach i ściany z folii, w środku grządki z rozsadą */
+function szklarnia(seed: number): Box[] {
+  const r = rnd(seed, 1511);
+  const wood = pick(WOODS, r(1));
+  const b: Box[] = [];
+  // grządki wewnątrz
+  const soil: Paint = (u, v, w, h) => {
+    if (u === 0 || v === 0 || u === w - 1 || v === h - 1) return shade(wood, 0.9);
+    if ((v - 2) % 4 === 0 && u > 1 && u < w - 2 && h2(u >> 1, v, seed + 6) < 0.7)
+      return pick(Q.leaf, h2(u, v, seed + 7));
+    const k = h2(u, v, seed + 5);
+    return k < 0.15 ? Q.soilHi : k > 0.85 ? Q.soilD : Q.soil;
+  };
+  for (const x of [8, 38, 68]) b.push(box(x, 12, 0, x + 20, 52, 5, wood, { top: soil }));
+  // folia: pasy na przemian z prześwitem, żeby widać było grządki; słupki co 24 px
+  const film =
+    (k: number): Paint =>
+    (u, v, w, h) => {
+      if (u % 24 === 0 || v === 0 || v === h - 1 || u === w - 1) return k ? shade(wood, 0.8) : wood;
+      return (u + v) % 2 === 0 ? (u % 11 === 3 ? 0xffffff : 0xcfe0e6) : HOLE;
+    };
+  const roof: Paint = (u, v, w) => {
+    if (u % 24 === 0 || u === w - 1) return wood;
+    return (u + v) % 2 === 0 ? 0xdcebf0 : HOLE;
+  };
+  const wall = { front: film(0), back: film(1), left: film(1), right: film(1) };
+  b.push(box(2, 6, 0, 94, 58, 18, 0xcfe0e6, { ...wall, top: roof, flat: true }));
+  b.push(box(2, 14, 18, 94, 50, 25, 0xcfe0e6, { ...wall, top: roof, flat: true }));
+  b.push(box(2, 24, 25, 94, 40, 30, 0xcfe0e6, { ...wall, top: roof, flat: true }));
+  // grzbiet dachu i narożne słupy
+  b.push(box(1, 30, 29, 95, 34, 32, wood));
+  for (const [x, y] of [
+    [1, 5],
+    [93, 5],
+    [1, 56],
+    [93, 56],
+  ])
+    b.push(box(x, y, 0, x + 3, y + 3, 19, shade(wood, 0.85)));
+  return b;
+}
+
+// ---------------------------------------------------------------- barykada
+
+/** barykada z wraków 1×1 wzdłuż odcinka: dwie opony, poszarpane drzwi i maska z samochodów, zderzak i pręty zbrojeniowe */
+function barykada(seed: number): Box[] {
+  const r = rnd(seed, 1521);
+  const body = pick(Q.carBody, r(1));
+  const body2 = pick(Q.carBody, r(2));
+  const rust = (u: number, v: number, c: number, k: number) =>
+    vnoise(u, v, 4, seed + k) > 0.64 ? M.rust : h2(u, v, seed + k + 1) < 0.06 ? shade(c, 0.7) : c;
+  const door: Paint = (u, v, w) => {
+    if (v === 0) return shade(body, 1.25);
+    if (v >= 2 && v <= 5 && u > 3 && u < w - 6) return Q.glassD; // szyba w drzwiach
+    if (u === w - 5 && v === 8) return M.tin; // klamka
+    return rust(u, v, body, 3);
+  };
+  const tire: Paint = (u, v, w) => (u === 0 || u === w - 1 ? Q.tireHi : (v + u) % 5 === 0 ? Q.tireHi : Q.tire);
+  const hub: Paint = (u, v, w, h) => {
+    const d = Math.hypot(u + 0.5 - w / 2, v + 0.5 - h / 2);
+    return d < 1.6 ? M.tin : d < 2.8 ? M.steelD : Q.tire;
+  };
+  const b: Box[] = [];
+  // opony po bokach
+  for (const x of [0, 24]) b.push(box(x, 11, 0, x + 8, 21, 8, Q.tire, { round: true, front: tire, top: hub }));
+  // drzwi w poprzek na dole, maska na nich i dach na wierzchu
+  b.push(box(3, 12, 0, 29, 19, 11, body, { front: door, back: door, top: (u, v) => rust(u, v, body, 5) }));
+  b.push(
+    box(1, 11, 11, 31, 19, 17, body2, {
+      front: (u, v) => (v === 0 ? shade(body2, 1.25) : rust(u, v, body2, 7)),
+      top: (u, v) => rust(u, v, body2, 9),
+    }),
+  );
+  b.push(
+    box(5, 13, 17, 27, 18, 21, M.steelD, {
+      front: (u, v) => rust(u, v, M.steelD, 11),
+      top: (u, v) => rust(u, v, M.steelD, 13),
+    }),
+  );
+  // zderzak z przodu
+  b.push(box(0, 19, 5, 32, 22, 8, M.tin, { round: true }));
+  // pręty zbrojeniowe i blacha wystające z góry
+  for (const x of [7, 14, 22]) b.push(box(x, 14, 21, x + 1, 15, 25 + (x % 3) * 2, M.rust, { opt: true }));
+  b.push(box(24, 12, 17, 29, 14, 25, M.rust, { flat: true, opt: true }));
+  return b;
+}
+
+// ---------------------------------------------------------------- wieża
+
+/** wieża z rusztowań 2×2: cztery nogi z rur z wiązaniami na krzyż, pomost z desek z barierką, drabina i strażnica z daszkiem */
+function wieza(seed: number): Box[] {
+  const r = rnd(seed, 1531);
+  const wood = pick(WOODS, r(1));
+  const tube = 0x8a9094;
+  const tubeD = 0x5d6366;
+  const b: Box[] = [];
+  // nogi
+  for (const [x, y] of [
+    [4, 4],
+    [57, 4],
+    [4, 57],
+    [57, 57],
+  ])
+    b.push(box(x, y, 0, x + 3, y + 3, 44, tube, { round: true }));
+  // wiązania na krzyż: ściany z przeźroczystymi polami, na których widać skosy
+  const cross: Paint = (u, v, w, h) => {
+    const t = u / w;
+    const d1 = Math.abs(v - t * (h - 1));
+    const d2 = Math.abs(v - (1 - t) * (h - 1));
+    if (d1 < 0.9 || d2 < 0.9 || v === 0 || v === h - 1) return h2(u, v, seed + 3) < 0.1 ? M.rust : tubeD;
+    return HOLE;
+  };
+  const open = () => HOLE;
+  for (const [z0, z1] of [
+    [2, 22],
+    [24, 44],
+  ])
+    b.push(
+      box(5, 5, z0, 60, 59, z1, tube, { front: cross, back: cross, left: cross, right: cross, top: open, flat: true }),
+    );
+  // pomost z desek
+  const plank: Paint = (u, v) =>
+    v % 6 === 0 ? shade(wood, 0.7) : (u + (v >> 2) * 7) % 23 === 0 ? shade(wood, 0.8) : wood;
+  b.push(
+    box(1, 1, 44, 63, 63, 47, wood, { top: plank, front: (_u, v) => (v === 0 ? shade(wood, 1.1) : shade(wood, 0.85)) }),
+  );
+  // barierka: dwa pasy rur i słupki, od środka widać pomost
+  const rail: Paint = (u, v) => (v === 1 || v === 6 ? tube : u % 16 < 2 ? tubeD : HOLE);
+  b.push(box(1, 1, 47, 63, 63, 57, tube, { front: rail, back: rail, left: rail, right: rail, top: open, flat: true }));
+  // strażnica na tylnej połowie pomostu: ściany z desek, okno z lampą, daszek z blachy falistej
+  const planks: Paint = (u, v) => {
+    if (u >= 14 && u <= 33 && v >= 5 && v <= 12) {
+      if (u === 14 || u === 33 || v === 5 || v === 12) return shade(wood, 0.6);
+      return u > 22 && u < 26 && v > 7 && v < 11 ? 0xffd27a | LIT : Q.glassD;
+    }
+    return v % 5 === 0 ? shade(wood, 0.72) : (u + (v >> 2) * 9) % 17 === 0 ? shade(wood, 0.85) : wood;
+  };
+  b.push(box(8, 8, 47, 56, 30, 64, wood, { front: planks, back: planks, left: planks, right: planks, top: plank }));
+  const sheet: Paint = (u) => (u % 4 < 2 ? Q.tin1 : Q.tin2);
+  b.push(box(5, 5, 64, 59, 33, 67, Q.tin1, { top: sheet, front: sheet }));
+  // latarnia na rogu barierki
+  b.push(box(57, 56, 57, 61, 60, 62, 0xffd27a | LIT, { flat: true }));
+  // drabina z przodu
+  const ladder: Paint = (u, v, w) => (u < 2 || u >= w - 2 || v % 5 === 0 ? wood : HOLE);
+  b.push(box(24, 60, 0, 36, 62, 44, wood, { front: ladder, back: ladder, flat: true }));
+  return b;
+}
+
 // ---------------------------------------------------------------- śmieci
 
 /** sterta śmieci z pustego mieszkania: worki, kartony, butelki, gazety; większa wyżej i szerzej */
@@ -405,8 +850,9 @@ export function smieciEnv(size: 1 | 2 | 3): Box[] {
   return [box(16 - R, 4, 0, 16 + R, 19 + R - 3, 14, 0)];
 }
 
-/** sprite budowli w ustawieniu rot; te same argumenty dają te same piksele */
-export function buildSprite(kind: BuildKind, rot: Rot, seed: number): Sprite {
+/** sprite budowli w ustawieniu rot; te same argumenty dają te same piksele. fire (0..FIRE_FRAMES-1) pali koza z beczki
+    i kocioł, u pozostałych budowli nic nie zmienia; bez fire wszystko jest zimne. */
+export function buildSprite(kind: BuildKind, rot: Rot, seed: number, fire = -1): Sprite {
   const [a, b] = BUILD_BASE[kind];
   const W = a * PX;
   const D = b * PX;
@@ -421,8 +867,22 @@ export function buildSprite(kind: BuildKind, rot: Rot, seed: number): Sprite {
       return renderBoxes(lozka(seed), W, D, rot);
     case 'ogrodek':
       return renderBoxes(ogrodek(seed), W, D, (rot & 1) as Rot, [box(0, 0, 0, W, D, 22, 0)]);
-    default:
+    case 'zasieki':
       return renderBoxes(zasieki(seed), W, D, (rot & 1) as Rot);
+    case 'pracownia':
+      return renderBoxes(pracownia(seed), W, D, rot);
+    case 'koza_beczka':
+      return renderBoxes(kozaBeczka(seed, fire), W, D, rot);
+    case 'kociol':
+      return renderBoxes(kociol(seed, fire), W, D, rot);
+    case 'pieczarkarnia':
+      return renderBoxes(pieczarkarnia(seed), W, D, rot);
+    case 'szklarnia':
+      return renderBoxes(szklarnia(seed), W, D, (rot & 1) as Rot);
+    case 'barykada':
+      return renderBoxes(barykada(seed), W, D, (rot & 1) as Rot);
+    case 'wieza':
+      return renderBoxes(wieza(seed), W, D, (rot & 1) as Rot);
   }
 }
 

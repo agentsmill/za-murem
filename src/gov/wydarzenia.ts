@@ -5,7 +5,47 @@
    kiedy na decyzję czeka karta nocy, uchwała, raport albo poprzednie wydarzenie.
    Pierwszy dzień (decyzja Mateusza, 17.10.2026): dopóki kuchnia się nie nagrzeje, cisza bez losowych wydarzeń;
    koza pierwszy raz się pali, więc po chwili ktoś widzi dym i przychodzi; do rana drugiego dnia tylko wydarzenia
-   pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia. */
+   pierwszej nocy (siatka, obcy, noc), reszta od drugiego dnia.
+   Pule według trybu gry: wydarzenie ma opcjonalne `tryby` (brak: oba tryby), `fitsMode` sprawdza je razem z wykluczeniem
+   wydarzeń ulicy w trybie zombie; karty o ludziach, których na mapie nie ma, w zombie nie przychodzą.
+   Karta z miejscem na mapie (`GEventDef.gdzie`) oddaje je w oknie wydarzenia (`eventView`, Prompt.gdzie) dla przycisku
+   „Pokaż”; „Szwendacz w siatce” bierze szwendacza z GovInput.horde.przy (`GovHost.przy`) i może wysłać na niego osobę
+   z dzidą (`GovHost.zDzida`, `atakuj` → GovEffects.atak).
+   Badania: technologie (`tech`), wiedza (`know`) i książki (`bookCount`, `addBook`) EventHost bierze z GovInput, czyli
+   z symulacji, jak tablica badań; nowa książka idzie do skutków (GovEffects.books), a nie do stanu zarządu.
+   Wpis do kroniki o przyjściu takiej karty (`GovState.log[]`) niesie jej miejsce jako `gdzie` (`Punkt`), jak okno.
+   Mieszkańcy siedziby z osobą z generatora (`GovInput.lokatorzy`) wchodzą do hosta jako `lokatorzy()` i `lokator(id)`,
+   w kopiach; bez generatora lista jest pusta. Skutki na ludziach: `awansuj(id)` (mieszkaniec do zarządu), `wyrzuc(id)`
+   (mieszkaniec albo osoba zarządu wychodzi bramą, od razu znika z `alive()`) i `sprawdz(id, tile)` (osoba zarządu idzie
+   na kafelek na 10 minut gry); idą do GovEffects.awans, .wyrzuc i .sprawdz, bez powtórzeń tego samego id.
+   Odstęp między powtórkami karty z nakładki (`OldEvent.gap`, np. kradzież co 48 godzin gry) idzie do `GEventDef.gap`.
+   Wybór bohatera karty z ludzi zarządu: `zarzad()` (wszyscy, bez tych, co wychodzą), `nieSpia()` (czuwający) i
+   `rested()` oraz `doSprawdzenia(oprocz?)` (najbardziej wypoczęta; do sprawdzania najpierw nieśpiąca, a gdy takiej nie
+   ma, śpiąca, ale nigdy z warty, z wyprawy ani od zabiegu) i `czuwaPozaWarta()`/`spiPozaWarta()` (do bezsenności:
+   czuwająca, a gdy takiej nie ma, śpiąca; nie z warty przy siatce, ale może być z dyżuru przy kozie; `posterunek(id)`
+   mówi, na którym stoi), a
+   „Sprawdzić” bierze kafelek z `kafelekPrzySiatce()` (GovInput.strony albo największa dziura), a „Ktoś nie może spać”
+   kafelek przed kozą z `kafelekKozy()` (GovInput.strony.koza); `moodOf` daje jednej
+   osobie chwilowy nastrój przez GovEffects.moods.
+   Pogrzeb (karta `pogrzeb`, z sytuacji jak dym): po zgonie z GovInput.dead, który ma płeć `f` (zarząd albo mieszkaniec
+   z imieniem; bez imienia zgon tylko przesuwa licznik), przychodzi w ciągu doby za dnia albo wieczorem, gdy nic nie
+   czeka na decyzję i nie trwa cisza ani pierwsza noc. Nie czeka na pełny odstęp między wydarzeniami (przy tempie 8×
+   to nawet 36 godzin gry), tylko najwyżej `POGRZEB_ODSTEP` sekund przy ekranie od ostatniej decyzji, więc kilka zgonów
+   naraz to kilka kart co kilkanaście sekund. Licznik `GovState.pogrzebN` (zgony, które przeszły przez pogrzeb) rośnie
+   przy pokazaniu karty albo pominięciu zgonu, więc zgon ma najwyżej jedną kartę; zgon starszy niż `POGRZEB_DO` minut
+   gry nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było. W trybie zombie karta czeka, dopóki zwłoki leżą
+   i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała.
+   Goście z klocków (src/gov/wizyta.ts, karty `gosc` i `zlapany` dołączone do `M1_EVENTS`): wydarzenie `gosc` z puli nie
+   otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc) i od razu losuje jeszcze raz wśród reszty (plan nie
+   zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
+   kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
+   kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`.
+   Karty z 0.3 z gościem (`GEventDef.gosc` z nakładek w warianty.ts: `uchodzcy`, `influencer`, `aktywisci`, `dzieci`,
+   `krypto`, w domu `fachowiec`) idą tą samą drogą: gdy wypadną z puli, `planujKarte` wystawia ich grupę zamiast karty, a
+   karta (z `gid` w danych) otwiera się w `goscTick`, gdy grupa stoi pod bramą. W odróżnieniu od gościa z klocków taka wizyta
+   zajmuje miejsce karty (to stare karty z puli, nie dodatkowe): po planie nie losuje się drugiej, odstęp do następnej
+   liczy się od tego losowania, więc liczba kart na dobę zostaje jak przed wizytami. `gdzie` takiej karty to kafelek grupy
+   (przycisk „Pokaż”). */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -13,18 +53,31 @@ import { makePerson, type Person } from '../content/people.ts';
 import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
-import { type GEventDef, type GovHost, NEW_EVENTS, OLD_EVENTS, type Pora, poraOf, REPEAT_GAP } from './tresc.ts';
-import type { GovEffects, GovInput, GovPerson, GovState, LootKey, StockKey } from './typy.ts';
+import { KOZA } from './noc.ts';
+import {
+  type DanePogrzebu,
+  type GEventDef,
+  type GovHost,
+  NEW_EVENTS,
+  OLD_EVENTS,
+  type Pora,
+  poraOf,
+  REPEAT_GAP,
+} from './tresc.ts';
+import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
+import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte } from './wizyta.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
 
-/** czy wydarzenie pasuje do trybu gry (w trybie zombie bez wydarzeń ulicy) */
-export const fitsMode = (st: Pick<GovState, 'mode'>, id: string): boolean =>
-  !(st.mode === 'zombie' && STREET_IDS.has(id));
+/** czy wydarzenie pasuje do trybu gry: jego `tryby` (brak: oba) i w trybie zombie bez wydarzeń ulicy */
+export const fitsMode = (st: Pick<GovState, 'mode'>, e: Pick<GEventDef, 'id' | 'tryby'>): boolean => {
+  const mode = st.mode ?? 'zwykly';
+  return (e.tryby?.includes(mode) ?? true) && !(mode === 'zombie' && STREET_IDS.has(e.id));
+};
 
 import { drewno } from './warianty.ts';
 import {
@@ -40,6 +93,7 @@ import {
   rnd,
   stockNow,
 } from './wspolne.ts';
+import { ludnoscOf } from './zwyciestwo.ts';
 
 /** pierwsze wydarzenie po tylu sekundach przy ekranie (samouczek ma swoje decyzje) */
 export const FIRST_EVENT = 70;
@@ -96,9 +150,14 @@ export const M1_EVENTS: GEventDef[] = [
       id: d.id,
       once: d.once,
       when: o.when,
+      tryby: o.tryby,
       first: o.first,
+      gap: o.gap,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
+      // karta z gościem: kogo wystawić (nakładka) i gdzie stoi grupa, gdy karta jest otwarta (dane z `gid`)
+      gosc: o.gosc,
+      gdzie: o.gosc ? (h, x) => (x?.gid ? (h.gosc(x.gid)?.wpis?.gdzie ?? null) : null) : undefined,
       title: (h, x) => {
         const pl = title(h, x);
         return tx(pl, en()?.title(h, x) ?? pl);
@@ -127,10 +186,19 @@ export const M1_EVENTS: GEventDef[] = [
   }),
   ...NEW_EVENTS,
   ...STREET_EVENTS,
+  ...GOSC_EVENTS,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
 byId.set('sasiadka', byId.get('dym')!);
+
+/** to samo co w wejściu, ale z własnymi obiektami w środku */
+const kopiaOsoby = (p: GovPerson): GovPerson => ({
+  ...p,
+  skills: { ...p.skills },
+  traits: [...p.traits],
+  needs: { ...p.needs },
+});
 
 const toPerson = (p: GovPerson): Person => ({
   id: p.id,
@@ -148,7 +216,17 @@ const toPerson = (p: GovPerson): Person => ({
   gone: false,
 });
 
-/** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; z wydarzeniem ev wpisy do kroniki
+/** to samo co w wejściu, ale z własnymi obiektami w środku (zmiana w wydarzeniu nie rusza wejścia) */
+const kopiaLokatora = (l: GovLokator): GovLokator => ({
+  ...l,
+  skills: { ...l.skills },
+  traits: [...l.traits],
+  needs: { ...l.needs },
+});
+
+/** EventHost z 0.3 na stanie zarządu: zapasy z wejścia, zmiany idą do skutków fx; `pop()` to ludność pod zarządem
+    z `ludnoscOf` (pole `GovInput.ludnosc`, a bez niego zarząd i mieszkańcy), ta sama liczba co w drogach do zwycięstwa;
+    z wydarzeniem ev wpisy do kroniki
     z jego wyborów mają drewno zamiast opału i zwroty według miejsca, a z danymi i numerem wyboru (pick) polski wpis
     z 0.3 dostaje angielski z EVENTS_EN */
 export function makeHost(
@@ -159,6 +237,7 @@ export function makeHost(
   pick?: { d: unknown; k: number },
 ): GovHost {
   const people = i.people.map(toPerson);
+  const lokatorzy = i.lokatorzy ?? [];
   const away = new Set(st.night?.confirmed ? st.night.exp.flatMap((e) => e.ids) : []);
   const res = (): Record<Res, number> => {
     const s = stockNow(i, fx);
@@ -169,6 +248,33 @@ export function makeHost(
     if (key) addStock(i, fx, key, v);
   };
   const nd = nightDay(i);
+  const odchodzi = (p: GovPerson) => fx.leave.includes(p.id) || !!fx.wyrzuc?.includes(p.id);
+  /** osoba zarządu na miejscu: nie jest na wyprawie (ani w nocnym planie wypraw) i nie wychodzi */
+  const naMiejscu = (p: GovPerson) => !p.away && !away.has(p.id) && !odchodzi(p);
+  /** osoba zarządu na miejscu, która nie śpi */
+  const czuwa = (p: GovPerson) => !p.asleep && naMiejscu(p);
+  /** klucz posterunku warty, na którym stoi osoba ('brama', 'd<id>', 'koza', 'siatka', 'wieza'): z odczytu symulacji, z
+      menu albo z zatwierdzonej karty nocy tej doby; null: nie stoi na żadnym. Praca 'guard' bez znanego posterunku to
+      posterunek przy siatce. */
+  const posterunek = (p: GovPerson): string | null => {
+    if (p.post) return p.post;
+    const menu = i.guards?.find((g) => g.id === p.id);
+    if (menu) return menu.post;
+    const klucz = st.night?.confirmed && st.night.day === nd ? st.night.assign[p.id] : undefined;
+    if (klucz?.startsWith('warta:')) return klucz.slice('warta:'.length);
+    return p.job === 'guard' ? 'brama' : null;
+  };
+  /** czy osoba stoi na warcie; z `dopuscKoze` dyżur przy kozie się nie liczy (siedzi przy kozie, nie pilnuje siatki) */
+  const naWarcie = (p: GovPerson, dopuscKoze = false) => {
+    const k = posterunek(p);
+    return k !== null && !(dopuscKoze && k === KOZA);
+  };
+  /** czy osoba może zająć się czymś poza swoim miejscem: nie na warcie (z `dopuscKoze` przy kozie wolno), nie
+      ugryziona (gorączka, amputacja) i nie operująca */
+  const moze = (p: GovPerson, dopuscKoze = false) => !naWarcie(p, dopuscKoze) && !p.bitten && p.job !== 'amputate';
+  /** najbardziej wypoczęta z osób, które przeszły filtr; przy remisie niższe id */
+  const najbardziejWypoczeta = (ok: (p: GovPerson) => boolean): GovPerson | null =>
+    [...i.people].filter(ok).sort((a, b) => b.needs.rest - a.needs.rest || (a.id < b.id ? -1 : 1))[0] ?? null;
   const h: GovHost = {
     rng: rngOf(st.rng),
     // Fisher-Yates z ziarna zarządu: ten sam wynik w każdym silniku JS (sort z losowym porównaniem daje różne)
@@ -189,12 +295,16 @@ export function makeHost(
     day: () => i.day,
     season: () => i.season,
     law: (id) => law(st, id),
-    tech: () => false,
-    know: (d) => Math.max(0, ...i.people.map((p) => p.skills[d] ?? 0)) + Math.min(2, st.books[d as TechDom] ?? 0),
+    // technologie i wiedza z symulacji (jedna wiedza z tablicą badań: zarząd, lokatorzy i książki); bez nich, w testach
+    // z ręcznym wejściem, po staremu
+    tech: (id) => !!i.techDone?.includes(id),
+    know: (d) =>
+      i.know?.[d as TechDom] ??
+      Math.max(0, ...i.people.map((p) => p.skills[d] ?? 0)) + Math.min(2, st.books[d as TechDom] ?? 0),
     rule: () => true,
-    pop: () => i.people.length + (i.residents ?? 0),
+    pop: () => ludnoscOf(i),
     cap: () => i.cap ?? i.people.length + (i.residents ?? 0) + 4,
-    alive: () => people.filter((p) => !fx.leave.includes(p.id)),
+    alive: () => people.filter((p) => !fx.leave.includes(p.id) && !fx.wyrzuc?.includes(p.id)),
     spec: (id) => people.find((p) => p.id === id),
     makePerson: (opts) => makePerson(rngOf(st.rng), new Set(people.map((p) => p.first)), () => st.nextId++, opts),
     joinPerson: (p) => {
@@ -236,9 +346,10 @@ export function makeHost(
       fx.fire = true;
     },
     hasWorking: () => false,
-    bookCount: (d) => st.books[d] ?? 0,
+    // książki mieszkają w symulacji; nowa idzie do skutków, a do liczenia wlicza się ta, która w tym kroku już czeka
+    bookCount: (d) => (i.books?.[d] ?? 0) + (fx.books?.filter((b) => b === d).length ?? 0),
     addBook: (d) => {
-      st.books[d] = (st.books[d] ?? 0) + 1;
+      (fx.books ??= []).push(d);
     },
     setAlertNight: () => {
       st.tonight.alert = nd;
@@ -268,18 +379,58 @@ export function makeHost(
       for (const p of i.people) addNeeds(fx, p.id, d);
     },
     needsOf: (id, d) => addNeeds(fx, id, d),
-    rested: () =>
-      [...i.people]
-        .filter((p) => !p.asleep && !away.has(p.id))
-        .sort((a, b) => b.needs.rest - a.needs.rest || (a.id < b.id ? -1 : 1))[0] ?? null,
+    rested: () => najbardziejWypoczeta(czuwa),
+    zarzad: () => i.people.filter((p) => !odchodzi(p)).map(kopiaOsoby),
+    nieSpia: () => i.people.filter(czuwa).map(kopiaOsoby),
+    // Najpierw ktoś, kto nie śpi; nocą zwykle śpią wszyscy poza wartownikami, więc gdy nikogo takiego nie ma, wstaje
+    // najbardziej wypoczęty ze śpiących (karta mówi, że ktoś usłyszał hałas). Wartownik na posterunku, osoba na
+    // wyprawie i ugryziona (gorączka, amputacja) albo operująca zostają przy sobie; wtedy „Sprawdzić” jest niedostępne.
+    doSprawdzenia: (oprocz) =>
+      najbardziejWypoczeta((p) => p.id !== oprocz && czuwa(p) && moze(p)) ??
+      najbardziejWypoczeta((p) => p.id !== oprocz && naMiejscu(p) && moze(p)),
+    // bezsenność: czuwa (albo śpi i się budzi), ale nie pilnuje siatki ani nie operuje; dyżur przy kozie wolno
+    czuwaPozaWarta: () => i.people.filter((p) => czuwa(p) && moze(p, true)).map(kopiaOsoby),
+    spiPozaWarta: () => i.people.filter((p) => p.asleep && naMiejscu(p) && moze(p, true)).map(kopiaOsoby),
+    posterunek: (id) => {
+      const p = i.people.find((x) => x.id === id);
+      return p ? posterunek(p) : null;
+    },
+    kafelekKozy: () => i.strony?.koza ?? null,
+    kafelekPrzySiatce: (strona) =>
+      i.strony?.[strona] ?? fenceOf(i, fx.patch).holes.find((x) => x.tiles?.length)?.tiles?.[0] ?? null,
+    moodOf: (id, why, d, hours) => {
+      fx.moods.push({ id, why, d, hours });
+    },
     flag: (k) => st.flags[k],
     setFlag: (k) => {
       st.flags[k] = true;
     },
     gateClosed: () => law(st, 'u_brama') && (i.hour >= 20 || i.hour < 6),
     guarded: () => !!st.night?.confirmed && Object.values(st.night.assign).some((k) => k.startsWith('warta:')),
+    przy: () => (i.horde?.przy ? { ...i.horde.przy } : null),
+    zDzida: () =>
+      [...i.people]
+        .filter((p) => !p.asleep && !p.away && !away.has(p.id) && p.arm === 'dzida')
+        .sort((a, b) => b.needs.health - a.needs.health || (a.id < b.id ? -1 : 1))[0] ?? null,
+    atakuj: (id, pawn) => {
+      (fx.atak ??= []).push({ id, pawn });
+    },
+    awansuj: (id) => {
+      if (!fx.awans?.includes(id)) (fx.awans ??= []).push(id);
+    },
+    wyrzuc: (id) => {
+      if (!fx.wyrzuc?.includes(id)) (fx.wyrzuc ??= []).push(id);
+    },
+    sprawdz: (id, tile) => {
+      (fx.sprawdz ??= []).push({ id, tile });
+    },
     later: (stock, line) => {
       st.later.push({ day: nd, stock: stock as Partial<Record<LootKey, number>>, line });
+    },
+    lokatorzy: () => lokatorzy.map(kopiaLokatora),
+    lokator: (id) => {
+      const l = lokatorzy.find((x) => x.id === id);
+      return l ? kopiaLokatora(l) : null;
     },
     place: () => placeIn(i),
     free: () => freePlaces(i),
@@ -301,6 +452,7 @@ export function makeHost(
       return s === null ? null : s === 'bloki' ? 'from the block next door' : 'from over the fence';
     },
     neighbours: () => sasiedzi(placeIn(i)),
+    ...goscHost(st, i, fx),
   };
   return h;
 }
@@ -319,8 +471,7 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
   const pool = M1_EVENTS.filter(
-    (e) =>
-      e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e.id),
+    (e) => e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
   )
     .map((e) => [e, e.w(h)] as const)
     .filter((x) => x[1] > 0);
@@ -338,6 +489,54 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
 const dymWaits = (st: GovState, h: GovHost): boolean =>
   !st.ev.done.dym && !st.ev.done.sasiadka && (st.ev.lit ?? -1) >= 0 && h.neighbour() !== null;
 
+/** zgon starszy niż tyle minut gry (dwie doby) nie dostaje już pogrzebu: karta o dawnej śmierci nie ma sensu */
+export const POGRZEB_DO = 2 * 1440;
+/** Czekający pogrzeb przychodzi najpóźniej tyle sekund przy ekranie po ostatniej decyzji gracza, nie dopiero po pełnym
+    odstępie między wydarzeniami (100–180 s przy ekranie to przy tempie 8× nawet 36 godzin gry, a karta ma przyjść w ciągu
+    doby). Kilka zgonów naraz to kilka kart co tyle sekund. */
+export const POGRZEB_ODSTEP = 15;
+
+/** Karta pogrzebu z listy zgonów (jak dym, poza losowaniem): pierwszy zgon od licznika `pogrzebN` z imieniem, z płcią
+    w `GovInput.dead[].f`. Zgon bez imienia przesuwa licznik po cichu, a starszy niż `POGRZEB_DO` zostaje w kronice jako
+    pogrzeb, którego nie było (nikt nie miał czasu). Karty nie ma też nocą (tylko dzień i wieczór) i w trybie zombie,
+    dopóki ciało leży i może wstać. Pokazana karta zjada zgon od razu. */
+function pogrzeb(st: GovState, i: GovInput, fx: GovEffects, pora: Pora): ActiveEvent | null {
+  const dead = i.dead ?? [];
+  let n = st.pogrzebN ?? st.deadN ?? 0;
+  if (n >= dead.length) return null;
+  const teraz = gameMin(i);
+  while (n < dead.length) {
+    const z = dead[n];
+    if (z.f !== undefined) {
+      if (teraz - (z.min ?? teraz) <= POGRZEB_DO) break;
+      logGov(
+        st,
+        i,
+        tx(
+          `Pogrzebu nie było, bo nikt nie miał czasu. W kronice zostało tylko: ${z.name}.`,
+          `There was no funeral, because nobody had the time. All that is left in the log is: ${z.name}.`,
+        ),
+        false,
+        fx,
+      );
+    }
+    n++;
+  }
+  st.pogrzebN = n;
+  if (n >= dead.length || pora === 'noc') return null;
+  const z = dead[n];
+  if (z.cialo === 'lezy') return null;
+  st.pogrzebN = n + 1;
+  const d: DanePogrzebu = {
+    id: z.id,
+    name: z.name,
+    f: !!z.f,
+    cause: z.cause,
+    ...(z.cialo ? { cialo: z.cialo } : {}),
+  };
+  return { id: 'pogrzeb', d };
+}
+
 /** odstęp do następnego wydarzenia w sekundach przy ekranie */
 export const nextGap = (st: GovState, screen: number): number =>
   screen < EARLY ? 38 + Math.floor(rnd(st) * 19) : 100 + Math.floor(rnd(st) * 81);
@@ -350,18 +549,49 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
   if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
   const quiet = calm(st, i);
+  // gość: wizyta idzie co sekundę, także gdy coś czeka (karta, której gość odszedł, znika); karta gościa pod bramą
+  // przychodzi, gdy nic innego nie czeka na decyzję
+  const gosc = goscTick(st, i, fx, busy);
   if (st.ev.active || busy) return;
+  if (gosc) {
+    show(st, i, fx, gosc);
+    return;
+  }
   const h = makeHost(st, i, fx);
   if (dymWaits(st, h)) {
     const def = byId.get('dym');
     if (def && i.screen >= (st.ev.lit ?? 0) + DYM_DELAY && poraOf(i.hour)) show(st, i, fx, activate(st, h, def));
     return;
   }
-  if (quiet || i.screen < st.ev.next || i.screen < (st.ev.warm ?? 0) + AFTER_WARM) return;
+  if (quiet || i.screen < (st.ev.warm ?? 0) + AFTER_WARM) return;
   const pora = poraOf(i.hour);
   if (!pora) return;
+  // pogrzeb po zgonie z imieniem przed losowaniem: bez pierwszej nocy, a odstęp od ostatniej decyzji to najwyżej
+  // POGRZEB_ODSTEP (zwykły odstęp między wydarzeniami przy szybkim tempie trwałby dłużej niż doba gry)
+  const ostatnia = st.decisions.at(-1)?.s ?? Number.NEGATIVE_INFINITY;
+  if (!firstNight(i) && i.screen >= Math.min(st.ev.next, ostatnia + POGRZEB_ODSTEP)) {
+    const pg = pogrzeb(st, i, fx, pora);
+    if (pg) {
+      show(st, i, fx, pg);
+      return;
+    }
+  }
+  if (i.screen < st.ev.next) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
-  const ev = pickGovEvent(st, h, pora, firstNight(i));
+  let ev = pickGovEvent(st, h, pora, firstNight(i));
+  // gość z klocków: wypadnięcie planuje wizytę (pionki idą do bramy), a karta przychodzi dopiero pod bramą. Plan nie jest
+  // kartą, więc nie zjada odstępu: losujemy jeszcze raz wśród reszty (gosc ma już odstęp i wagę 0), a gdy nic nie pasuje,
+  // następna próba za RETRY sekund, jak po pustym losowaniu
+  if (ev?.id === 'gosc') {
+    planujGoscia(st, i, fx, pora);
+    ev = pickGovEvent(st, h, pora, firstNight(i));
+  } else if (ev) {
+    // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
+    // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
+    // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
+    const def = byId.get(ev.id);
+    if (def?.gosc && planujKarte(st, i, fx, def, h, ev.d)) return;
+  }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
     st.ev.next = i.screen + RETRY;
@@ -376,22 +606,26 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
   st.ev.active = ev;
   st.ev.when = i.screen;
   const def = byId.get(ev.id)!;
-  logGov(st, i, def.title(makeHost(st, i, fx), ev.d), false, fx);
+  const h = makeHost(st, i, fx);
+  logGov(st, i, def.title(h, ev.d), false, fx, def.gdzie?.(h, ev.d));
 }
 
+/** okno bieżącego wydarzenia; `gdzie` (kafelki) tylko dla kart z miejscem na mapie, z niego przycisk „Pokaż” */
 export function eventView(
   st: GovState,
   i: GovInput,
-): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[] } | null {
+): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[]; gdzie?: Punkt } | null {
   const ev = st.ev.active;
   const def = ev && byId.get(ev.id);
   if (!ev || !def) return null;
   const h = makeHost(st, i, emptyEffects());
+  const gdzie = def.gdzie?.(h, ev.d);
   return {
     id: ev.id,
     title: def.title(h, ev.d),
     text: def.text(h, ev.d),
     choices: def.choices(h, ev.d).map((c) => ({ label: c.label, ok: c.ok })),
+    ...(gdzie ? { gdzie } : {}),
   };
 }
 
@@ -407,9 +641,11 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
   const h = makeHost(st, i, fx, def, { d: ev.d, k });
   const c = def.choices(h, ev.d)[k];
   if (!c?.ok) return false;
-  st.ev.active = null;
+  // wybór z `zostaje` (np. „Obejrzeć ręce”) nie zamyka okna: karta czeka dalej, bez decyzji i bez odstępu
+  st.ev.active = c.zostaje ? ev : null;
   logGov(st, i, txCat(def.title(h, ev.d), ': ', c.label, '.'), false, fx);
   c.run();
+  if (c.zostaje) return true;
   decision(st, i, 'wydarzenie');
   // odstęp liczy się od decyzji, żeby wydarzenia nie przychodziły jedno za drugim
   st.ev.next = Math.max(st.ev.next, i.screen + nextGap(st, i.screen));

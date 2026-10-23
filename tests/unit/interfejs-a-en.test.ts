@@ -35,7 +35,7 @@ import {
   placeText,
   workText,
 } from '../../src/ui/budowa.ts';
-import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
+import { goalsOf } from '../../src/ui/cele.ts';
 import { DAMAGE_EN, WHY_SHORT_EN, WHY_TEXT_EN } from '../../src/ui/mieszkania.en.ts';
 import { aptCard, aptState, aptView, DAMAGE_NAME, WHY_SHORT, WHY_TEXT } from '../../src/ui/mieszkania.ts';
 import {
@@ -66,6 +66,7 @@ import type { AptWhy, DamageKind } from '../../src/world/apts.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { mockBlock, mockBlockM2 } from './interior-mock.ts';
 import { POLSKIE, polskieSlowa } from './po-angielsku.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
 
@@ -212,13 +213,13 @@ describe('okna zarządu po angielsku', () => {
 
   it('koza w nocy i blok szansy: do rana, do północy, bez drewna, zgaśnie', () => {
     ustawJezyk('en');
-    const v = (have: number, until: string, who: string[]) => fuelHtml({ have, need: 20, until }, who);
+    const v = (have: number, until: string, who: string[]) => fuelHtml({ have, need: 10, until }, who);
     expect(v(40, '6:00', ['Ania'])).toContain(
-      '<b class="odd-v">till morning</b><em class="odd-note">stove watch: Ania · wood 40, the night needs 20 (2 an hour)',
+      '<b class="odd-v">till morning</b><em class="odd-note">stove watch: Ania · wood 40, the night needs 10 (1 an hour)',
     );
     expect(v(8, '0:00', ['Ania'])).toContain('till midnight');
     expect(v(5, '22:00', ['Ania', 'Bartek'])).toContain('till 22:00');
-    expect(v(1, '20:00', ['Ania'])).toContain('no wood');
+    expect(v(0, '20:00', ['Ania'])).toContain('no wood');
     expect(v(40, '6:00', [])).toContain('<b class="odd-v">goes out</b><em class="odd-note">no stove watch');
     for (const h of [v(40, '6:00', ['Ania']), v(8, '0:00', []), v(0, '20:00', ['Ania'])])
       expect(polskieSlowa(h, ['Ania', 'Bartek'])).toEqual([]);
@@ -319,7 +320,7 @@ describe('okna zarządu po angielsku', () => {
         expect(polskieSlowa(all(burnSheet(kind, owner, softer)), ['Anna Nowak']), kind).toEqual([]);
     const wall = burnSheet('mebloscianka', 'Anna Nowak', false);
     expect(wall.title).toBe('Burn the wall unit?');
-    expect(wall.body).toContain('Good for 6 pieces of wood, about 3 h of fire');
+    expect(wall.body).toContain('Good for 6 pieces of wood, about 6 h of fire');
     expect(wall.body).toContain('It belongs to Anna Nowak');
     expect(burnSheet('krzeslo', null, true).body).toContain('Good for 1 piece of wood');
     expect(burnSheet('krzeslo', null, true).body).toContain('“Furniture for fuel” resolution halves that');
@@ -447,23 +448,39 @@ describe('pasek, cele i przybysze po angielsku', () => {
       how: 'Click a person in the HQ kitchen.',
     });
     expect(g.find((x) => x.key === 'cieplo')?.how).toContain('The kitchen is at 9°C now.');
-    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 6.');
+    expect(g.find((x) => x.key === 'drewno')).toMatchObject({ text: 'Get wood in for the evening.' });
+    expect(g.find((x) => x.key === 'drewno')?.how).toContain('Wood stocked: 2 of 3, enough fire to last till bedtime.');
+    expect(g.find((x) => x.key === 'koza')?.how).toContain('Whoever has wood will also feed it on their own.');
     expect(goalsOf(st, null, { touch: true, kitchen: 9, hour: 15 })[0].how).toBe('Tap a person in the HQ kitchen.');
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const touch of [false, true]) {
         const gv = newGov(seed, mode);
         gv.reports.push({} as NightReport);
-        const g2 = goalsDay2(st, gv, { touch, wood: 3, woodReady: false, holes: 2 });
+        const g2 = celeR1(st, sim.w, gv, { touch });
+        expect(g2.map((x) => x.key)).toEqual(
+          mode === 'zombie'
+            ? ['przeszukaj', 'budowla', 'dzida', 'drewno2', 'dyzur']
+            : ['przeszukaj', 'budowla', 'obwod', 'drewno2', 'dyzur'],
+        );
         for (const x of g2) texts.push(x.text, x.how);
         const b = g2.find((x) => x.key === 'budowla')!;
+        // dwie najtańsze budowle do postawienia: te za badaniem (pieczarkarnia, koza z beczki) menu budowy ukrywa
         const cheap = (Object.keys(BUILDS) as BuildKind[])
+          .filter((k) => !BUILDS[k].tech)
           .map((k) => ({ k, n: Object.values(BUILDS[k].cost).reduce((a: number, v) => a + (v ?? 0), 0) }))
           .sort((x, y) => x.n - y.n)
           .slice(0, 2);
         for (const { k } of cheap) expect(b.how).toContain(`${BUILDS_EN[k].the} (${costText(BUILDS[k].cost)})`);
+        for (const k of (Object.keys(BUILDS) as BuildKind[]).filter((x) => BUILDS[x].tech))
+          expect(b.how).not.toContain(BUILDS_EN[k].the);
         if (mode === 'zombie')
           expect(g2.find((x) => x.key === 'dzida')?.how).toContain('“Make a spear” (2 planks and 1 scrap)');
-        else expect(g2.find((x) => x.key === 'obwod')?.how).toContain('Open holes: 2.');
+        else {
+          expect(g2.find((x) => x.key === 'obwod')?.how).toContain(
+            `Open holes: ${snapshot(st, sim.w).fence.holes.length}.`,
+          );
+          expect(g2.find((x) => x.key === 'obwod')?.how).toContain('a barricade in place of a stretch of fence');
+        }
       }
     for (const t of texts) expect(polskieSlowa(t), t).toEqual([]);
   });

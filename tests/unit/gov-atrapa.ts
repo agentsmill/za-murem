@@ -1,13 +1,18 @@
 /* Atrapa symulacji dla zarządu (src/gov): czterech ludzi z generatora 0.3, zegar jak w symulacji
    (godzina gry to 800 ticków, 20 ticków na sekundę przy 1×, start o 15:00), proste potrzeby, koza
    zjadająca drewno, zapasy, ognisko wieczorem, siatka z trzema dziurami. Stosuje skutki zarządu.
-   Do tego przebieg z polityką gracza, który od razu odpowiada na karty. Używają jej testy
+   Książki z wydarzeń (GovEffects.books) trafiają na półkę atrapy tak jak w applyGov: najwyżej 2 na dziedzinę, trzecia
+   to +1 drewna; wejście zarządu ma `books` i `know` jak govInput (wiedza = najlepsza osoba na miejscu plus najwyżej
+   2 książki z dziedziny). Do tego przebieg z polityką gracza, który od razu odpowiada na karty. Używają jej testy
    i tools/trzy-noce.ts.
 
    Mapa miasta: pole `okolica` (miejsca z OSM) trafia do wejścia zarządu tylko wtedy, gdy jest ustawione, a osoba
    z mapy `away` ma w wejściu `away: true`, jak pionek poza mapą w prawdziwej symulacji. Bez `okolica` wejście
-   jest takie jak przed mapą miasta. */
+   jest takie jak przed mapą miasta. Dziury w siatce mają kafelki (`GovHole.tiles`), a wejście `strony` (zmyślone numery
+   kafelków, także przed kozą), więc „Sprawdzić” z krzyku i hałasu działa na atrapie tak jak w grze. */
 
+import type { TechDom } from '../../src/content/data.ts';
+import { TECH_DOMS } from '../../src/content/data.ts';
 import { makePerson } from '../../src/content/people.ts';
 import { mulberry, type Rng } from '../../src/core/rng.ts';
 import type { GovEffects, GovFence, GovInput, GovPerson, GovState, Prompt } from '../../src/gov/typy.ts';
@@ -27,6 +32,8 @@ import type { Miejsce } from '../../src/world/miasto.ts';
 
 export const TPS = 20;
 export const TPH = 800;
+/** ile książek z jednej dziedziny mieści półka i liczy się do wiedzy (jak KSIAZEK_NA_DZIEDZINE w src/sim/badania.ts) */
+const KSIAZEK_NA_DZIEDZINE = 2;
 const START = 15 * 60;
 const clamp100 = (v: number) => Math.max(0, Math.min(100, v));
 
@@ -41,12 +48,15 @@ export class Atrapa {
   meds = 0;
   fence: GovFence = {
     holes: [
-      { id: 1, size: 0.8 },
-      { id: 2, size: 0.5 },
-      { id: 3, size: 0.3 },
+      { id: 1, size: 0.8, tiles: [1101, 1102] },
+      { id: 2, size: 0.5, tiles: [2201] },
+      { id: 3, size: 0.3, tiles: [3301, 3302] },
     ],
     durability: 0.55,
   };
+  /** kafelki podwórka przy siatce od strony garaży i najbliższego budynku mieszkalnego oraz przed kozą
+      (`GovInput.strony`); zmyślone numery, atrapa nie ma mapy */
+  strony: { garaze: number; blok: number; koza: number } = { garaze: 4111, blok: 4222, koza: 4333 };
   fire = 0;
   campfire = false;
   residents = 4;
@@ -56,6 +66,11 @@ export class Atrapa {
   /** miejsca z okolicy (mapa miasta) przekazywane do wejścia; bez pola zarząd gra na TARGETS jak dotąd */
   okolica?: Miejsce[];
   guards: string[] = [];
+  /** tempo gry (1, 3, 6, 8): sekundy przy ekranie w wejściu liczą się jak w grze (`screen` rośnie raz na 20 × tempo
+      ticków), więc odstępy zarządu w sekundach przy ekranie to przy 8× kilka godzin gry na sekundę */
+  tempo = 1;
+  /** półka osady: książki według dziedziny (jak SimState.books) */
+  books: Partial<Record<TechDom, number>> = {};
 
   constructor(seed: number) {
     const r = mulberry(seed);
@@ -122,14 +137,32 @@ export class Atrapa {
         parts: this.parts,
         meds: this.meds,
       },
-      screen: this.tick / TPS,
-      fence: { holes: this.fence.holes.map((x) => ({ ...x })), durability: this.fence.durability },
+      screen: this.tick / (TPS * this.tempo),
+      fence: {
+        holes: this.fence.holes.map((x) => ({ ...x, ...(x.tiles ? { tiles: [...x.tiles] } : {}) })),
+        durability: this.fence.durability,
+      },
+      strony: { ...this.strony },
       light: { campfire: this.campfire, gateLamp: false },
       residents: this.residents,
       burned: this.burned,
       hqName: 'Atrapia 7',
       ...(this.okolica ? { okolica: this.okolica } : {}),
+      books: { ...this.books },
+      know: this.know(),
     };
+  }
+
+  /** wiedza osady jak `wiedza` z src/sim/badania.ts: najwyższa umiejętność wśród osób na miejscu (nie na wyprawie)
+      plus najwyżej 2 książki z dziedziny */
+  private know(): Record<TechDom, number> {
+    const here = this.people.filter((p) => !(p.id in this.away));
+    return Object.fromEntries(
+      TECH_DOMS.map((d) => [
+        d,
+        Math.max(0, ...here.map((p) => p.skills[d] ?? 0)) + Math.min(KSIAZEK_NA_DZIEDZINE, this.books[d] ?? 0),
+      ]),
+    ) as Record<TechDom, number>;
   }
 
   /** godzina gry: samouczek (drewno z suchego drzewa o 16:00), drewno ścinane co dzień przed południem
@@ -224,11 +257,17 @@ export class Atrapa {
         asleep: false,
         inside: true,
       });
-    this.people = this.people.filter((p) => !fx.leave.includes(p.id));
+    this.people = this.people.filter((p) => !fx.leave.includes(p.id) && !fx.wyrzuc?.includes(p.id));
     this.residents = Math.max(0, this.residents + fx.residents);
     if (fx.patch) this.fence.holes = [...this.fence.holes].sort((a, b) => b.size - a.size).slice(fx.patch);
     if (fx.guards.length) this.guards = fx.guards.map((g) => g.id);
     if (fx.fire) this.burned++;
+    // książki na półkę; trzecia z dziedziny idzie na podpałkę (+1 drewna, jak przy bramie w applyGov)
+    for (const d of fx.books ?? []) {
+      const ma = this.books[d] ?? 0;
+      if (ma >= KSIAZEK_NA_DZIEDZINE) this.woodLoose += 1;
+      else this.books[d] = ma + 1;
+    }
   }
 
   clone(): Atrapa {

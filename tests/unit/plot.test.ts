@@ -381,29 +381,31 @@ describe('duch planu wspólnego płotu', () => {
     expect(duchPlotu(sim.st, w)).toBeNull();
   });
 
-  it('zasieki na siatce zmieniają ducha tak samo jak menu i pracę', () => {
-    const { w, sim, b, p, r } = graZPlotem();
-    sim.push({ t: 'enclose', ids: [p.id], bid: b.id });
-    sim.step();
-    expect(duchPlotu(sim.st, w)?.tiles).toEqual(r.nowe);
-    const t = r.usuniete[Math.floor(r.usuniete.length / 2)];
-    sim.st.things.push({
-      id: sim.st.nextThing++,
-      kind: 'zasieki',
-      x: t % w.size,
-      y: Math.floor(t / w.size),
-      w: 1,
-      h: 1,
-      rot: 0,
-      n: 1,
-      fuel: 0,
-      by: -1,
-      owner: -1,
+  // zasieki i barykada z wraków stoją na siatce tak samo: korytarz płotu ich nie przekracza
+  for (const kind of ['zasieki', 'barykada'] as const)
+    it(`${kind} na siatce zmieniają ducha tak samo jak menu i pracę`, () => {
+      const { w, sim, b, p, r } = graZPlotem();
+      sim.push({ t: 'enclose', ids: [p.id], bid: b.id });
+      sim.step();
+      expect(duchPlotu(sim.st, w)?.tiles).toEqual(r.nowe);
+      const t = r.usuniete[Math.floor(r.usuniete.length / 2)];
+      sim.st.things.push({
+        id: sim.st.nextThing++,
+        kind,
+        x: t % w.size,
+        y: Math.floor(t / w.size),
+        w: 1,
+        h: 1,
+        rot: 0,
+        n: 1,
+        fuel: 0,
+        by: -1,
+        owner: -1,
+      });
+      const r2 = plotDla(sim.st, w, b.id);
+      expect(r2?.ok ? r2.nowe : null).not.toEqual(r.nowe);
+      expect(duchPlotu(sim.st, w)?.tiles ?? null).toEqual(r2?.ok ? r2.nowe : null);
     });
-    const r2 = plotDla(sim.st, w, b.id);
-    expect(r2?.ok ? r2.nowe : null).not.toEqual(r.nowe);
-    expect(duchPlotu(sim.st, w)?.tiles ?? null).toEqual(r2?.ok ? r2.nowe : null);
-  });
 
   it('rysunek planu ze sprite’a: kryjące piksele w błękicie (ciemne ciemniej), cień i puste znikają', () => {
     const sp = { w: 2, h: 2, ax: 1, ay: 2, px: Uint32Array.of(rgba(0x262321), rgba(0xf0f0f0), 0x60000000, 0) };

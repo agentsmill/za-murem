@@ -183,7 +183,8 @@ describe('przyjęcia według wolnych miejsc', () => {
   });
 
   it('waga spada przy ciasnocie', () => {
-    const w = (free: number) => def('uchodzcy').w(setup({ cap: 5 + free, residents: 5 }).h);
+    // zadanie 11: uchodźcy stają pod bramą jako pionki, więc karta wymaga gry z obcymi (GovInput.goscie)
+    const w = (free: number) => def('uchodzcy').w(setup({ cap: 5 + free, residents: 5, goscie: [] }).h);
     expect(w(5)).toBeGreaterThan(0);
     expect(w(2)).toBeCloseTo(w(5) * 0.5);
     expect(w(0)).toBeCloseTo(w(5) * 0.15);
@@ -222,11 +223,12 @@ describe('przyjęcia według wolnych miejsc', () => {
     expect(c.residents).toBe(0);
   });
 
-  it('ktoś odchodzi z rdzenia i nie zabiera ze sobą jeszcze jednego mieszkańca', () => {
+  it('ktoś odchodzi z rdzenia bramą (wyrzuc zamiast leave) i nie zabiera ze sobą jeszcze jednego mieszkańca', () => {
     const low = { residents: 4 };
     const d = def('odejscie').make(setup(low, 1, 30).h) as { p: string };
     const { fx, lines } = pick('odejscie', d, 1, low);
-    expect(fx.leave).toEqual([d.p]);
+    expect(fx.wyrzuc).toEqual([d.p]);
+    expect(fx.leave).toEqual([]);
     expect(fx.residents).toBe(0);
     expect(lines.some((l) => l.includes('z osiedla'))).toBe(true);
   });

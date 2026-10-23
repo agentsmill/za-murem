@@ -76,6 +76,7 @@ const dozwolone = (...s: (string | undefined)[]): string[] => s.flatMap((x) => (
 
 const osoba = (extra: Partial<SimPerson> = {}): SimPerson => ({
   pawn: 3,
+  osoba: 4,
   id: 's5',
   name: 'Anna Kowalska',
   first: 'Anna',
@@ -91,6 +92,8 @@ const osoba = (extra: Partial<SimPerson> = {}): SimPerson => ({
     { why: 'Śmierć: Józef', d: -10, until: 900 },
   ],
   job: null,
+  sam: false,
+  praca: { prio: [1, 3, 3, 3, 3, 3, 3, 3, 0], stale: null, zaSiatke: false },
   doing: 'Stoi.',
   asleep: false,
   inside: false,
@@ -177,11 +180,11 @@ describe('karta osoby po angielsku', () => {
     infect(sim.st, p, true);
     const bitten = card();
     expect(polskieSlowa(bitten, names)).toEqual([]);
-    expect(bitten).toMatch(/Bitten on the arm 0 min ago\. The fever will kill (her|him) in 18 h\./);
+    expect(bitten).toMatch(/Bitten on an arm or a leg 0 min ago\. The fever will kill (her|him) in 18 h\./);
     expect(bitten).toContain('data-card="amputate"');
     expect(bitten).toContain('>Amputate</button>');
     for (let k = 0; k < 1700; k++) sim.step();
-    if (sim.st.pawns.includes(p)) expect(card()).toMatch(/Bitten on the arm 2 h 0\d min ago\./);
+    if (sim.st.pawns.includes(p)) expect(card()).toMatch(/Bitten on an arm or a leg 2 h 0\d min ago\./);
     const other = snapshot(sim.st, w).people.find((x) => x.pawn === q.id)!;
     const maimed = personCard({ ...other, maimed: true }, sim.st.tick);
     expect(maimed).toContain('title="After an amputation: worse aim">stump</span>');

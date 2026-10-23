@@ -3,11 +3,16 @@
    gdy seria pęka), kamień terenu, zdanie „co dalej” i seria poranków w `ocenDrogi`, kolejka epilogów (FIFO, także ze
    starego kształtu stanu z jednym polem `epilog`) w `pending` i „Graj dalej”. Czyste funkcje na wejściu z atrapy
    symulacji (tests/unit/gov-atrapa.ts), bez symulacji i bez sieci. Moduł jest opcją: bez `wlaczZwyciestwo` stan
-   i skróty zarządu zostają jak przed nim. */
+   i skróty zarządu zostają jak przed nim. Wejście z atrapy nie ma odczytu badań (`GovInput.badania`), więc droga
+   technologii jest tu bez odczytu: sześć kamieni w tabeli tekstów i dawne „Wkrótce”; jej kamienie z odczytu, „co dalej”,
+   „Wkrótce” o prądzie i epilog fabryki sprawdza zwyciestwo-technologia.test.ts. Tu też droga terenu na mapie, gdzie nie
+   da się otoczyć żadnego sąsiada (`GovInput.teren.mozliwe` równe 0: „Wkrótce” o płocie przez jezdnię zamiast „co dalej”),
+   i zdanie o pracowni, które mówi słowami miejsca (dom: „waszego domu”, blok: „waszego mieszkania”). */
 
 import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
-import type { GameMode, GovInput, GovState, NightReport } from '../../src/gov/typy.ts';
+import { BLOK } from '../../src/gov/miejsce.ts';
+import type { GameMode, GovInput, GovPlace, GovState, NightReport } from '../../src/gov/typy.ts';
 import { emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
 import { ackReport, govUpdate, loadGov, newGov, pending, saveGov } from '../../src/gov/zarzad.ts';
 import {
@@ -23,6 +28,7 @@ import {
   wygrajDroge,
 } from '../../src/gov/zwyciestwo.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
+import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
 const DROGI_PO_KOLEI: Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
@@ -125,7 +131,7 @@ describe('ocenDrogi', () => {
     expect(st.zwyciestwo).toBeUndefined();
   });
 
-  it('technologia, lek i cuda mówią „wkrótce”, ludność ma postęp z celem, reszta bez postępu', () => {
+  it('technologia (bez odczytu badań), lek i cuda mówią „wkrótce”, ludność ma postęp z celem, reszta bez postępu', () => {
     const d = ocenDrogi(newGov(1), wej({ ludnosc: 40 }));
     const po = (droga: Droga) => d.find((x) => x.droga === droga)!;
     for (const droga of ['technologia', 'lek', 'cuda'] as const) {
@@ -143,10 +149,11 @@ describe('ocenDrogi', () => {
     const st = wlaczony();
     const po = (droga: Droga) => ocenDrogi(st, wej()).find((x) => x.droga === droga)!;
     // komplet kamieni każdej drogi: ani jedna nie mówi „wkrótce”
-    Object.assign(z(st).kamienie, { technologia: 5, teren: 5, lek: 5, ludnosc: 5, cuda: 3 });
+    Object.assign(z(st).kamienie, { technologia: 6, teren: 5, lek: 5, ludnosc: 5, cuda: 3 });
     for (const d of ocenDrogi(st, wej())) expect(d.wkrotce, d.droga).toBeNull();
     // o jeden kamień mniej: zdanie wraca z dokładnym tekstem, także na terenie, który ma je od pierwszego kamienia
-    Object.assign(z(st).kamienie, { technologia: 4, teren: 4, lek: 4, cuda: 2 });
+    // (technologia bez odczytu badań: wejście z atrapy go nie ma, więc dawny tekst)
+    Object.assign(z(st).kamienie, { technologia: 5, teren: 4, lek: 4, cuda: 2 });
     expect(po('technologia').wkrotce?.pl).toBe('Wkrótce: badania w pracowni i sieć bez miedzi.');
     expect(po('teren').wkrotce?.pl).toBe('Wkrótce: sąsiednie kwadraty i mur.');
     expect(po('lek').wkrotce?.pl).toBe('Wkrótce: dalekie wyprawy po lek.');
@@ -174,8 +181,9 @@ describe('ocenDrogi', () => {
           ['Pracownia postawiona', 'Research room built'],
           ['Pierwsze badanie', 'First research'],
           ['Era 3', 'Era 3'],
-          ['Era 5', 'Era 5'],
           ['Sieć bez miedzi', 'Copper-free grid'],
+          ['Generator fuzji', 'Fusion generator'],
+          ['Fabryka ruszyła', 'The factory is running'],
         ],
       },
       teren: {
@@ -225,6 +233,7 @@ describe('ocenDrogi', () => {
         droga,
       ).toEqual(tabela[droga].kamienie);
     }
+    // wejście z atrapy nie ma odczytu badań: technologia ma dawne „Wkrótce” (z odczytem: zwyciestwo-technologia.test.ts)
     const wkrotce = (droga: Droga) => d.find((x) => x.droga === droga)!.wkrotce;
     expect(wkrotce('technologia')).toEqual({
       pl: 'Wkrótce: badania w pracowni i sieć bez miedzi.',
@@ -369,7 +378,7 @@ describe('„co dalej” i seria poranków w ocenDrogi', () => {
     expect(po(st, wej(), 'teren').dalej).toBeNull();
   });
 
-  it('technologia, lek i cuda nie mają zdania na żadnym etapie: czekają na projekty („Wkrótce”)', () => {
+  it('technologia (bez odczytu badań), lek i cuda nie mają zdania na żadnym etapie: czekają na projekty („Wkrótce”)', () => {
     for (const mode of ['zwykly', 'zombie'] as const)
       for (const droga of ['technologia', 'lek', 'cuda'] as const)
         for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
@@ -379,16 +388,20 @@ describe('„co dalej” i seria poranków w ocenDrogi', () => {
         }
   });
 
-  it('zdanie „co dalej” i „Wkrótce” nigdy razem, a przebyta droga nie ma żadnego', () => {
+  it('zdanie „co dalej” i „Wkrótce” nigdy razem, a przebyta droga nie ma żadnego (z odczytem badań i bez)', () => {
+    const zBadaniami = wej({
+      badania: { pracownia: false, zbadane: 0, era: 0, koncowa: false, siecWlaczona: false },
+    });
     for (const mode of ['zwykly', 'zombie'] as const)
-      for (const droga of DROGI_PO_KOLEI)
-        for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
-          const st = wlaczony(mode);
-          z(st).kamienie[droga] = n;
-          const d = po(st, wej(), droga);
-          expect(d.dalej !== null && d.wkrotce !== null, `${droga} ${n}`).toBe(false);
-          if (n === DROGI[droga].kamienie.length) expect([d.dalej, d.wkrotce], `${droga} ${n}`).toEqual([null, null]);
-        }
+      for (const i of [wej(), zBadaniami])
+        for (const droga of DROGI_PO_KOLEI)
+          for (let n = 0; n <= DROGI[droga].kamienie.length; n++) {
+            const st = wlaczony(mode);
+            z(st).kamienie[droga] = n;
+            const d = po(st, i, droga);
+            expect(d.dalej !== null && d.wkrotce !== null, `${droga} ${n}`).toBe(false);
+            if (n === DROGI[droga].kamienie.length) expect([d.dalej, d.wkrotce], `${droga} ${n}`).toEqual([null, null]);
+          }
   });
 
   it('bez stanu zwycięstwa (stary stan) też: pierwsze zdania i seria od zera', () => {
@@ -560,10 +573,25 @@ describe('zarząd bez opcji zwycięstwa', () => {
   });
 
   it('cztery doby gry mają te same skróty stanu co przed modułem zwycięstwa', () => {
+    // skróty przepięte 19.10.2026 po zmianie puli wydarzeń (pule według trybu, handlarz i wędrowiec z wagą 0):
+    // inna pula to inne losowanie zarządu; przed zmianą były 51743a78, 1792dce3 i 7b631d3d, czyli przebieg sprzed
+    // modułu zwycięstwa. Przepięte drugi raz w zadaniu 6 wydarzeń (karty z sytuacji z mieszkańcami), bo zmiany kart
+    // przesunęły strumień losowania zarządu: kłótnia bierze parę o najniższym nastroju bez losowania, bezsenność
+    // osobę spoza warty przy siatce bez losowania (nocą rzadko jest ktoś taki), kradzież wraca co 48 godzin, odejście
+    // nie dotyczy ostatniej osoby. Trzeci raz w poprawce zadania 6: atrapa ma teraz kafelki dziur i strony świata,
+    // więc „Sprawdzić” z krzyku i hałasu jest w niej dostępne (wcześniej zawsze wyszarzone), a przy tym wchodzi w grę
+    // wstawanie śpiącego. Czwarty raz w drugiej poprawce zadania 6: bezsenność bierze też śpiącego (ciągle się budzi),
+    // a jej wybory wysyłają ludzi do kozy (atrapa ma kafelek przed kozą) albo do siatki; były 32eb97ec, 88a53f7e
+    // i 438e5c9b, potem 1859eee3, 8e1834e7 i 04753f7b, potem 69085683, 00eb9415 i ef1cea9e, potem 7fa6ef50, b2171b99
+    // i 943895c7. Piąty raz po scaleniu z kozą z głową (sztuka drewna na godzinę; tam same skróty kozy były 651e9fe7,
+    // ca868e42 i 829d4a08) i z poprawkami trybu zombie w noc-integracja, 19.10.2026 wieczorem (14943f9b, 02636e00
+    // i d2f68ad8). Szósty raz w zadaniu 11 wydarzeń (karty z 0.3 z gościem pod bramą: uchodźcy, influencerka, aktywiści,
+    // dzieciaki, sąsiad od tokenów i fachowiec w domu mają wagę 0 bez GovInput.goscie, a atrapa nie ma obcych), czyli
+    // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); tu po scaleniu obu, 20.10.2026.
     const przebiegi = [
-      [1, 'propozycja', '51743a78'],
-      [3, 'zawsze-warta', '1792dce3'],
-      [5, 'losowo', '7b631d3d'],
+      [1, 'propozycja', 'aaa8b716'],
+      [3, 'zawsze-warta', 'd1a8e423'],
+      [5, 'losowo', '76e72ff9'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));
@@ -722,6 +750,162 @@ describe('droga terenu', () => {
       pl: 'Wkrótce: sąsiednie kwadraty i mur.',
       en: 'Coming soon: neighbouring squares and the wall.',
     });
+  });
+});
+
+describe('droga terenu na mapie, gdzie nie da się otoczyć żadnego sąsiada (GovInput.teren.mozliwe)', () => {
+  const teren = (st: GovState, i: GovInput) => ocenDrogi(st, i).find((x) => x.droga === 'teren')!;
+  const wejscie = (przylaczone: number, mozliwe?: number) => wej({ teren: { przylaczone, mozliwe } });
+  /** dosłownie z planu ścieżki celów (poprawka U14) */
+  const PLOT_PRZEZ_JEZDNIE = {
+    pl: 'Wkrótce: wspólny płot przez jezdnię.',
+    en: 'Coming soon: a shared fence across the road.',
+  };
+  const DALEJ_PLOT = {
+    pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
+    en: 'Put a shared fence round the first building next door.',
+  };
+
+  it('przy zerze przed pierwszym kamieniem: „Wkrótce” o płocie przez jezdnię zamiast „co dalej”', () => {
+    // z włączonymi drogami i w starym stanie bez nich
+    for (const st of [wlaczony(), newGov(1), wlaczony('zombie')]) {
+      const t = teren(st, wejscie(0, 0));
+      expect(t.wkrotce).toEqual(PLOT_PRZEZ_JEZDNIE);
+      expect(t.dalej).toBeNull();
+      expect(t.zaliczone).toBe(0);
+    }
+  });
+
+  it('przy mozliwe 1, 4 albo bez pola: jak dotąd, zdanie o płocie i żadnego „Wkrótce”', () => {
+    for (const i of [wejscie(0, 1), wejscie(0, 4), wejscie(0), wej()]) {
+      const t = teren(wlaczony(), i);
+      expect(t.dalej).toEqual(DALEJ_PLOT);
+      expect(t.wkrotce).toBeNull();
+    }
+  });
+
+  it('po pierwszym kamieniu mozliwe nie ma znaczenia: zwykłe „Wkrótce” o kwadratach i murze, bez „co dalej”', () => {
+    for (const n of [1, 2, 3, 4])
+      for (const mozliwe of [0, 4]) {
+        const st = wlaczony();
+        z(st).kamienie.teren = n;
+        const t = teren(st, wejscie(1, mozliwe));
+        expect(t.wkrotce?.pl, `${n} ${mozliwe}`).toBe('Wkrótce: sąsiednie kwadraty i mur.');
+        expect(t.dalej, `${n} ${mozliwe}`).toBeNull();
+      }
+  });
+
+  it('droga przebyta do końca nie ma ani „Wkrótce”, ani „co dalej”, także przy mozliwe 0', () => {
+    const st = wlaczony();
+    z(st).kamienie.teren = 5;
+    const t = teren(st, wejscie(3, 0));
+    expect([t.wkrotce, t.dalej]).toEqual([null, null]);
+  });
+
+  it('„Wkrótce” i „co dalej” nigdy razem: żadna liczba kamieni, żaden tryb, żadne mozliwe', () => {
+    for (const mode of ['zwykly', 'zombie'] as const)
+      for (const mozliwe of [undefined, 0, 1, 4])
+        for (let n = 0; n <= DROGI.teren.kamienie.length; n++) {
+          const st = wlaczony(mode);
+          z(st).kamienie.teren = n;
+          const t = teren(st, wejscie(0, mozliwe));
+          expect(t.dalej !== null && t.wkrotce !== null, `${mode} ${mozliwe} ${n}`).toBe(false);
+          // przed pierwszym kamieniem droga ma zawsze jedno z dwojga, po nim „Wkrótce”, na końcu nic
+          const oczekiwane = n >= DROGI.teren.kamienie.length ? 0 : 1;
+          expect([t.dalej, t.wkrotce].filter(Boolean), `${mode} ${mozliwe} ${n}`).toHaveLength(oczekiwane);
+        }
+  });
+
+  it('kamień terenu liczy się dalej z przylaczone, a nie z mozliwe', () => {
+    const st = wlaczony();
+    krok(st, wej({ teren: { przylaczone: 0, mozliwe: 0 } }));
+    expect(z(st).kamienie.teren).toBeUndefined();
+    // zepsuty odczyt (płot jest, a mozliwe 0) i tak zalicza kamień, a „Wkrótce” zmienia się na zwykłe
+    krok(st, wej({ teren: { przylaczone: 1, mozliwe: 0 } }));
+    expect(z(st).kamienie.teren).toBe(1);
+    expect(teren(st, wejscie(1, 0)).wkrotce?.pl).toBe('Wkrótce: sąsiednie kwadraty i mur.');
+  });
+
+  it('liczba bez sensu: ujemna to zero, NaN jak brak pola', () => {
+    expect(teren(wlaczony(), wejscie(0, -3)).wkrotce).toEqual(PLOT_PRZEZ_JEZDNIE);
+    expect(teren(wlaczony(), wejscie(0, Number.NaN)).dalej).toEqual(DALEJ_PLOT);
+  });
+
+  it('po angielsku zdanie o płocie przez jezdnię nie ma polskich liter ani słówek i różni się od polskiego', () => {
+    const t = teren(wlaczony(), wejscie(0, 0));
+    expect(t.wkrotce!.en).not.toMatch(POLSKIE_LITERY);
+    expect(polskieSlowa(t.wkrotce!.en)).toEqual([]);
+    expect(t.wkrotce!.en).not.toBe(t.wkrotce!.pl);
+    // jak inne „Wkrótce”: zaczyna się od „Wkrótce: ” i „Coming soon: ”, kończy kropką
+    expect(t.wkrotce!.pl).toMatch(/^Wkrótce: .*\.$/);
+    expect(t.wkrotce!.en).toMatch(/^Coming soon: .*\.$/);
+  });
+
+  it('jest czysta: nie zmienia ani stanu, ani wejścia', () => {
+    const st = wlaczony();
+    const i = wejscie(0, 0);
+    const stPrzed = JSON.stringify(st);
+    const iPrzed = JSON.stringify(i);
+    ocenDrogi(st, i);
+    expect(JSON.stringify(st)).toBe(stPrzed);
+    expect(JSON.stringify(i)).toBe(iPrzed);
+  });
+});
+
+describe('„co dalej” technologii mówi słowami miejsca (pokój lokum zarządu)', () => {
+  const BADANIA = { pracownia: false, zbadane: 0, era: 0, koncowa: false, siecWlaczona: false };
+  const DOM: GovPlace = { ...BLOK, kind: 'dom', near: 'domy' };
+  const tech = (i: GovInput, kamienie = 0) => {
+    const st = wlaczony();
+    z(st).kamienie.technologia = kamienie;
+    return ocenDrogi(st, i).find((x) => x.droga === 'technologia')!;
+  };
+
+  it('w bloku, także bez opisu miejsca, jak dotąd: „waszego mieszkania” i „your flat”', () => {
+    for (const place of [undefined, BLOK])
+      expect(tech(wej({ badania: BADANIA, place })).dalej).toEqual({
+        pl: 'Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).',
+        en: 'Build a research room in a room of your flat (Build, Home tab).',
+      });
+  });
+
+  it('w domu jednorodzinnym: „waszego domu” i „your house”', () => {
+    expect(tech(wej({ badania: BADANIA, place: DOM })).dalej).toEqual({
+      pl: 'Postawcie pracownię w pokoju waszego domu (Budowa, zakładka Dom).',
+      en: 'Build a research room in a room of your house (Build, Home tab).',
+    });
+  });
+
+  it('drugie zdanie (stół pracowni) jest takie samo w domu i w bloku', () => {
+    const stol = {
+      pl: 'Posadźcie kogoś przy stole pracowni i wybierzcie kartkę na tablicy badań.',
+      en: 'Sit someone at the research table and pick a card on the research board.',
+    };
+    for (const place of [BLOK, DOM]) expect(tech(wej({ badania: BADANIA, place }), 1).dalej).toEqual(stol);
+  });
+
+  it('w domu żadne zdanie technologii i terenu nie ma słów z bloku, w obu językach', () => {
+    // słowa bloku po angielsku (wydarzenia03-en.test.ts): klatka, spółdzielnia, mieszkanie i reszta
+    const blokEn = /stairwell|co-op|pavilion|common room|service charge|block|\bflats?\b/i;
+    for (const mode of ['zwykly', 'zombie'] as const)
+      for (const mozliwe of [0, 4]) {
+        const i = wej({ badania: BADANIA, place: DOM, teren: { przylaczone: 0, mozliwe } });
+        const wszystkie = ocenDrogi(wlaczony(mode), i).filter((d) => d.droga === 'technologia' || d.droga === 'teren');
+        const zdania = wszystkie.flatMap((d) => [d.dalej, d.wkrotce]).filter((t) => t !== null);
+        expect(zdania.length).toBeGreaterThanOrEqual(2);
+        for (const t of zdania) {
+          expect(t.pl, t.pl).not.toMatch(FORBIDDEN_DOM);
+          expect(t.en, t.en).not.toMatch(blokEn);
+        }
+      }
+  });
+
+  it('bez odczytu badań technologia dalej ma dawne „Wkrótce”, w domu i w bloku', () => {
+    for (const place of [BLOK, DOM]) {
+      const t = tech(wej({ place }));
+      expect(t.dalej).toBeNull();
+      expect(t.wkrotce?.pl).toBe('Wkrótce: badania w pracowni i sieć bez miedzi.');
+    }
   });
 });
 

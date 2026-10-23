@@ -13,8 +13,8 @@ import { canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { applyGov } from '../../src/sim/gov.ts';
 import { createSim, infect, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
-import { goalsDay2 } from '../../src/ui/cele.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
 const world = (seed = 1): World => buildWorld(demo.geo, { seed, street: demo.street });
@@ -59,6 +59,9 @@ describe('styk M2 i trybu zombie', () => {
     const yard = f.yard.filter((i) => !w.blocked[i]).sort((a, b) => near(a) - near(b));
     heap(st, 'zlom', yard[3], size, 12);
     const core = st.pawns.find((p) => p.kind === 'core')!;
+    // ciepło i jedzenie w porządku: zimny zarząd (koza wygasa) miałby pracę przerywaną pilną potrzebą, a dalej budowałby
+    // sam tylko w pętli „start, przerwanie” (przy szwendaczu bliżej niż 10 m zarząd bez polecenia przy siatce nie buduje)
+    for (const q of st.pawns) if (q.kind === 'core') Object.assign(q.needs!, { warm: 90, food: 90, rest: 90 });
     sim.push({ t: 'build', ids: [core.id], kind: 'zasieki', x: tile % size, y: Math.floor(tile / size), rot: 0 });
     const t0 = st.tick;
     while (st.tick < t0 + 4 * TICKS_PER_HOUR && !st.things.some((t) => t.kind === 'zasieki')) sim.step();
@@ -119,7 +122,14 @@ describe('styk M2 i trybu zombie', () => {
     const { w, st, sim } = play(1, 2, 9);
     const size = w.size;
     const yard = w.fence!.yard;
-    const spot = yard.find((i) => canPlace(st, w, 'ogrodek', i % size, Math.floor(i / size), 0).ok) as number;
+    // plan dalej niż 4 kafelki od siatki: przy siatce zarząd bez polecenia nie buduje, gdy szwendacz jest bliżej niż 10 m
+    const odSiatki = (i: number) =>
+      w.fence!.tiles.every(
+        (t) => Math.max(Math.abs((t % size) - (i % size)), Math.abs(Math.floor(t / size) - Math.floor(i / size))) > 4,
+      );
+    const spot = yard.find(
+      (i) => odSiatki(i) && canPlace(st, w, 'ogrodek', i % size, Math.floor(i / size), 0).ok,
+    ) as number;
     const sx = spot % size;
     const sy = Math.floor(spot / size);
     sim.push({ t: 'build', ids: [], kind: 'ogrodek', x: sx, y: sy, rot: 0 });
@@ -165,20 +175,19 @@ describe('styk M2 i trybu zombie', () => {
 
   it('w trybie zombie nie ma wydarzeń ulicy (żywi sąsiedzi, wyjścia bez ryzyka), w zwykłym są', () => {
     for (const id of ['jablka', 'kury', 'kosiarka', 'szopa', 'plot', 'panele', 'przychodnia']) {
-      expect(fitsMode({ mode: 'zombie' }, id), id).toBe(false);
-      expect(fitsMode({ mode: 'zwykly' }, id), id).toBe(true);
+      expect(fitsMode({ mode: 'zombie' }, { id }), id).toBe(false);
+      expect(fitsMode({ mode: 'zwykly' }, { id }), id).toBe(true);
     }
-    expect(fitsMode({ mode: 'zombie' }, 'wedrowiec')).toBe(true);
+    expect(fitsMode({ mode: 'zombie' }, { id: 'wedrowiec' })).toBe(true);
   });
 
   it('cel drugiego dnia w trybie zombie to dzida dla warty, a w zwykłym obwód', () => {
     const w = world(1);
-    const o = { touch: false, wood: 0, woodReady: false, holes: 0 };
     const z = createSim(w, 1, { core: 4, mode: 'zombie' });
-    const keys = (st: SimState, mode: 'zombie' | 'zwykly') => goalsDay2(st, newGov(1, mode), o).map((g) => g.key);
+    const keys = (st: SimState, mode: 'zombie' | 'zwykly') => celeR1(st, w, newGov(1, mode)).map((g) => g.key);
     expect(keys(z, 'zombie')).toContain('dzida');
     expect(keys(z, 'zombie')).not.toContain('obwod');
-    const goal = () => goalsDay2(z, newGov(1, 'zombie'), o).find((g) => g.key === 'dzida')!;
+    const goal = () => celeR1(z, w, newGov(1, 'zombie')).find((g) => g.key === 'dzida')!;
     expect(goal().done).toBe(false);
     z.store.arms!.push('dzida');
     expect(goal().done).toBe(true);

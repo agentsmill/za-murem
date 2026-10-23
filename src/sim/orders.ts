@@ -7,10 +7,22 @@
    wspólnoty (wordsOfWorld, wordsEnOfWorld). Napisy przy sąsiadach (fala 2) z src/content/napisy-sasiedzi.ts przez tr(). */
 
 import { MENU, PRACA, PRACA_DRZWI } from '../content/napisy-sasiedzi.ts';
-import { L, tr } from '../core/jezyk.ts';
+import { jezyk, L, liczba, tr } from '../core/jezyk.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../gov/miejsce.ts';
 import { IN } from '../world/interior.ts';
 import type { World } from '../world/world.ts';
+import {
+  BRAK_MIEJSCA,
+  kartka,
+  kosztDoPokazania,
+  kosztTech,
+  nazwaTech,
+  postepDoPokazania,
+  siecWlaczona,
+  siecZbadana,
+  TECH_BY,
+  wolneMiejsca,
+} from './badania.ts';
 import { weaponOf } from './bron.ts';
 import type { BuildKind, Mat } from './budowle.ts';
 import { TICKS_PER_HOUR } from './clock.ts';
@@ -50,6 +62,7 @@ import {
   FURNITURE_ACC,
   isEnemy,
   KOZA_POST,
+  okazjaWerbunku,
   PATCH_COST,
   type Pawn,
   SIATKA_POST,
@@ -59,8 +72,10 @@ import {
   STAY_FIRE,
   STAY_MEAL,
   STAY_YARD,
+  szansaZaproszenia,
   type Thing,
   trunkOf,
+  WIEZA_POST,
 } from './sim.ts';
 import { BATCH, CARRY_MATS, NAPISY, type Product, RECIPES, wreckAt, wreckStage, wreckTile } from './surowce.ts';
 import { modeOf } from './tryb.ts';
@@ -94,6 +109,13 @@ const BUILD_ACC: Record<BuildKind, string> = {
   lozka_pietrowe: 'łóżka piętrowe',
   ogrodek: 'ogródek',
   zasieki: 'zasieki',
+  pracownia: 'pracownię',
+  koza_beczka: 'kozę z beczki',
+  kociol: 'kocioł',
+  pieczarkarnia: 'pieczarkarnię',
+  szklarnia: 'szklarnię',
+  barykada: 'barykadę',
+  wieza: 'wieżę',
 };
 
 export interface MenuItem {
@@ -140,10 +162,32 @@ function dismantleEn(kind: string | undefined): { base: string; ing: string } {
 
 const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
 
+/** Po rozmowie z wędrowcem, który jeszcze stoi przy siatce: w trybie zombie „Zapytać o rękę” (raz), potem zaproszenie
+    z szansą w procentach. Przy pełnym zarządzie zaproszenie dotyczy mieszkańca i jest wyszarzone, gdy brak wolnego
+    łóżka; w domu jednorodzinnym (mieszkańcy bez mieszkań) przy pełnym zarządzie zaproszenia nie ma wcale. Kto już
+    wędrowca zaprasza, tego nie pytamy drugi raz. */
+function werbunekAt(st: SimState, w: World, core: number[], near: Pawn): MenuItem[] {
+  const r = st.obcy?.rozmowa;
+  if (near.job?.phase !== 1 || near.job.what !== 'zagadany' || !r || r.id !== near.id) return [];
+  if (st.pawns.some((q) => q.job?.t === 'zapros' && q.job.target === near.id)) return [];
+  const out: MenuItem[] = [];
+  if (modeOf(st) === 'zombie' && !r.pytali)
+    out.push({ cmd: { t: 'reka', ids: core, target: near.id }, label: tr(OBCY.zapytacORege), quick: false });
+  const ok = okazjaWerbunku(st, w);
+  const cmd = { t: 'zapros', ids: core, target: near.id } as const;
+  if (ok.dokad === 'dom') return out;
+  if (ok.dokad === 'brak') out.push({ cmd, label: tr(OBCY.zaprosicBez), quick: false, off: tr(OBCY.brakLozka) });
+  else {
+    const n = Math.round(100 * szansaZaproszenia(st, w, ok));
+    out.push({ cmd, label: tr(ok.dokad === 'zarzad' ? OBCY.zaprosic(n) : OBCY.zaprosicMieszkanca(n)), quick: false });
+  }
+  return out;
+}
+
 /** Polecenia, które mają sens na klikniętym kafelku (menu kontekstowe z GDD), „Idź tu” zawsze na końcu.
-    Drewno poza składem: zanieść do składu. Koza albo ognisko, gdy jest skąd wziąć drewno: dołożyć. Drzewo: ściąć,
-    od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie w las ma znaczyć „idź”.
-    Dziura w siatce: załatać (gdy na stertach starczy desek i złomu) i pilnować. Brama: pilnować, zamknąć albo
+    Drewno poza składem: zanieść do składu. Koza, koza z beczki, kocioł albo ognisko, gdy jest skąd wziąć drewno:
+    dołożyć. Drzewo: ściąć, od razu tylko po kliknięciu w pień albo tuż obok, bo drzewa nie odrastają, a stuknięcie
+    w las ma znaczyć „idź”. Dziura w siatce: załatać (gdy na stertach starczy desek i złomu) i pilnować. Brama: pilnować, zamknąć albo
     otworzyć. Wolny kafelek podwórka: rozpalić ognisko (tylko z menu). Polecenia przyjmuje tylko zarząd: bez nikogo
     z rdzenia lista jest pusta. */
 export function commandsAt(st: SimState, w: World, ids: readonly number[], tile: number): MenuItem[] {
@@ -208,6 +252,7 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
   if (near?.kind === 'wedrowiec') {
     if (near.job?.phase === 1 && near.job.what !== 'zagadany')
       out.push({ cmd: { t: 'talk', ids: core, target: near.id }, label: tr(OBCY.zagadac), quick: false });
+    out.push(...werbunekAt(st, w, core, near));
     out.push({ cmd: { t: 'mug', ids: core, target: near.id }, label: tr(OBCY.napasc), quick: false, confirm: true });
   } else if (near?.kind === 'obcy' && (near.job?.phase ?? 4) < 2)
     out.push({ cmd: { t: 'shoo', ids: core, target: near.id }, label: tr(OBCY.przegonic), quick: false });
@@ -246,6 +291,17 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       label: L('Czuwać przy kozie', 'Keep watch by the stove'),
       quick: false,
     });
+  // koza z beczki i kocioł z badań: dokładanie jak do kozy zarządu (dyżur przy kozie dotyczy tylko jej)
+  const nowe = thingAt(st, w, tile, 'koza_beczka') ?? thingAt(st, w, tile, 'kociol');
+  if (nowe && wood)
+    out.push({
+      cmd: { t: 'refuel', ids: core, thing: nowe.id },
+      label:
+        nowe.kind === 'kociol'
+          ? L('Dołożyć do kotła', 'Feed the boiler')
+          : L('Dołożyć do kozy z beczki', 'Feed the barrel stove'),
+      quick: true,
+    });
   const fire = thingAt(st, w, tile, 'ognisko');
   if (fire && wood)
     out.push({
@@ -270,11 +326,17 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
       quick: false,
     });
   }
-  // siatka: wzmocnić uszkodzony kafelek (2 deski albo 2 złomu ze stert), w trybie zombie pilnować przy siatce
+  // siatka: wzmocnić uszkodzony kafelek (2 deski albo 2 złomu ze stert; nie pod barykadą, która ma 160, a wzmocnienie
+  // sięga 100), w trybie zombie pilnować przy siatce
   const k = w.fence?.tiles.indexOf(tile) ?? -1;
   if (st.fence && k >= 0 && !st.fence.holes.some((h) => h.tiles.includes(tile))) {
     const mat = (kind: string) => st.things.reduce((a, t) => a + (t.kind === kind ? t.n : 0), 0);
-    if (st.fence.hp[k] > 0 && st.fence.hp[k] < 100 && (mat('deski') >= BRACE_COST || mat('zlom') >= BRACE_COST))
+    if (
+      st.fence.hp[k] > 0 &&
+      st.fence.hp[k] < 100 &&
+      !thingAt(st, w, tile, 'barykada') &&
+      (mat('deski') >= BRACE_COST || mat('zlom') >= BRACE_COST)
+    )
       out.push({
         cmd: { t: 'brace', ids: core, tile },
         label: L('Wzmocnić siatkę', 'Shore up the fence'),
@@ -418,6 +480,19 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     make('deski', tr(NAPISY.deska), (n) => tr(NAPISY.deskiN(n)));
     make('czesci', tr(NAPISY.czesc), (n) => tr(NAPISY.czesciN(n)));
   }
+  // pracownia: zarząd do stołu i tablica badań (Badać: <nazwa>, Tablica badań albo Wybrać badanie)
+  const lab = things.find((t) => t.kind === 'pracownia');
+  if (lab) out.push(...pracowniaItems(st, core, lab.id));
+  // pracownia po zbadaniu sieci bez miedzi (jeszcze przed fabryką): włączyć sieć (raz; nieodwracalne, więc z potwierdzeniem,
+  // którego okno to `siecSheet` w src/ui/okna.ts). To czwarty kamień drogi technologii (`siecWlaczona` w odczycie dla ramy
+  // zwycięstwa); epilog daje dopiero fabryka
+  if (things.some((t) => t.kind === 'pracownia') && siecZbadana(st) && !siecWlaczona(st))
+    out.push({
+      cmd: { t: 'siec', ids: core },
+      label: L('Włączyć sieć', 'Switch on the grid'),
+      quick: false,
+      confirm: true,
+    });
   // ognisko na wolnym kafelku podwórka, gdy jest z czego (drewno luzem albo w rękach)
   const woodN =
     st.things.reduce((a, t) => a + (t.kind === 'drewno' ? t.n : 0), 0) + st.pawns.reduce((a, p) => a + p.carry, 0);
@@ -429,6 +504,26 @@ export function commandsAt(st: SimState, w: World, ids: readonly number[], tile:
     });
   out.push({ cmd: { t: 'move', ids: core, to: tile }, label: L('Idź tu', 'Go here'), quick: true });
   return out;
+}
+
+/** Polecenia przy pracowni (badania). Z wybranym badaniem „Badać: <nazwa>” (polecenie `study`: zaznaczeni siadają do
+    stołu) i „Tablica badań”; bez wybranego „Wybrać badanie” (otwiera tablicę). „Badać” nie znika, kiedy nie da się
+    usiąść, tylko jest wyszarzone z powodem: oba miejsca zajęli inni (zaznaczeni, którzy już siedzą, nie liczą się) albo
+    badanie stanęło, bo osadzie zabrakło wiedzy. Polecenie `tablica` przechwytuje interfejs (main.ts). */
+function pracowniaItems(st: SimState, core: number[], lab: number): MenuItem[] {
+  const cur = st.research?.cur;
+  if (!cur || !Object.hasOwn(TECH_BY, cur))
+    return [{ cmd: { t: 'tablica', ids: core }, label: L('Wybrać badanie', 'Choose research'), quick: false }];
+  const nazwa = nazwaTech(cur);
+  const badac: MenuItem = {
+    cmd: { t: 'study', ids: core, thing: lab },
+    label: L(`Badać: ${nazwa.pl}`, `Research: ${nazwa.en}`),
+    quick: false,
+  };
+  if (kartka(st, cur, modeOf(st)).stan !== 'w_toku')
+    badac.off = L('Brakuje wiedzy w osadzie.', 'The estate lacks the know-how.');
+  else if (wolneMiejsca(st.pawns, lab, core) < 1) badac.off = tr(BRAK_MIEJSCA);
+  return [badac, { cmd: { t: 'tablica', ids: core }, label: L('Tablica badań', 'Research board'), quick: false }];
 }
 
 /** M2 fala 2 (docs/M2-fala-2.md): polecenia przy cudzych drzwiach (otworzyć, wejść, zapukać, wyważyć, zabić deskami,
@@ -562,6 +657,16 @@ export function commandFor(st: SimState, w: World, ids: readonly number[], tile:
   return commandsAt(st, w, ids, tile).find((m) => m.quick && !m.off)?.cmd ?? null;
 }
 
+/** Potwierdzenie po poleceniu „Dołożyć” na nowym palenisku (koza z beczki, kocioł): do czego dokłada; `k` 0 to jedna osoba,
+    1 kilka. null dla kozy zarządu, ogniska i nieznanej rzeczy: tam zostaje ogólne potwierdzenie z interfejsu. */
+export function refuelFeedback(st: SimState, thing: number, k: number): string | null {
+  const kind = st.things.find((t) => t.id === thing)?.kind;
+  if (kind === 'koza_beczka')
+    return L(k ? 'Dołożą do kozy z beczki.' : 'Dołoży do kozy z beczki.', 'Off to feed the barrel stove.');
+  if (kind === 'kociol') return L(k ? 'Dołożą do kotła.' : 'Dołoży do kotła.', 'Off to feed the boiler.');
+  return null;
+}
+
 /** co robi osoba: krótki opis do karty */
 export function jobText(st: SimState, w: World, p: Pawn): string {
   const j = p.job;
@@ -591,11 +696,19 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         ? L('Idzie po drewno.', 'Fetching wood.')
         : L('Niesie drewno do składu.', 'Carrying wood to the woodpile.');
     case 'refuel': {
-      const fire = st.things.find((t) => t.id === j.target)?.kind === 'ognisko';
-      if (fire)
+      const kind = st.things.find((t) => t.id === j.target)?.kind;
+      if (kind === 'ognisko')
         return walking
           ? L('Idzie po drewno do ogniska.', 'Fetching wood for the campfire.')
           : L('Dokłada do ogniska.', 'Feeding the campfire.');
+      if (kind === 'koza_beczka')
+        return walking
+          ? L('Idzie po drewno do kozy z beczki.', 'Fetching wood for the barrel stove.')
+          : L('Dokłada do kozy z beczki.', 'Feeding the barrel stove.');
+      if (kind === 'kociol')
+        return walking
+          ? L('Idzie po drewno do kotła.', 'Fetching wood for the boiler.')
+          : L('Dokłada do kotła.', 'Feeding the boiler.');
       return walking
         ? L('Idzie po drewno do kozy.', 'Fetching wood for the stove.')
         : L('Dokłada do kozy.', 'Feeding the stove.');
@@ -658,6 +771,10 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
         return walking
           ? L('Idzie na wartę przy siatce.', 'Going on watch at the fence.')
           : L('Trzyma wartę przy siatce.', 'On watch at the fence.');
+      if (j.target === WIEZA_POST)
+        return walking
+          ? L('Idzie na wartę na wieżę.', 'Going on watch on the tower.')
+          : L('Trzyma wartę na wieży.', 'On watch on the tower.');
       if (j.target === 0) {
         const gate = wordsEnOfWorld(w).brama;
         return L(
@@ -721,6 +838,14 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       return walking
         ? L('Wychodzi na wyprawę.', 'Heading out on a supply run.')
         : L('Na wyprawie.', 'Out on a supply run.');
+    case 'odejscie':
+      return walking
+        ? L(`Idzie do ${wordsOfWorld(w).brama.d}, żeby odejść.`, `Heading for ${wordsEnOfWorld(w).brama} to leave.`)
+        : L('Odchodzi z osiedla.', 'Leaving the neighbourhood.');
+    case 'sprawdz':
+      return walking
+        ? L('Idzie sprawdzić, co się dzieje.', 'Going to check what is happening.')
+        : L('Rozgląda się i nasłuchuje.', 'Looking around and listening.');
     case 'raid':
       return (
         [
@@ -760,12 +885,33 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       );
     case 'zemsta':
       return tr(HANDEL.zemstaPraca[Math.min(3, j.phase)]);
+    case 'gosc': {
+      // gość z klocków: what mówi, co robi (src/sim/gosc.ts, JobKind 'gosc')
+      const idzie = p.pi < p.path.length;
+      if (j.what === 'spi') return L('Śpi przy ogniu.', 'Asleep by the fire.');
+      if (j.what === 'lup')
+        return idzie ? L('Skrada się po jedzenie.', 'Sneaking off for food.') : L('Rozgląda się.', 'Looking around.');
+      if (j.what === 'rdzen')
+        return idzie ? L('Idzie do ognia.', 'Heading for the fire.') : L('Siedzi przy ogniu.', 'Sitting by the fire.');
+      if (j.what === 'stoi') return L('Stoi i czeka na decyzję.', 'Standing there, waiting for a decision.');
+      return idzie ? L('Idzie do bramy.', 'Walking to the gate.') : L('Czeka pod bramą.', 'Waiting at the gate.');
+    }
     case 'wander':
       return tr(OBCY.wander[Math.min(3, j.phase)]);
     case 'scavenge':
       return tr(OBCY.scavenge[Math.min(3, j.phase)]);
     case 'talk':
       return tr(walking ? OBCY.idzieZagadac : OBCY.rozmawia);
+    case 'zapros':
+      return tr(
+        j.what === 'reka'
+          ? walking
+            ? OBCY.idzieZapytac
+            : OBCY.pytaORege
+          : walking
+            ? OBCY.idzieZaprosic
+            : OBCY.zaprasza,
+      );
     case 'mug':
       return tr(OBCY.idzieNapasc);
     case 'shoo':
@@ -777,6 +923,15 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
     case 'saw':
       if (walking) return tr(NAPISY.idzieWarsztat);
       return tr(j.what === 'czesci' ? NAPISY.robiCzesci(j.from) : NAPISY.pilujeDeski(j.from));
+    case 'research': {
+      if (walking) return L('Idzie do pracowni.', 'Heading to the research room.');
+      const cur = st.research?.cur;
+      if (!cur || !Object.hasOwn(TECH_BY, cur)) return L('Siedzi przy stole.', 'Sitting at the desk.');
+      // te same punkty co na tablicy: postęp w dół, koszt w górę (koszt bywa ułamkiem przez mnożnik ery)
+      const postep = `${liczba(postepDoPokazania(st.research?.prog[cur] ?? 0), 0, jezyk())} / ${liczba(kosztDoPokazania(kosztTech(cur)), 0, jezyk())}`;
+      const nazwa = nazwaTech(cur);
+      return L(`Bada: ${nazwa.pl} (${postep})`, `Researching: ${nazwa.en} (${postep})`);
+    }
     case 'zombie':
       return (
         [

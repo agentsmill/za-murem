@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { makePerson } from '../../src/content/people.ts';
+import { mulberry } from '../../src/core/rng.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { createSim, Sim, type SimState } from '../../src/sim/sim.ts';
@@ -121,5 +123,36 @@ describe('przyjmowanie ludzi', () => {
       }
     }
     expect(inStairs).toBeGreaterThan(0);
+  });
+
+  it('fx.join: nowa osoba zarządu czeka za bramą i dochodzi do siedziby', () => {
+    const st = createSim(w, 3, { core: 2 });
+    st.tick = atHour(1, 10);
+    const sim = new Sim(w, st);
+    const person = makePerson(mulberry(9), new Set(), () => 101);
+    const fx = emptyEffects();
+    fx.join.push(person);
+    applyGov(st, w, fx);
+    const np = st.pawns.find((q) => q.kind === 'core' && st.people[q.person].id === person.id)!;
+    // zaczyna za siatką, poza budynkami, w pracy „arrive”
+    expect(np.job?.t).toBe('arrive');
+    const start = tileOf(np);
+    expect(w.fence.yard.includes(start) || w.bid[start] >= 0).toBe(false);
+    // nikt inny z zarządu nie dostał pracy „arrive”
+    expect(st.pawns.filter((q) => q.kind === 'core' && q.job?.t === 'arrive')).toEqual([np]);
+    let passed = false;
+    for (let k = 0; k < 2 * 800 && (np.job?.t === 'arrive' || !passed); k++) {
+      sim.step();
+      if (isGate(tileOf(np))) passed = true;
+    }
+    expect(passed).toBe(true);
+    expect(np.job?.t).not.toBe('arrive');
+    // po drugiej godzinie jest już po naszej stronie, przy siedzibie, i żyje jak reszta zarządu
+    for (let k = 0; k < 800; k++) sim.step();
+    const i = tileOf(np);
+    expect(w.fence.yard.includes(i) || w.bid[i] >= 0).toBe(true);
+    const door = w.buildings[w.hq].entrances[0].out;
+    expect(Math.hypot((i % size) - (door % size), Math.floor(i / size) - Math.floor(door / size))).toBeLessThan(25);
+    expect(np.needs).toBeTruthy();
   });
 });

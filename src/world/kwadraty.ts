@@ -14,7 +14,8 @@
    `kafelkiKwadratu` to kafelki OpenFreeMap z=14 do pobrania dla kwadratu: w promieniu 720 m od jego środka, tak samo
    jak dom pobiera je wokół adresu (load() w mvt.ts), więc klucze budynków liczą się z tych samych całych budowli.
    Dla domu to dokładnie kafelki, które i tak pobiera gra. `seedKwadratu` daje ziarno kwadratu poza domem (drzewa, wraki):
-   dom używa ziarna gry wprost, więc jego świat się nie zmienia. */
+   dom używa ziarna gry wprost, więc jego świat się nie zmienia. `czytajKwadraty` zamienia parametr adresu ?kwadraty=
+   (do zrzutów i pomiarów) na listę kwadratów obok domu. */
 
 import { hashString } from '../core/rng.ts';
 import type { Geo, Pt } from './geo.ts';
@@ -99,4 +100,85 @@ export function sasiedzi8(sx: number, sy: number): [number, number][] {
 /** Ziarno kwadratu poza domem: skrót (hashString) z napisu „ziarno:sx:sy” jako liczba całkowita bez znaku. */
 export function seedKwadratu(seed: number, sx: number, sy: number): number {
   return Number.parseInt(hashString(`${seed}:${sx}:${sy}`), 16);
+}
+
+/** Budynki kwadratu (sx, sy) sąsiadujące kafelkami przez szew z budynkami domu: numer budynku kwadratu → numer budynku
+    domu. To ten sam budynek po dwóch stronach granicy (dwa kawałki jednej budowli), więc kawałek sąsiada bierze od domu
+    to, czego dom nie może zmienić (poziomy, styl). Sąsiadują kafelki leżące obok siebie przez granicę: wzdłuż boku dla
+    czterech kwadratów obok domu, przez róg dla czterech narożnych; dalsze kwadraty nie mają szwu z domem (pusta mapa).
+    Budynek kwadratu, który dotyka dwóch budynków domu, dostaje pierwszy napotkany od północy i zachodu. Dwa różne
+    budynki tuż przy granicy, które się stykają, uchodzą za jeden (rzadkie i nieszkodliwe). */
+export function budynkiZDomem(
+  dom: Pick<World, 'size' | 'bid'>,
+  w: Pick<World, 'size' | 'bid'>,
+  sx: number,
+  sy: number,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  if ((sx === 0 && sy === 0) || Math.abs(sx) > 1 || Math.abs(sy) > 1) return out;
+  const n = dom.size;
+  const para = (iw: number, id: number) => {
+    const bw = w.bid[iw];
+    const bd = dom.bid[id];
+    if (bw >= 0 && bd >= 0 && !out.has(bw)) out.set(bw, bd);
+  };
+  if (sx !== 0 && sy !== 0) {
+    const x = sx > 0 ? 0 : n - 1;
+    const y = sy > 0 ? 0 : n - 1;
+    para(y * n + x, (n - 1 - y) * n + (n - 1 - x));
+  } else if (sy === 0) {
+    const x = sx > 0 ? 0 : n - 1;
+    for (let y = 0; y < n; y++) para(y * n + x, y * n + (n - 1 - x));
+  } else {
+    const y = sy > 0 ? 0 : n - 1;
+    for (let x = 0; x < n; x++) para(y * n + x, (n - 1 - y) * n + x);
+  }
+  return out;
+}
+
+/** najwięcej kwadratów obok domu z parametru adresu (siedem na siedem bez domu); dalej to już sprawa wydajności (etap 5) */
+export const MAX_KWADRATOW = 48;
+/** najdalszy kwadrat od domu w każdą stronę (spec: do 16 kwadratów, czyli około 6 km) */
+const MAX_ODLEGLOSC = 16;
+
+/**
+ * Kwadraty obok domu z parametru adresu ?kwadraty=:
+ * - „3x3”, „5x5”, „7x7” (nieparzysty kwadrat siatki z domem pośrodku): wszystkie kwadraty poza domem, pierścień po
+ *   pierścieniu od domu na zewnątrz, w każdym od kwadratu na północ od domu zgodnie z ruchem zegara (dla 3x3 to
+ *   sasiedzi8: N, NE, E, SE, S, SW, W, NW);
+ * - lista par „sx,sy” rozdzielonych średnikami, np. „1,0;0,-1”, w podanej kolejności;
+ * bez domu (0, 0) i bez powtórzeń. Puste, błędne (zła para, parzysty albo niekwadratowy wymiar, za duża siatka,
+ * kwadrat dalej niż 16 od domu, więcej niż MAX_KWADRATOW) i brak parametru dają pustą listę.
+ */
+export function czytajKwadraty(param: string | null): [number, number][] {
+  if (!param) return [];
+  const rozmiar = /^(\d+)[xX](\d+)$/.exec(param.trim());
+  if (rozmiar) {
+    const n = Number(rozmiar[1]);
+    if (n !== Number(rozmiar[2]) || n % 2 === 0 || n < 3) return [];
+    const out: [number, number][] = [];
+    for (let r = 1; r <= (n - 1) / 2; r++) {
+      // pierścień r zgodnie z ruchem zegara od (0, −r): górny bok w prawo, prawy w dół, dolny w lewo, lewy w górę
+      for (let x = 0; x <= r; x++) out.push([x, -r]);
+      for (let y = -r + 1; y <= r; y++) out.push([r, y]);
+      for (let x = r - 1; x >= -r; x--) out.push([x, r]);
+      for (let y = r - 1; y >= -r; y--) out.push([-r, y]);
+      for (let x = -r + 1; x < 0; x++) out.push([x, -r]);
+    }
+    return out.length <= MAX_KWADRATOW ? out : [];
+  }
+  const out: [number, number][] = [];
+  const widziane = new Set<string>();
+  for (const el of param.split(';')) {
+    const m = /^\s*(-?\d+)\s*,\s*(-?\d+)\s*$/.exec(el);
+    if (!m) return [];
+    const sx = Number(m[1]);
+    const sy = Number(m[2]);
+    if (Math.abs(sx) > MAX_ODLEGLOSC || Math.abs(sy) > MAX_ODLEGLOSC) return [];
+    const k = kluczKwadratu(sx, sy);
+    if ((sx === 0 && sy === 0) || widziane.has(k)) continue;
+    widziane.add(k);
+    out.push([sx, sy]);
+  }
+  return out.length <= MAX_KWADRATOW ? out : [];
 }

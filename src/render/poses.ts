@@ -2,14 +2,14 @@
    mebla siekierą, niesienie naręcza drewna, klęczenie przy kozie (grzanie rąk, dokładanie drewna),
    gotowanie, siedzenie na krześle przy stole, sen w łóżku pod kocem (także na łóżkach piętrowych)
    albo na podłodze, warta z lampą (praca 'guard' przy bramie albo dziurze), czuwanie przy kozie
-   (guard na posterunku KOZA_POST) i drzemka wartownika (guard w fazie 4). Prace M2: przeszukiwanie
-   i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa i zajmowanie mieszkania
-   młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę, naprawę
-   i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
+   (guard na posterunku KOZA_POST), warta na wieży (rysuje się przed jej sprite'em) i drzemka wartownika (guard
+   w fazie 4). Prace M2: przeszukiwanie i przebieranie śmieci na kolanach, rozbiórka siekierą, naprawa, budowa
+   i zajmowanie mieszkania młotkiem (podłoga, rura i grządki na kolanach), niesienie desek albo złomu na łatę,
+   naprawę i budowę; przyjęty (praca 'arrive') idzie jak każdy mieszkaniec. Fala 2: przy cudzych drzwiach
    wyważanie zamachem, deski i pukanie młotkiem, zamek na kolanach, pomieszczenie sąsiada przeszukuje
-   na kolanach. Klatki liczone z czasu gry, bez
-   stanu w symulacji. Dokładanie do kozy trwa w symulacji
-   jeden tick, więc widok pamięta je chwilę (FeedWatch). Czyste funkcje bez PixiJS. */
+   na kolanach. Gość wpuszczony na noc (praca 'gosc', what 'spi') śpi na ziemi przy ognisku jak śpiący na podłodze.
+   Klatki liczone z czasu gry, bez stanu w symulacji. Dokładanie do kozy trwa w symulacji jeden tick, więc widok pamięta je
+   chwilę (FeedWatch). Czyste funkcje bez PixiJS. */
 
 import { type WeaponId, weaponOf } from '../sim/bron.ts';
 import { BITE_CD } from '../sim/zombie.ts';
@@ -85,6 +85,9 @@ const BUNK_LOW = 10;
 const BUNK_HIGH = 26;
 /** posterunek warty przy kozie zarządu (KOZA_POST w sim.ts): czuwa przy ogniu, bez latarni */
 export const KOZA_POST = -1;
+/** posterunek warty na wieży (WIEZA_POST w sim.ts): wartownik stoi na kafelku wieży i rysuje się przed nią, bo sprite
+    wieży (z kabiną na palach) zasłoniłby go, a z wieży ma być widoczny */
+export const WIEZA_POST = -3;
 /** cykl czuwania przy kozie (s gry): tyle klęczy przy ogniu, resztę stoi */
 const VIGIL = 19;
 const VIGIL_KNEEL = 14;
@@ -182,6 +185,19 @@ export function poseOf(
       case 'campfire':
         return { pose: 'crouch', dir, frame: 0 };
     }
+  // śpiący na ziemi bez łóżka (na podłodze) albo gość wpuszczony na noc, który kładzie się przy ognisku
+  const floor = (): PoseView => {
+    const o = FLOOR_O[dir];
+    const [hx, hy] = lieHead(o);
+    return {
+      pose: 'walk',
+      dir,
+      frame: 0,
+      lie: { kind: 'floor', o, x: p.x * TILE + hx - 24, y: p.y * TILE + hy - 26 },
+      z: p.y,
+    };
+  };
+  if (!moving && j?.t === 'gosc' && j.what === 'spi') return floor();
   if (!moving && j?.t === 'guard' && j.phase === 4) return { pose: 'doze', dir, frame: 0 };
   if (!moving && j && j.phase === 1)
     switch (j.t) {
@@ -216,6 +232,16 @@ export function poseOf(
       case 'cook':
         return { pose: 'cook', dir, frame: Math.floor(tt * 2) % 2 };
       case 'guard': {
+        if (j.target === WIEZA_POST) {
+          const tower = things.find((c) => c.kind === 'wieza');
+          return {
+            pose: 'guard',
+            dir,
+            frame: Math.floor(tt) % 2,
+            arm: 'hold',
+            ...(tower ? { z: tower.y + tower.h + 0.01 } : {}),
+          };
+        }
         if (j.target !== KOZA_POST) return { pose: 'guard', dir, frame: Math.floor(tt) % 2, arm: 'hold' };
         // czuwanie przy kozie: na krześle siedzi, bez krzesła klęczy przy ogniu i co jakiś czas wstaje
         const chair = things.find((c) => c.kind === 'krzeslo' && covers(c, p.x, p.y));
@@ -243,15 +269,7 @@ export function poseOf(
           const h = bedHead(bed);
           return { pose: 'walk', dir, frame: 0, lie: { kind: 'bed', ...h }, z: bed.y + bed.h + 0.02 };
         }
-        const o = FLOOR_O[dir];
-        const [hx, hy] = lieHead(o);
-        return {
-          pose: 'walk',
-          dir,
-          frame: 0,
-          lie: { kind: 'floor', o, x: p.x * TILE + hx - 24, y: p.y * TILE + hy - 26 },
-          z: p.y,
-        };
+        return floor();
       }
     }
   if (p.carry > 0) return { pose: 'carry', dir, frame: step };

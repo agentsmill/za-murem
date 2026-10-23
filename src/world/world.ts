@@ -5,6 +5,12 @@
    z kwadratami miasta (src/world/kwadraty.ts): ta sama geometria na oknie przesuniętym o wielokrotność boku.
    `buildKwadrat` buduje z niego świat kwadratu obok domu (bez siedziby, siatki, wnętrza i mieszkań); dom wygrywa na szwie
    (budynki wspólne z domem prostują się jak w domu, rotate.ts), a świat domu zostaje bit w bit taki, jaki był.
+   Z opcją `pietra` kwadrat awansuje domy po kluczu budynku, a z opcją `dom` kawałek przy szwie z domem bierze poziomy
+   budynku domu (pietra.ts), żeby dwa kawałki jednego budynku miały te same piętra. Miejsca (sklep, szkoła) kwadratu
+   trafiają do budynków po całym obrysie z geo (okno widzi tylko swój kawałek przeciętego budynku), dom po kafelkach jak
+   zawsze; odległości w tym kodzie liczą się przez kwadraty, bez Math.hypot (świat kwadratu wejdzie do symulacji).
+   Budynek przecięty granicą okna ma w kwadracie `ramka` całego budynku (WorldBuilding.ramka, z pierścieni geo), z której
+   rysowanie liczy styl (grzbiet dachu, głębokość fasady) i rząd kominów tak samo w obu kawałkach; dom jej nie ma.
    Wszystko deterministyczne: ten sam adres i ziarno dają ten sam świat. W grze sieciowej świat może dostać listę
    budynków zajętych przez inne drużyny (bezSiedziby, klucze z klucze.ts): siedzibą zostaje wtedy najbliższy wolny
    budynek mieszkalny; bez tej opcji świat jest taki jak zawsze. Świat nie zależy od języka (nazwy budynków zostają
@@ -17,12 +23,12 @@ import { labelRegions, nearestFree } from '../sim/path.ts';
 import { type AptState, applyApts, type Damage, type Smieci, settleApts } from './apts.ts';
 import { classify, levelsOf, nameOf } from './classify.ts';
 import { applyFence, buildFence, type Fence, type Gate, gateCrowded, yardEdges } from './fence.ts';
-import { type Geo, type GeoBuilding, type GeoPoi, type Pt, polyArea, segDist } from './geo.ts';
+import { type Geo, type GeoBuilding, type GeoPoi, type Pt, pip, polyArea, segDist, segDist2 } from './geo.ts';
 import { type Heap, placeHeaps } from './heaps.ts';
 import { applyInterior, buildInterior, type Interior } from './interior.ts';
 import { kluczBudynku } from './klucze.ts';
 import { seedKwadratu, type Uklad } from './kwadraty.ts';
-import { awansujDomy } from './pietra.ts';
+import { awansujDomy, awansujDomyKwadratu, uzgodnijPietraZDomem } from './pietra.ts';
 import { fillRing, stampLine } from './raster.ts';
 import type { RodzajPunktu } from './rodzaje.ts';
 import { dominantAngle, rotateGeo, straighten, straightenZDomem } from './rotate.ts';
@@ -70,6 +76,14 @@ export interface WorldBuilding {
   osmId?: string;
   /** data budowy z tagu start_date w OSM, bez zmian („1975”, „1970s”, „~1965”); tylko z Overpass */
   startDate?: string;
+  /**
+   * Ramka całego budynku w kafelkach okna, także poza oknem (x0 i y0 mogą być ujemne, x1 i y1 sięgać poza bok): tylko w
+   * świecie kwadratu obok domu i tylko dla budynku przeciętego granicą okna. Liczy się z pierścieni geo, które mają
+   * budynek w całości, więc oba kawałki jednego budynku w sąsiednich kwadratach mają tę samą ramkę w układzie miasta
+   * (przesuniętą o bok kwadratu). Styl (grzbiet dachu, głębokość fasady) i rząd kominów liczą się z niej zamiast z ramki
+   * kawałka (x0..y1). Dom i budynek w całości w oknie jej nie mają, więc wyglądają jak zawsze.
+   */
+  ramka?: { x0: number; y0: number; x1: number; y1: number };
 }
 
 export interface Tree {
@@ -397,10 +411,33 @@ function opiszBudynki(
   size: number,
   ox: number,
   oy: number,
+  poObrysie = false,
 ): { buildings: WorldBuilding[]; pois: GeoPoi[] } {
   const half = size / 2;
+  // kwadrat obok domu (poObrysie): miejsce należy do budynku po całym obrysie z geo, a nie po kafelkach okna, bo okno widzi
+  // tylko swój kawałek przeciętego budynku, a miejsce leży czasem w drugim; dwa kawałki jednego budynku mają wtedy te same
+  // kategorie, czyli tę samą klasę i piętra. Dom liczy po kafelkach jak zawsze.
+  const obrysy = poObrysie ? kept.map((o) => [o.b.p, ...(o.b.pp ?? [])]) : null;
+  const budynekPoObrysie = (px: number, py: number): number => {
+    let naj = -1;
+    // do 6,5 m od obrysu; kwadraty odległości, bez hypot: świat kwadratu wejdzie do symulacji (ten sam wynik w każdym silniku)
+    let bd = 6.5 * 6.5;
+    for (let i = 0; i < kept.length; i++)
+      for (const r of obrysy![i]) {
+        if (pip(px, py, r)) return i;
+        for (let k = 0; k + 1 < r.length; k++) {
+          const d = segDist2(px, py, r[k][0], r[k][1], r[k + 1][0], r[k + 1][1]);
+          if (d < bd) {
+            bd = d;
+            naj = i;
+          }
+        }
+      }
+    return naj;
+  };
   // 6. miejsca: punkt w budynku albo najbliższy budynek do 6 m (też dla rodzajów punktów: muzeum, teatr, hotel…)
   const budynekPunktu = (px: number, py: number): number => {
+    if (obrysy) return budynekPoObrysie(px, py);
     const tx = Math.floor(px - ox + half);
     const ty = Math.floor(py - oy + half);
     if (tx < 0 || ty < 0 || tx >= size || ty >= size) return -1;
@@ -438,6 +475,29 @@ function opiszBudynki(
     if (b >= 0) rodzajeOf[b].add(p.k);
   }
 
+  // ramka całego budynku (tylko kwadrat obok domu i tylko budynek wystający poza okno): z pierścieni geo, w układzie okna.
+  // Indeks kafelka liczy się w układzie adresu (floor(x + half)) i dopiero potem przesuwa o ox, oy (całkowite), więc oba
+  // kawałki jednego budynku dostają dokładnie te same liczby (to samo co floor(x − ox + half) z jednego geo)
+  const ramkaCalosci = (b: GeoBuilding): WorldBuilding['ramka'] => {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const r of [b.p, ...(b.pp ?? [])])
+      for (const [px, py] of r) {
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+      }
+    if (!Number.isFinite(minX)) return undefined;
+    const x0 = Math.floor(minX + half) - ox;
+    const y0 = Math.floor(minY + half) - oy;
+    const x1 = Math.floor(maxX + half) - ox;
+    const y1 = Math.floor(maxY + half) - oy;
+    return x0 >= 0 && y0 >= 0 && x1 < size && y1 < size ? undefined : { x0, y0, x1, y1 };
+  };
+
   // 7. opis budynków
   const counters: Record<string, number> = {};
   const buildings: WorldBuilding[] = kept.map((o, id) => {
@@ -459,6 +519,7 @@ function opiszBudynki(
     const rodzaje = [...rodzajeOf[id]].sort();
     const cls = classify(o.b, area, cats);
     counters[cls] = (counters[cls] || 0) + 1;
+    const ramka = poObrysie ? ramkaCalosci(o.b) : undefined;
     return {
       id,
       cls,
@@ -476,6 +537,7 @@ function opiszBudynki(
       ...(o.b.t.id ? { osmId: o.b.t.id } : {}),
       ...(o.b.t.start_date ? { startDate: o.b.t.start_date } : {}),
       ...(rodzaje.length ? { rodzaje } : {}),
+      ...(ramka ? { ramka } : {}),
     };
   });
   const pois = ox || oy ? geo.poi.map((p) => ({ ...p, x: p.x - ox, y: p.y - oy })) : geo.poi;
@@ -671,6 +733,12 @@ export interface KwadratOpts {
   /** SUROWE geo domu, takie jak dostał buildWorld (przed obrotem i prostowaniem): reguła „dom wygrywa na szwie” –
       budynki, których kawałki są też w domu, prostują się tak jak w domu. Bez niego kwadrat prostuje wszystko sam. */
   geoDomu?: Geo;
+  /** widok pięter (flaga ?pietra=1): domy od 60 m² idą do dwóch kondygnacji według skrótu z klucza budynku
+      (awansujDomyKwadratu), tak samo w każdym kwadracie; bez tej opcji poziomy są z danych */
+  pietra?: boolean;
+  /** świat domu (potrzebne tylko `size`, `bid` i `buildings`): z `pietra` kawałki budynków przy szwie z domem dostają
+      poziomy budynku domu (uzgodnijPietraZDomem) */
+  dom?: Pick<World, 'size' | 'bid' | 'buildings'>;
 }
 
 /** Geo kwadratu gotowe do rastrowania: obrót kątem układu domu (nie własnym dominantAngle kwadratu, żeby siatki się
@@ -701,7 +769,9 @@ const pustaSiatka = (): Fence => ({ tiles: [], hole: [], gate: { x: -1, y: -1, w
     i prostowanie (przygotujGeoKwadratu), teren i budynki (rastrujTeren ze skrawkami przy granicy kwadratu), opis
     budynków, drzewa i wraki z ziarna kwadratu, spójność (obszar dotykający granicy kwadratu uchodzi za połączony),
     drzwi (nie na brzegu kwadratu). Bez siedziby (hq = −1), siatki, wnętrza, suchego drzewa, stert i mieszkań.
-    Nie rzuca na kwadracie bez budynków (woda, las, pola). Współrzędne drzew, miejsc i wraków są względem kwadratu. */
+    Nie rzuca na kwadracie bez budynków (woda, las, pola). Współrzędne drzew, miejsc i wraków są względem kwadratu.
+    Z `pietra` domy awansują do dwóch kondygnacji po kluczu budynku, a z `dom` kawałki przy szwie z domem mają jego
+    poziomy (kawałki jednego budynku po obu stronach szwu wyglądają jak jedna bryła w widoku pięter). */
 export function buildKwadrat(geoIn: Geo, opts: KwadratOpts): World {
   const { uklad, sx, sy } = opts;
   const size = uklad.bok;
@@ -711,7 +781,13 @@ export function buildKwadrat(geoIn: Geo, opts: KwadratOpts): World {
   const oy = sy * size;
   const geo = przygotujGeoKwadratu(geoIn, uklad, opts.geoDomu);
   const { terr, bid, blocked, kept } = rastrujTeren(geo, size, ox, oy, { skrawki: true });
-  const { buildings, pois } = opiszBudynki(geo, kept, bid, size, ox, oy);
+  const { buildings, pois } = opiszBudynki(geo, kept, bid, size, ox, oy, true);
+  // widok pięter: awans domów po kluczu budynku (dwa kawałki jednego budynku decydują tak samo), a kawałek przy szwie
+  // z domem ma poziomy budynku domu
+  if (opts.pietra) {
+    awansujDomyKwadratu({ buildings }, opts.seed);
+    if (opts.dom) uzgodnijPietraZDomem({ size, bid, buildings }, opts.dom, sx, sy);
+  }
 
   // 9. drzewa: przy krawędzi kwadratu zostaje pas bez drzew (korona nie wychodzi poza kwadrat)
   const planted = plantTrees(terr, blocked, size, seed);

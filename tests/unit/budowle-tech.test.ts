@@ -8,33 +8,56 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import { BUILD_CATS, BUILDS, type BuildCat, type BuildKind, canPlace, isUnlocked } from '../../src/sim/budowle.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
-import { allowedAnchors } from '../../src/ui/budowa.ts';
+import { allowedAnchors, buildMenu } from '../../src/ui/budowa.ts';
 import { buildWorld } from '../../src/world/world.ts';
 
 const d = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
 const seed = Number.parseInt(hashString(d.addr), 16) || 2051;
 const w = buildWorld(d.geo, { seed, street: d.street });
 
+/** badania budowli z technologii z danych (BUILDS[k].tech), zanim któryś test ustawi własne */
+const TECH0: Readonly<Partial<Record<BuildKind, string>>> = Object.fromEntries(
+  (Object.keys(BUILDS) as BuildKind[]).filter((k) => BUILDS[k].tech).map((k) => [k, BUILDS[k].tech]),
+);
+
 afterEach(() => {
-  for (const k of Object.keys(BUILDS) as BuildKind[]) delete BUILDS[k].tech;
+  for (const k of Object.keys(BUILDS) as BuildKind[]) {
+    const t = TECH0[k];
+    if (t) BUILDS[k].tech = t;
+    else delete BUILDS[k].tech;
+  }
 });
 
 describe('kategorie i blokady budowli', () => {
-  it('każda budowla ma zakładkę z BUILD_CATS: dom, podwórko albo obwód', () => {
+  it('każda budowla ma zakładkę z BUILD_CATS: dom, podwórko albo obwód, a cuda są ostatnie i bez budowli', () => {
     const cat = (k: BuildKind): BuildCat => BUILDS[k].cat;
-    expect(BUILD_CATS).toEqual(['dom', 'podworko', 'obwod']);
-    expect(['warsztat', 'kuchnia_spoleczna', 'magazyn', 'lozka_pietrowe'].map((k) => cat(k as BuildKind))).toEqual([
-      'dom',
-      'dom',
-      'dom',
-      'dom',
-    ]);
-    expect(cat('ogrodek')).toBe('podworko');
-    expect(cat('zasieki')).toBe('obwod');
+    expect(BUILD_CATS).toEqual(['dom', 'podworko', 'obwod', 'cuda']);
+    expect(
+      [
+        'warsztat',
+        'kuchnia_spoleczna',
+        'magazyn',
+        'lozka_pietrowe',
+        'pracownia',
+        'koza_beczka',
+        'kociol',
+        'pieczarkarnia',
+      ].map((k) => cat(k as BuildKind)),
+    ).toEqual(Array(8).fill('dom'));
+    expect(['ogrodek', 'szklarnia', 'wieza'].map((k) => cat(k as BuildKind))).toEqual(Array(3).fill('podworko'));
+    expect(['zasieki', 'barykada'].map((k) => cat(k as BuildKind))).toEqual(['obwod', 'obwod']);
+    expect((Object.keys(BUILDS) as BuildKind[]).filter((k) => cat(k) === 'cuda')).toEqual([]);
+  });
+
+  it('pusta zakładka cuda jest ukryta w menu budowy', () => {
+    const menu = buildMenu({}, () => true);
+    expect(menu.map((c) => c.key)).toEqual(['dom', 'podworko', 'obwod']);
   });
 
   it('bez pola tech budowla jest odblokowana, z polem czeka na badanie z techDone', () => {
-    for (const k of Object.keys(BUILDS) as BuildKind[]) expect(isUnlocked({}, k)).toBe(true);
+    // od początku stoją te bez badania; sześć z technologii czeka na swoje
+    for (const k of Object.keys(BUILDS) as BuildKind[]) expect(isUnlocked({}, k), k).toBe(!TECH0[k]);
+    for (const [k, t] of Object.entries(TECH0)) expect(isUnlocked({ techDone: [t] }, k as BuildKind), k).toBe(true);
     BUILDS.warsztat.tech = 't_test';
     expect(isUnlocked({}, 'warsztat')).toBe(false);
     expect(isUnlocked({ techDone: [] }, 'warsztat')).toBe(false);

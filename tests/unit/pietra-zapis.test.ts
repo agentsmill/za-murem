@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
+import { nowyStanSciezki, stanZZapisu, zalicz } from '../../src/ui/sciezka.ts';
 import { pietraWlaczone, readSave, SAVE_KEY, type Save, worldKey, writeSave } from '../../src/ui/zapis.ts';
 import type { Loaded } from '../../src/world/load.ts';
 import { listaPieter } from '../../src/world/pietra.ts';
@@ -59,6 +60,44 @@ describe('flaga pięter w zapisie', () => {
   });
 });
 
+/* Stan ścieżki celów (`cele`) leży w zapisie obok flagi pięter, ale kontrola kształtu jest inna: flaga buduje świat,
+   więc jej zły kształt odrzuca cały zapis, a `cele` dotyczy samego interfejsu, więc zły kształt zdejmuje tylko to
+   pole. */
+describe('stan ścieżki celów obok flagi pięter', () => {
+  const cele = zalicz(nowyStanSciezki(), 'r0.drewno', 2200);
+
+  it('oba pola przeżywają zapis razem, każde niezależnie od drugiego', () => {
+    const store = memory();
+    expect(writeSave(zapis({ pietra: true, cele }), store)).toBe(true);
+    const back = readSave(store);
+    expect(back?.pietra).toBe(true);
+    expect(back?.cele).toEqual(cele);
+    // sama flaga i samo cele
+    const sama = memory();
+    writeSave(zapis({ pietra: true }), sama);
+    expect(readSave(sama)?.cele).toBeUndefined();
+    const samo = memory();
+    writeSave(zapis({ cele }), samo);
+    expect(readSave(samo)?.pietra).toBeUndefined();
+    expect(readSave(samo)?.cele).toEqual(cele);
+  });
+
+  it('zły kształt cele zdejmuje tylko cele: flaga pięter zostaje', () => {
+    const store = memory();
+    store.m.set(SAVE_KEY, JSON.stringify(zapis({ pietra: true, cele: { ...cele, zrobione: { 'r0.drewno': 'tak' } } })));
+    const back = readSave(store);
+    expect(back).not.toBeNull();
+    expect(back?.pietra).toBe(true);
+    expect('cele' in back!).toBe(false);
+  });
+
+  it('zła flaga pięter odrzuca zapis, choć cele ma dobry kształt', () => {
+    const store = memory();
+    store.m.set(SAVE_KEY, JSON.stringify(zapis({ pietra: false, cele })));
+    expect(readSave(store)).toBeNull();
+  });
+});
+
 describe('pietraWlaczone', () => {
   const adres = (q: string) => new URLSearchParams(q);
 
@@ -104,6 +143,7 @@ describe('zapis i wczytanie gry z widokiem pięter albo bez', () => {
       screen: 12,
       world: worldKey(w),
       ...(pietra ? { pietra: true } : {}),
+      cele: zalicz(nowyStanSciezki(), 'r0.drewno', sim.st.tick),
     };
     const store = memory();
     expect(writeSave(s, store)).toBe(true);
@@ -129,6 +169,9 @@ describe('zapis i wczytanie gry z widokiem pięter albo bez', () => {
     // stan symulacji wraca bez zmian
     expect(new Sim(w2, back.sim).hash()).toBe(sim.hash());
     expect(s.world).toBe(worldKey(w2));
+    // stan ścieżki celów jedzie z zapisem, nie zależy od flagi i nie rusza świata ani stanu gry
+    expect(back.cele).toEqual(s.cele);
+    expect(stanZZapisu(back.cele, back.sim, back.gov).zrobione).toEqual({ 'r0.drewno': sim.st.tick });
   });
 
   it('bez flagi: w zapisie nie ma pola pietra, a ?pietra=1 w adresie wczytanej gry go nie włącza', () => {
@@ -146,6 +189,8 @@ describe('zapis i wczytanie gry z widokiem pięter albo bez', () => {
     expect(listaPieter(w2)).toEqual([0]);
     expect(back.world).toBe(worldKey(w2));
     expect(new Sim(w2, back.sim).hash()).toBe(sim.hash());
+    // stan ścieżki celów jest w zapisie także bez flagi pięter
+    expect(back.cele).toEqual(zalicz(nowyStanSciezki(), 'r0.drewno', sim.st.tick));
   });
 
   it('zapis sprzed widoku pięter (bez pola) wczytuje się jak zapis bez flagi, nowa gra czyta adres', () => {

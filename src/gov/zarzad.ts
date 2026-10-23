@@ -14,19 +14,24 @@
    Drogi do zwycięstwa (src/gov/zwyciestwo.ts): na końcu kroku, po `checkOver` i tylko w trwającej grze, `govUpdate` woła
    `krokZwyciestwa` (kamienie milowe, licznik celu ludności, zwycięstwo; bez `st.zwyciestwo` z `wlaczZwyciestwo` nie robi
    nic), a `pending` oddaje epilog zwycięstwa przed raportem (pierwszy z kolejki `epilogi`). `grajDalej` zdejmuje pierwszy
-   epilog, następny z kolejki pokazuje się zaraz po nim; zapis i gra zostają. */
+   epilog, następny z kolejki pokazuje się zaraz po nim; zapis i gra zostają.
+
+   Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
+   (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
+import { TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
-import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, setAssign } from './noc.ts';
-import { FIRST_LAWS } from './tresc.ts';
+import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
+import { FIRST_LAWS, PRZYCZYNA } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
 import { lawEffects as effectsOfLaws, lawState, lawOptions as optionsOfLaws, sign } from './uchwaly.ts';
-import { wiesci } from './wiesci.ts';
+import { przyjeciaZUlicy, wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
+import { znaleziska } from './znaleziska.ts';
 import { krokZwyciestwa } from './zwyciestwo.ts';
 
 export const GOV_VERSION = 1;
@@ -73,6 +78,9 @@ const busy = (st: GovState) => !!st.report || st.lawPending || (!!st.night && !s
     do zwycięstwa; zwraca skutki do zastosowania */
 export function govUpdate(st: GovState, i: GovInput): GovEffects {
   const fx = emptyEffects();
+  // książki ze starego zapisu (zarząd trzymał je u siebie, teraz są w symulacji) idą do niej przy pierwszym kroku
+  for (const d of TECH_DOMS) for (let k = st.books[d] ?? 0; k > 0; k--) (fx.books ??= []).push(d);
+  if (Object.keys(st.books).length) st.books = {};
   if (st.over) return fx;
   if (i.hour >= 18 && i.light?.campfire) st.evening.campfire = true;
   // powroty wypraw dziennych z mapy miasta (bez st.wyprawy nic: skróty botów bez mapy zostają)
@@ -124,7 +132,9 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
   mourn(st, i, fx);
+  znaleziska(st, i);
   wiesci(st, i, fx);
+  przyjeciaZUlicy(st, i, fx);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   // drogi do zwycięstwa (bez wlaczZwyciestwo nic); w przegranej grze nikt już nie wygrywa
@@ -132,20 +142,28 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   return fx;
 }
 
-const CAUSE: Record<string, string> = { rany: 'od ran', gorączka: 'po ugryzieniu', amputacja: 'przy amputacji' };
-
-/** nowe zgony: ktoś z zarządu to zaufanie −5 i wkurzenie +8, mieszkaniec −2 i +3; raz na zgon, linia do raportu */
+/** nowe zgony: ktoś z zarządu to zaufanie −5 i wkurzenie +8, mieszkaniec −2 i +3; raz na zgon, linia do raportu (z imieniem
+    dla zarządu i mieszkańca z osobą, „jeden z mieszkańców” dla bezimiennego). Pogrzeb (karta `pogrzeb`) ma swój licznik
+    `pogrzebN`, który stąd tylko startuje. */
 function mourn(st: GovState, i: GovInput, fx: GovEffects): void {
   const dead = i.dead ?? [];
   const from = st.deadN ?? 0;
   if (dead.length <= from) return;
+  // licznik pogrzebów rusza od pierwszego zgonu po tej zmianie: stary zapis nie dostaje kart za dawne zgony
+  st.pogrzebN ??= from;
   st.deadN = dead.length;
   for (const d of dead.slice(from)) {
-    const why = CAUSE[d.cause] ?? d.cause;
+    const why = PRZYCZYNA[d.cause] ?? d.cause;
     const whyEn = przyczynaEn(d.cause);
-    const line = d.id
-      ? tx(`${d.name} nie żyje, ${why}.`, `${d.name} has died ${whyEn}.`)
-      : tx(`Nie żyje jeden z mieszkańców, ${why}.`, `One of the ${wordsEn(placeIn(i)).mieszkancy} has died ${whyEn}.`);
+    // z imieniem: zarząd (id osoby) i mieszkaniec z osobą z generatora (płeć `f`, id puste); bezimienny mieszkaniec
+    // zostaje „jednym z mieszkańców”. Zaufanie i wkurzenie liczą się dalej po id (zarząd −5 i +8, mieszkaniec −2 i +3)
+    const line =
+      d.id || d.f !== undefined
+        ? tx(`${d.name} nie żyje, ${why}.`, `${d.name} has died ${whyEn}.`)
+        : tx(
+            `Nie żyje jeden z mieszkańców, ${why}.`,
+            `One of the ${wordsEn(placeIn(i)).mieszkancy} has died ${whyEn}.`,
+          );
     if (d.id) mood(st, -5, 8);
     else mood(st, -2, 3);
     if (st.night?.confirmed) st.night.lines.push(line);
@@ -184,6 +202,9 @@ export function pending(st: GovState, i: GovInput): Prompt | null {
 
 /** przydział na karcie nocy (klucz opcji z karty); false, gdy nie wolno */
 export const setNight = (st: GovState, id: string, key: string): boolean => setAssign(st, id, key);
+
+/** „Jak radzi zarząd”: cały przydział z powrotem na propozycje (wieża ma ograniczoną liczbę miejsc, więc nie osoba po osobie) */
+export const resetNight = (st: GovState): boolean => resetAssign(st);
 
 /** zatwierdzenie karty nocy: wyprawy wychodzą, warta staje, plan napadu na tę noc */
 export function confirmNight(st: GovState, i: GovInput): GovEffects {
@@ -257,6 +278,9 @@ export function normalizujTeksty(st: GovState): GovState {
   for (const l of st.log ?? []) l.txt = txt(l.txt);
   for (const l of st.later ?? []) l.line = txt(l.line);
   for (const r of [...(st.reports ?? []), ...(st.report ? [st.report] : [])]) r.lines = r.lines.map(txt);
+  // gość prowadzony przez zarząd: miejsce „skąd” to Tx także w zapisie sprzed angielskiej wersji (gdyby pole się trafiło)
+  const skad = st.goscie?.aktywny?.gosc.skad;
+  if (skad) skad.nazwa = txt(skad.nazwa);
   const n = st.night;
   if (n) {
     n.lines = n.lines.map(txt);

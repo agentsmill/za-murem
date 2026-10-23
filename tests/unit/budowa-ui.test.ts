@@ -5,15 +5,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { tx } from '../../src/core/jezyk.ts';
+import { tr, tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { BLOK, wordsOf } from '../../src/gov/miejsce.ts';
+import { KOZA_KEY } from '../../src/gov/noc.ts';
 import type { GovState } from '../../src/gov/typy.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
+import { nazwaTech, PIECZARKI_PLON, TECH_BY } from '../../src/sim/badania.ts';
+import { BUILDS_EN } from '../../src/sim/budowle.en.ts';
 import { BUILDS, type BuildKind, canPlace, effectOf, footprint, type Mat } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { REPAIR } from '../../src/sim/mieszkania.ts';
-import { addResidents, createSim, Sim } from '../../src/sim/sim.ts';
+import { addResidents, createSim, GARDEN_YIELD, Sim, type SimState } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import {
   allowedAnchors,
@@ -25,6 +28,7 @@ import {
   costText,
   MAT_NAME,
   matsOf,
+  noweBudowle,
   okTilesOf,
   ourApts,
   placeKey,
@@ -33,13 +37,20 @@ import {
   TECH_NAMES,
   workText,
 } from '../../src/ui/budowa.ts';
-import { DAY2_WOOD, goalsDay2, isDay2 } from '../../src/ui/cele.ts';
 import { aptAt, aptCard, aptView, DAMAGE_NAME, WHY_TEXT } from '../../src/ui/mieszkania.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
 import { arriving, comingText } from '../../src/ui/przybycie.ts';
+import { krokSciezki, nowyStanSciezki } from '../../src/ui/sciezka.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { celeR1, odczytZ } from './sciezka-pomoc.ts';
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'] as const;
+/** badania budowli z technologii (BUILDS[k].tech) z danych, zanim któryś test ustawi własne: afterEach je przywraca,
+    a wszystkie razem odblokowują każdą budowlę */
+const TECH0: Readonly<Partial<Record<BuildKind, string>>> = Object.fromEntries(
+  (Object.keys(BUILDS) as BuildKind[]).filter((k) => BUILDS[k].tech).map((k) => [k, BUILDS[k].tech]),
+);
+const ALL_TECH = Object.values(TECH0) as string[];
 const worlds = new Map<string, { w: World; seed: number }>();
 /** demo gry z ziarnem z adresu, jak w przeglądarce */
 function demo(key: string) {
@@ -68,7 +79,11 @@ const missing = (k: BuildKind, have: Partial<Record<Mat, number>>) =>
 
 describe('menu budowy', () => {
   afterEach(() => {
-    for (const k of Object.keys(BUILDS) as BuildKind[]) delete BUILDS[k].tech;
+    for (const k of Object.keys(BUILDS) as BuildKind[]) {
+      const t = TECH0[k];
+      if (t) BUILDS[k].tech = t;
+      else delete BUILDS[k].tech;
+    }
     delete TECH_NAMES.t_test;
     BUILD_MENU.showLocked = false;
   });
@@ -99,8 +114,232 @@ describe('menu budowy', () => {
     ]);
   });
 
+  /** pracownia stoi (rzecz w st.things), położenie bez znaczenia dla menu */
+  const pracownia = (st: SimState) =>
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'pracownia',
+      x: 1,
+      y: 1,
+      w: 2,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+  const bogaty = { deski: 999, zlom: 999, czesci: 999 };
+  const pozycja = (m: ReturnType<typeof buildMenu>, k: BuildKind) =>
+    m.flatMap((c) => c.items).find((b) => b.kind === k);
+
+  it('kłódki od chwili, gdy stoi pracownia: szklarnia z „Wymaga badania: Szklarnie z folii”, po badaniu bez kłódki', () => {
+    const { st } = fresh();
+    const menu = () => buildMenu(bogaty, () => true, undefined, undefined, { st });
+    // bez pracowni budowle z technologii są ukryte
+    expect(pozycja(menu(), 'szklarnia')).toBeUndefined();
+    expect(pozycja(menu(), 'kociol')).toBeUndefined();
+    pracownia(st);
+    const szkl = pozycja(menu(), 'szklarnia')!;
+    expect(szkl).toMatchObject({ ok: false, locked: 'Wymaga badania: Szklarnie z folii' });
+    expect(szkl.why).toBe(szkl.locked);
+    expect(pozycja(menu(), 'kociol')!.locked).toBe('Wymaga badania: Rozruch węzła cieplnego');
+    expect(buildPanelHtml(menu(), { tab: 'podworko', kind: 'szklarnia' }, false).body).toMatch(
+      /class="tile sel lock"[^>]*data-kind="szklarnia"/,
+    );
+    ustawJezyk('en');
+    expect(pozycja(menu(), 'szklarnia')!.locked).toBe(`Needs research: ${tr(nazwaTech('t_szklarnia'))}`);
+    ustawJezyk('pl');
+    // po badaniu: bez kłódki i do postawienia
+    st.techDone = ['t_konserwy', 't_szklarnia'];
+    const po = pozycja(menu(), 'szklarnia')!;
+    expect(po.locked).toBeUndefined();
+    expect(po.ok).toBe(true);
+    // rozbiórka pracowni chowa kłódki przed następnymi badaniami, zbadana budowla zostaje
+    st.things = st.things.filter((t) => t.kind !== 'pracownia');
+    expect(pozycja(menu(), 'szklarnia')?.ok).toBe(true);
+    expect(pozycja(menu(), 'kociol')).toBeUndefined();
+    // opcja showLocked nadal wymusza kłódki bez pracowni (zrzuty, ?budowa=klodki)
+    expect(
+      pozycja(
+        buildMenu(bogaty, () => true, undefined, undefined, { st, showLocked: true }),
+        'kociol',
+      )!.locked,
+    ).toBe('Wymaga badania: Rozruch węzła cieplnego');
+  });
+
+  it('nazwy badań w kłódkach biorą się z tablicy badań dla każdej technologii z budowlą', () => {
+    for (const t of Object.values(TECH_BY)) expect(TECH_NAMES[t.id], t.id).toEqual(nazwaTech(t.id));
+    for (const k of Object.keys(BUILDS) as BuildKind[]) {
+      const id = BUILDS[k].tech;
+      if (id) expect(tr(TECH_NAMES[id]), k).not.toBe(id);
+    }
+  });
+
+  it('stojąca pracownia (albo plan) mówi „Pracownia już stoi.”, a nie „Nie ma gdzie postawić”', () => {
+    const { st } = fresh();
+    const menu = (room = false) => buildMenu(bogaty, () => room, undefined, undefined, { st });
+    // jeszcze nie stoi: zwykły powód braku miejsca
+    expect(pozycja(menu(), 'pracownia')!.why).toMatch(/^Nie ma gdzie postawić/);
+    expect(pozycja(menu(true), 'pracownia')).toMatchObject({ ok: true });
+    pracownia(st);
+    for (const room of [false, true]) {
+      const p = pozycja(menu(room), 'pracownia')!;
+      expect(p).toMatchObject({ ok: false, why: 'Pracownia już stoi.' });
+    }
+    ustawJezyk('en');
+    expect(pozycja(menu(), 'pracownia')!.why).toBe('The research room already stands.');
+    ustawJezyk('pl');
+    // szczegóły w panelu niosą ten sam powód i nie mają przycisku „Postaw”
+    const html = buildPanelHtml(menu(), { tab: 'dom', kind: 'pracownia' }, false).body;
+    expect(html).toContain('<p class="build-why">Pracownia już stoi.</p>');
+    expect(html).not.toContain('data-act="build" data-arg="pracownia"');
+    // sam plan też wypełnia limit
+    st.things = st.things.filter((t) => t.kind !== 'pracownia');
+    st.builds.push({ id: 900, kind: 'pracownia', x: 1, y: 1, rot: 0, need: {}, have: {}, work: 1, by: -1 });
+    expect(pozycja(menu(), 'pracownia')!.why).toBe('Pracownia już stoi.');
+    // canPlace mówi to samo
+    expect(canPlace(st, fresh().w, 'pracownia', 1, 1, 0).why).toBe('Pracownia już stoi.');
+  });
+
+  it('wieża: „Wieża już stoi.”, a budowla innego rodzaju może mieć własny napis (BuildDef.juzStoi)', () => {
+    const { w, st } = fresh();
+    st.techDone = ['t_wieza', 't_kozy'];
+    const menu = () => buildMenu(bogaty, () => false, undefined, undefined, { st });
+    expect(pozycja(menu(), 'wieza')!.why).toMatch(/^Nie ma gdzie postawić/);
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'wieza',
+      x: 1,
+      y: 1,
+      w: 2,
+      h: 2,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    expect(pozycja(menu(), 'wieza')!.why).toBe('Wieża już stoi.');
+    ustawJezyk('en');
+    expect(pozycja(menu(), 'wieza')!.why).toBe('The tower already stands.');
+    ustawJezyk('pl');
+    // własny napis dla budowli, której domyślne zdanie by nie pasowało
+    BUILDS.wieza.juzStoi = tx('Wieża jest już postawiona.', 'The tower is up already.');
+    try {
+      expect(pozycja(menu(), 'wieza')!.why).toBe('Wieża jest już postawiona.');
+      expect(canPlace(st, w, 'wieza', 1, 1, 0).why).toBe('Wieża jest już postawiona.');
+      ustawJezyk('en');
+      expect(pozycja(menu(), 'wieza')!.why).toBe('The tower is up already.');
+    } finally {
+      delete BUILDS.wieza.juzStoi;
+      ustawJezyk('pl');
+    }
+    // budowla bez limitu nigdy nie dostaje tego powodu
+    expect(pozycja(menu(), 'warsztat')!.why).toMatch(/^Nie ma gdzie postawić/);
+  });
+
+  it('NOWE: budowle z odkrytych technologii, dopóki gracz ich nie postawi ani nie otworzy ich szczegółów', () => {
+    const { st } = fresh();
+    expect([...noweBudowle(st, new Set())]).toEqual([]);
+    st.techDone = ['t_okna', 't_kozy', 't_wezel'];
+    // technologia bez budowli (t_okna) nic nie daje, reszta tak
+    expect([...noweBudowle(st, new Set())].sort()).toEqual(['kociol', 'koza_beczka']);
+    expect([...noweBudowle(st, new Set(['kociol']))]).toEqual(['koza_beczka']);
+    // postawiona albo zaplanowana przestaje być nowa
+    st.builds.push({ id: 901, kind: 'kociol', x: 1, y: 1, rot: 0, need: {}, have: {}, work: 1, by: -1 });
+    expect([...noweBudowle(st, new Set())]).toEqual(['koza_beczka']);
+    st.builds = [];
+    st.things.push({
+      id: st.nextThing++,
+      kind: 'koza_beczka',
+      x: 1,
+      y: 1,
+      w: 1,
+      h: 1,
+      rot: 0,
+      n: 0,
+      fuel: 0,
+      by: -1,
+      owner: -1,
+    });
+    expect([...noweBudowle(st, new Set())]).toEqual(['kociol']);
+    // budowle bez technologii nigdy nie są nowe
+    expect([...noweBudowle(st, new Set())].some((k) => !BUILDS[k as BuildKind].tech)).toBe(false);
+  });
+
+  it('NOWE w menu i na kafelku: tylko z podaną pamięcią widzianych, po polsku „NOWE”, po angielsku „NEW”', () => {
+    const { st } = fresh();
+    st.techDone = ['t_kozy', 't_wezel', 't_konserwy', 't_szklarnia'];
+    const bez = buildMenu(bogaty, () => true, undefined, undefined, { st });
+    expect(bez.flatMap((c) => c.items).some((b) => b.nowe)).toBe(false);
+    const widziane = new Set<string>(['kociol']);
+    const menu = buildMenu(bogaty, () => true, undefined, undefined, { st, widziane });
+    expect(
+      menu
+        .flatMap((c) => c.items)
+        .filter((b) => b.nowe)
+        .map((b) => b.kind)
+        .sort(),
+    ).toEqual(['koza_beczka', 'szklarnia']);
+    const dom = buildPanelHtml(menu, { tab: 'dom', kind: 'warsztat' }, false).body;
+    expect(dom).toMatch(/data-kind="koza_beczka"[^>]*>(?:(?!<\/button>).)*<span class="tnew">NOWE<\/span>/);
+    expect(dom).not.toMatch(/data-kind="kociol"[^>]*>(?:(?!<\/button>).)*tnew/);
+    expect(dom).not.toMatch(/data-kind="warsztat"[^>]*>(?:(?!<\/button>).)*tnew/);
+    ustawJezyk('en');
+    expect(
+      buildPanelHtml(
+        buildMenu(bogaty, () => true, undefined, undefined, { st, widziane }),
+        { tab: 'dom', kind: 'warsztat' },
+        false,
+      ).body,
+    ).toContain('<span class="tnew">NEW</span>');
+    ustawJezyk('pl');
+    // zablokowana kłódką nigdy nie jest nowa (nie jest odkryta)
+    pracownia(st);
+    st.techDone = ['t_kozy'];
+    const zKlodka = buildMenu(bogaty, () => true, undefined, undefined, { st, widziane: new Set() });
+    expect(pozycja(zKlodka, 'szklarnia')).toMatchObject({ locked: expect.any(String) });
+    expect(pozycja(zKlodka, 'szklarnia')!.nowe).toBeUndefined();
+  });
+
+  it('teksty działania nowych budowli zgadzają się z tym, co robią (wieża, pieczarkarnia, szklarnia)', () => {
+    const slowa = wordsOf(BLOK);
+    // wieża: posterunek na karcie nocy, połowa warty do każdego innego posterunku
+    expect(effectOf('wieza', slowa)).toBe(
+      'Posterunek „Warta na wieży” na karcie nocy: stojący tam dokłada połowę swojej warty do obrony każdego innego posterunku. Można mieć jedną.',
+    );
+    expect(BUILDS_EN.wieza.effect).toBe(
+      'A “Watch on the tower” post on the Night orders: whoever stands there adds half their watch to the defence of every other post. You can have one.',
+    );
+    expect(TECH_BY.t_wieza.dzialanie.pl).toContain('„Warta na wieży”');
+    expect(TECH_BY.t_wieza.dzialanie.en).toContain('“Watch on the tower”');
+    // pieczarkarnia: 2 porcje co trzy doby przez cały rok, także zimą, kiedy ogródek nie rodzi; latem ogródek daje więcej
+    expect(PIECZARKI_PLON).toBe(2);
+    expect(GARDEN_YIELD[1]).toBe(0);
+    expect(GARDEN_YIELD[3]).toBeGreaterThan(PIECZARKI_PLON);
+    expect(effectOf('pieczarkarnia', slowa)).toBe(
+      'Plon mniejszy niż w ogródku wiosną i latem, ale taki sam przez cały rok, także zimą.',
+    );
+    expect(BUILDS_EN.pieczarkarnia.effect).toBe(
+      'A smaller yield than a vegetable patch in spring and summer, but the same all year round, winter included.',
+    );
+    expect(TECH_BY.t_grzyby.dzialanie.pl).toContain(effectOf('pieczarkarnia', slowa));
+    expect(TECH_BY.t_grzyby.dzialanie.en).toContain(BUILDS_EN.pieczarkarnia.effect);
+    // szklarnia: zimą jak jesienią (to zdanie zgadza się z plonem)
+    expect(effectOf('szklarnia', slowa)).toBe('Jak ogródek, ale zimą rodzi jak jesienią.');
+    expect(GARDEN_YIELD[0]).toBeGreaterThan(GARDEN_YIELD[1]);
+  });
+
   it('trzy zakładki, każda budowla z kosztem, czasem pracy, działaniem i miejscem z BUILDS', () => {
-    const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true);
+    // po wszystkich badaniach: budowle z technologii są w menu, bez nich ich nie ma
+    const bez = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true).flatMap((c) =>
+      c.items.map((b) => b.kind),
+    );
+    expect(bez.sort()).toEqual((Object.keys(BUILDS) as BuildKind[]).filter((k) => !BUILDS[k].tech).sort());
+    const menu = buildMenu({ deski: 999, zlom: 999, czesci: 999 }, () => true, undefined, undefined, {
+      st: { techDone: ALL_TECH },
+    });
     expect(menu.map((c) => c.title)).toEqual(['Dom', 'Podwórko', 'Obwód']);
     const all = menu.flatMap((c) => c.items);
     expect(all.map((b) => b.kind).sort()).toEqual((Object.keys(BUILDS) as BuildKind[]).sort());
@@ -118,7 +357,7 @@ describe('menu budowy', () => {
         if (n > 0) expect(b.cost).toContain(`${MAT_NAME[m]} ${n}`);
     }
     expect(all.find((b) => b.kind === 'warsztat')!.place).toBe('w pokoju naszego mieszkania');
-    expect(menu.find((c) => c.key === 'obwod')!.items.map((b) => b.kind)).toEqual(['zasieki']);
+    expect(menu.find((c) => c.key === 'obwod')!.items.map((b) => b.kind)).toEqual(['zasieki', 'barykada']);
   });
 
   it('niedostępne wyszarzone z powodem: brak materiałów (z podpowiedzią skąd) albo miejsca', () => {
@@ -221,13 +460,15 @@ describe('menu budowy', () => {
 describe('dozwolone miejsca (canPlace symulacji)', () => {
   it.each(DEMOS)('%s: tryb stawiania podświetla dokładnie to, na co pozwala canPlace', (key) => {
     const { w, st } = fresh(key);
+    // wszystkie badania zrobione, żeby canPlace oceniał też budowle z technologii, a nie tylko odmawiał
+    st.techDone = ALL_TECH;
     const ours = ourApts(st);
     expect(ours).toContain(w.interior.home);
-    // cokolwiek może stanąć tylko na siatce, podwórku albo w pomieszczeniach naszych mieszkań: sprawdzam canPlace
-    // na każdym kafelku tego obszaru z zapasem, żeby kandydaci w allowedAnchors niczego nie gubili
+    // cokolwiek może stanąć tylko na siatce, podwórku, w pomieszczeniach naszych mieszkań albo na klatce (kocioł):
+    // sprawdzam canPlace na każdym kafelku tego obszaru z zapasem, żeby kandydaci w allowedAnchors niczego nie gubili
     const region = [...w.fence.tiles, ...w.fence.yard];
     w.interior.room.forEach((r, i) => {
-      if (r >= 0 && ours.includes(w.interior.rooms[r].apt)) region.push(i);
+      if (r >= 0 && (ours.includes(w.interior.rooms[r].apt) || w.interior.rooms[r].kind === 'klatka')) region.push(i);
     });
     const xs = region.map((i) => i % w.size);
     const ys = region.map((i) => Math.floor(i / w.size));
@@ -430,39 +671,68 @@ describe('cele drugiego dnia', () => {
     gov.reports.push({} as GovState['reports'][number]);
     return gov;
   };
-  it('po pierwszym raporcie: przeszukać, pierwsza budowla (dowolna), obwód, drewno na noc', () => {
-    const { st } = fresh();
-    expect(isDay2(newGov(1))).toBe(false);
+  /** plan nocy z atrapy: drewno na karcie, czy zatwierdzona i czy ktoś ma dyżur przy kozie (dzień 2, po otwarciu rozdziału) */
+  const noc = (o: { confirmed: boolean; have: number; koza: boolean }): GovState['night'] =>
+    ({
+      day: 2,
+      confirmed: o.confirmed,
+      card: { wood: { have: o.have, need: 10, until: '6:00' } },
+      assign: o.koza ? { s1: KOZA_KEY } : { s1: 'sen' },
+    }) as unknown as GovState['night'];
+  it('po pierwszym raporcie: przeszukać, pierwsza budowla (dowolna), obwód, drewno na noc i dyżur przy kozie', () => {
+    const { w, st } = fresh();
+    // drugi dzień otwiera się po zamknięciu pierwszego raportu, nie wcześniej
+    expect(krokSciezki(nowyStanSciezki(), odczytZ(st, w, newGov(1))).rozdzial).toBe('r0');
     const gov = day2();
-    expect(isDay2(gov)).toBe(true);
-    const o = { touch: false, wood: 3, woodReady: false, holes: 2 };
-    let g = goalsDay2(st, gov, o);
-    expect(g.map((x) => x.key)).toEqual(['przeszukaj', 'budowla', 'obwod', 'drewno2']);
+    expect(krokSciezki(nowyStanSciezki(), odczytZ(st, w, gov)).rozdzial).toBe('r1');
+    const holes = snapshot(st, w).fence.holes.length;
+    expect(holes).toBeGreaterThan(0);
+    let g = celeR1(st, w, gov);
+    expect(g.map((x) => x.key)).toEqual(['przeszukaj', 'budowla', 'obwod', 'drewno2', 'dyzur']);
     expect(g.every((x) => !x.done)).toBe(true);
-    // podpowiedź wskazuje dwie budowle, które biorą najmniej materiału
-    const cheap = (Object.keys(BUILDS) as BuildKind[]).sort((a, b) => total(a) - total(b)).slice(0, 2);
+    // podpowiedź wskazuje dwie budowle, które biorą najmniej materiału spośród tych do postawienia: pieczarkarnia i koza
+    // z beczki są tańsze, ale menu budowy ukrywa je do badania, więc podpowiedź ich nie poleca
+    const cheap = (Object.keys(BUILDS) as BuildKind[])
+      .filter((k) => !BUILDS[k].tech)
+      .sort((a, b) => total(a) - total(b))
+      .slice(0, 2);
     for (const k of cheap) expect(g[1].how).toContain(`${BUILDS[k].name.toLowerCase()} (${costText(BUILDS[k].cost)})`);
+    for (const k of Object.keys(TECH0) as BuildKind[]) expect(g[1].how).not.toContain(BUILDS[k].name.toLowerCase());
     expect(g[2].how).toContain(`Zasieki w miejscu odcinka siatki (${costText(BUILDS.zasieki.cost)})`);
-    expect(g[2].how).toContain('Otwartych dziur: 2.');
+    expect(g[2].how).toContain(`Otwartych dziur: ${holes}.`);
+    // drewno na noc liczy się tak jak na karcie nocy: zapas razem z tym w kozie z potrzebą na dziesięć godzin
+    const zapas = Math.floor(snapshot(st, w).stock.wood);
     expect(g[3].how).toBe(
-      `Drewna na zapas: 3 z ${DAY2_WOOD}. Noc zjada około 2 sztuk na godzinę, a przy kozie może ktoś czuwać.`,
+      `Drewna ${zapas} z 10, razem z tym w kozie: tyle zje noc od 20:00 do 6:00 przy dyżurze, sztuka na godzinę. Prawy przycisk na drzewie: „Ściąć drzewo”; za dnia brama stoi otwarta.`,
     );
     // dowolna gotowa budowla zalicza „pierwszą budowlę”, ale nie obwód
     const empty = st.apts.find((a) => a.state === 'puste')!;
     empty.searched.push(5);
     st.things.push({ ...st.things[0], id: 9001, kind: 'magazyn' });
-    g = goalsDay2(st, gov, o);
-    expect(g.map((x) => x.done)).toEqual([true, true, false, false]);
-    // zasieki i zapas drewna: wszystko
+    g = celeR1(st, w, gov);
+    expect(g.map((x) => x.done)).toEqual([true, true, false, false, false]);
+    // drewno i dyżur przepadają z kartą nocy zatwierdzoną bez zapasu i bez dyżuru (obwód czeka dalej, bez terminu)
+    gov.night = noc({ confirmed: true, have: 3, koza: false });
+    g = celeR1(st, w, gov);
+    expect(g.find((x) => x.key === 'drewno2')).toMatchObject({ done: true, missed: true });
+    expect(g.find((x) => x.key === 'dyzur')).toMatchObject({ done: true, missed: true });
+    expect(g.find((x) => x.key === 'obwod')).toMatchObject({ done: false });
+    // zasieki, zapas drewna na karcie nocy (karta otwarta) i dyżur przy kozie (karta zatwierdzona): wszystko
     st.things.push({ ...st.things[0], id: 9002, kind: 'zasieki' });
-    g = goalsDay2(st, gov, { ...o, woodReady: true });
-    expect(g.every((x) => x.done)).toBe(true);
-    // obwód bez zasieków liczy się, gdy wszystkie dziury załatane; drewno przepada z kartą nocy
+    gov.night = noc({ confirmed: false, have: 10, koza: false });
+    g = celeR1(st, w, gov);
+    expect(g.map((x) => x.done)).toEqual([true, true, true, true, false]);
+    gov.night = noc({ confirmed: true, have: 10, koza: true });
+    g = celeR1(st, w, gov);
+    expect(g.every((x) => x.done && !x.missed)).toBe(true);
+    // obwód bez zasieków liczy się, gdy wszystkie dziury załatane
     st.things = st.things.filter((t) => t.kind !== 'zasieki');
-    expect(goalsDay2(st, gov, { ...o, holes: 0 }).find((x) => x.key === 'obwod')?.done).toBe(true);
-    gov.night = { confirmed: true } as GovState['night'];
-    const late = goalsDay2(st, gov, o).find((x) => x.key === 'drewno2')!;
-    expect(late).toMatchObject({ done: true, missed: true });
+    gov.night = null;
+    expect(celeR1(st, w, gov).find((x) => x.key === 'obwod')?.done).toBe(false);
+    const sim = new Sim(w, st);
+    sim.push({ t: 'mend', ids: [], n: holes });
+    sim.step();
+    expect(celeR1(st, w, gov).find((x) => x.key === 'obwod')?.done).toBe(true);
   });
 });
 

@@ -13,12 +13,12 @@ export interface Hole {
   tiles: number[];
   /** wielkość 0–1: większą łatwiej przejść (dla zarządu) */
   size: number;
-  /** wytrzymałość łaty 0–100; 0: dziura otwarta */
+  /** wytrzymałość łaty 0–100 (pod barykadą do 160); 0: dziura otwarta */
   patch: number;
 }
 
 export interface FenceState {
-  /** wytrzymałość kafelków siatki 0–100 w kolejności World.fence.tiles (dziury 0) */
+  /** wytrzymałość kafelków siatki 0–100 w kolejności World.fence.tiles (dziury 0); pod barykadą z wraków do 160 */
   hp: number[];
   holes: Hole[];
   gateOpen: boolean;
@@ -96,7 +96,8 @@ export function initFence(w: World, mode: GameMode = 'zwykly'): FenceState | nul
   return { hp, holes, gateOpen: true };
 }
 
-/** średnia wytrzymałość siatki 0–1: otwarta dziura 0, łata swoją wytrzymałością, reszta swoim odcinkiem */
+/** średnia wytrzymałość siatki 0–1: otwarta dziura 0, łata swoją wytrzymałością, reszta swoim odcinkiem; barykada
+    (ponad 100) liczy się jak cały kafelek, żeby średnia nie wyszła ponad 1 */
 export function durability(w: World, f: FenceState): number {
   const shape = fenceShape(w);
   if (!shape) return 1;
@@ -105,7 +106,7 @@ export function durability(w: World, f: FenceState): number {
   let s = 0;
   shape.tiles.forEach((t, k) => {
     const h = hole.get(t);
-    s += h ? h.patch : f.hp[k];
+    s += Math.min(100, h ? h.patch : f.hp[k]);
   });
   return round2(s / shape.tiles.length / 100);
 }

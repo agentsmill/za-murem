@@ -169,7 +169,17 @@ export const STATYCZNE: readonly Statyczny[] = [
       `© ${a('https://www.openstreetmap.org/copyright', 'OpenStreetMap contributors')}, ${a('https://openfreemap.org', 'OpenFreeMap')}, ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}`,
     ),
   },
+  {
+    sel: '#btnPraca',
+    tekst: tx('Praca', 'Work'),
+    title: tx('Praca: priorytety i progi zapasów (P)', 'Work: priorities and stock levels (P)'),
+  },
   { sel: '#btnBuild', tekst: tx('Budowa', 'Build') },
+  {
+    sel: '#btnResearch',
+    tekst: tx('Badania', 'Research'),
+    title: tx('Tablica badań (T)', 'Research board (T)'),
+  },
   { sel: '#goals', aria: tx('Cele', 'Goals') },
   { sel: '#arriveShow', tekst: tx('Pokaż', 'Show') },
   { sel: '#placeBar [data-place="rot"]', tekst: tx('Obróć', 'Rotate') },

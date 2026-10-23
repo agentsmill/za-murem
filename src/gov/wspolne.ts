@@ -1,12 +1,12 @@
-/* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika (wpisy w obu językach, Tx), zaufanie
-   i wkurzenie. */
+/* Wspólne drobiazgi zarządu: puste skutki, czas gry w minutach, kronika (wpisy w obu językach, Tx; wpis o karcie
+   z miejscem na mapie niesie jeszcze `gdzie`, kafelek jako `Punkt`, w `GovState.log[]`), zaufanie i wkurzenie. */
 
 import { type Tx, tx } from '../core/jezyk.ts';
 import { clamp, nextRandom } from '../core/rng.ts';
 import { placeIn } from './miejsce.ts';
 import { HOLE_NAMES_DOM_EN, HOLE_NAMES_EN } from './tresc.en.ts';
 import { HOLE_NAMES, HOLE_NAMES_DOM, LOOT_LABEL } from './tresc.ts';
-import type { GovEffects, GovFence, GovInput, GovNeeds, GovState, StockDelta, StockKey } from './typy.ts';
+import type { GovEffects, GovFence, GovInput, GovNeeds, GovState, Punkt, StockDelta, StockKey } from './typy.ts';
 
 export const STOCK_KEYS: readonly StockKey[] = ['wood', 'supplies', 'scrap', 'parts', 'meds'];
 
@@ -49,8 +49,9 @@ export const rnd = (st: GovState): number => nextRandom(st.rng);
 /** liczba całkowita z [a, b] */
 export const rint = (st: GovState, a: number, b: number): number => a + Math.floor(rnd(st) * (b - a + 1));
 
-export function logGov(st: GovState, i: GovInput, txt: Tx, big = false, fx?: GovEffects): void {
-  st.log.push({ day: i.day, clock: clockOf(i), txt, big });
+/** wpis do kroniki; `gdzie` (kafelek mapy) dostają tylko wpisy o kartach z miejscem, reszta bez pola */
+export function logGov(st: GovState, i: GovInput, txt: Tx, big = false, fx?: GovEffects, gdzie?: Punkt | null): void {
+  st.log.push({ day: i.day, clock: clockOf(i), txt, big, ...(gdzie ? { gdzie: { x: gdzie.x, y: gdzie.y } } : {}) });
   if (st.log.length > 300) st.log.splice(0, st.log.length - 300);
   fx?.log.push(txt);
 }

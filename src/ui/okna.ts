@@ -1,17 +1,41 @@
-/* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenie palenia mebli,
-   menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do zwycięstwa, który rysuje src/ui/zwyciestwo.ts),
-   jak grać i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML w czterech częściach
-   (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
+/* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenia (palenie mebli, włączenie
+   sieci, polecenia nieodwracalne), menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do
+   zwycięstwa, który rysuje src/ui/zwyciestwo.ts), jak grać (sterowanie, budowa, praca ludzi z panelem Pracy i klawiszem
+   P, poza siatką: mapa miasta z klawiszem M, sąsiednie budynki, handlarz i wędrowcy, badania z klawiszem T, zarząd
+   z drogami do zwycięstwa, tryb zombie, „Na razie”) i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML
+   w czterech częściach (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
+   Okno wydarzenia z miejscem na mapie (`Prompt.gdzie`) ma przed wyborami przycisk „Pokaż” (`event-show`): main.ts jedzie
+   kamerą na miejsce i zostawia okno otwarte.
    Napisy okien są w bieżącym języku (L() przy rysowaniu, Tx w tablicach). Teksty zarządu (Tx albo polski napis ze
    starego zapisu) idą przez tr(), więc okna działają z oboma kształtami; zarządu ten moduł nie tłumaczy. Słowa
    wspólnoty (w domu komitet ulicy, w bloku zarząd spółdzielni) biorą ze słownika miejsca po polsku i po angielsku
-   (words, e); bez niego mówią jak w bloku. */
+   (words, e); bez niego mówią jak w bloku. Lista wyboru karty nocy (optionText) wyszarza „Wartę na wieży”, gdy wszystkie
+   miejsca wieży zajmują inni (jak setAssign w src/gov/noc.ts). Typ `Sheet` ma też pole `cel`: linię „Cel: …” z ścieżki
+   celów (src/ui/sciezka.ts) rysuje `sheetHtml` w src/ui/okno.ts pod nagłówkiem okna; funkcje tego pliku jej nie znają.
+
+   „Jak grać” (`helpSheet(touch, zombie, words, e, opts?)`) mówi o starcie tak, jak jest w grze: `opts.osob` to liczba osób
+   zarządu na starcie (main.ts podaje ją z gry; bez niej cztery, jak w panelu „Wasz zarząd”), zdanie o zarządzie nazywa ją
+   słownie i z odmianą, siatka w trybie zombie jest wzmocniona, a nie dziurawa, i broń na starcie (kto co trzyma, co leży
+   w magazynie) liczy `bronNaStarcie` z `START_KIT`, tak jak `createSim`. Etykiety i klawisze w nowych częściach są jak
+   w grze (menu drzwi, wędrowców i handlarza, przyciski z index.html); testy w tests/unit/pomoc.test.ts pilnują
+   zgodności. W trybie zwykłym pomoc nie wspomina szwendaczy. */
 
 import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
-import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { OSOB_DOMYSLNIE } from '../content/druzyna.ts';
+import { MENU as DRZWI } from '../content/napisy-sasiedzi.ts';
+import { L, mnogaPl, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
-import { deterrence, KOZA_KEY, untilWord, WOOD_PER_HOUR, watchersOf } from '../gov/noc.ts';
+import {
+  deterrence,
+  KOZA_KEY,
+  untilWord,
+  WIEZA,
+  WIEZA_KEY,
+  WOOD_PER_HOUR,
+  watchersOf,
+  wiezaPelna,
+} from '../gov/noc.ts';
 import type {
   GovInput,
   GovState,
@@ -23,9 +47,11 @@ import type {
   Prompt,
   StockDelta,
 } from '../gov/typy.ts';
+import { START_KIT, WEAPONS, WEAPONS_EN, type WeaponId } from '../sim/bron.ts';
 import { TICKS_PER_HOUR } from '../sim/clock.ts';
 import { FURNITURE_EN } from '../sim/nazwy.en.ts';
 import { BURN_TICKS, BURNABLE, FURNITURE_ACC } from '../sim/sim.ts';
+import { NAPISY as WEDROWCY } from '../sim/wedrowcy.ts';
 import { FENCE_BEARS } from '../sim/zombie.ts';
 import { esc, manyEn, num, pct, signed } from './tekst.ts';
 
@@ -38,7 +64,8 @@ export interface Sheet {
   /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
       mapa miasta (okno na cały ekran, src/ui/miasto.ts), plan wyprawy z mapy (zwykłe okno w barwie mapy,
       src/ui/wyprawa.ts), ekran dróg do zwycięstwa (szeroka tabliczka w złocie) i epilog zwycięstwa (ta sama barwa,
-      zwykła szerokość), oba z src/ui/zwyciestwo.ts */
+      zwykła szerokość), oba z src/ui/zwyciestwo.ts, i odkrycie (karta po ukończeniu badania, w kolorze korka
+      tablicy) */
   tone:
     | 'noc'
     | 'uchwala'
@@ -52,9 +79,14 @@ export interface Sheet {
     | 'miasto'
     | 'wyprawa'
     | 'drogi'
-    | 'zwyciestwo';
+    | 'zwyciestwo'
+    | 'odkrycie';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
+  /** linia „Cel: …” pod nagłówkiem: tekst celu ze ścieżki celów, który dotyczy tego okna (`celWOknie` w src/ui/sciezka.ts;
+      zwykły tekst, `sheetHtml` w src/ui/okno.ts ucieka go sam). Dopisuje ją main.ts do okien karty nocy, uchwały i spotkania
+      z sąsiadami; okno bez celu nie ma linii */
+  cel?: string;
 }
 
 /** nazwy rodzajów łupu w obu językach (karta nocy, raport, karta miejsca na mapie miasta) */
@@ -110,6 +142,23 @@ export function optionShort(o: NightOption, proposal: boolean): string {
   return s;
 }
 
+/** Tekst i dostępność opcji `o` na liście wyboru osoby `id` przy obecnym przydziale: jak `optionShort`, a pełna wieża
+    (wszystkie jej miejsca zajęte przez innych) jest wyszarzona z dopiskiem. Woła ją okno karty przy rysowaniu i przy
+    każdej zmianie przydziału, żeby lista każdej osoby zgadzała się z `setAssign`. */
+export function optionText(
+  card: NightCard,
+  assign: Record<string, string>,
+  id: string,
+  o: NightOption,
+  proposal: boolean,
+): { text: string; disabled: boolean } {
+  const full = o.key === WIEZA_KEY && wiezaPelna(card, assign, id);
+  return {
+    text: full ? `${optionShort(o, proposal)} (${L('wieża pełna', 'tower full')})` : optionShort(o, proposal),
+    disabled: !o.ok || full,
+  };
+}
+
 /** co znaczy wybór: zysk, ryzyko, obrona i uwaga z karty */
 export function optionDetail(o: NightOption): string {
   if (!o.ok) return or(o.why, L('Nie da rady.', 'Not possible.'));
@@ -148,12 +197,17 @@ export function oddsHtml(
   names: Record<string, string>,
 ): string {
   const loss = lootText(card.loss) || L('niewiele, wszystko jest pod dachem', 'not much, it is all indoors');
-  const posts = card.posts
+  // wieża to przydział, nie miejsce napadu: jej wiersz jest za miejscami do pilnowania
+  const rows = [
+    ...card.posts.map((p) => ({ key: p.key, name: tr(p.name) })),
+    ...(card.wieza ? [{ key: WIEZA, name: L('na wieży', 'on the tower') }] : []),
+  ];
+  const posts = rows
     .map((p) => {
       const who = Object.entries(assign)
         .filter(([, k]) => k === `warta:${p.key}`)
         .map(([id]) => names[id] ?? id);
-      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(tr(p.name))}</span><b class="post-v">${
+      return `<li class="post ${who.length ? 'kept' : 'open'}"><span class="post-k">${esc(p.name)}</span><b class="post-v">${
         who.length ? esc(who.join(', ')) : L('nikt', 'nobody')
       }</b></li>`;
     })
@@ -212,8 +266,8 @@ export function fuelHtml(wd: NonNullable<NightCard['wood']>, koza: string[]): st
     'Koza w nocy',
     'Stove overnight',
   )}</small><b class="odd-v">${esc(v)}</b><em class="odd-note">${esc(who)} · ${L(
-    `drewno ${wd.have} szt., noc zje ${wd.need} (2 na godzinę)`,
-    `wood ${wd.have}, the night needs ${wd.need} (2 an hour)`,
+    `drewno ${wd.have} szt., noc zje ${wd.need} (${WOOD_PER_HOUR} na godzinę)`,
+    `wood ${wd.have}, the night needs ${wd.need} (${WOOD_PER_HOUR} an hour)`,
   )}</em></div>`;
 }
 
@@ -229,10 +283,10 @@ export function nightSheet(
     .map((p) => {
       const sel = assign[p.id] ?? p.proposal;
       const opts = p.options
-        .map(
-          (o) =>
-            `<option value="${esc(o.key)}"${o.key === sel ? ' selected' : ''}${o.ok ? '' : ' disabled'}>${esc(optionShort(o, o.key === p.proposal))}</option>`,
-        )
+        .map((o) => {
+          const t = optionText(card, assign, p.id, o, o.key === p.proposal);
+          return `<option value="${esc(o.key)}"${o.key === sel ? ' selected' : ''}${t.disabled ? ' disabled' : ''}>${esc(t.text)}</option>`;
+        })
         .join('');
       const cur = p.options.find((o) => o.key === sel) ?? p.options[0];
       return `<li class="mate"><div class="who"><b class="who-n">${esc(p.name)}</b><small class="who-s">${L(
@@ -344,7 +398,8 @@ export function eventSheet(
     kicker: L(words.naglowek, e.naglowek),
     title: esc(tr(p.title)),
     body: text,
-    foot: `<div class="choices">${p.choices
+    // karta z miejscem na mapie: „Pokaż” (kamera jedzie na miejsce, okno zostaje) przed wyborami
+    foot: `${p.gdzie ? btn('event-show', L('Pokaż', 'Show'), 'btn ghost') : ''}<div class="choices">${p.choices
       .map((c, k) => btn('event', esc(tr(c.label)), 'btn', String(k), c.ok ? '' : ' disabled'))
       .join('')}</div>`,
   };
@@ -508,6 +563,210 @@ function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
     .join('')}</ul>`;
 }
 
+/** Pomoc o pracy ludzi (docs/superpowers/specs/2026-10-19-praca-ludzi-design.md): panel Pracy (przycisk u góry i klawisz
+    P), priorytety rodzajów pracy, zapasy, reguła klawiatury w tabeli (ta sama, co w leadzie panelu, patrz
+    src/ui/panelpracy.ts) i ustawienia na karcie osoby. Bez słów miejsca: tekst jest taki sam w bloku i w domu. */
+function workHelp(touch: boolean): string {
+  const stock = tx(
+    'Plus i minus pod „Trzymać w zapasie” ustawiają, ile drewna, desek i części ma leżeć w zapasie; 0 wyłącza.',
+    'The plus and minus buttons under “Keep in stock” set how much wood, planks and parts to keep; 0 turns it off.',
+  );
+  const card = tx(
+    'Na karcie osoby można dać jej stałe zajęcie (zlecenia tego rodzaju bierze przed wszystkimi) i pozwolić jej wychodzić za siatkę za dnia bez polecenia. W trybie zwykłym to pozwolenie jest domyślnie włączone, w trybie zombie wyłączone.',
+    'On a person’s card you can give them a fixed job (they take jobs of that kind before anything else) and let them go outside the fence by day without orders. In normal mode this is on by default, in zombie mode it is off.',
+  );
+  const items = touch
+    ? [
+        tx(
+          'Przycisk Praca u góry otwiera panel Pracy: tabela, kto czym zajmuje się sam, gdy nikt nie wydaje rozkazów. 1 to najpierw, 4 na końcu, puste: nie robi. Stuknij komórkę, żeby zmienić priorytet, przytrzymaj, żeby cofnąć.',
+          'The Work button at the top opens the Work panel: a table of what each person does on their own when nobody gives an order. 1 goes first, 4 last, blank: won’t do it. Tap a cell to change it, press and hold to go back.',
+        ),
+        stock,
+        card,
+      ]
+    : [
+        tx(
+          'Przycisk Praca u góry albo klawisz P otwiera panel Pracy: tabela, kto czym zajmuje się sam, gdy nikt nie wydaje rozkazów. 1 to najpierw, 4 na końcu, puste: nie robi. Klik w komórkę zmienia priorytet, prawy przycisk w drugą stronę.',
+          'The Work button at the top, or the P key, opens the Work panel: a table of what each person does on their own when nobody gives an order. 1 goes first, 4 last, blank: won’t do it. Click a cell to change it, right-click to go back.',
+        ),
+        stock,
+        tx(
+          'Z klawiatury: Tab i strzałki wybierają komórkę, cyfry 0–4 ustawiają jej priorytet. Po kliknięciu myszą spacja i 1–4 znów sterują grą.',
+          'From the keyboard: Tab and the arrows pick a cell, digits 0–4 set its priority. After a mouse click, Space and 1–4 control the game again.',
+        ),
+        card,
+      ];
+  return `<h3 class="help-h">${L('Praca', 'Work')}</h3><ul class="help">${items
+    .map((t) => `<li>${esc(tr(t))}</li>`)
+    .join('')}</ul>`;
+}
+
+/** Pomoc o tym, co jest za siatką: mapa miasta (przycisk Mapa miasta i klawisz M, karta miejsca, „Wyślij wyprawę”),
+    sąsiednie budynki (drzwi i lokatorzy), handlarz pod bramą (w domu pod furtką) i wędrowcy. Jedno zdanie na mechanikę,
+    etykiety poleceń z tych samych tablic co menu (DRZWI z src/content/napisy-sasiedzi.ts, WEDROWCY z src/sim/wedrowcy.ts;
+    oferta handlarza ma kształt „Dać … za …”, patrz NAPISY.oferta w src/sim/handlarz.ts), brama ze słownika miejsca.
+    Na telefonie przycisk ma krótki napis Mapa (src/ui/miasto.css), polecenia wywołuje przytrzymanie palca, a klawiszy
+    nie ma. Bez słowa o szwendaczach: pomoc mówi o nich tylko w trybie zombie. */
+function outsideHelp(touch: boolean, words: Words, e: WordsEn): string {
+  const doors = (pl: string, en: string) =>
+    tx(
+      `Sąsiednie budynki mają drzwi: ${pl} daje „${DRZWI.zapukaj.pl}”, „${DRZWI.otworz.pl}” albo „${DRZWI.wywaz.pl}”, a w środku można przeszukiwać pomieszczenia.`,
+      `The neighbouring buildings have doors: ${en} for “${DRZWI.zapukaj.en}”, “${DRZWI.otworz.en}” or “${DRZWI.wywaz.en}”, and inside you can search the rooms.`,
+    );
+  const items = [
+    touch
+      ? tx(
+          'Przycisk Mapa u góry otwiera mapę okolicy: stuknięcie w miejsce pokazuje odległość, ryzyko i łup, a „Wyślij wyprawę” pyta, kto idzie.',
+          'The Map button at the top opens the map of the area: tap a place to see the distance, the risk and the loot, and “Send a supply run” asks who goes.',
+        )
+      : tx(
+          'Przycisk Mapa miasta u góry albo klawisz M otwiera mapę okolicy: klik w miejsce pokazuje odległość, ryzyko i łup, a „Wyślij wyprawę” pyta, kto idzie.',
+          'The City map button at the top, or the M key, opens the map of the area: click a place to see the distance, the risk and the loot, and “Send a supply run” asks who goes.',
+        ),
+    touch
+      ? doors('przytrzymanie palca na nich', 'press and hold on one')
+      : doors('prawy przycisk na nich', 'right-click one'),
+    tx(
+      'Kto mieszka w środku, może wyjść na pukanie: gra staje, a karta spotkania mówi, kim są i co można z nimi zrobić.',
+      'Anyone living inside may come out when you knock: the game pauses, and a card tells you who they are and what you can do.',
+    ),
+    touch
+      ? tx(
+          `Czasem za dnia ${words.brama.pod} staje handlarz z wózkiem: przytrzymanie palca na nim pokazuje oferty „Dać … za …”.`,
+          `Now and then a trader with a cart waits at ${e.brama} by day: press and hold on the trader to see the offers, “Give … for …”.`,
+        )
+      : tx(
+          `Czasem za dnia ${words.brama.pod} staje handlarz z wózkiem: prawy przycisk na nim pokazuje oferty „Dać … za …”.`,
+          `Now and then a trader with a cart waits at ${e.brama} by day: right-click the trader to see the offers, “Give … for …”.`,
+        ),
+    touch
+      ? tx(
+          `Wędrowcy przystają czasem przy siatce: przytrzymanie palca na wędrowcu daje „${WEDROWCY.zagadac.pl}”, a po rozmowie można go zaprosić do nas.`,
+          `Wanderers sometimes stop at the fence: press and hold on one for “${WEDROWCY.zagadac.en}”, and after the talk you can invite them to join us.`,
+        )
+      : tx(
+          `Wędrowcy przystają czasem przy siatce: prawy przycisk na wędrowcu daje „${WEDROWCY.zagadac.pl}”, a po rozmowie można go zaprosić do nas.`,
+          `Wanderers sometimes stop at the fence: right-click one for “${WEDROWCY.zagadac.en}”, and after the talk you can invite them to join us.`,
+        ),
+  ];
+  return `<h3 class="help-h">${L('Poza siatką', 'Beyond the fence')}</h3><ul class="help">${items
+    .map((t) => `<li>${esc(tr(t))}</li>`)
+    .join('')}</ul>`;
+}
+
+/** Pomoc o badaniach (docs/superpowers/specs/2026-10-19-badania-design.md): pracownia w zakładce Dom menu budowy, przycisk
+    Badania i klawisz T (tablica badań, przycisk jest od chwili, gdy pracownia stoi), wybór „Badać” na tablicy i polecenie
+    „Badać: …” przy pracowni, odkrycie ze znaczkiem NOWE w menu budowy i książki z przeszukań. Bez słów miejsca: tekst jest
+    taki sam w bloku i w domu. „Research board” to tablica badań ze słowniczka, nie zarząd. */
+function researchHelp(touch: boolean): string {
+  const items = [
+    touch
+      ? tx(
+          'Pracownię stawia się w panelu budowy, w zakładce Dom. Kiedy stoi, przycisk Badania u góry otwiera tablicę badań.',
+          'The research room is built in the build panel, on the Home tab. Once it stands, the Research button at the top opens the Research board.',
+        )
+      : tx(
+          'Pracownię stawia się w panelu budowy, w zakładce Dom. Kiedy stoi, przycisk Badania u góry albo klawisz T otwiera tablicę badań.',
+          'The research room is built in the build panel, on the Home tab. Once it stands, the Research button at the top, or the T key, opens the Research board.',
+        ),
+    touch
+      ? tx(
+          'Na tablicy wybieracie badanie („Badać”), a badają zaznaczeni ludzie: przytrzymanie palca na pracowni daje „Badać: …”. Im lepiej ktoś zna dziedzinę, tym szybciej idzie.',
+          'On the Research board you choose what to research (“Research”) and the people you have selected do the work: press and hold on the research room for “Research: …”. The better someone knows the field, the faster it goes.',
+        )
+      : tx(
+          'Na tablicy wybieracie badanie („Badać”), a badają zaznaczeni ludzie: prawy przycisk na pracowni daje „Badać: …”. Im lepiej ktoś zna dziedzinę, tym szybciej idzie.',
+          'On the Research board you choose what to research (“Research”) and the people you have selected do the work: right-click the research room for “Research: …”. The better someone knows the field, the faster it goes.',
+        ),
+    tx(
+      'Ukończone badanie daje nową budowlę (w panelu budowy świeci znaczek NOWE) albo premię, a książki z przeszukań podnoszą wiedzę.',
+      'A finished research unlocks a new building (it gets a NEW tag in the build panel) or gives a bonus, and books found while searching raise your knowledge.',
+    ),
+  ];
+  return `<h3 class="help-h">${L('Badania', 'Research')}</h3><ul class="help">${items
+    .map((t) => `<li>${esc(tr(t))}</li>`)
+    .join('')}</ul>`;
+}
+
+/** liczba osób zarządu słownie i z odmianą do zdania o starcie: „Jedna osoba”, „Cztery osoby”, „Pięć osób” (po angielsku
+    „One person”, „Four people”). Do dwunastu (tyle zarządu daje ?zarzad=N w pomiarach) słowem, wyżej cyfrą z odmianą. */
+const OSOBY_PL = [
+  '',
+  'Jedna osoba',
+  'Dwie osoby',
+  'Trzy osoby',
+  'Cztery osoby',
+  'Pięć osób',
+  'Sześć osób',
+  'Siedem osób',
+  'Osiem osób',
+  'Dziewięć osób',
+  'Dziesięć osób',
+  'Jedenaście osób',
+  'Dwanaście osób',
+];
+const OSOBY_EN = [
+  '',
+  'One person',
+  'Two people',
+  'Three people',
+  'Four people',
+  'Five people',
+  'Six people',
+  'Seven people',
+  'Eight people',
+  'Nine people',
+  'Ten people',
+  'Eleven people',
+  'Twelve people',
+];
+const osobySlownie = (n: number): Tx =>
+  tx(OSOBY_PL[n] ?? mnogaPl(n, 'osoba', 'osoby', 'osób'), OSOBY_EN[n] ?? manyEn(n, 'person', 'people'));
+
+/** Broń zarządu na starcie gry dla `osob` osób: co trzymają kolejne osoby (`START_KIT[tryb].core`), co leży w magazynie
+    (broń magazynowa i, gdy osób jest mniej niż broni na liście, nadwyżka z listy osób) i ile osób ma gołe ręce. Liczy
+    z tych samych danych i w tej samej kolejności co `createSim` (src/sim/sim.ts); test porównuje oba na prawdziwej
+    symulacji. */
+export function bronNaStarcie(
+  zombie: boolean,
+  osob: number,
+): { wRekach: WeaponId[]; wMagazynie: WeaponId[]; bezBroni: number } {
+  const kit = START_KIT[zombie ? 'zombie' : 'zwykly'];
+  const uzbrojone = (lista: readonly (WeaponId | null)[]) => lista.filter((a): a is WeaponId => a !== null);
+  const wRekach = uzbrojone(kit.core.slice(0, osob));
+  return { wRekach, wMagazynie: [...kit.store, ...uzbrojone(kit.core.slice(osob))], bezBroni: osob - wRekach.length };
+}
+
+/** lista z „i” (po angielsku „and”) przed ostatnim: „nóż i łom”, „rewolwer, dzida i nóż” */
+const spisz = (a: readonly string[], i: string): string =>
+  a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} ${i} ${a[a.length - 1]}`;
+
+/** zdanie o broni na starcie: „Na start siekiera jest w rękach (reszta ma gołe ręce), a nóż i łom leżą w magazynie
+    (karta osoby: „Zmień”).” i to samo po angielsku, z nazw broni z `WEAPONS` i `WEAPONS_EN` */
+function bronNaStartTx(zombie: boolean, osob: number): Tx {
+  const b = bronNaStarcie(zombie, osob);
+  const nazwyPl = (ids: WeaponId[]) => ids.map((a) => WEAPONS[a].name);
+  const nazwyEn = (ids: WeaponId[]) => ids.map((a) => WEAPONS_EN[a].name);
+  const pl = (ids: WeaponId[]) => spisz(nazwyPl(ids), 'i');
+  const en = (ids: WeaponId[]) => `the ${spisz(nazwyEn(ids), 'and')}`;
+  const rekach = b.wRekach.length
+    ? tx(
+        `${pl(b.wRekach)} ${b.wRekach.length === 1 ? 'jest' : 'są'} w rękach${b.bezBroni ? ` (reszta ma ${WEAPONS.piesci.name})` : ''}`,
+        `${en(b.wRekach)} ${b.wRekach.length === 1 ? 'is' : 'are'} in hand${b.bezBroni ? ` (the rest have ${WEAPONS_EN.piesci.name})` : ''}`,
+      )
+    : tx(`wszyscy mają ${WEAPONS.piesci.name}`, `everyone has ${WEAPONS_EN.piesci.name}`);
+  const magazyn = b.wMagazynie.length
+    ? tx(
+        `, a ${pl(b.wMagazynie)} ${b.wMagazynie.length === 1 ? 'leży' : 'leżą'} w magazynie`,
+        `, and ${en(b.wMagazynie)} ${b.wMagazynie.length === 1 ? 'is' : 'are'} in the storeroom`,
+      )
+    : tx('', '');
+  return tx(
+    `Na start ${rekach.pl}${magazyn.pl} (karta osoby: „Zmień”).`,
+    `At the start ${rekach.en}${magazyn.en} (person card: “Swap”).`,
+  );
+}
+
 /** potwierdzenie polecenia, którego nie da się cofnąć (rozbiórka, zajęcie mieszkania; palenie ma własne okno); `note`
     zastępuje zdanie „Tego nie da się cofnąć.” tam, gdzie byłoby nieprawdziwe (nowa gra po zwycięstwie zostawia zapis) */
 export function confirmSheet(label: string, note?: string): Sheet {
@@ -521,32 +780,56 @@ export function confirmSheet(label: string, note?: string): Sheet {
   };
 }
 
+/** potwierdzenie włączenia sieci (badania, zbadana sieć bez miedzi): nieodwracalne, więc z potwierdzeniem; włączona sieć
+    to czwarty kamień drogi technologii, a epilog daje dopiero fabryka; przyciski jak w `confirmSheet`, więc obsługuje je
+    ten sam kod w main.ts */
+export function siecSheet(): Sheet {
+  return {
+    tone: 'ogien',
+    kicker: L('Na pewno?', 'Are you sure?'),
+    title: L('Włączyć sieć bez miedzi?', 'Switch on the copper-free grid?'),
+    body: `<p>${L('Tej nocy zapalą się okna w całym terenie.', 'Tonight every window on your ground will light up.')}</p><p>${L(
+      'Tego nie da się cofnąć.',
+      'This cannot be undone.',
+    )}</p>`,
+    foot: `${btn('confirm-no', L('Nie', 'No'), 'btn ghost')}${btn('confirm-yes', L('Włączyć sieć', 'Switch on the grid'), 'btn go')}`,
+    closable: true,
+  };
+}
+
+/** Okno „Jak grać”. `opts.osob`: ile osób ma zarząd na starcie gry (main.ts liczy to z gry); bez niej albo z liczbą, która
+    nie jest dodatnią liczbą całkowitą, cztery, jak w panelu „Wasz zarząd”. */
 export function helpSheet(
   touch: boolean,
   zombie = false,
   words: Words = wordsOf(BLOK),
   e: WordsEn = wordsEn(BLOK),
+  opts: { osob?: number } = {},
 ): Sheet {
   const z = words.zarzad.dk;
+  const osob =
+    typeof opts.osob === 'number' && Number.isInteger(opts.osob) && opts.osob >= 1 ? opts.osob : OSOB_DOMYSLNIE;
+  const osoby = osobySlownie(osob);
+  const bron = bronNaStartTx(zombie, osob);
   const ctl = touch
     ? L(
-        `<li>Stuknięcie w człowieka z ${z} zaznacza go.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>`,
-        `<li>Tap someone from ${e.krotko} to select them.</li><li>Tap a spot to give the simplest order: go, chop, haul, feed the stove.</li><li>Press and hold to see every order for that spot, burning furniture included.</li><li>One finger moves the map, two fingers zoom.</li>`,
+        `<li>Stuknięcie w człowieka z ${z} zaznacza go.</li><li>Rząd portretów pod paskiem to wasi ludzie: stuknięcie w portret zaznacza osobę i pokazuje ją na mapie, drugie stuknięcie prowadzi za nią kamerę.</li><li>Stuknięcie w miejsce wydaje najprostsze polecenie: idź, zetnij, zanieś, dołóż.</li><li>Przytrzymanie palca pokazuje wszystkie polecenia w tym miejscu, także palenie mebli.</li><li>Jeden palec przesuwa mapę, dwa przybliżają.</li>`,
+        `<li>Tap someone from ${e.krotko} to select them.</li><li>The row of portraits under the top bar is your people: tap a portrait to select them and show them on the map, tap again to make the camera follow.</li><li>Tap a spot to give the simplest order: go, chop, haul, feed the stove.</li><li>Press and hold to see every order for that spot, burning furniture included.</li><li>One finger moves the map, two fingers zoom.</li>`,
       )
     : L(
-        `<li>Klik zaznacza człowieka z ${z}, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>`,
-        `<li>Click someone from ${e.krotko} to select them; Shift-drag to select several with a box.</li><li>Right-click shows the orders for that spot: go, chop, haul to the woodpile, feed the stove, cook, burn furniture.</li><li>Scroll to zoom; drag or use WASD to move the map.</li><li>On a trackpad, a two-finger click or Ctrl+click works as a right-click; pinch to zoom and swipe with two fingers to move the map.</li><li>Space pauses, 1–4 set the speed (up to 8×).</li>`,
+        `<li>Klik zaznacza człowieka z ${z}, Shift i przeciąganie zaznacza ramką kilku naraz.</li><li>Rząd portretów pod paskiem to wasi ludzie, z ikonami głodu, zimna, ran, ugryzienia, snu, warty, wyprawy i badań: klik zaznacza osobę i pokazuje ją na mapie, drugi klik prowadzi za nią kamerę, Shift dokłada do zaznaczenia. Klawisze Q i E przełączają ludzi po kolei.</li><li>Prawy przycisk pokazuje polecenia w tym miejscu: idź, zetnij, zanieś do składu, dołóż do kozy, gotuj, spal mebel.</li><li>Kółko przybliża, przeciąganie przesuwa mapę, WASD też.</li><li>Na gładziku kliknięcie dwoma palcami albo Ctrl+klik to prawy przycisk, szczypanie przybliża, dwa palce przesuwają mapę.</li><li>Spacja to pauza, 1–4 tempo (do 8×).</li>`,
+        `<li>Click someone from ${e.krotko} to select them; Shift-drag to select several with a box.</li><li>The row of portraits under the top bar is your people, with icons for hunger, cold, wounds, bites, sleep, watch, runs and research: click one to select them and show them on the map, click again to make the camera follow, Shift-click to add to the selection. Keys Q and E step through them one by one.</li><li>Right-click shows the orders for that spot: go, chop, haul to the woodpile, feed the stove, cook, burn furniture.</li><li>Scroll to zoom; drag or use WASD to move the map.</li><li>On a trackpad, a two-finger click or Ctrl+click works as a right-click; pinch to zoom and swipe with two fingers to move the map.</li><li>Space pauses, 1–4 set the speed (up to 8×).</li>`,
       );
   return {
     tone: 'menu',
     kicker: 'Za Murem 0.4',
     title: L('Jak grać', 'How to play'),
-    body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
-      `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. Czterech ludzi, koza w kuchni i dziurawa siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>Każdy z ${z} ma jedną broń, zapasowa leży w magazynie (karta osoby: „Zmień”). Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li>`,
-      `<li>You are ${e.pelny} in 2051. Four people, a potbelly stove in the kitchen and a fence full of holes around the yard.</li><li>Watch everyone’s needs on their card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>Everyone on ${e.krotko} carries one weapon, and spares are kept in the storeroom (person card: “Swap”). Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li>`,
+    body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}${workHelp(touch)}${outsideHelp(touch, words, e)}${researchHelp(touch)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
+      `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. ${osoby.pl}, koza w kuchni i ${zombie ? 'wzmocniona' : 'dziurawa'} siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>${bron.pl} Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li><li>W Menu jest ekran „Drogi do zwycięstwa”: kamienie milowe każdej drogi, postęp i to, co zrobić dalej.</li>`,
+      `<li>You are ${e.pelny} in 2051. ${osoby.en}, a potbelly stove in the kitchen and ${zombie ? 'a reinforced fence' : 'a fence full of holes'} around the yard.</li><li>Watch everyone’s needs on their card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>${bron.en} Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li><li>The Menu has a “Roads to victory” screen: the milestones of each road, your progress and what to do next.</li>`,
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(
-      `W wersji 0.4 są noce za siatką, budowa, ${words.szukanie.wersja}, przybysze i tryb zombie. Badania, zima i reszta gospodarki przyjdą w kolejnych wersjach.`,
-      `Version 0.4 has nights behind the fence, building, ${e.szukanie.wersja}, newcomers and Zombie mode. Research, winter and the rest of the economy will come in later versions.`,
+      `W wersji 0.4 są noce za siatką, budowa, ${words.szukanie.wersja}, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.`,
+      `Version 0.4 has nights behind the fence, building, ${e.szukanie.wersja}, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.`,
     )}</p>`,
     foot: btn('help-back', L('Wróć', 'Back'), 'btn go'),
     closable: true,

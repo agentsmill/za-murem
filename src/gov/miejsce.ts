@@ -2,7 +2,9 @@
    policzone raz ze świata, do tego słownik wspólnoty (w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd)
    i wolne miejsca dla mieszkańców. Z tego zarząd bierze warianty tekstów i warunki wydarzeń; słownik czytają też
    teksty spoza zarządu. Odległości w kwadratach liczb całkowitych, bez Math.hypot, żeby wynik był ten sam w każdej
-   przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. */
+   przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. `stronyOf` liczy ze świata,
+   gdzie przy siatce jest strona garaży i strona najbliższego budynku mieszkalnego (kafelki dla „Sprawdzić” z krzyku
+   i hałasu); wołają ją `govInput` (src/sim/gov.ts) i testy. */
 
 import type { EndingId } from '../content/data.ts';
 import type { World } from '../world/world.ts';
@@ -135,6 +137,63 @@ function describePlace(w: PlaceWorld): GovPlace {
   };
 }
 
+/** to, czego strony potrzebują ze świata: budynki, siedziba, rozmiar, kafelki nie do przejścia i podwórko siatki */
+export type StronyWorld = Pick<World, 'size' | 'buildings' | 'hq'> & {
+  blocked?: Uint8Array;
+  fence?: Pick<World['fence'], 'yard'>;
+};
+
+/** Kafelek podwórka przy siatce od strony najbliższych garaży (do 150 m od siedziby) i od strony najbliższego budynku
+    mieszkalnego za siatką (blok albo dom do 120 m, bez siedziby i bez `wylaczone`, czyli budynków już otoczonych
+    wspólnym płotem). Budynek to ten o najbliższym środku od środka siedziby (jak w `placeOf`), a kafelek to wolny kafelek
+    podwórka o najbliższym kwadracie odległości od jego środka; remis rozstrzyga niższy numer. Same liczby całkowite,
+    bez Math.hypot. Strony, których świat nie ma, nie występują; bez podwórka obiekt jest pusty. */
+export function stronyOf(w: StronyWorld, wylaczone: ReadonlySet<number> = new Set()): NonNullable<GovInput['strony']> {
+  const yard = w.fence?.yard ?? [];
+  const hq = w.buildings[w.hq];
+  if (!yard.length || !hq) return {};
+  const size = w.size;
+  const mid = (b: World['buildings'][number]): [number, number] => [
+    Math.round((b.x0 + b.x1) / 2),
+    Math.round((b.y0 + b.y1) / 2),
+  ];
+  const [hx, hy] = mid(hq);
+  let garaz: { d: number; at: [number, number] } | null = null;
+  let blok: { d: number; at: [number, number] } | null = null;
+  for (let k = 0; k < w.buildings.length; k++) {
+    if (k === w.hq || wylaczone.has(k)) continue;
+    const b = w.buildings[k];
+    const at = mid(b);
+    const d = (at[0] - hx) ** 2 + (at[1] - hy) ** 2;
+    if (b.cls === 'garaz' && d <= GARAGES * GARAGES && (!garaz || d < garaz.d)) garaz = { d, at };
+    else if ((b.cls === 'blok' || b.cls === 'dom') && d <= NEAR * NEAR && (!blok || d < blok.d)) blok = { d, at };
+  }
+  /** wolny kafelek podwórka najbliższy punktowi */
+  const najblizszy = (at: [number, number]): number => {
+    let best = -1;
+    let bd = Number.POSITIVE_INFINITY;
+    for (const t of yard) {
+      if (w.blocked?.[t]) continue;
+      const d = ((t % size) - at[0]) ** 2 + (Math.floor(t / size) - at[1]) ** 2;
+      if (d < bd || (d === bd && t < best)) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  };
+  const out: NonNullable<GovInput['strony']> = {};
+  if (garaz) {
+    const t = najblizszy(garaz.at);
+    if (t >= 0) out.garaze = t;
+  }
+  if (blok) {
+    const t = najblizszy(blok.at);
+    if (t >= 0) out.blok = t;
+  }
+  return out;
+}
+
 /** jacy sąsiedzi są w okolicy (w 120 m): bloki, domy albo nikt (null); jedno źródło słów o sąsiadach w wydarzeniach */
 export const sasiedzi = (p: GovPlace): 'bloki' | 'domy' | null => (p.near === 'nikt' ? null : p.near);
 
@@ -171,13 +230,18 @@ export interface Words {
       menu poleceń, ze stanem lokum małą literą („mieszkanie 3, puste od 2034, wyjazd”; w domu sam stan). */
   lokal: { M: string; d: string; w: string; nr: (n: number) => string; menu: (n: number, stan: string) => string };
   /** Co przeszukiwać: w bloku puste mieszkania, w domu pomieszczenia domu komitetu (decyzja Mateusza 18.10.2026).
-      b: cel („Przeszukajcie puste mieszkanie.”), d: „przeszukiwanie pustych mieszkań”, jak: podpowiedź do celu drugiego
-      dnia, karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
+      b: cel („Przeszukajcie puste mieszkanie.”), d: „przeszukiwanie pustych mieszkań”, w: gdzie leży mebel do spalenia,
+      kiedy drzewa stoją wśród szwendaczy („w pustym mieszkaniu” | „w domu”), jak: podpowiedź do celu drugiego dnia
+      (najpierw zaznaczyć osobę, potem polecenie „Przeszukać …” w pomieszczeniu, karta jako sposób na znalezienie pustego),
+      obok: dopisek do podpowiedzi pierwszej budowli o sąsiednich domach jako drugim źródle desek i złomu (w bloku null),
+      karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
       w wersji 0.4, zrodla: skąd deski, złom i części („Deski daje …”, „Dają je …”). */
   szukanie: {
     b: string;
     d: string;
+    w: string;
     jak: { mysz: string; dotyk: string };
+    obok: { mysz: string; dotyk: string } | null;
     karta: { mysz: string; dotyk: string };
     pomoc: { mysz: string; dotyk: string };
     naglowek: string;
@@ -218,11 +282,15 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
   szukanie: {
     b: 'puste mieszkanie',
     d: 'pustych mieszkań',
+    w: 'w pustym mieszkaniu',
+    // lewy klik w puste miejsce zdejmuje zaznaczenie, a prawy przycisk bez zaznaczonej osoby nic nie daje: najpierw
+    // osoba, potem polecenie; karta mieszkania (klik bez zaznaczenia) mówi tylko, które jest puste
     jak: {
-      mysz: 'Kliknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem prawy przycisk w nim: „Przeszukać”.',
+      mysz: 'Zaznaczcie kogoś z zarządu i prawy przycisk w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: klik w mieszkanie, kiedy nikt nie jest zaznaczony.',
       dotyk:
-        'Stuknijcie mieszkanie w siedzibie: karta pokaże, czy jest puste i co w nim zostało. Potem przytrzymajcie w nim palec: „Przeszukać”.',
+        'Stuknijcie kogoś z zarządu i przytrzymajcie palec w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: stuknięcie w mieszkanie, kiedy nikt nie jest zaznaczony.',
     },
+    obok: null,
     karta: {
       mysz: 'Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
       dotyk: 'Przytrzymajcie palec w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
@@ -272,9 +340,16 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
   szukanie: {
     b: 'dom',
     d: 'domu',
+    w: 'w domu',
     jak: {
-      mysz: 'Kliknijcie dom: karta pokaże, co w nim już przeszukane. Potem prawy przycisk w domu: „Przeszukać”.',
-      dotyk: 'Stuknijcie dom: karta pokaże, co w nim już przeszukane. Potem przytrzymajcie palec w domu: „Przeszukać”.',
+      mysz: 'Zaznaczcie kogoś z komitetu i prawy przycisk w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: klik w dom, kiedy nikt nie jest zaznaczony.',
+      dotyk:
+        'Stuknijcie kogoś z komitetu i przytrzymajcie palec w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: stuknięcie w dom, kiedy nikt nie jest zaznaczony.',
+    },
+    // dom komitetu przeszukuje się w godzinę, więc materiału brakuje wcześniej niż w bloku: pomagają sąsiednie domy
+    obok: {
+      mysz: 'Deski i złom mają też sąsiednie domy: prawy przycisk na ich drzwiach.',
+      dotyk: 'Deski i złom mają też sąsiednie domy: przytrzymajcie palec na ich drzwiach.',
     },
     karta: {
       mysz: 'Prawy przycisk w domu: Przeszukać.',
@@ -351,7 +426,11 @@ export interface WordsEn {
     b: string;
     /** „searching empty flats” | „searching the house” */
     d: string;
+    /** gdzie leży mebel do spalenia: „in an empty flat” | „in the house” */
+    w: string;
     jak: { mysz: string; dotyk: string };
+    /** dopisek o sąsiednich domach jako drugim źródle desek i złomu (w bloku null) */
+    obok: { mysz: string; dotyk: string } | null;
     karta: { mysz: string; dotyk: string };
     pomoc: { mysz: string; dotyk: string };
     naglowek: string;
@@ -389,11 +468,13 @@ const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
   szukanie: {
     b: 'an empty flat',
     d: 'empty flats',
+    w: 'in an empty flat',
     jak: {
-      mysz: 'Click a flat at HQ: its card shows whether it is empty and what is left in it. Then right-click inside it: “Search”.',
+      mysz: 'Select someone from the board and right-click inside an empty flat: “Search the …”. To see which flats are empty, click a flat while nobody is selected and read its card.',
       dotyk:
-        'Tap a flat at HQ: its card shows whether it is empty and what is left in it. Then press and hold inside it: “Search”.',
+        'Tap someone from the board and press and hold inside an empty flat: “Search the …”. To see which flats are empty, tap a flat while nobody is selected and read its card.',
     },
+    obok: null,
     karta: {
       mysz: 'Right-click inside the flat: Search, Take apart, Fix, Claim the flat.',
       dotyk: 'Press and hold inside the flat: Search, Take apart, Fix, Claim the flat.',
@@ -440,10 +521,15 @@ const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
   szukanie: {
     b: 'the house',
     d: 'the house',
+    w: 'in the house',
     jak: {
-      mysz: 'Click the house: its card shows what has already been searched. Then right-click inside the house: “Search”.',
+      mysz: 'Select someone from the committee and right-click inside a room of the house: “Search the …”. To see what has been searched, click the house while nobody is selected and read its card.',
       dotyk:
-        'Tap the house: its card shows what has already been searched. Then press and hold inside the house: “Search”.',
+        'Tap someone from the committee and press and hold inside a room of the house: “Search the …”. To see what has been searched, tap the house while nobody is selected and read its card.',
+    },
+    obok: {
+      mysz: 'The houses next door have planks and scrap too: right-click their door.',
+      dotyk: 'The houses next door have planks and scrap too: press and hold on their door.',
     },
     karta: {
       mysz: 'Right-click inside the house: Search.',

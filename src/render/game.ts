@@ -1,13 +1,14 @@
 /* Rysowanie stanu gry: z symulacji i świata powstają rzeczy, światła i stan siatki dla widoku.
-   Rzeczy to st.things (meble, drewno, zapasy, pnie, koza z ogniem, garnek z posiłkiem na stole) plus
+   Rzeczy to st.things (meble, drewno, zapasy, pnie, koza i inne paleniska z ogniem, garnek z posiłkiem na stole) plus
    ze świata trzepak, wraki, siatka i sterty materiału (te ze świata, dopóki symulacja ich nie przejmie).
-   Światła dają koza z ogniem (we wnętrzu), okna pomieszczeń oświetlonych ogniem (sim.light, plama
+   Światła dają koza, koza z beczki i kocioł z ogniem (we wnętrzu), okna pomieszczeń oświetlonych ogniem (sim.light, plama
    na ziemi za oknem), ognisko, lampy warty i latarnia w ręce wartownika. Stan siatki wynika z kopii
    blocked w symulacji, jak w kontrakcie siatki: łata na dziurze i zamknięta brama to blocked = 1,
    dziura to blocked = 0.
    Obcych (szabrownicy, wędrowcy) widać tylko w świetle. Do tego wybór pionka pod punktem kliknięcia (pawnAt, dla
    widoku: zarząd, mieszkańcy z osobą i lokatorzy sąsiednich budynków ze spotkania). Czyste funkcje bez PixiJS. */
 
+import { GOSC_HP } from '../sim/gosc.ts';
 import type { Sasiedzi } from '../sim/sasiedzi.ts';
 import type { PlotStan } from '../sim/sim.ts';
 import type { World } from '../world/world.ts';
@@ -90,6 +91,13 @@ export const GAME_KINDS: ReadonlySet<string> = new Set([
   'lozka_pietrowe',
   'ogrodek',
   'zasieki',
+  'pracownia',
+  'koza_beczka',
+  'kociol',
+  'pieczarkarnia',
+  'szklarnia',
+  'barykada',
+  'wieza',
 ]);
 
 /** sterty materiału i śmieci: ze świata (World.props), dopóki symulacja nie trzyma ich u siebie jako rzeczy
@@ -110,8 +118,9 @@ export function onTables(things: readonly ThingLike[]): readonly ThingLike[] {
   });
 }
 
-/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza w ciemności jako zarys, strangerVisibility); handlarz
-    przychodzi za dnia */
+/** rodzaje pionków obcych: widać je tylko w świetle (szwendacza i gościa z klocków w ciemności jako zarys,
+    strangerVisibility); handlarz przychodzi za dnia, gość z klocków o każdej porze (karta jest nocą równie często co za
+    dnia), wpuszczony siedzi w świetle ogniska */
 export const STRANGERS: ReadonlySet<string> = new Set([
   'obcy',
   'szabrownik',
@@ -119,6 +128,7 @@ export const STRANGERS: ReadonlySet<string> = new Set([
   'zombie',
   'handlarz',
   'zbir',
+  'gosc',
 ]);
 
 /** zasięg latarni wartownika w metrach: tyle, ile warta widzi w symulacji (LAMP_REACH w sim.ts) */
@@ -165,7 +175,7 @@ export function windowSpots(w: Pick<World, 'size' | 'interior'>): WindowSpot[] {
 }
 
 /**
- * Światła ze stanu gry: koza z ogniem (inside, świeci w pomieszczeniu), okna pomieszczeń
+ * Światła ze stanu gry: koza, koza z beczki i kocioł z ogniem (inside, świecą w pomieszczeniu), okna pomieszczeń
  * oświetlonych ogniem (plama za szybą, słabsza dla pomieszczeń oświetlonych tylko przez drzwi),
  * ognisko z ogniem, lampa i budka warty (zapalone, póki fuel nie spadnie do zera).
  */
@@ -173,8 +183,8 @@ export function gameLights(g: Pick<GameLike, 'st' | 'light'>, windows: readonly 
   const out: Light[] = [];
   for (const t of g.st.things) {
     const fuel = t.fuel ?? 0;
-    if (t.kind === 'koza' && fuel > 0)
-      out.push({ x: t.x + 0.5, y: t.y + 0.5, r: 4, color: FIRE, strength: 1, flicker: 0.3, inside: true });
+    if ((t.kind === 'koza' || t.kind === 'koza_beczka' || t.kind === 'kociol') && fuel > 0)
+      out.push({ x: t.x + t.w / 2, y: t.y + 0.5, r: 4, color: FIRE, strength: 1, flicker: 0.3, inside: true });
     else if (t.kind === 'ognisko' && fuel > 0)
       out.push({ x: t.x + 0.5, y: t.y + 0.6, r: 5.5, color: FIRE, strength: 1.1, flicker: 0.35 });
     else if ((t.kind === 'lampa' || t.kind === 'budka') && (t.fuel ?? 1) > 0)
@@ -229,15 +239,22 @@ export function fenceStateFn(f: FenceLike, codes: Uint8Array): (tile: number) =>
   return (tile) => at.get(tile) ?? 'cala';
 }
 
-/** szwendacz w ciemności: ciemny zarys, żeby było widać, gdzie napiera stado */
+/** szwendacz i gość w ciemności: ciemny zarys, żeby było widać, gdzie napiera stado i kto stoi pod bramą albo śpi przy ogniu */
 export const ZOMBIE_SHADOW = 0.4;
+/** rodzaje obcych, których w ciemności widać jako zarys (`ZOMBIE_SHADOW`), nigdy całkiem ukryte */
+const ZAWSZE_ZARYS: ReadonlySet<string> = new Set(['zombie', 'gosc']);
 
 /** jak dobrze widać obcego: 1 w dzień albo w świetle, 0 w nocnej ciemności (lit: światło w jego miejscu);
-    szwendacza w ciemności widać jako ciemny zarys (ZOMBIE_SHADOW) */
+    szwendacza i gościa z klocków w ciemności widać jako ciemny zarys (ZOMBIE_SHADOW): karta, „Pokaż” i noc przy ogniu
+    potrzebują go widocznego o każdej porze */
 export function strangerVisibility(darkness: number, lit: number, kind = ''): number {
   const v = Math.max(0, Math.min(1, 1 - darkness + lit * 1.4));
-  return kind === 'zombie' ? Math.max(ZOMBIE_SHADOW, v) : v;
+  return ZAWSZE_ZARYS.has(kind) ? Math.max(ZOMBIE_SHADOW, v) : v;
 }
+
+/** pełne życie gościa na pasku: życie pionka (`GOSC_HP`), a po przyjęciu albo ugryzieniu (pionek ma potrzeby, `hp` zastępuje
+    `needs.health`) skala zdrowia 0–100 */
+export const goscMaxHp = (p: { needs?: unknown }): number => (p.needs ? 100 : GOSC_HP);
 
 /** to, czego wybór pionka potrzebuje (Pawn z symulacji pasuje bez zmian) */
 export interface HitPawn {

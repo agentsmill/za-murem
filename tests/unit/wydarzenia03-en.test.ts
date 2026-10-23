@@ -49,9 +49,10 @@ function stan(place: GovPlace, residents: number, seed: number) {
   const gov = newGov(seed);
   gov.trust = seed % 2 ? 30 : 60;
   if (seed % 2) gov.laws.signed.u_sad = true;
-  // przy dwóch książkach z dziedziny karton idzie na opał bez wpisu do kroniki
-  if (seed % 7 === 3) gov.books = { bud: 2, cieplo: 2, elek: 2, med: 2, uprawa: 2, it: 2 };
   const atr = new Atrapa(seed);
+  // przy dwóch książkach z dziedziny karton idzie na opał bez wpisu do kroniki; książki są w symulacji, więc na półce
+  // atrapy, skąd trafiają do GovInput.books (i do wiedzy w GovInput.know)
+  if (seed % 7 === 3) atr.books = { bud: 2, cieplo: 2, elek: 2, med: 2, uprawa: 2, it: 2 };
   atr.supplies = 30;
   atr.woodSklad = 10;
   atr.scrap = 12;
