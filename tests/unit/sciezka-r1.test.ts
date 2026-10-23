@@ -19,7 +19,7 @@ import { nowyBudynek } from '../../src/sim/sasiedzi.ts';
 import type { Command } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
-import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { doorWhere, core as rdzen } from './sasiedzi-pomoc.ts';

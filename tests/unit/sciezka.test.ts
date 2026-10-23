@@ -20,11 +20,11 @@ import {
   krokSciezki,
   licznikiStartu,
   nowyStanSciezki,
-  ROZDZIALY,
   stanZZapisu,
   widokSciezki,
   zaliczony,
 } from '../../src/ui/sciezka.ts';
+import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
 import {
   cel,
   cele,
