@@ -21,7 +21,7 @@ import { makePerson } from '../../src/content/people.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
-import { CARD_HOUR, MORNING } from '../../src/gov/noc.ts';
+import { CARD_HOUR, KOZA_KEY, MORNING } from '../../src/gov/noc.ts';
 import type { GovEffects, NightReport, Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
 import { celZMiejsca, wlaczMiasto } from '../../src/gov/wyprawy.ts';
@@ -187,6 +187,9 @@ describe('kolejność rozdziałów: R0, R1, R2, R4, R5 (bez R3, którego jeszcze
   });
 
   it('rozdziały R2, R4 i R5 nie mają celów z terminem: nic nie przepada, nawet po nocy bez niczego', () => {
+    // definicje: tylko R0 `drewno` oraz R1 `drewno2` i `dyzur` mają warunek przepadnięcia
+    const zTerminem = ROZDZIALY.flatMap((r) => r.cele.filter((c) => c.przepadl).map((c) => `${r.k}.${c.key}`));
+    expect(zTerminem).toEqual(['r0.drewno', 'r1.drewno2', 'r1.dyzur']);
     const g = poPierwszymRaporcie('przymorze', 'zwykly');
     otworz(g, 'r2');
     graj(g, (x) => x.gov.reports.length >= 3 && !x.gov.report, {}, 3000);
@@ -311,6 +314,12 @@ describe.each(KOMBINACJE_ZOMBIE)('R2 dzgnij: %s %s', (key, mode) => {
     // ta sama walka, ale z automatu (np. warta): bez polecenia
     kto.job!.order = false;
     expect(cel(g, 'dzgnij').done).toBe(false);
+    // walka z polecenia, ale pionek nie jest z zarządu (tu: inny szwendacz z taką samą pracą bije tego pierwszego)
+    const obcy = st.pawns.find((p) => p.kind === 'zombie' && p.id !== kto.job!.target)!;
+    const praca = obcy.job;
+    obcy.job = { ...kto.job!, order: true };
+    expect(cel(g, 'dzgnij').done).toBe(false);
+    obcy.job = praca;
     // polecenie, ale wróg to nie szwendacz (tu: id innej osoby z zarządu)
     kto.job!.order = true;
     const szwendacz = kto.job!.target;
@@ -447,6 +456,22 @@ describe.each(KOMBINACJE_ZOMBIE)('R2 dzidy: %s %s', (key, mode) => {
     zatwierdz(g, dzidy);
     expect(g.gov.night!.day).toBe(3);
     expect(cel(g, 'dzidy').done).toBe(true);
+  });
+
+  it('dzida na innej warcie niż przy siatce (brama, koza) się nie liczy', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    otworz(g, 'r2');
+    const dzidy = drugaDzida(g);
+    for (const inna of ['warta:brama', KOZA_KEY]) {
+      const h = klon(g);
+      const card = doKarty(h);
+      for (const o of card.people) expect(setNight(h.gov, o.id, 'sen')).toBe(true);
+      expect(setNight(h.gov, idOsoby(h, dzidy[0]), 'warta:siatka')).toBe(true);
+      expect(setNight(h.gov, idOsoby(h, dzidy[1]), inna)).toBe(true);
+      odpowiedz(h, { k: 'karta', card, assign: { ...h.gov.night!.assign } });
+      expect(h.gov.night!.confirmed).toBe(true);
+      expect(cel(h, 'dzidy').done, inna).toBe(false);
+    }
   });
 
   it('dwie osoby przy siatce, ale tylko jedna z dzidą: jeszcze nie', () => {
@@ -592,6 +617,13 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
     expect(g.sciezka.zrobione).toHaveProperty(['r4.wkurzenie']);
     // kolejny raport ze wzrostem niczego nie cofa
     g.gov.reports.push(raport(5));
+    expect(cel(g, 'wkurzenie').done).toBe(true);
+  });
+
+  it('raport ze spadkiem wkurzenia liczy się, choć po nim przyszedł gorszy, zanim okienko go obejrzało', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    otworz(g, 'r4');
+    g.gov.reports.push(raport(-1), raport(3));
     expect(cel(g, 'wkurzenie').done).toBe(true);
   });
 
@@ -818,6 +850,25 @@ function wyslij(g: Gra, okolica: ReturnType<typeof okolicaZGeo>, c: ReturnType<t
   if (wynik.ok) applyGov(g.sim.st, g.sim.w, wynik.fx);
 }
 
+/** Gra z mapą miasta i okolicą w wejściu zarządu, w której jedna osoba idzie nocą na „Wyprawę blisko” do miejsca z mapy;
+    gra stoi po nocy, po raporcie rano (R5 otwarty przed kartą nocy). */
+function wyprawaNocna(key: Demo, mode: GameMode): Gra {
+  const g = poPierwszymRaporcie(key, mode);
+  wlaczMiasto(g.gov);
+  // z okolicą w wejściu zarządu karta nocy proponuje wyprawy do miejsc z mapy (bez niej do celów z TARGETS)
+  g.okolica = okolicaZGeo(demoGeo(key));
+  otworz(g, 'r5');
+  const card = doKarty(g);
+  const kto = card.people.find((p) => p.options.some((o) => o.key === 'wyprawa:blisko' && o.ok))!;
+  expect(setNight(g.gov, kto.id, 'wyprawa:blisko')).toBe(true);
+  odpowiedz(g, { k: 'karta', card, assign: { ...g.gov.night!.assign } });
+  expect(g.gov.night!.exp).toHaveLength(1);
+  expect(g.gov.night!.exp[0].cel?.zapas, 'miejsce z mapy, nie cel z TARGETS').not.toBeNull();
+  expect(cel(g, 'wyprawa').done, 'wyprawa nocna to nie wyprawa dzienna').toBe(false);
+  graj(g, (x) => x.gov.reports.length >= 3 && !x.gov.report, {}, 3000);
+  return g;
+}
+
 describe.each(KOMBINACJE)('R5 wyprawa i łup: %s %s', (key, mode) => {
   it('wyprawa dzienna w drodze zalicza `wyprawa`, powrót z łupem zalicza `lup`; tylko to, co po otwarciu rozdziału', () => {
     const { g, okolica, cel: c } = zMapaMiasta(key, mode);
@@ -861,21 +912,38 @@ describe.each(KOMBINACJE)('R5 wyprawa i łup: %s %s', (key, mode) => {
     expect(cel(g, 'lup').done).toBe(true);
   });
 
-  it('łup z wyprawy nocnej do miejsca z mapy też się liczy: liczy się suma `gov.miasto.zabrano`', () => {
+  it('łup z wyprawy nocnej do miejsca z mapy też się liczy: liczy się suma `gov.miasto.zabrano` ze wszystkich miejsc', () => {
     const g = poPierwszymRaporcie(key, mode);
     wlaczMiasto(g.gov);
     g.gov.miasto!.zabrano['poi:1:2'] = 4;
     otworz(g, 'r5');
     expect(g.sciezka.start.lup).toBe(4);
     expect(cel(g, 'lup').done).toBe(false);
-    g.gov.miasto!.zabrano['poi:1:2'] = 6;
+    // łup z tego samego miejsca
+    g.gov.miasto!.zabrano['poi:1:2'] = 5;
     expect(cel(g, 'lup').done).toBe(true);
-    // i drugie miejsce, zanim rozdział się otworzył
+    // łup z drugiego miejsca, choć żadne z miejsc nie przekroczyło osobno liczby z otwarcia (suma 4 + 3 > 4)
     const h = poPierwszymRaporcie(key, mode);
     wlaczMiasto(h.gov);
+    h.gov.miasto!.zabrano['poi:1:2'] = 4;
     otworz(h, 'r5');
-    h.gov.miasto!.zabrano['poi:9:9'] = 1;
+    h.gov.miasto!.zabrano['poi:9:9'] = 3;
     expect(cel(h, 'lup').done).toBe(true);
+    // bez zmian w łupie nic się nie zalicza, a łup sprzed otwarcia z wielu miejsc nie liczy się wcale
+    const k = poPierwszymRaporcie(key, mode);
+    wlaczMiasto(k.gov);
+    Object.assign(k.gov.miasto!.zabrano, { 'poi:1:2': 4, 'poi:9:9': 3 });
+    otworz(k, 'r5');
+    expect(k.sciezka.start.lup).toBe(7);
+    expect(cel(k, 'lup').done).toBe(false);
+  });
+
+  it('wyprawa nocna z karty nocy nie zalicza `wyprawa`, a łup z niej liczy się do `lup`', () => {
+    const g = wyprawaNocna(key, mode);
+    expect(g.sciezka.zrobione).not.toHaveProperty(['r5.wyprawa']);
+    const lup = Object.values(g.gov.miasto!.zabrano).reduce((a, b) => a + b, 0);
+    // łup z nocnej wyprawy (jeśli coś przyniosła) to łup z miejsca z mapy
+    expect(Object.hasOwn(g.sciezka.zrobione, 'r5.lup')).toBe(lup > g.sciezka.start.lup);
   });
 
   it('podpowiedź wyprawy w trybie zombie ma dopisek o szwendaczach, w zwykłym go nie ma', () => {
@@ -888,6 +956,19 @@ describe.each(KOMBINACJE)('R5 wyprawa i łup: %s %s', (key, mode) => {
     ustawJezyk('en');
     const en = 'There are shamblers out there: the risk is higher, and trouble can mean a bite.';
     expect(cel(g, 'wyprawa').how.endsWith(en)).toBe(mode === 'zombie');
+  });
+});
+
+describe.each([
+  ['lanciego', 'zwykly'],
+  ['zielonki', 'zombie'],
+] as const)('R5 łup z wyprawy nocnej: %s %s', (key, mode) => {
+  it('wyprawa nocna do miejsca z mapy przynosi łup i zalicza `lup`, a `wyprawa` zostaje niezaliczona', () => {
+    const g = wyprawaNocna(key, mode);
+    const lup = Object.values(g.gov.miasto!.zabrano).reduce((a, b) => a + b, 0);
+    expect(lup).toBeGreaterThan(g.sciezka.start.lup);
+    expect(g.sciezka.zrobione).toHaveProperty(['r5.lup']);
+    expect(g.sciezka.zrobione).not.toHaveProperty(['r5.wyprawa']);
   });
 });
 

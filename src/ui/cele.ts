@@ -6,10 +6,10 @@
    `drzewoWObwodzie` mówi, czy w obrębie siatki zostało drzewo do ścięcia, bo w trybie zombie drzewa za siatką stoją
    wśród szwendaczy i drewno trzeba wtedy brać z mebli.
 
-   To jest rozdział R0 ścieżki celów: src/ui/sciezka.ts opakowuje `goalsOf` w rozdział „Pierwszy dzień” i trzyma
-   zaliczenie drewna na wieczór w stanie ścieżki. Cele drugiego dnia mieszkają w rozdziale R1 tamże (z potrzebą drewna na
-   noc liczoną jak karta nocy), więc tu zostają tylko pomocniki, których używają oba rozdziały: `najtanszeBudowle`
-   i `zombieMode`. */
+   To jest rozdział R0 ścieżki celów: src/ui/sciezka-rozdzialy.ts opakowuje `goalsOf` w rozdział „Pierwszy dzień”
+   i trzyma zaliczenie drewna na wieczór w stanie ścieżki (silnik i stan: src/ui/sciezka.ts). Cele drugiego dnia
+   mieszkają w rozdziale R1 tamże (z potrzebą drewna na noc liczoną jak karta nocy), więc tu zostają tylko pomocniki,
+   których używają kolejne rozdziały: `najtanszeBudowle` i `zombieMode`. */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';

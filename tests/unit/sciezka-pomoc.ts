@@ -8,7 +8,7 @@
    bez ponownego grania dwóch dób. Żadnego losowania poza ziarnem gry; wszystko w Node, bez przeglądarki. */
 
 import { type Words, type WordsEn, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
-import type { GovState, NightCard, Prompt } from '../../src/gov/typy.ts';
+import type { GovInput, GovState, NightCard, Prompt } from '../../src/gov/typy.ts';
 import { ackReport, chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { grajDalej } from '../../src/gov/zwyciestwo.ts';
 import { dayOf, hourOf, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
@@ -31,6 +31,7 @@ import {
   widokSciezki,
 } from '../../src/ui/sciezka.ts';
 import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
+import type { Miejsce } from '../../src/world/miasto.ts';
 import type { World } from '../../src/world/world.ts';
 import { newGame, core as rdzen } from './sasiedzi-pomoc.ts';
 
@@ -50,6 +51,9 @@ export interface Gra {
   sciezka: StanSciezki;
   /** gra bez automatu pracy ludzi (`bezAutomatu`): osoby zarządu, którym nowe rodzaje pracy już wyłączono */
   wylaczeni?: number[];
+  /** miejsca z okolicy w wejściu zarządu (`GovInput.okolica`, jak w grze z mapą miasta): z nimi karta nocy proponuje
+      wyprawy do miejsc z mapy, bez nich do celów z TARGETS */
+  okolica?: Miejsce[];
 }
 
 /** nowa gra: 4 osoby zarządu, godzina 15:00 pierwszego dnia, ścieżka na starcie (pierwszy dzień) */
@@ -111,8 +115,11 @@ export function przezZapis(g: Gra): Gra {
 /** sekundy przy ekranie w tej chwili (przy tempie 1×) */
 export const ekran = (st: SimState): number => Math.floor(st.tick / TICKS_PER_SECOND);
 
-/** wejście zarządu z tej chwili, tak jak buduje je gra */
-export const wejscie = (g: Gra) => govInput(g.sim.st, g.sim.w, ekran(g.sim.st));
+/** wejście zarządu z tej chwili, tak jak buduje je gra (z okolicą, jeśli gra ją ma) */
+export const wejscie = (g: Gra): GovInput => ({
+  ...govInput(g.sim.st, g.sim.w, ekran(g.sim.st)),
+  ...(g.okolica ? { okolica: g.okolica } : {}),
+});
 
 /** opcje odczytu: dotyk zamiast myszy, zaznaczenie w interfejsie i słowa miejsca (domyślnie z świata gry) */
 export interface OpcjeOdczytu {
