@@ -6,7 +6,7 @@
    R2: `sily` (zdarzenie interfejsu `lista`), `ognisko` (zwykły: ognisko płonie po 18:00) albo `dzgnij` (zombie: polecenie
    ataku na szwendaczu przez siatkę), `uzbrojeni` (zwykły: broń u `min(2, osób)` osób) albo `dzidy` (zombie: karta nocy
    zatwierdzona po otwarciu rozdziału z `min(2, osób)` przydziałami `warta:siatka` u osób z dzidą). R4: `uchwala` (podpis
-   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana), `nowi` (ludność
+   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (ludność
    większa niż przy otwarciu), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów bez R3, przejścia R2 → R4 → R5
@@ -37,6 +37,7 @@ import { populacja } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
 import {
+  celeHtml,
   celWOknie,
   type KluczRozdzialu,
   krokSciezki,
@@ -142,6 +143,10 @@ const raport = (dAnger: number, day = 2): NightReport => ({
   dTrust: 0,
   dAnger,
 });
+
+/** Dopisek czekającego celu „wkurzenie” (R4.2): niesie lekcję, bo podpowiedź czekającego celu się nie pokazuje, a dopisek tak. */
+const CZEKA_RANO = 'Raport rano. Wkurzenie spada, gdy ludzie są najedzeni i w cieple.';
+const CZEKA_RANO_EN = 'Morning report. Anger drops when people are fed and warm.';
 
 /** skutki zarządu z jednym polem ustawionym przez test */
 function skutki(f: (e: GovEffects) => void): GovEffects {
@@ -685,9 +690,9 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
       expect(g.gov.reports).toHaveLength(1);
       otworz(g, 'r4');
       expect(g.sciezka.start.raporty).toBe(1);
-      expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+      expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: CZEKA_RANO });
       ustawJezyk('en');
-      expect(cel(g, 'wkurzenie').czeka).toBe('waiting for morning');
+      expect(cel(g, 'wkurzenie').czeka).toBe(CZEKA_RANO_EN);
       ustawJezyk('pl');
       g.gov.reports.push(raport(dAnger));
       expect(cel(g, 'wkurzenie').done, `dAnger ${dAnger}`).toBe(true);
@@ -699,11 +704,35 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
     }
   });
 
+  it('dopisek czekającego celu niesie lekcję o wkurzeniu (ten sam w obu trybach, bez ogniska) i jest w HTML okienka', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    otworz(g, 'r4');
+    for (const touch of [false, true]) {
+      expect(cel(g, 'wkurzenie', { touch }).czeka).toBe(CZEKA_RANO);
+      expect(celeHtml(widok(g, { touch }), { otwarte: true, touch })).toContain(
+        `<small class="goal-czeka">${CZEKA_RANO}</small>`,
+      );
+    }
+    ustawJezyk('en');
+    for (const touch of [false, true]) {
+      expect(cel(g, 'wkurzenie', { touch }).czeka).toBe(CZEKA_RANO_EN);
+      expect(celeHtml(widok(g, { touch }), { otwarte: true, touch })).toContain(
+        `<small class="goal-czeka">${CZEKA_RANO_EN}</small>`,
+      );
+    }
+    ustawJezyk('pl');
+    // dopisek znika razem z czekaniem: po porannym raporcie cel jest zaliczony i nie ma dopisku
+    g.gov.reports.push(raport(1));
+    expect(cel(g, 'wkurzenie')).toMatchObject({ done: true });
+    expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
+    expect(celeHtml(widok(g), { otwarte: true, touch: false })).not.toContain('Raport rano. Wkurzenie');
+  });
+
   it('raport sprzed otwarcia rozdziału niczego nie zalicza, nawet gdy wkurzenie wtedy spadło', () => {
     const g = poPierwszymRaporcie(key, mode);
     g.gov.reports.push(raport(-3, 1));
     otworz(g, 'r4');
-    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: CZEKA_RANO });
   });
 
   it('prawdziwy raport rano: przed nim cel czeka i nie jest zaliczony, po nim (okno raportu otwarte) jest zaliczony', () => {
@@ -711,7 +740,7 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
     otworz(g, 'r4');
     graj(g, (x) => doba(x) === 3 && godzina(x) >= 5, {}, 3000);
     expect(g.gov.reports).toHaveLength(1);
-    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: CZEKA_RANO });
     expect(g.sciezka.zrobione).not.toHaveProperty(['r4.wkurzenie']);
     const p = graj(g, () => false, { stoj: ['raport'] }, 600);
     expect(p?.k).toBe('raport');
@@ -732,7 +761,7 @@ describe.each(KOMBINACJE_ZWYKLE)('R4 wkurzenie po dziesięciu raportach: %s %s',
     otworz(g, 'r4');
     // liczba raportów przy otwarciu to już sufit listy, więc z niej nie da się policzyć nowych
     expect(g.sciezka.start.raporty).toBe(10);
-    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: CZEKA_RANO });
     // następny raport rano: lista dalej ma dziesięć wpisów (najstarszy wypada), a cel widzi nowy
     const p = graj(g, () => false, { stoj: ['raport'] }, 2000);
     expect(p?.k).toBe('raport');
@@ -750,7 +779,7 @@ describe('R4 wkurzenie: raport po otwarciu rozdziału jest rozpoznawany po dniu 
     // otwarcie w tej samej minucie co poranny raport (poPierwszymRaporcie kończy się w minucie raportu): raport za noc 1
     // nie liczy się, choć ma tę samą minutę; raport za noc 2 powstaje dobę później
     expect(minutesAt(g.sciezka.od)).toBe(atHour(g.gov.reports[0].day + 1, MORNING));
-    expect(cel(g, 'wkurzenie').czeka).toBe('czeka do rana');
+    expect(cel(g, 'wkurzenie').czeka).toBe(CZEKA_RANO);
     g.gov.reports.push(raport(-1, 2));
     expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
     // pełna lista (dziesięć wpisów, jak po 11. nocy): stare raporty nie udają nowych, a nowy z późniejszym dniem nocy
@@ -758,7 +787,7 @@ describe('R4 wkurzenie: raport po otwarciu rozdziału jest rozpoznawany po dniu 
     const h = poPierwszymRaporcie('przymorze', 'zwykly');
     otworz(h, 'r4');
     h.gov.reports = Array.from({ length: 10 }, () => raport(1, 1));
-    expect(cel(h, 'wkurzenie').czeka).toBe('czeka do rana');
+    expect(cel(h, 'wkurzenie').czeka).toBe(CZEKA_RANO);
     h.gov.reports.shift();
     h.gov.reports.push(raport(1, 2));
     expect(h.gov.reports).toHaveLength(10);

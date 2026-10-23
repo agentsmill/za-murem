@@ -19,11 +19,12 @@
    R4 „Zarząd” (w domu „Komitet”) uczy uchwał (podpis po otwarciu, czeka do zebrania; cel nie istnieje, gdy żadnej uchwały nie
    da się już podpisać ani po odnowieniu, chyba że jest zaliczony: stąd `jest(o, s)` ze stanem ścieżki), odczytu porannego
    raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie, bo o 6:00 rośnie ono
-   prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego; czeka do rana; raport rozpoznaje się po dniu nocy,
-   nie po numerze na liście, która ma sufit 10 wpisów), nowych ludzi (ludność większa niż przy otwarciu) i kart mieszkańców
-   albo budynków (zdarzenie interfejsu). Wariant „ludzie” w bloku z mieszkańcami z generatora liczy tylko pionki `resident`
-   z osobą, bo `snap.lokatorzy` ma też lokatorów sąsiednich budynków (pionki `sasiad` podczas spotkania), którzy nie
-   powinni przestawiać tekstu w domu.
+   prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego; raport rozpoznaje się po dniu nocy, nie po numerze
+   na liście, która ma sufit 10 wpisów; cel czeka do rana i nie bywa bieżący, więc jego podpowiedź się nie pokazuje, a lekcję
+   niesie dopisek czekania „Raport rano. Wkurzenie spada, gdy ludzie są najedzeni i w cieple.”, ten sam w obu trybach),
+   nowych ludzi (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu). Wariant
+   „ludzie” w bloku z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też
+   lokatorów sąsiednich budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu.
 
    R5 „Jedzenie” uczy mapy miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu) i ogródka. Cele
    z mapy istnieją tylko w grze z oknem mapy miasta, które gra zgłasza flagą `OdczytCelow.mapaMiasta`: z `?miasto=0` i na
@@ -490,9 +491,16 @@ const R4: DefRozdzialu = {
         );
       },
       // obserwacja jak `sily`: zalicza poranny raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie (o 6:00 rośnie
-      // ono prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego, więc gracz nie ma na nie dźwigni); do raportu
-      // cel czeka
-      czeka: (o, s) => (raportyPoOtwarciu(o, s).length ? null : L('czeka do rana', 'waiting for morning')),
+      // ono prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego, więc gracz nie ma na nie dźwigni). Do raportu
+      // cel czeka (nie bywa bieżący, więc jego podpowiedź się nie pokazuje), a lekcję niesie dopisek czekania, ten sam
+      // w obu trybach: bez ogniska, bo w zombie R2 każe unikać światła nocą
+      czeka: (o, s) =>
+        raportyPoOtwarciu(o, s).length
+          ? null
+          : L(
+              'Raport rano. Wkurzenie spada, gdy ludzie są najedzeni i w cieple.',
+              'Morning report. Anger drops when people are fed and warm.',
+            ),
       zrobiony: (o, s) => raportyPoOtwarciu(o, s).length > 0,
     },
     {
