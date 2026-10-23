@@ -23,11 +23,12 @@ import { mulberry } from '../../src/core/rng.ts';
 import { powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING } from '../../src/gov/noc.ts';
 import type { GovEffects, NightReport, Prompt } from '../../src/gov/typy.ts';
-import { emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
+import { atHour, emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
 import { celZMiejsca, wlaczMiasto } from '../../src/gov/wyprawy.ts';
 import { LAW_HOUR, LAW_MINUTE, setNight, signLaw } from '../../src/gov/zarzad.ts';
 import { ludnoscOf } from '../../src/gov/zwyciestwo.ts';
 import { START_KIT } from '../../src/sim/bron.ts';
+import { minutesAt } from '../../src/sim/clock.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, type Pawn, Sim } from '../../src/sim/sim.ts';
@@ -54,6 +55,7 @@ import {
   cele,
   DEMA,
   type Demo,
+  doba,
   doKarty,
   type Gra,
   godzina,
@@ -124,9 +126,10 @@ function zdarz(g: Gra, k: 'lista' | 'mieszkaniec' | 'budynek' | 'drogi'): void {
   g.sciezka = zdarzenieUi(g.sciezka, k, g.sim.st.tick);
 }
 
-/** raport z nocy tylko z tym, co czyta ścieżka (`dAnger`); reszta jak po spokojnej nocy */
-const raport = (dAnger: number): NightReport => ({
-  day: 2,
+/** raport z nocy tylko z tym, co czyta ścieżka (dzień nocy i `dAnger`); reszta jak po spokojnej nocy. Raport za noc `day`
+    powstaje o 6:00 dnia `day + 1`. */
+const raport = (dAnger: number, day = 2): NightReport => ({
+  day,
   lines: [],
   raid: 'brak',
   stolen: zeroStock(),
@@ -638,6 +641,49 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
     // rozdział mógł się zamknąć dopiero przy innych celach, więc patrzymy na zapis
     expect(Object.hasOwn(g.sciezka.zrobione, 'r4.wkurzenie')).toBe(nowy.dAnger < 0);
     if (nowy.dAnger >= 0) expect(wkurzenie?.czeka).toBeUndefined();
+  });
+});
+
+describe.each(KOMBINACJE_ZWYKLE)('R4 wkurzenie po dziesięciu raportach: %s %s', (key, mode) => {
+  it('od 11. nocy lista raportów ma dziesięć wpisów, a cel i tak widzi nowy raport (liczy po dniu nocy, nie po numerze)', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    graj(g, (x) => doba(x) >= 12 && godzina(x) >= 7 && !x.gov.report, {}, 20000);
+    // raport za noc 1 już wypadł z listy, zostały noce 2–11
+    expect(g.gov.reports.map((r) => r.day)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    otworz(g, 'r4');
+    // liczba raportów przy otwarciu to już sufit listy, więc z niej nie da się policzyć nowych
+    expect(g.sciezka.start.raporty).toBe(10);
+    expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: 'czeka do rana' });
+    // następny raport rano: lista dalej ma dziesięć wpisów (najstarszy wypada), a cel widzi nowy
+    const p = graj(g, () => false, { stoj: ['raport'] }, 2000);
+    expect(p?.k).toBe('raport');
+    expect(g.gov.reports).toHaveLength(10);
+    expect(g.gov.reports.at(-1)!.day).toBe(12);
+    expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
+    expect(Object.hasOwn(g.sciezka.zrobione, 'r4.wkurzenie')).toBe(g.gov.reports.at(-1)!.dAnger < 0);
+  });
+});
+
+describe('R4 wkurzenie: raport po otwarciu rozdziału jest rozpoznawany po dniu nocy', () => {
+  it('raport z minuty otwarcia jest już obejrzany, raport z następnego rana się liczy, starsze z pełnej listy nie', () => {
+    const g = poPierwszymRaporcie('przymorze', 'zwykly');
+    otworz(g, 'r4');
+    // otwarcie w tej samej minucie co poranny raport (poPierwszymRaporcie kończy się w minucie raportu): raport za noc 1
+    // nie liczy się, choć ma tę samą minutę; raport za noc 2 powstaje dobę później
+    expect(minutesAt(g.sciezka.od)).toBe(atHour(g.gov.reports[0].day + 1, MORNING));
+    expect(cel(g, 'wkurzenie').czeka).toBe('czeka do rana');
+    g.gov.reports.push(raport(-1, 2));
+    expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
+    // pełna lista (dziesięć wpisów, jak po 11. nocy): stare raporty nie udają nowych, a nowy z późniejszym dniem nocy
+    // liczy się, choć lista się nie wydłuża (najstarszy wypada)
+    const h = poPierwszymRaporcie('przymorze', 'zwykly');
+    otworz(h, 'r4');
+    h.gov.reports = Array.from({ length: 10 }, () => raport(1, 1));
+    expect(cel(h, 'wkurzenie').czeka).toBe('czeka do rana');
+    h.gov.reports.shift();
+    h.gov.reports.push(raport(1, 2));
+    expect(h.gov.reports).toHaveLength(10);
+    expect(cel(h, 'wkurzenie').czeka).toBeUndefined();
   });
 });
 

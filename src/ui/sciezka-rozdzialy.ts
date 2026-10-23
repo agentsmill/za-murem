@@ -30,7 +30,7 @@
 import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING, WOOD_PER_HOUR } from '../gov/noc.ts';
-import type { GovInput, GovState, NightPlan } from '../gov/typy.ts';
+import type { GovInput, GovState, NightPlan, NightReport } from '../gov/typy.ts';
 import { atHour } from '../gov/wspolne.ts';
 import { LAW_HOUR, LAW_MINUTE } from '../gov/zarzad.ts';
 import { START_KIT } from '../sim/bron.ts';
@@ -413,8 +413,15 @@ const R2: DefRozdzialu = {
 
 const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** raporty rano, które powstały po otwarciu rozdziału (`start.raporty` to liczba raportów w chwili otwarcia) */
-const raportyPoOtwarciu = (o: OdczytCelow, s: StanSciezki) => (o.gov?.reports ?? []).slice(s.start.raporty);
+/** Raporty rano, które powstały po otwarciu rozdziału. Raport za noc `day` powstaje o MORNING dnia `day + 1` (`nightTick`
+    w src/gov/noc.ts), więc liczy się, gdy ta minuta przypada ściśle po minucie otwarcia rozdziału: raport z tej samej
+    minuty co otwarcie (kto zamknął poranny raport i w tym samym ticku otworzył rozdział) jest już obejrzany. Raportów nie
+    liczy się od numeru na liście (`start.raporty`): `gov.reports` ma najwyżej 10 wpisów i najstarszy wypada, więc od 11. nocy
+    `slice(start.raporty)` byłby zawsze pusty, a cel czekałby na zawsze. Raport powstały po otwarciu rozdziału w minucie jego
+    godziny (do półtorej minuty gry przy tempie 1×, do 12 minut przy 8×, bo zarząd liczy się raz na sekundę przy ekranie)
+    zalicza się dopiero następnego ranka. */
+const raportyPoOtwarciu = (o: OdczytCelow, s: StanSciezki): NightReport[] =>
+  (o.gov?.reports ?? []).filter((r) => atHour(r.day + 1, MORNING) > minutesAt(s.od));
 
 /** Czy siedziba ma mieszkańców z osobą z generatora (pionki `resident`). Nie `snap.lokatorzy`: ta lista ma też lokatorów
     sąsiednich budynków (pionki `sasiad` w trakcie spotkania), a tekst celu nie może przeskakiwać z domu na blok. */
