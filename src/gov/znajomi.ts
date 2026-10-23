@@ -350,34 +350,29 @@ export function tytulPowrotu(g: Gosc, s: Words, e: WordsEn): Tx {
   return tx(`${p.first} znowu ${s.brama.pod}`, `${p.first} is back at ${e.brama}`);
 }
 
-/** zdanie o tym, co się stało ostatnio (rodzaj mówiącego) */
-function rozpoznanie(z: Znajomy, g: Gosc, s: Words, e: WordsEn): Tx {
+/** Zdanie o tym, jak się zachowuje, gdy wraca: nie powtarza epitetu (ten mówi, co się stało), tylko pokazuje, że pamięta
+    (rodzaj mówiącego). Jedno na zdarzenie. */
+function rozpoznanie(z: Znajomy, g: Gosc): Tx {
   const p = g.osoby[0];
   const he = p.f ? 'She' : 'He';
-  const him = p.f ? 'her' : 'him';
+  const hel = he.toLowerCase();
   switch (z.jak) {
     case 'nakarmiony':
       return tx(
-        `Ostatnim razem ${plec(p, 'nie wyszedł', 'nie wyszła')} stąd z pustymi rękami i nie ${plec(p, 'zapomniał', 'zapomniała')}.`,
-        `Last time ${he.toLowerCase()} did not leave empty-handed, and ${he.toLowerCase()} has not forgotten.`,
+        `${plec(p, 'Wrócił', 'Wróciła')}, bo pamięta, że tu nikogo nie odprawia się z pustymi rękami.`,
+        `${he} came back because ${hel} remembers that nobody is sent off empty-handed here.`,
       );
     case 'nocleg':
       return tx(
-        `Ostatnim razem ${plec(p, 'spał', 'spała')} u was przy ogniu i nie ${plec(p, 'zapomniał', 'zapomniała')}.`,
-        `Last time ${he.toLowerCase()} slept by your fire, and ${he.toLowerCase()} has not forgotten.`,
+        `Rozgląda się po podwórku jak ktoś, kto już tu ${plec(p, 'był', 'była')}.`,
+        `${he} looks around the yard like someone who has been here before.`,
       );
     case 'przyjety':
-      return tx(
-        `${plec(p, 'Mieszkał', 'Mieszkała')} u was, a teraz stoi po drugiej stronie siatki.`,
-        `${he} used to live with you, and now stands on the other side of the fence.`,
-      );
+      return tx('Teraz stoi po drugiej stronie siatki.', `Now ${hel} stands on the other side of the fence.`);
     case 'odprawiony':
-      return tx(
-        `Ostatnim razem odprawiliście ${plec(p, 'go', 'ją')} spod ${s.brama.d}, ale nie chowa urazy.`,
-        `Last time you sent ${him} away from ${e.brama}, but ${he.toLowerCase()} holds no grudge.`,
-      );
+      return tx('Nie wygląda na kogoś, kto chowa urazę.', `${he} does not look like someone who holds a grudge.`);
     default:
-      return tx('Ostatnim razem rozstaliście się źle.', 'You parted badly last time.');
+      return tx('Rozstaliście się wtedy źle.', 'You parted badly that time.');
   }
 }
 
@@ -389,8 +384,8 @@ function dar(g: Gosc): Tx | null {
   const sib = g.osoby[1];
   if (sib && g.chce === 'dolaczyc')
     return tx(
-      `${plec(p, 'Przyprowadził', 'Przyprowadziła')} ze sobą ${sib.f ? 'siostrę' : 'brata'}, ${sib.first}, i prosi, żeby ${sib.f ? 'ją' : 'go'} przyjąć.`,
-      `${he} has brought ${his} ${sib.f ? 'sister' : 'brother'}, ${sib.first}, and asks you to take ${sib.f ? 'her' : 'him'} in.`,
+      `${plec(p, 'Przyprowadził', 'Przyprowadziła')} ze sobą ${sib.f ? 'siostrę' : 'brata'} o imieniu ${sib.first} i prosi, żeby ${sib.f ? 'ją' : 'go'} przyjąć.`,
+      `${he} has brought ${his} ${sib.f ? 'sister' : 'brother'} ${sib.first} and asks you to take ${sib.f ? 'her' : 'him'} in.`,
     );
   if (g.porcje !== undefined)
     return tx(
@@ -414,7 +409,7 @@ export function tekstPowrotu(g: Gosc, z: Znajomy, s: Words, e: WordsEn): Tx {
   const ep = epitet(z);
   const czesci: Tx[] = [
     tx(`${wielka(s.brama.pod)} znowu stoi ${p.name}, ${ep.pl}.`, `${p.name}, ${ep.en}, is back at ${e.brama}.`),
-    rozpoznanie(z, g, s, e),
+    rozpoznanie(z, g),
   ];
   const d = dar(g);
   if (d) czesci.push(d);
