@@ -10,8 +10,9 @@
    `Znajomy.przed` to nastawienie sprzed tej wizyty).
 
    Nastawienie (`NASTAWIENIE`): nakarmiony +1 (pomoc przez siatkę: jedzenie, leki, wymiana, przechowanie, wysłuchanie),
-   nocleg +1, przyjęty +2, odprawiony 0 (−1, gdy chciał jedzenia, a zapasów było ponad 5: `opcje.odmowa`), okradł −1,
-   złapany i wyrzucony −2.
+   nocleg +1, przyjęty +2, odprawiony 0 (−1, gdy chciał jedzenia, a zapasów było ponad 5: `opcje.odmowa`), okradł −1;
+   te dodają się do poprzedniego nastawienia (przycięte do −2..2). Złapany i wyrzucony to −2 i ustawiają je, nie dodają
+   (`USTAWIA_MIN`): przyjęty (+2), którego potem wyrzucono albo złapano na kradzieży, ma −2, nie 0, i idzie na napad.
 
    Powrót (`doPowrotu`): wraca ktoś o dodatnim nastawieniu i niewrogim ostatnim zdarzeniu (nie okradł, nie został złapany
    ani wyrzucony), którego ostatnie spotkanie było co najmniej `POWROT_WIEK_DNI` dni temu, najwyżej jeden powrót
@@ -89,6 +90,10 @@ const MIN = -2;
 const MAX = 2;
 const przytnij = (v: number): number => Math.max(MIN, Math.min(MAX, v));
 
+/** zdarzenia, które nie dodają, tylko ustawiają najgorsze nastawienie (−2), także u kogoś, kto miał +2: wyrzucony z osiedla i
+    złapany na kradzieży nie wybaczają się sumą */
+const USTAWIA_MIN: ReadonlySet<JakId> = new Set(['wyrzucony', 'zlapany']);
+
 /** zdarzenia, po których nie wraca się z darem */
 const WROGIE: ReadonlySet<JakId> = new Set(['okradl', 'wyrzucony', 'zlapany']);
 
@@ -140,7 +145,7 @@ export function zapamietaj(
   const przed = poprawka ? (x.przed ?? 0) : x.nastawienie;
   x.jak = z.jak;
   x.kto = z.kto;
-  x.nastawienie = przytnij(przed + delta);
+  x.nastawienie = USTAWIA_MIN.has(z.jak) ? MIN : przytnij(przed + delta);
   x.ostatnio = d;
   if (z.prof !== undefined && x.prof === undefined) x.prof = z.prof;
   if (!poprawka) {

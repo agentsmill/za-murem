@@ -474,11 +474,11 @@ describe('decyzja o gościu zostawia znajomego', () => {
       dzien: 2,
       ostatnio: 5,
     });
-    // kolejne +2 nie przekracza 2; wyrzucenie z osiedla (jako lokator, inne id) schodzi o 2
+    // kolejne +2 nie przekracza 2; wyrzucenie z osiedla (jako lokator, inne id) nie schodzi o 2, tylko ustawia −2
     zapamietaj(st, { ...bazowy, id: 's9', kto: 'lokator', jak: 'wyrzucony' }, 8, { wizyta: 'w1' });
     expect(st.znajomi).toHaveLength(1);
-    expect(st.znajomi![0]).toMatchObject({ kto: 'lokator', jak: 'wyrzucony', nastawienie: 0, wizyty: 3, ostatnio: 8 });
-    // dwa wyrzucenia nie schodzą poniżej −2
+    expect(st.znajomi![0]).toMatchObject({ kto: 'lokator', jak: 'wyrzucony', nastawienie: -2, wizyty: 3, ostatnio: 8 });
+    // dwa złapania nie schodzą poniżej −2
     zapamietaj(st, { ...bazowy, jak: 'zlapany' }, 9, { wizyta: 'w2' });
     zapamietaj(st, { ...bazowy, jak: 'zlapany' }, 10, { wizyta: 'w3' });
     expect(st.znajomi![0].nastawienie).toBe(-2);
@@ -510,6 +510,52 @@ describe('decyzja o gościu zostawia znajomego', () => {
 });
 
 // ---------------------------------------------------------------- powroty
+
+describe('wyrzucony i złapany ustawiają −2', () => {
+  const bazowy = {
+    id: 'g4p0',
+    osoba: { first: 'Anna', name: 'Anna Nowak', f: true, age: 40 },
+    look: 6,
+    kto: 'wedrowiec' as const,
+    dzien: 2,
+  };
+
+  it('przyjęty (+2), potem wyrzucony z osiedla: −2, a nie 0, i idzie z szabrownikami na najbliższy napad', () => {
+    const st = newGov(1);
+    zapamietaj(st, { ...bazowy, jak: 'przyjety' }, 2, { wizyta: 'g4' });
+    expect(st.znajomi![0].nastawienie).toBe(2);
+    zapamietaj(st, { ...bazowy, id: 's30', kto: 'lokator', jak: 'wyrzucony' }, 5, { wizyta: 'ws30' });
+    expect(st.znajomi).toHaveLength(1);
+    expect(st.znajomi![0]).toMatchObject({ jak: 'wyrzucony', nastawienie: -2, wizyty: 2 });
+    expect(wrogDoNapadu(st, 6)?.id).toBe('g4p0');
+    // przez korektę w tej samej wizycie też −2
+    const st2 = newGov(1);
+    zapamietaj(st2, { ...bazowy, jak: 'przyjety' }, 2, { wizyta: 'g4' });
+    zapamietaj(st2, { ...bazowy, jak: 'wyrzucony' }, 2, { wizyta: 'g4' });
+    expect(st2.znajomi![0].nastawienie).toBe(-2);
+  });
+
+  it('znajomy z +2 złapany na kradzieży: −2 (nowa wizyta i korekta w tej samej), a po napadzie dalej dodaje się z zaciśnięciem', () => {
+    // nowa wizyta
+    const st = newGov(1);
+    zapamietaj(st, { ...bazowy, jak: 'przyjety' }, 2, { wizyta: 'g4' });
+    zapamietaj(st, { ...bazowy, jak: 'zlapany' }, 6, { wizyta: 'g9' });
+    expect(st.znajomi![0]).toMatchObject({ jak: 'zlapany', nastawienie: -2, wizyty: 2 });
+    expect(wrogDoNapadu(st, 6)?.id).toBe('g4p0');
+    // ta sama wizyta: powracający +2 wpuszczony na noc (nocleg), potem złapany
+    const st2 = newGov(1);
+    zapamietaj(st2, { ...bazowy, jak: 'przyjety' }, 2, { wizyta: 'g4' });
+    zapamietaj(st2, { ...bazowy, jak: 'nocleg' }, 6, { wizyta: 'g9' });
+    expect(st2.znajomi![0].nastawienie).toBe(2);
+    zapamietaj(st2, { ...bazowy, jak: 'zlapany' }, 7, { wizyta: 'g9' });
+    expect(st2.znajomi![0]).toMatchObject({ jak: 'zlapany', nastawienie: -2, wizyty: 2 });
+    // inne zdarzenia dalej się sumują: okradł −1 z +2 to +1
+    const st3 = newGov(1);
+    zapamietaj(st3, { ...bazowy, jak: 'przyjety' }, 2, { wizyta: 'g4' });
+    zapamietaj(st3, { ...bazowy, jak: 'okradl' }, 6, { wizyta: 'g9' });
+    expect(st3.znajomi![0].nastawienie).toBe(1);
+  });
+});
 
 describe('powrót znajomego', () => {
   it('doPowrotu: dodatni, sprzed co najmniej 2 dni, najwyżej jeden powrót na 4 dni, bez obecnych w osiedlu', () => {
