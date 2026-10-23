@@ -45,6 +45,10 @@
    pionki powstają i ruszają od następnego kroku, a zapis niczego nie gubi. Plan idzie jako kopia osób, bo kolejka jest
    częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
 
+   Znajomi (src/gov/znajomi.ts): `RaidPlan.znajomy` niesie wygląd ujemnego znajomego, z którym szabrownicy przychodzą na
+   napad; `planRaid` zapisuje go w `Raid.znajomy`, a pierwszy szabrownik dostaje ten wygląd (`spawnRaid`). Mieszkaniec
+   w `lokatorzy` ma `look`, wygląd swojego pionka, żeby zarząd zapamiętał go przy wyrzuceniu.
+
    Pies i kot (src/sim/zwierzeta.ts): `GovInput.zwierzeta` to wpis symulacji o zwierzętach (`SimState.zwierzeta`: pies żyje albo
    zginął, kot żyje), a `fx.zwierze` idzie do kolejki poleceń jako 'zwierze'. Zwierząt nie liczy żaden odczyt ludzi: ani `people`,
    `lokatorzy`, `residents`, `ludnosc`, ani `dead`.
@@ -198,7 +202,7 @@ function kafelekKozy(st: SimState, w: World): number | undefined {
 }
 
 /** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
-const lokatorZarzadu = (p: SimPerson): GovLokator => ({
+const lokatorZarzadu = (p: SimPerson, look?: number): GovLokator => ({
   pawn: p.pawn,
   id: p.id,
   name: p.name,
@@ -212,6 +216,7 @@ const lokatorZarzadu = (p: SimPerson): GovLokator => ({
   asleep: p.asleep,
   inside: p.inside,
   tile: p.tile,
+  ...(look !== undefined ? { look } : {}),
 });
 
 /** Zmarli z zarządu i mieszkańcy (`GovInput.dead`), po kolei, z tym, czego potrzebuje pogrzeb: płeć `f` zmarłego, który
@@ -307,7 +312,9 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
   const residents = s.residents - odchodzacyMieszkancy;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
-  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);
+  // wygląd pionka mieszkańca idzie do zarządu, który zapamięta go, gdy wyrzuci mieszkańca (`Znajomy.look`)
+  const wyglad = new Map(st.pawns.map((q) => [q.id, q.look]));
+  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map((l) => lokatorZarzadu(l, wyglad.get(l.pawn)));
   return {
     tick: s.tick,
     day: s.day,
@@ -498,7 +505,16 @@ function give(st: SimState, w: World, k: keyof Loot, n: number): void {
 export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   const cmd = (c: SimState['cmds'][number]) => st.cmds.push(c);
   // napad: plan na tę noc, a w minucie napadu rozstrzygnięcie (łup wyniosą szabrownicy, nie znika od razu)
-  if (fx.raid) planRaid(st, tickOfMinute(fx.raid.at), fx.raid.post, true, fx.raid.people ?? 0, fx.raid.attack ?? 0);
+  if (fx.raid)
+    planRaid(
+      st,
+      tickOfMinute(fx.raid.at),
+      fx.raid.post,
+      true,
+      fx.raid.people ?? 0,
+      fx.raid.attack ?? 0,
+      fx.raid.znajomy?.look,
+    );
   const res = raidOutcome(st, fx);
   const loot: Loot = { wood: 0, supplies: 0, scrap: 0 };
   if (res && st.raid) {

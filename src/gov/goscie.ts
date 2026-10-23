@@ -42,7 +42,12 @@
      albo równa kategorii odpada.
    - Teksty (goscie-teksty.ts): wybór wariantu zdania zależy tylko od gościa (skrót z id, imienia mówiącego i archetypu),
      więc ten sam gość czyta się tak samo przy każdym otwarciu i po wczytaniu zapisu. Każdy klocek ma po 3 warianty
-     w obu językach, `wariantyGoscia` wystawia wszystkie (testy angielskiego sprawdzają każdy, nie tylko wybrany). */
+     w obu językach, `wariantyGoscia` wystawia wszystkie (testy angielskiego sprawdzają każdy, nie tylko wybrany).
+   - Powrót znajomego (`skladPowrotu`, etap 4): ten sam człowiek (imię, nazwisko, płeć, wiek, zawód z wpisu `Znajomy`) z tym
+     samym archetypem, o ile to archetyp pojedynczego człowieka (rodzina, ocaleni i ktoś z ugryzionym bliskim wracają jako
+     wędrowiec: ich karty mówią o liczbie osób w grupie), bez haczyka, z darem do wyboru: rodzeństwo do
+     przyjęcia (drugi gość, to samo nazwisko), worek jedzenia 2–4 porcji (`Gosc.porcje`) albo wiadomość o miejscu. Losowania
+     po kolei: dar, skąd, porcje, rodzeństwo; chory nie przyprowadza rodzeństwa (nie prosi o przyjęcie). */
 
 import { type Dom, NAMES, POICAT, PROFS, type Prof, SEASONS, SURN } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
@@ -53,6 +58,7 @@ import type { Miejsce } from '../world/miasto.ts';
 import { AMUNICJA, BRON, frazaSkad, KATEGORIA_SKAD, KIERUNEK, SATYRA_KLUCZE } from './goscie-teksty.ts';
 import type { Pora } from './tresc.ts';
 import type { GameMode } from './typy.ts';
+import type { Znajomy } from './znajomi.ts';
 
 export {
   AMUNICJA,
@@ -95,8 +101,10 @@ export interface Gosc {
   skad: { strona: Strona; nazwa: Tx; klucz?: string };
   /** klucz linijki z `SATYRA` */
   satyra?: string;
-  /** id znajomego przy powrocie (etap 4) */
+  /** id znajomego (`Znajomy.id`), gdy to jego powrót (`skladPowrotu`): karta rozpoznaje go po imieniu i epitecie */
   wraca?: string;
+  /** powrót z darem w jedzeniu: tyle porcji (2–4) dostaje zarząd rano po wpuszczeniu, przyjęciu i nakarmieniu, nie po odprawie */
+  porcje?: number;
   rzecz?: { arms?: string; meds?: number; ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>> };
 }
 
@@ -714,5 +722,92 @@ export function skladGoscia(rng: Rng, n: number, ctx: KontekstGoscia, used: Read
     skad,
     ...(satyra !== undefined ? { satyra } : {}),
     ...(rzecz ? { rzecz } : {}),
+  };
+}
+
+// ---------------------------------------------------------------- powrót znajomego
+
+/** archetypy całych grup: jeden powracający (z rodzeństwem co najwyżej) nie jest już rodziną ani ocalałymi, więc wraca jako
+    wędrowiec; karty tych archetypów mówią o liczbie osób, a powracający ma ją w zdaniu o darze */
+const GRUPOWE: ReadonlySet<KtoId> = new Set(['rodzina', 'ocaleni', 'z_ugryzionym']);
+
+/** dar powracającego znajomego: rodzeństwo do przyjęcia, worek jedzenia albo wiadomość o miejscu */
+export type DarPowrotu = 'rodzenstwo' | 'jedzenie' | 'wiesc';
+
+const BAZA_DAR: Record<DarPowrotu, number> = { rodzenstwo: 1, jedzenie: 1.2, wiesc: 1 };
+
+/** zawód z PROFS po nazwie w którejkolwiek formie (męskiej albo żeńskiej) */
+const profPoFormie = (nazwa: string | undefined): Prof | undefined =>
+  nazwa === undefined ? undefined : PROFS.find((p) => p[0] === nazwa || p[1] === nazwa);
+
+/** Ta sama osoba co w wpisie znajomego: imię, nazwisko, płeć i wiek z wpisu, zawód z jego nazwy (nieznany: dziecko
+    albo „mieszkaniec”), reszta (cechy) z ziarna. Id nadaje wywołujący. */
+function osobaZnajomego(rng: Rng, z: Pick<Znajomy, 'osoba' | 'prof'>, kto: KtoId, used: ReadonlySet<string>): Person {
+  const zawod = profPoFormie(z.prof);
+  const wiek = z.osoba.age;
+  const prof: Prof = zawod
+    ? [zawod[0], zawod[1], zawod[2], [wiek, wiek]]
+    : kto === 'dziecko' || wiek < 16
+      ? dziecieProf(wiek, wiek)
+      : doroslyProf(wiek, wiek);
+  const p = makePerson(rng, new Set([...used, z.osoba.first]), () => 0, { f: z.osoba.f, prof });
+  if (p.age < 16) p.traits = [];
+  return { ...p, first: z.osoba.first, name: z.osoba.name, age: wiek };
+}
+
+/** Brat albo siostra mówiącego: to samo nazwisko (w formie płci rodzeństwa), nowe imię, wiek blisko jego wieku. */
+function rodzenstwo(rng: Rng, mow: Person, used: ReadonlySet<string>): Person {
+  const f = rng() < 0.5;
+  const wiek = mow.age < 16 ? przytnij(mow.age + ri(-4, 3, rng), 4, 15) : przytnij(mow.age + ri(-8, 8, rng), 18, 80);
+  const prof = wiek < 16 ? dziecieProf(wiek, wiek) : doroslyProf(wiek, wiek);
+  const p = makePerson(rng, new Set([...used, mow.first]), () => 0, { f, prof });
+  if (p.age < 16) p.traits = [];
+  const nazwisko = mow.name.slice(mow.first.length + 1);
+  p.name = `${p.first} ${nazwiskoDla(nazwisko, f)}`;
+  return p;
+}
+
+/**
+ * Składa powrót znajomego (`GovState.znajomi`): ten sam człowiek co w wpisie, archetyp ten sam, jeśli da się go odtworzyć
+ * (rodzina, ocaleni, ktoś z ugryzionym bliskim, lokator i archetyp spoza trybu wracają jako wędrowiec), haczyk „prawda” i dar. `dar` wymusza rodzaj daru (testy);
+ * chory nie przyprowadza rodzeństwa, więc dostaje wtedy worek jedzenia. Losowanie w stałej kolejności: dar, skąd, porcje,
+ * rodzeństwo (płeć, wiek, imię). `n` to numer gościa (id `g<n>`), `used` imiona już zajęte na osiedlu.
+ */
+export function skladPowrotu(
+  rng: Rng,
+  n: number,
+  z: Pick<Znajomy, 'id' | 'osoba' | 'prof' | 'kto'>,
+  ctx: Pick<KontekstGoscia, 'mode' | 'okolica' | 'dom'>,
+  used: ReadonlySet<string>,
+  dar?: DarPowrotu,
+): Gosc {
+  const kto: KtoId =
+    z.kto === 'lokator' || GRUPOWE.has(z.kto) || !KTO[z.kto].tryby.includes(ctx.mode) ? 'wedrowiec' : z.kto;
+  const losowy = wybierz(
+    rng,
+    (Object.keys(BAZA_DAR) as DarPowrotu[]).map(
+      (d) => [d, d === 'rodzenstwo' && kto === 'chory' ? 0 : BAZA_DAR[d]] as const,
+    ),
+  );
+  let wybrany = dar ?? losowy;
+  if (wybrany === 'rodzenstwo' && kto === 'chory') wybrany = 'jedzenie';
+  const skad = wybierzSkad(rng, ctx.okolica);
+  const porcje = wybrany === 'jedzenie' ? ri(2, 4, rng) : undefined;
+  const mow = osobaZnajomego(rng, z, kto, used);
+  const osoby = wybrany === 'rodzenstwo' ? [mow, rodzenstwo(rng, mow, used)] : [mow];
+  const id = `g${n}`;
+  osoby.forEach((p, i) => {
+    p.id = `${id}p${i}`;
+  });
+  return {
+    id,
+    osoby,
+    kto,
+    chce: wybrany === 'rodzenstwo' ? 'dolaczyc' : 'nocleg',
+    ma: wybrany === 'wiesc' ? 'wiadomosc' : 'nic',
+    haczyk: 'prawda',
+    skad,
+    wraca: z.id,
+    ...(porcje !== undefined ? { porcje } : {}),
   };
 }

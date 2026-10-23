@@ -13,6 +13,7 @@ import type { RngState } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
 import type { Gosc, Strona } from './goscie.ts';
 import type { Cel } from './wyprawy.ts';
+import type { Znajomy } from './znajomi.ts';
 import type { Droga, StanZwyciestwa } from './zwyciestwo.ts';
 
 // ---------------------------------------------------------------- wejście
@@ -141,6 +142,9 @@ export interface GovLokator {
   inside: boolean;
   /** kafelek mapy, na którym stoi */
   tile: number;
+  /** wygląd pionka (numer stroju): zarząd zapamiętuje go, gdy wyrzuca mieszkańca, żeby znajomy miał twarz na mapie
+      (`Znajomy.look`); atrapy w testach mogą go nie podawać (wtedy wygląd z hasha id) */
+  look?: number;
 }
 
 /** Faza wizyty gościa w symulacji (faza grupy to faza mówiącego, gdy żyje, a gdy zginie, następnego żywego):
@@ -413,6 +417,9 @@ export interface RaidPlan {
   attack?: number;
   /** ilu szabrowników przychodzi (1–3, z siły) */
   people?: number;
+  /** znajomy, który dołącza do napadu (src/gov/znajomi.ts, `wrogDoNapadu`): jeden z szabrowników dostaje jego wygląd
+      (`look`), a raport rano mówi, kto to był (imię i epitet w obu językach) */
+  znajomy?: { id: string; imie: Tx; epitet: Tx; look: number };
 }
 
 /** wynik napadu dla symulacji: co się stało, gdzie, przy jakiej sile i obronie, co zabrali */
@@ -559,6 +566,8 @@ export interface NightPlan {
     attack: number;
     defense: number;
     stolen: StockDelta;
+    /** id znajomego (`Znajomy.id`), który idzie z szabrownikami; raport rano czyta jego imię i epitet ze stanu */
+    znajomy?: string;
   } | null;
   /** wyprawy: grupy po celu; `cel` to opis celu (stare grupy bez niego szukają w TARGETS po `target`) */
   exp: { key: string; ids: string[]; target: string; cel?: Cel }[];
@@ -686,6 +695,10 @@ export interface GovState {
       gry, w którym je dostaliśmy. Następna wyprawa do tego miejsca ma ryzyko ×0,5 i łup ×1,5, po rozliczeniu wskazówka
       znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki */
   wskazowki?: Record<string, { dzien: number }>;
+  /** pamięć o ludziach (src/gov/znajomi.ts): gość po decyzji zarządu o nim i mieszkaniec wyrzucony bramą, jeden wpis na
+      człowieka; dodatni wraca jako gość, ujemny w zwykłym trybie idzie z szabrownikami. Pole od pierwszego wpisu, gra bez
+      gości i stary zapis go nie mają. */
+  znajomi?: Znajomy[];
 }
 
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy
@@ -693,10 +706,14 @@ export interface GovState {
     pokazało obejrzenie rąk w trybie zombie), `noc` (wpuszczony na noc: zarząd śledzi wizytę do końca), `kradl` (linia
     o kradzieży już wpisana), `liniaNocy` (linia o nocy już w raporcie), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą),
     `kartaId` i `dane` (wizyta zaplanowana przez kartę z 0.3 z gościem, `GEventDef.gosc`: id tej karty i jej dane z `make`;
-    pod bramą otwiera się ta karta z danymi i `gid`, a nie karta `gosc`) */
+    pod bramą otwiera się ta karta z danymi i `gid`, a nie karta `gosc`), `looks` (wygląd osób z planu, w kolejności osób;
+    z nich zarząd bierze wygląd znajomego; stary zapis ich nie ma), `znajomy` (id wpisu `Znajomy`, który ta wizyta
+    zostawiła: późniejsza decyzja albo kradzież poprawia go, nie dokłada drugiego) */
 export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
+  looks?: number[];
+  znajomy?: string;
   karta: boolean;
   kartaId?: string;
   dane?: unknown;

@@ -929,6 +929,9 @@ export interface Raid {
   /** ile mają wynieść (z zarządu; bez zarządu tyle, ile uniosą) i ile już wynieśli */
   loot: Loot;
   took: Loot;
+  /** wygląd znajomego z planu zarządu (RaidPlan.znajomy.look): pierwszy szabrownik dostaje go zamiast zwykłego stroju;
+      pole jest tylko wtedy, gdy zarząd wysłał znajomego, więc napad bez niego ma ten sam stan co dotąd */
+  znajomy?: number;
   /** kafelek, z którego przyszli i do którego wracają, i kafelek za siatką, pod którym czekają (−1: jeszcze nie) */
   from: number;
   spot: number;
@@ -1535,10 +1538,31 @@ export function campfireSpotOk(st: SimState, w: World, at: number): boolean {
 
 /** napad zaplanowany na tick at przy posterunku post ('brama' / 'd<id>'); gov: rozstrzyga zarząd; people i attack
     z planu zarządu (0: nieznane, wtedy 1–3 szabrowników losowanych przy pojawieniu się) */
-export function planRaid(st: SimState, at: number, post: string, gov: boolean, people = 0, attack = 0): void {
+export function planRaid(
+  st: SimState,
+  at: number,
+  post: string,
+  gov: boolean,
+  people = 0,
+  attack = 0,
+  znajomy?: number,
+): void {
   const zero = (): Loot => ({ wood: 0, supplies: 0, scrap: 0 });
   const n = Math.max(0, Math.min(5, Math.round(people)));
-  st.raid = { at, post, n, attack, phase: 0, outcome: '', gov, loot: zero(), took: zero(), from: -1, spot: -1 };
+  st.raid = {
+    at,
+    post,
+    n,
+    attack,
+    phase: 0,
+    outcome: '',
+    gov,
+    loot: zero(),
+    took: zero(),
+    from: -1,
+    spot: -1,
+    ...(znajomy !== undefined ? { znajomy } : {}),
+  };
 }
 
 /** Wartownicy (pionki), którzy według zarządu zasnęli: przysypiają tam, gdzie stoją (warta w fazie 4, bez lampy
@@ -8757,7 +8781,9 @@ export class Sim {
     const waits = this.tilesAround(r.spot, r.n);
     const starts = this.tilesAround(r.from, r.n);
     for (let k = 0; k < r.n; k++) {
-      const look = 16 + Math.floor(nextRandom(st.rng) * 4);
+      // losowanie zostaje także dla znajomego z zarządu (pierwszy szabrownik ma jego wygląd), żeby reszta ciągu była ta sama
+      const los = 16 + Math.floor(nextRandom(st.rng) * 4);
+      const look = k === 0 && r.znajomy !== undefined ? r.znajomy : los;
       const p = newPawn(st, this.w, 'szabrownik', -1, starts[k] ?? r.from, r.from, look);
       p.hp = STRANGER_HP;
       p.job = this.newJob('raid', tg.post, waits[k] ?? r.spot, false);

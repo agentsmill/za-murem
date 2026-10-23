@@ -34,6 +34,7 @@ const POLA = [
   'first',
   'id',
   'inside',
+  'look',
   'name',
   'needs',
   'pawn',
@@ -86,7 +87,7 @@ describe('GovInput.lokatorzy', () => {
     for (const l of lok ?? []) expect(zarzad.has(l.id)).toBe(false);
   });
 
-  it('osoba ma dokładnie pola GovLokator, bez historii, odnośnika i nastrojów, i jest kopią', () => {
+  it('osoba ma dokładnie pola GovLokator (z wyglądem pionka), bez historii, odnośnika i nastrojów, i jest kopią', () => {
     const { w, st } = zGeneratorem;
     const lok = govInput(st, w, 0).lokatorzy ?? [];
     expect(lok.length).toBeGreaterThan(0);
@@ -108,6 +109,8 @@ describe('GovInput.lokatorzy', () => {
         asleep: s.asleep,
         inside: s.inside,
         tile: s.tile,
+        // wygląd pionka, żeby zarząd zapamiętał wyrzuconego mieszkańca z twarzą (Znajomy.look)
+        look: st.pawns.find((p) => p.id === l.pawn)!.look,
       });
     }
     // zmiana w wejściu nie rusza stanu symulacji

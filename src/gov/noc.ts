@@ -33,7 +33,12 @@
    `GovState.wskazowki`): `expRisk` mnoży ryzyko tego miejsca przez `WSKAZOWKA_RYZYKO`, a `rozliczWyprawe` łup przez
    `WSKAZOWKA_LUP` i zużywa wskazówkę. Pościg za gościem wpuszczonym na noc (`poscigNocy`, zwykły tryb): `raidChance`
    ×1,5 i napad przy bramie tej nocy (`GovState.tonight.poscig`); po zatwierdzeniu karty nocy daje jeszcze jedno losowanie,
-   gdy napad nie przyszedł. Poranny raport dolicza chorych od gościa (`GovState.later[].sick`). */
+   gdy napad nie przyszedł. Poranny raport dolicza chorych od gościa (`GovState.later[].sick`).
+
+   Znajomi (src/gov/znajomi.ts): plan napadu (`planNapadu`, z `confirm` i z `poscigNocy`) bierze w zwykłym trybie jednego
+   ujemnego znajomego (`wrogDoNapadu`, raz na znajomego): `RaidPlan.znajomy` niesie jego imię, epitet i wygląd (jeden
+   szabrownik w symulacji dostaje ten wygląd), a raport rano dostaje zaraz po opisie napadu linię „Wśród nich był X, ten od
+   słoików” (`znajomyWNapadzie`, w obu wynikach napadu). W zombie napadów nie ma i znajomi nie dołączają do niczego. */
 
 import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
 import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
@@ -52,6 +57,7 @@ import type {
   NightCard,
   NightOption,
   NightReport,
+  RaidPlan,
   StockDelta,
 } from './typy.ts';
 import { dailyDrift, law } from './uchwaly.ts';
@@ -87,6 +93,7 @@ import {
   wybierzCeleNocy,
   zostaloZMiejsca,
 } from './wyprawy.ts';
+import { liniaWsrod, obecniWOsiedlu, wPlanieNapadu, wrogDoNapadu } from './znajomi.ts';
 
 export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
@@ -767,7 +774,7 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   const attack = come ? round1(2 + rnd(st) * (2 + 0.55 * n.day)) : 0;
   if (!zombieMode(st)) {
     n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack, defense: 0, stolen: zeroStock() };
-    if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name, attack, people: raidersOf(attack) };
+    if (come) fx.raid = planNapadu(st, i, n.raid, { day: n.day, at, post: post.key, where: post.name, attack });
   }
   // kronika
   n.fire = { on: 0, all: 0, at: gameMin(i) };
@@ -824,7 +831,22 @@ export function poscigNocy(st: GovState, i: GovInput, fx: GovEffects): void {
   n.raid.post = brama.key;
   n.raid.attack = attack;
   n.raid.at = Math.max(n.raid.at, gameMin(i) + 20);
-  fx.raid = { day: n.day, at: n.raid.at, post: brama.key, where: brama.name, attack, people: raidersOf(attack) };
+  fx.raid = planNapadu(st, i, n.raid, { day: n.day, at: n.raid.at, post: brama.key, where: brama.name, attack });
+}
+
+/** Plan napadu dla symulacji: szabrownicy z siły napadu, a z nimi znajomy, jeśli jakiś jest ujemny (`wrogDoNapadu`, tylko
+    w zwykłym trybie, raz na znajomego): wpis `Znajomy.napad` i `NightPlan.raid.znajomy` (raport rano) zaznaczają go od razu. */
+function planNapadu(
+  st: GovState,
+  i: GovInput,
+  raid: NonNullable<NonNullable<GovState['night']>['raid']>,
+  plan: Omit<RaidPlan, 'people' | 'znajomy'> & { attack: number },
+): RaidPlan {
+  const wrog = wrogDoNapadu(st, plan.day, obecniWOsiedlu(i), st.mode ?? 'zwykly');
+  if (!wrog) return { ...plan, people: raidersOf(plan.attack) };
+  wrog.napad = plan.day;
+  raid.znajomy = wrog.id;
+  return { ...plan, people: raidersOf(plan.attack), znajomy: wPlanieNapadu(wrog) };
 }
 
 /** Wynik rozliczenia wyprawy: wpisy raportu (kłopoty albo powrót, potem ewentualne znaleziska), kto oberwał
@@ -978,6 +1000,12 @@ function finds(st: GovState, fx: GovEffects): Tx[] {
   return out;
 }
 
+/** Linia raportu o znajomym wśród szabrowników (jeśli plan napadu go niósł): zaraz po opisie przebiegu napadu. */
+function znajomyWNapadzie(st: GovState, r: NonNullable<NonNullable<GovState['night']>['raid']>): void {
+  const z = r.znajomy ? st.znajomi?.find((x) => x.id === r.znajomy) : undefined;
+  if (z) st.night!.lines.push(liniaWsrod(z));
+}
+
 function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
   const n = st.night!;
   const r = n.raid!;
@@ -1062,6 +1090,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     for (const p of here) fx.moods.push({ id: p.id, why: 'Przegoniliśmy szabrowników', d: 6, hours: 12 });
     for (const p of i.people) addNeeds(fx, p.id, { safe: 8 });
     logGov(st, i, n.lines[n.lines.length - 1], true, fx);
+    znajomyWNapadzie(st, r);
     result('odparty');
     return;
   }
@@ -1082,6 +1111,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     ),
   );
   logGov(st, i, n.lines[n.lines.length - 1], true, fx);
+  znajomyWNapadzie(st, r);
   mood(st, -2, 4);
   for (const p of i.people) {
     addNeeds(fx, p.id, { safe: -25 });
