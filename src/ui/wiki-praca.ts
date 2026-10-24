@@ -28,7 +28,7 @@ import {
   zaSiatkeDomyslnie,
 } from '../sim/praca.ts';
 import type { Pawn, SimState } from '../sim/sim.ts';
-import { PATCH_COST } from '../sim/sim.ts';
+import { PATCH_COST, WZNOW_PROBY } from '../sim/sim.ts';
 import { CARRY_MATS } from '../sim/surowce.ts';
 import { MAT_NAME } from './budowa.ts';
 import { DAMAGE_EN } from './mieszkania.en.ts';
@@ -773,8 +773,8 @@ export function definicjePraca(): Def[] {
             'The menu shows only what makes sense at that spot and what the materials allow.',
           ),
           L(
-            'Rozkaz przerwany walką wraca, ale najwyżej dwa razy; potem przepada z wpisem w kronice.',
-            'An order interrupted by a fight comes back, but at most twice; after that it lapses with a note in the log.',
+            `Rozkaz przerwany walką wraca, ale najwyżej ${WZNOW_PROBY - 1} razy; potem przepada z wpisem w kronice.`,
+            `An order interrupted by a fight comes back, but at most ${WZNOW_PROBY - 1} times; after that it lapses with a note in the log.`,
           ),
         ],
         fakty: POLECENIA(c).map((p, k) => fakt(`polecenie-${k}`, L(p.pl, p.en), L(p.coPl, p.coEn))),
