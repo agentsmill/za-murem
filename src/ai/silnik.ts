@@ -52,7 +52,7 @@ export interface PamiecSilnika {
   pominieteDrzewa: number[];
   /** drzewo z ostatniego polecenia ścinania (−1: brak) */
   zlecone: number;
-  /** ile razy ruszyła każda warstwa (klucz to jej nazwa: 'zima'); pole powstaje przy pierwszym użyciu */
+  /** ile razy ruszyła każda warstwa (klucz to jej nazwa: 'zima', 'jedzenie'); pole powstaje przy pierwszym użyciu */
   wywolania?: Record<string, number>;
   /** warstwa zimy (src/ai/zima.ts); pole powstaje przy pierwszym użyciu */
   zima?: PamiecZimy;

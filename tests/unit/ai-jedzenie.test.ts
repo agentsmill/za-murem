@@ -371,6 +371,8 @@ describe('ogródek i deski pracowni', () => {
     expect(st.things.some((t) => t.kind === 'pracownia')).toBe(true);
     expect(st.techDone).toContain('t_kozy');
     expect(st.things.some((t) => t.kind === 'koza_beczka')).toBe(true);
+    // ogródek w domu jednorodzinnym (bez klatki i bloku) dostaje miejsce na podwórku, gdy tylko pracownia przestaje czekać
+    expect(st.things.some((t) => t.kind === 'ogrodek') || st.builds.some((b) => b.kind === 'ogrodek')).toBe(true);
   }, 120_000);
 
   it('plan ogródka czeka na pracownię: dopóki jest jej plan, ogródka nie ma, potem jest jeden', () => {

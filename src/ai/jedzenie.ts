@@ -40,7 +40,7 @@
    w ciele funkcji. */
 
 import { powodOdmowy } from '../gov/dzienne.ts';
-import type { GovInput, GovPerson, Prompt } from '../gov/typy.ts';
+import type { GovInput, Prompt } from '../gov/typy.ts';
 import { type Cel, celZMiejsca, UDZWIG_NA_OSOBE, wDrodze, zostaloZMiejsca } from '../gov/wyprawy.ts';
 import { naMapieLokalnej } from '../world/miasto.ts';
 import { type GraAi, type Rece, wejscie } from './gra.ts';
@@ -105,9 +105,12 @@ function spodziewanyLup(g: GraAi, cel: Cel): number {
   return Math.min(srednia, zostaloZMiejsca(g.gov, cel), UDZWIG_NA_OSOBE * OSOB_NA_WYPRAWE);
 }
 
+/** bliższe miejsce wygrywa, przy tej samej odległości mniejszy klucz (tak samo porządkuje cele zarząd) */
+const blizej = (a: Cel, b: Cel): boolean => a.odl < b.odl || (a.odl === b.odl && a.klucz < b.klucz);
+
 /** Cel wyprawy po jedzenie: najbliższe miejsce z łupem co najmniej `MIN_LUP`, a gdy takiego nie ma, to z największym łupem
-    (przy remisie bliższe, potem mniejszy klucz). Miejsca, do których zarząd nie wyśle wyprawy (mapa lokalna, wyczerpane,
-    ktoś już tam idzie), odpadają przez `powodOdmowy`. */
+    (przy remisie bliższe). Miejsca, do których zarząd nie wyśle wyprawy (mapa lokalna, wyczerpane, ktoś już tam idzie),
+    odpadają przez `powodOdmowy`. */
 function celWyprawy(g: GraAi, i: GovInput): Cel | null {
   let najblizsze: { cel: Cel; lup: number } | null = null;
   let najobfitsze: { cel: Cel; lup: number } | null = null;
@@ -116,7 +119,6 @@ function celWyprawy(g: GraAi, i: GovInput): Cel | null {
     const cel = celZMiejsca(m);
     const lup = spodziewanyLup(g, cel);
     if (lup <= 0 || powodOdmowy(g.gov, i, cel)) continue;
-    const blizej = (a: Cel, b: Cel): boolean => a.odl < b.odl || (a.odl === b.odl && a.klucz < b.klucz);
     if (lup >= MIN_LUP && (!najblizsze || blizej(cel, najblizsze.cel))) najblizsze = { cel, lup };
     if (!najobfitsze || lup > najobfitsze.lup || (lup === najobfitsze.lup && blizej(cel, najobfitsze.cel)))
       najobfitsze = { cel, lup };
@@ -125,7 +127,7 @@ function celWyprawy(g: GraAi, i: GovInput): Cel | null {
 }
 
 /** Osoby na wyprawę: najzdrowsze spośród tych, które przejdą zasady wysyłki, do dwóch, ale nie ta, która jest ostatnią
-    zdrową (zdrowie co najmniej `ZDROWIE_DYZURU`) w domu: ona tej nocy czuwa przy kozie. */
+    zdrową (zdrowie co najmniej `ZDROWIE_DYZURU`) w domu: ona tej nocy czuwa przy kozie. Przy remisie zdrowia mniejsze id. */
 function ekipa(g: GraAi, i: GovInput, cel: Cel): string[] {
   const dyzurni = i.people.filter((p) => !p.away && !wDrodze(g.gov, p.id) && p.needs.health >= ZDROWIE_DYZURU);
   const chetni = i.people
@@ -135,10 +137,9 @@ function ekipa(g: GraAi, i: GovInput, cel: Cel): string[] {
   for (const p of chetni) {
     if (ids.length >= OSOB_NA_WYPRAWE) break;
     // wyprawa zabrałaby ostatnią zdrową osobę z domu: dyżur przy kozie zostałby bez nikogo
-    const zabieraOstatniego = (osoba: GovPerson): boolean =>
-      dyzurni.some((d) => d.id === osoba.id) && dyzurni.every((d) => d.id === osoba.id || ids.includes(d.id));
-    if (zabieraOstatniego(p)) continue;
-    ids.push(p.id);
+    const zabieraOstatniego =
+      dyzurni.some((d) => d.id === p.id) && dyzurni.every((d) => d.id === p.id || ids.includes(d.id));
+    if (!zabieraOstatniego) ids.push(p.id);
   }
   return ids;
 }
