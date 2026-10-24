@@ -433,6 +433,7 @@ export function makeHost(
       fx.moods.push({ id, why, d, hours });
     },
     pies: () => !!st.flags.dog || i.zwierzeta?.pies !== undefined,
+    watek: (id) => !!st.watki?.wybrane.includes(id),
     napadNocy: (dzien) => (st.reports ?? []).find((r) => r.day === dzien)?.raid ?? null,
     handlarz: () => (i.handlarz ? { tile: i.handlarz.tile, gdzie: { ...i.handlarz.gdzie } } : null),
     handlarzEfekt: (co) => {

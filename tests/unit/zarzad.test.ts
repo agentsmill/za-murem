@@ -19,6 +19,7 @@ import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.
 import type { GovEffects, GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
 import { STREET_EVENTS } from '../../src/gov/ulica.ts';
+import { krokPoId } from '../../src/gov/watki.ts';
 import { GOSC_EVENTS } from '../../src/gov/wizyta.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -286,7 +287,7 @@ describe('wydarzenia', () => {
       // atrapa zapala kozę o 17:00 (80 s) i ma wtedy 18°C w kuchni: cisza do 80 s, dym w 100 s
       expect(seen[0]).toMatchObject({ s: 100, id: 'dym' });
       for (const e of seen) {
-        const def = M1_EVENTS.find((d) => d.id === e.id)!;
+        const def = M1_EVENTS.find((d) => d.id === e.id) ?? krokPoId(e.id)!;
         expect(def.when, `${e.id} o ${e.hour}`).toContain(poraOf(e.hour));
       }
       // po decyzji następne najwcześniej po 38 s

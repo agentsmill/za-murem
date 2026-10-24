@@ -26,7 +26,12 @@
    `doSprawdzenia()` za −10 odpoczynku), pożegnać przy kozie (nastrój +1) albo bez ceremonii (wkurzenie +1). W trybie
    zombie `cialo` (dobite albo nie) idzie do tekstu; bez ciała zamiast grobu tabliczka.
    Kroki łańcuchów kart (src/gov/watki.ts) to też `GEventDef`; host dostaje od nich `hak(id, d?)` i `hakDane(id)`, którymi
-   wybór na karcie ustawia i czyta fakty zwalniające następny krok. */
+   wybór na karcie ustawia i czyta fakty zwalniające następny krok. Treść dwunastu łańcuchów (src/gov/watki-tresc.ts) bierze od
+   hosta jeszcze: `pies()` (flaga `dog` albo wpis o psie), `watek(id)` (łańcuch jest wątkiem sezonu; karta `pies` ustępuje
+   wtedy łańcuchowi „Szczekanie”), `napadNocy(dzien)` (wynik nocy z raportu), `handlarz()` i `handlarzEfekt(...)` (handlarz
+   pod bramą, `GovInput.handlarz`; lepsza oferta albo zła sława w symulacji) oraz `wskazowkaMiejsca(...)` i
+   `miejsceWskazowki(...)` (wskazówka na miejsce z kategorii albo cel z TARGETS, także z bronią). `GoscKarty` ma dla tych
+   kroków `look` (twarze), `chce`, `ugryziony` (ukryte ugryzienie) i `wraca` (ten sam znajomy w pamięci zarządu). */
 
 import { przyczynaEn } from '../content/data.en.ts';
 import { LAW, type LawPath } from '../content/data.ts';
@@ -299,6 +304,8 @@ export interface GovHost extends EventHost, GoscHost {
   /** czy gra ma psa albo go miała: flaga `dog` (przygarnięty) albo jakikolwiek wpis o psie w `GovInput.zwierzeta` (żyje albo
       zginął). Łańcuch „Szczekanie” nie oferuje psa, gdy to prawda. */
   pies(): boolean;
+  /** czy łańcuch historii o tym id jest wątkiem sezonu tej gry (src/gov/watki.ts); karty, które dublują jego treść, ustępują mu */
+  watek(id: string): boolean;
   /** wynik napadu nocy `dzien` (dzień, w którym noc się zaczęła: `NightReport.day`) z raportu porannego, a null, gdy raportu tej
       nocy jeszcze nie ma albo już go nie ma wśród ostatnich dziesięciu; raport rano to prawda o tej nocy, kroki łańcucha mówią to samo */
   napadNocy(dzien: number): 'brak' | 'odparty' | 'wtargnięcie' | null;
@@ -674,8 +681,9 @@ export const NEW_EVENTS: GEventDef[] = [
     first: true,
     once: true,
     when: ['wieczor', 'noc'],
-    // pies z łańcucha „Szczekanie” (src/gov/watki-tresc.ts) ustawia tę samą flagę: drugiego już nie przygarniamy
-    w: (h) => (h.flag('dog') ? 0 : 0.7),
+    // pies z łańcucha „Szczekanie” (src/gov/watki-tresc.ts) ustawia tę samą flagę: drugiego już nie przygarniamy, a gdy ten
+    // łańcuch jest wątkiem sezonu, pies przychodzi jego drogą (pies ujada, ślady, pies przychodzi sam), nie z tej karty
+    w: (h) => (h.flag('dog') || h.watek('szczekanie') ? 0 : 0.7),
     make: () => ({}),
     title: () => tx('Pies przy siatce', 'A dog at the fence'),
     text: () =>
@@ -929,7 +937,9 @@ export const NEW_EVENTS: GEventDef[] = [
     first: true,
     once: true,
     when: ['noc'],
-    w: (h) => (h.place().near === 'nikt' ? 0 : 0.8),
+    // gdy łańcuch „Światło w oknie” (src/gov/watki-tresc.ts) jest wątkiem sezonu, to jego pierwszy krok zajmuje miejsce tej
+    // karty, a chłopak z babcią naprawdę staje potem pod bramą
+    w: (h) => (h.place().near === 'nikt' || h.watek('swiatlo') ? 0 : 0.8),
     make: () => ({}),
     title: () => tx('Światło w oknie naprzeciwko', 'A light in the window opposite'),
     text: (h) =>
@@ -948,11 +958,12 @@ export const NEW_EVENTS: GEventDef[] = [
         ok: true,
         run: () => {
           h.mood(1, 0);
+          // nikt nie staje rano pod bramą (zrobi to dopiero łańcuch „Światło w oknie”): ta karta mówi tylko o oknie
           h.later(
             {},
             tx(
-              `Rano ${h.words().brama.pod} stał chłopak z ${domyObok(h) ? 'domu' : 'bloku'} naprzeciwko. Mieszka z babcią i dwoma kocami. Dziękował, że ktoś w ogóle odpowiedział.`,
-              `In the morning a lad from the ${domyObok(h) ? 'house' : 'block'} opposite was waiting at ${h.wordsEn().brama}. He lives with his gran and two blankets. He thanked you for answering at all.`,
+              `Rano w oknie ${domyObok(h) ? 'domu' : 'bloku'} naprzeciwko było już ciemno. Ktoś tam odmigał trzy razy i poszedł spać.`,
+              `In the morning the window of the ${domyObok(h) ? 'house' : 'block'} opposite was dark. Someone there flashed back three times and went to bed.`,
             ),
           );
         },

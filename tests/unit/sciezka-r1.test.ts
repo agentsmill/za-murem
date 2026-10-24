@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { CARD_HOUR, KOZA_KEY, nightWood, WOOD_PER_HOUR } from '../../src/gov/noc.ts';
 import type { GovInput, NightCard } from '../../src/gov/typy.ts';
+import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { setNight } from '../../src/gov/zarzad.ts';
 import { BUILDS } from '../../src/sim/budowle.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
@@ -47,6 +48,10 @@ import {
   wejscie,
   widok,
 } from './sciezka-pomoc.ts';
+
+// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
+// sprawdza cele rozdziału R1 w grze na samej puli kart, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
+podmienLancuchy([]);
 
 afterEach(() => ustawJezyk('pl'));
 

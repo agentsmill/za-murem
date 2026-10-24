@@ -71,6 +71,23 @@ describe('host: pies, napadNocy, handlarz', () => {
     expect(h().pies()).toBe(true);
   });
 
+  it('watek(id): łańcuch wybrany na wątek sezonu; karta „Pies przy siatce” ustępuje wtedy łańcuchowi „Szczekanie”', () => {
+    const s = stan();
+    const pies = M1_EVENTS.find((e) => e.id === 'pies')!;
+    expect(makeHost(s.gov, s.i, emptyEffects()).watek('szczekanie')).toBe(false);
+    expect(pies.w(makeHost(s.gov, s.i, emptyEffects()))).toBe(0.7);
+    s.gov.watki = { wybrane: ['swiatlo', 'szczekanie'], haki: {}, krok: {} };
+    expect(makeHost(s.gov, s.i, emptyEffects()).watek('szczekanie')).toBe(true);
+    expect(makeHost(s.gov, s.i, emptyEffects()).watek('woda')).toBe(false);
+    expect(pies.w(makeHost(s.gov, s.i, emptyEffects()))).toBe(0);
+    // inny wątek niż psi: karta jak dotąd
+    s.gov.watki = { wybrane: ['swiatlo'], haki: {}, krok: {} };
+    expect(pies.w(makeHost(s.gov, s.i, emptyEffects()))).toBe(0.7);
+    // pies już jest: karta też ustępuje
+    s.gov.flags.dog = true;
+    expect(pies.w(makeHost(s.gov, s.i, emptyEffects()))).toBe(0);
+  });
+
   it('napadNocy(dzień): wynik z raportu tej nocy, a bez raportu null', () => {
     const s = stan();
     s.gov.reports = [
@@ -137,6 +154,22 @@ describe('wskazowkaMiejsca: wskazówka z karty łańcucha', () => {
     wlaczMiasto(inne.gov);
     makeHost(inne.gov, inne.i, emptyEffects()).wskazowkaMiejsca(['apteka'], 'stacja');
     expect(Object.keys(inne.gov.wskazowki!)).toEqual(['stacja']);
+  });
+
+  it('miejsceWskazowki tylko czyta: to samo miejsce co wskazowkaMiejsca, a stanu nie rusza', () => {
+    const s = stan({ input: { okolica: [apteka] } });
+    wlaczMiasto(s.gov);
+    const czyta = makeHost(s.gov, s.i, emptyEffects()).miejsceWskazowki(['apteka'], 'apteka');
+    expect(s.gov.wskazowki).toBeUndefined();
+    const zapisuje = makeHost(s.gov, s.i, emptyEffects()).wskazowkaMiejsca(['apteka'], 'apteka');
+    expect(czyta).toEqual(zapisuje);
+    expect(Object.keys(s.gov.wskazowki!)).toEqual(['poi:400:0']);
+    // bez mapy miasta: ten sam cel z TARGETS
+    const bez = stan();
+    expect(makeHost(bez.gov, bez.i, emptyEffects()).miejsceWskazowki(['apteka'], 'apteka').pl).toBe(
+      'apteka przy przystanku',
+    );
+    expect(bez.gov.wskazowki).toBeUndefined();
   });
 
   it('z bronią: znacznik zostaje, gdy to samo miejsce dostaje potem zwykłą wskazówkę', () => {

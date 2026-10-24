@@ -269,6 +269,37 @@ describe('wybór wątków sezonu', () => {
     expect(s.gov.watki?.wybrane).toEqual(['b']);
   });
 
+  it('łańcuch z `obcy: true` (handlarz zamiast gościa) odpada bez obcych, a z `lokatorzy: true` bez mieszkańców z generatora', () => {
+    const handlarz: Lancuch = { ...lancuchZ('h', OBA), obcy: true };
+    const mieszkaniec: Lancuch = { ...lancuchZ('m', OBA), lokatorzy: true };
+    const zwykly = lancuchZ('z', OBA);
+    podmienLancuchy([handlarz, mieszkaniec, zwykly]);
+    for (let seed = 1; seed <= 10; seed++) {
+      expect([...wybierzWatki(newGov(seed), 'zwykly', true, false)].sort(), `bez obcych, ziarno ${seed}`).toEqual([
+        'm',
+        'z',
+      ]);
+      expect([...wybierzWatki(newGov(seed), 'zwykly', false, true)].sort(), `bez mieszkańców, ziarno ${seed}`).toEqual([
+        'h',
+        'z',
+      ]);
+      expect([...wybierzWatki(newGov(seed), 'zwykly', true, true)], `bez obu, ziarno ${seed}`).toEqual(['z']);
+      expect([...wybierzWatki(newGov(seed), 'zwykly')].sort(), `z obcymi i mieszkańcami, ziarno ${seed}`).toEqual([
+        'h',
+        'm',
+        'z',
+      ]);
+    }
+    // `obcy: false` jawnie wyłącza wymóg, nawet gdy któryś krok ma gościa
+    podmienLancuchy([{ ...G, obcy: false }]);
+    expect(wybierzWatki(newGov(1), 'zwykly', true)).toEqual(['g']);
+    // pierwszy tick gry bez mieszkańców nie wybiera łańcucha z `lokatorzy: true`
+    podmienLancuchy([mieszkaniec]);
+    const bez = stan({ seed: 4 });
+    expect(losuj(bez)).toBeNull();
+    expect(bez.gov.watki).toBeUndefined();
+  });
+
   it('łańcuchy filtrowane według trybu: kroki innego trybu nie wypadają, nawet gdy ktoś dopisał je do wybranych', () => {
     podmienLancuchy([lancuchZ('z1', ['zwykly']), lancuchZ('m1', ['zombie'])]);
     const s = stan({ mode: 'zombie' });

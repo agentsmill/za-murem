@@ -2884,6 +2884,96 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // krok łańcucha historii z gościem pod bramą (Przymorze, obcy włączeni): „Światło w oknie naprzeciwko”, krok drugi,
+        // „Chłopak z babcią”. Wątek sezonu ustawiony ręcznie z hakiem po kroku pierwszym; dwie osoby naprawdę stoją pod bramą
+        // (faza brama, dwa pionki o imionach z karty), karta ma „Pokaż”, który jedzie kamerą do nich, nie zamykając okna.
+        // Zrzuty: karta (wyd-watek-okno.png) i po „Pokaż” (końcowy wyd-watek.png)
+        name: 'wyd-watek',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await ustawWatekSwiatlo(page);
+          const krok = await doKarty(page, 'swiatlo_2', 400);
+          await waitIdle(page);
+          const stan = await watekGosci(page);
+          const tekst = await sheetText(page);
+          console.log(
+            `  krok łańcucha po ${krok} krokach: faza ${stan.faza}, ${stan.pionki} pionków: ${stan.imiona.join(', ')}`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          if (stan.faza !== 'brama') throw new Error(`krok łańcucha, ale faza ${stan.faza}`);
+          if (stan.pionki !== 2) throw new Error(`chłopak z babcią to dwie osoby, na mapie ${stan.pionki} pionków`);
+          for (const imie of stan.imiona)
+            if (!tekst.includes(imie)) throw new Error(`karta nie zna imienia ${imie} z mapy`);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-watek-okno.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          const po = await page.evaluate(() => {
+            const zm = window.zm!;
+            const a = zm.gov!.goscie!.aktywny!;
+            const p = zm.sim!.st.pawns.find(
+              (q) => q.kind === 'gosc' && q.id === zm.sim!.st.goscie!.find((g) => g.id === a.gosc.id)!.pawns[0],
+            )!;
+            const [sx, sy] = zm.screenOf(p.x, p.y);
+            const r = document.getElementById('sheet')!.getBoundingClientRect();
+            const bar = document.getElementById('top')!.getBoundingClientRect().bottom;
+            return {
+              open: !document.getElementById('modal')!.hidden,
+              ev: zm.gov!.ev.active?.id ?? null,
+              pod: sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom,
+              widac: sx > 0 && sx < zm.view.width && sy > bar && sy < zm.view.height,
+            };
+          });
+          if (!po.open || po.ev !== 'swiatlo_2') throw new Error('„Pokaż” zamknęło okno kroku łańcucha');
+          if (po.pod || !po.widac) throw new Error('po „Pokaż” gościa nie widać: jest pod oknem albo poza ekranem');
+          await waitIdle(page);
+          await frames(page, 3);
+          await gosciNarysowani(page, 'po „Pokaż”');
+        },
+      },
+      {
+        // ten sam krok łańcucha po angielsku: cała karta bez polskich liter poza imionami z mapy (en-wyd-watek.png)
+        name: 'en-wyd-watek',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await ustawWatekSwiatlo(page);
+          const krok = await doKarty(page, 'swiatlo_2', 400);
+          await waitIdle(page);
+          const stan = await watekGosci(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          console.log(`  buttons: ${foot.join(' | ')}`);
+          if (stan.faza !== 'brama' || stan.pionki !== 2)
+            throw new Error('English chain card without two people at the gate');
+          if (!foot.some((f) => f.startsWith('event-show:'))) throw new Error('card without a Show button');
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, stan.imiona);
+          if (pl.length) throw new Error(`Polish letters on the English chain card: ${pl.join(', ')}`);
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await frames(page, 3);
+        },
+      },
+      {
         // znajomy wśród szabrowników (Przymorze): zarząd pamięta Henryka Kowalskiego, złapanego na kradzieży (ujemny wpis
         // w GovState.znajomi). Szukamy ziarna, przy którym pierwszej nocy szabrownicy przychodzą; wtedy plan napadu niesie
         // znajomego, jeden z szabrowników ma jego wygląd (wyd-powrot-szabrownicy.png), a poranny raport ma linię
@@ -8363,6 +8453,36 @@ async function doKarty(page: Page, id: string, ile = 300, kto = ''): Promise<num
     await answerFirst(page, p);
   }
   throw new Error(`przez ${ile / 2} godzin gry nie wypadła karta „${id}”${kto ? ` dla „${kto}”` : ''}`);
+}
+
+/** Wątek sezonu „Światło w oknie naprzeciwko” ustawiony ręcznie po kroku pierwszym (hak z odpowiedzią latarką, czas sprzed
+    gry): krok drugi, „Chłopak z babcią”, czeka tylko na porę dnia i na wizytę pod bramą. Zwykła pula zostaje, bo bez niej
+    gra nie ma okien do odpowiadania. */
+async function ustawWatekSwiatlo(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const g = window.zm!.gov!;
+    g.watki = {
+      wybrane: ['swiatlo'],
+      haki: { swiatlo_1: { t: 0 }, 'swiatlo.znak': { t: 0, d: { odp: 'latarka' } } },
+      krok: { swiatlo: 1 },
+    };
+  });
+}
+
+/** Wizyta kroku łańcucha z gośćmi: faza w symulacji, pionki o imionach z mapy (kolejność jak w planie) */
+async function watekGosci(page: Page): Promise<{ faza: string; pionki: number; imiona: string[] }> {
+  return page.evaluate(() => {
+    const zm = window.zm!;
+    const st = zm.sim!.st;
+    const a = zm.gov!.goscie!.aktywny!;
+    const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+    const pionki = wpis.pawns.map((id) => st.pawns.find((p) => p.id === id)!).filter((p) => p.kind === 'gosc');
+    return {
+      faza: wpis.faza,
+      pionki: pionki.length,
+      imiona: pionki.map((p) => st.people[p.person].name),
+    };
+  });
 }
 
 /** Znajomi do zrzutów powrotu (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 4): Henryk Kowalski, który

@@ -593,11 +593,12 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // i f064e248); tu znów po scaleniu obu, 23.10.2026. Ósmy raz w zadaniu 15 wydarzeń (dwanaście łańcuchów historii,
     // src/gov/watki-tresc.ts): pierwszy tick zarządu wybiera wątki sezonu z ziarna zarządu (`wybierzWatki`), a pierwsze kroki
     // wybranych łańcuchów wchodzą do puli, czyli inne losowanie; atrapa nie ma obcych ani mieszkańców z generatora, więc do
-    // wyboru zostają tylko „List z 2026” i „Pies ujada nocami” (były f90d5ef8, 949f8cf5 i 76e72ff9).
+    // wyboru zostają tylko „List z 2026” i „Pies ujada nocami”, który zajmuje miejsce karty „Pies przy siatce” (były f90d5ef8, 949f8cf5
+    // i 76e72ff9).
     const przebiegi = [
-      [1, 'propozycja', 'bb1442e9'],
-      [3, 'zawsze-warta', 'efd50682'],
-      [5, 'losowo', '4be52ef7'],
+      [1, 'propozycja', '668ba3fa'],
+      [3, 'zawsze-warta', '4ce4129e'],
+      [5, 'losowo', '65a73c2f'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

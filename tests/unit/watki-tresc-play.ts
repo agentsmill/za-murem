@@ -382,6 +382,64 @@ export function przejdz(l: Lancuch, start: Swiat): Wynik {
   return w;
 }
 
+export interface Scen {
+  nazwa: string;
+  o: OpcjeSwiata;
+}
+
+/** scenariusze przejścia: tryb i miejsce według łańcucha, plus to, czego krok wymaga od świata */
+export const SCEN: Record<string, Scen[]> = {
+  swiatlo: [
+    { nazwa: 'blok, zwykły', o: {} },
+    { nazwa: 'dom, zombie', o: { place: DOM, mode: 'zombie' } },
+  ],
+  szczekanie: [
+    { nazwa: 'blok, zwykły', o: {} },
+    { nazwa: 'dom, zombie', o: { place: DOM, mode: 'zombie' } },
+  ],
+  puszki: [
+    { nazwa: 'blok, zwykły', o: {} },
+    { nazwa: 'dom, zombie', o: { place: DOM, mode: 'zombie' } },
+  ],
+  woda: [
+    { nazwa: 'blok, zwykły', o: {} },
+    { nazwa: 'dom, zombie', o: { place: DOM, mode: 'zombie' } },
+  ],
+  list: [
+    { nazwa: 'blok, zwykły, z mapą miasta', o: {} },
+    { nazwa: 'dom, zombie, bez mapy miasta', o: { place: DOM, mode: 'zombie', bezOkolicy: true } },
+  ],
+  pluca: [
+    { nazwa: 'blok, zwykły', o: {} },
+    { nazwa: 'dom, zombie', o: { place: DOM, mode: 'zombie' } },
+  ],
+  ostrzega: [
+    { nazwa: 'napad odparty', o: { napad: 'odparty' } },
+    { nazwa: 'napad z wtargnięciem, dom', o: { napad: 'wtargnięcie', place: DOM } },
+    { nazwa: 'bez napadu', o: { napad: 'brak' } },
+  ],
+  dlug: [
+    { nazwa: 'blok', o: { handlarz: true } },
+    { nazwa: 'dom', o: { handlarz: true, place: DOM } },
+  ],
+  aktywistka: [
+    { nazwa: 'blok, zimno', o: { zimno: true } },
+    { nazwa: 'dom, zimno', o: { zimno: true, place: DOM } },
+  ],
+  dach: [
+    { nazwa: 'blok', o: { mode: 'zombie' } },
+    { nazwa: 'dom', o: { mode: 'zombie', place: DOM } },
+  ],
+  dobicie: [
+    { nazwa: 'blok', o: { mode: 'zombie' } },
+    { nazwa: 'dom', o: { mode: 'zombie', place: DOM } },
+  ],
+  glos: [
+    { nazwa: 'blok, z mapą miasta', o: { mode: 'zombie' } },
+    { nazwa: 'dom, bez mapy miasta', o: { mode: 'zombie', place: DOM, bezOkolicy: true } },
+  ],
+};
+
 /** Łańcuch z produkcyjnej listy po id (rzuca, gdy go nie ma) */
 export function lancuch(id: string): Lancuch {
   const l = lancuchy().find((x) => x.id === id);

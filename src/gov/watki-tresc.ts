@@ -160,7 +160,24 @@ function pierwsza(h: GovHost, d: D): { p: Person; look: number | undefined; zid:
 const gdzieGrupy = (h: GovHost, d: D): Punkt | null => (d.gid ? (h.gosc(d.gid)?.wpis?.gdzie ?? null) : null);
 /** ilu spałoby na podłodze po przyjęciu `n` osób */
 const naPodlodze = (h: GovHost, n: number): number => Math.max(0, n - h.free());
-const ludzieEn = (n: number): string => `${n} ${n === 1 ? 'person' : 'people'}`;
+const LICZBY_EN = [
+  'no',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+];
+/** „five people”, „one person”; od trzynastu cyfrą (na początku zdania przez `wielka`) */
+const ludzieEn = (n: number): string =>
+  `${n >= 0 && n < LICZBY_EN.length ? LICZBY_EN[n] : n} ${n === 1 ? 'person' : 'people'}`;
 
 /** angielski zaimek dopełnienia dla grupy karty: him, her albo them */
 const them = (h: GovHost, d: D): string => {
@@ -204,6 +221,8 @@ const SWIATLO: Lancuch = {
   tryby: OBA,
   kroki: [
     krok('swiatlo', 1, {
+      // zajmuje miejsce karty „Światło w oknie naprzeciwko” (sygnal w tresc.ts), więc też pierwszej nocy
+      first: true,
       when: ['wieczor', 'noc'],
       w: () => 1,
       make: () => ({}),
@@ -441,7 +460,9 @@ const SZCZEKANIE: Lancuch = {
   tryby: OBA,
   kroki: [
     krok('szczekanie', 1, {
-      when: ['noc'],
+      // jak karta „Pies przy siatce”, której miejsce zajmuje, gdy ten łańcuch jest wątkiem sezonu: też pierwszej nocy
+      first: true,
+      when: ['wieczor', 'noc'],
       w: (h) => (h.pies() ? 0 : 1),
       make: () => ({}),
       title: () => tx('Pies ujada nocami', 'A dog barking at night'),
@@ -505,24 +526,25 @@ const SZCZEKANIE: Lancuch = {
         const e = h.wordsEn();
         const dziura = h.holes() > 0 ? h.weakName() : null;
         const gdzie = dziura
-          ? tx(`przy dziurze ${dziura.pl}`, `at the hole ${dziura.en}`)
+          ? tx(`${dziura.pl}, tam gdzie jest dziura`, `${dziura.en}, where the hole is`)
           : tx(s.brama.przy, `at ${e.brama}`);
+        const slady = tx(
+          'odciski łap w błocie, duże jak dłoń dorosłego, a na drucie kłaki szarej sierści',
+          'paw prints in the mud as big as an adult’s palm, and tufts of grey fur on the wire',
+        );
         const wstep: Record<string, Tx> = {
           miska: tx(
-            'Miska stoi tam, gdzie ją zostawiliście, wylizana do czysta.',
-            'The bowl stands where you left it, licked clean.',
+            `Miska stoi tam, gdzie ją zostawiliście, wylizana do czysta. A obok ${slady.pl}.`,
+            `The bowl stands where you left it, licked clean. And beside it are ${slady.en}.`,
           ),
           przegonili: tx(
-            'Pies nie szczeka od dwóch nocy. Za to coś innego się zmieniło:',
-            'The dog has not barked for two nights. Something else has changed instead:',
+            `Pies nie szczeka od dwóch nocy. Za to przy siatce widać ${slady.pl}.`,
+            `The dog has not barked for two nights. Instead, by the fence, there are ${slady.en}.`,
           ),
-          nic: tx('Rano coś się zmieniło.', 'Something changed this morning.'),
+          nic: tx(`Rano przy siatce widać ${slady.pl}.`, `This morning, by the fence, there are ${slady.en}.`),
         };
         const w = wstep[d.jak] ?? wstep.nic;
-        return tx(
-          `${w.pl} Obok, w błocie, odciski łap, duże jak dłoń dorosłego, a na drucie kłaki szarej sierści. Ślady urywają się ${gdzie.pl}.`,
-          `${w.en} Beside it, in the mud, are paw prints as big as an adult's palm, and tufts of grey fur on the wire. The trail stops ${gdzie.en}.`,
-        );
+        return tx(`${w.pl} Ślady urywają się ${gdzie.pl}.`, `${w.en} The trail stops ${gdzie.en}.`);
       },
       choices: (h) => [
         {
@@ -950,8 +972,8 @@ const WODA: Lancuch = {
         const listaEn =
           imiona.length === 1 ? imiona[0] : `${imiona.slice(0, -1).join(', ')} and ${imiona[imiona.length - 1]}`;
         return tx(
-          `${w.pl} ${wielka(s.brama.pod)} stoi z młodszymi braćmi, ${lista}, i trzema baniakami. Mówi, że w ${sas.w} wszyscy już wiedzą, kto ma studnię z pompą, i że kolejka po wodę zaczyna się teraz u was.`,
-          `${w.en} She is standing at ${e.brama} with her younger brothers, ${listaEn}, and three cans. She says everybody in ${sas.en} now knows who has a well with a pump, and that the water queue starts at your place now.`,
+          `${w.pl} ${wielka(s.brama.pod)} stoi z trzema baniakami i młodszymi braćmi (${lista}). Mówi, że w ${sas.w} wszyscy już wiedzą, kto ma studnię z pompą, i że kolejka po wodę zaczyna się teraz u was.`,
+          `${w.en} She is standing at ${e.brama} with three cans and her younger brothers (${listaEn}). She says everybody in ${sas.en} now knows who has a well with a pump, and that the water queue starts at your place now.`,
         );
       },
       choices: (h, d) => {
@@ -1023,7 +1045,7 @@ const WODA: Lancuch = {
           dzieci.length > 1 ? `${dzieci.slice(0, -1).join(', ')} and ${dzieci[dzieci.length - 1]}` : (dzieci[0] ?? '');
         return tx(
           `${wielka(s.brama.pod)} stoją ${n} ${osob(n)}: ${ojciec.name}${matka ? ` i ${matka.name}` : ''}${dzieci.length ? `, a przy nich ${imiona}, których znacie z baniakami` : ''}. Ojciec trzyma zwinięty materac, matka torbę z całym dobytkiem. Mówią, że w ${sas.w} zostali sami, bo reszta wyniosła się, kiedy wyłączyli ostatnią pompę. Proszą o miejsce dla całej rodziny.`,
-          `${ludzieEn(n)} stand at ${e.brama}: ${ojciec.name}${matka ? ` and ${matka.name}` : ''}${dzieci.length ? `, and with them ${imionaEn}, whom you know from the water cans` : ''}. The father holds a rolled-up mattress, the mother a bag with everything they own. They say that in ${sas.en} they were left on their own, because everyone else moved out when the last pump was switched off. They ask for a place for the whole family.`,
+          `${wielka(ludzieEn(n))} stand at ${e.brama}: ${ojciec.name}${matka ? ` and ${matka.name}` : ''}${dzieci.length ? `, and with them ${imionaEn}, whom you know from the water cans` : ''}. The father holds a rolled-up mattress, the mother a bag with everything they own. They say that in ${sas.en} they were left on their own, because everyone else moved out when the last pump was switched off. They ask for a place for the whole family.`,
         );
       },
       choices: (h, d) => {
@@ -1082,13 +1104,15 @@ const LIST: Lancuch = {
   tryby: OBA,
   kroki: [
     krok('list', 1, {
-      when: ['dzien'],
+      // koperta leży w skrzynce od dwudziestu pięciu lat, więc znaleźć ją można o każdej porze, także pierwszej nocy
+      first: true,
+      when: ['dzien', 'wieczor', 'noc'],
       w: () => 1,
       make: () => ({}),
       title: () => tx('List z 2026 roku', 'A letter from 2026'),
       text: (h) =>
         tx(
-          `W skrzynce na listy ${dom(h) ? 'przy furtce' : 'na klatce'} zardzewiałe zawiasy trzymały kopertę dwadzieścia pięć lat. Stempel: październik 2026. Adresat: „Do wszystkich lokatorów, bo nie wiem, kogo”. W środku jedna kartka, pisana ręcznie, bo drukarka, jak pisze nadawca, „zażądała subskrypcji”. Pracował w firmie od recyklingu elektrośmieci. Pisze, że ich model dostał polecenie, żeby oddzielić miedź od plastiku, i że od tygodnia nikt nie wie, co dokładnie wypuścił z laboratorium. Radzi schować miedź w szkle i nie odpisywać przez asystenta.`,
+          `W skrzynce na listy ${dom(h) ? 'przy furtce' : 'na klatce'} zardzewiałe zawiasy trzymały kopertę dwadzieścia pięć lat. Stempel: październik 2026. Adresat: „Do wszystkich mieszkańców, bo nie wiem, kogo”. W środku jedna kartka, pisana ręcznie, bo drukarka, jak pisze nadawca, „zażądała subskrypcji”. Nadawca pracował w firmie od recyklingu elektrośmieci. Pisze, że ich model dostał polecenie, żeby oddzielić miedź od plastiku, i że od tygodnia nikt nie wie, co dokładnie wypuścił z laboratorium. Radzi schować miedź w szkle i nie odpisywać przez asystenta.`,
           `In the letterbox ${dom(h) ? 'by the garden gate' : 'in the stairwell'}, rusty hinges had held an envelope shut for twenty-five years. Postmark: October 2026. Addressed to “All residents, because I don’t know whom”. Inside is a single handwritten page, because the printer, the writer says, “demanded a subscription”. The writer worked for an e-waste recycling company. Their AI model was told to separate copper from plastic, the letter says, and for a week nobody has known what exactly it let out of the lab. The writer advises hiding any copper in glass and not replying through an assistant.`,
         ),
       choices: (h) => [
@@ -2164,7 +2188,7 @@ const DACH: Lancuch = {
         const po = k?.obejrzano ? rekaOglad(b, k.obejrzano) : tx('', '');
         return tx(
           `${wielka(s.brama.pod)} stoją ${n} ${osob(n)}, szare ze zmęczenia, z kurzem z dachu na kurtkach: ${imiona}. Mówią, że to oni wołali z dachu ${sas.d}: dwie noce, zanim zeszli po rynnie.${reka.pl}${po.pl ? ` ${po.pl}` : ''}`,
-          `${ludzieEn(n)} stand at ${e.brama}, grey with exhaustion, rooftop dust on their jackets: ${imionaEn}. They say they were the ones calling from the roof of ${sas.en}: two nights, before they climbed down the drainpipe.${reka.en}${po.en ? ` ${po.en}` : ''}`,
+          `${wielka(ludzieEn(n))} stand at ${e.brama}, grey with exhaustion, rooftop dust on their jackets: ${imionaEn}. They say they were the ones calling from the roof of ${sas.en}: two nights, before they climbed down the drainpipe.${reka.en}${po.en ? ` ${po.en}` : ''}`,
         );
       },
       choices: (h, d) => (d.gid ? wyboryGoscia(h, { id: d.gid }) : []),

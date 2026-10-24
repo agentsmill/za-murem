@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLOK, placeOf } from '../../src/gov/miejsce.ts';
 import type { GovInput, GovState } from '../../src/gov/typy.ts';
+import { krokPoId } from '../../src/gov/watki.ts';
 import { M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { ackReport, chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { Atrapa, TPH, TPS } from './gov-atrapa.ts';
@@ -188,8 +189,11 @@ describe('pierwsza noc', () => {
         if (ev && ev !== had) {
           const first = atr.day === 1 || (atr.day === 2 && atr.hour < 8);
           if (first)
-            expect(ev.id === 'dym' || byId.get(ev.id)?.first, `${ev.id} dnia ${atr.day} o ${atr.hour}`).toBe(true);
-          else if (!byId.get(ev.id)?.first) later++;
+            expect(
+              ev.id === 'dym' || (byId.get(ev.id) ?? krokPoId(ev.id))?.first,
+              `${ev.id} dnia ${atr.day} o ${atr.hour}`,
+            ).toBe(true);
+          else if (!(byId.get(ev.id) ?? krokPoId(ev.id))?.first) later++;
         }
         const p = pending(gov, atr.input());
         if (p?.k === 'wydarzenie')

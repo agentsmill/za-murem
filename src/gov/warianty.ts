@@ -415,7 +415,9 @@ export const OLD_EVENTS: OldEvent[] = [
     when: ['dzien'],
     // protest przy stadzie nie ma sensu
     tryby: ['zwykly'],
-    w: (h, base) => (zGosciem(h) ? base : 0),
+    // protest przeciw kozom jest też początkiem łańcucha „Aktywistka od kóz” (src/gov/watki-tresc.ts): gdy ten jest wątkiem
+    // sezonu, protestuje tamta jedna kobieta, nie grupka
+    w: (h, base) => (zGosciem(h) && !h.watek('aktywistka') ? base : 0),
     // czterech aktywistów pod bramą (dorośli, bez wspólnego nazwiska)
     gosc: (h) => ({ osoby: grupaKarty(h, 'wedrowiec', 4), kto: 'aktywisci' }),
     text: (h) =>

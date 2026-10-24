@@ -61,6 +61,11 @@
    zginął, kot żyje), a `fx.zwierze` idzie do kolejki poleceń jako 'zwierze'. Zwierząt nie liczy żaden odczyt ludzi: ani `people`,
    `lokatorzy`, `residents`, `ludnosc`, ani `dead`.
 
+   Handlarz (src/sim/handlarz.ts): `GovInput.handlarz` jest, gdy handlarz stoi pod bramą z wózkiem (faza 1 pracy `trader`; tylko
+   w grze z obcymi), z jego kafelkiem i punktem mapy; `fx.handlarz` zmienia wtedy jego ofertę (`lepszeOferty`) albo daje złą
+   sławę (`zlaSlawa`), bezpośrednio w stanie, bez kolejki poleceń, bo nic tu nie przelicza dróg. Czyta to łańcuch „Dług”
+   (src/gov/watki-tresc.ts).
+
    Zmarli (`dead`, `zmarli`): zarząd i mieszkańcy po kolei; do karty „Pogrzeb” każdy wpis niesie płeć `f` (gdy zmarły miał
    osobę w `st.people`), minutę gry zgonu `min` i w trybie zombie los zwłok `cialo` (leżą, dobite, nie ma ich), liczone ze
    zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
