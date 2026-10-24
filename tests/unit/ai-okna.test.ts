@@ -1,11 +1,13 @@
 /* Okna zarządu silnika osady AI (src/ai/okna.ts), etap 1 osady AI (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md,
-   zadanie 5): wybór w wydarzeniu przez ocenę skutków na kopii zarządu i uchwała według potrzeb. Pilnuje czterech rzeczy:
+   zadania 5 i 6): wybór w wydarzeniu przez ocenę skutków na kopiach zarządu i uchwała według potrzeb. Pilnuje pięciu rzeczy:
    - oceny skutków (`ocenSkutki`): zapasy (jedzenie ×3, drewno ×1, reszta ×0,5), zaufanie +2 i wkurzenie −2 za punkt, rany −10,
      zgony −50, przyjęcia ±4 na osobę według zapasu jedzenia, koniec gry −1000 i dwie wagi dodane po pomiarze: pożar −15
      (gaszenie wygrywa z ewakuacją klatki) i łata na dziurę +6 (zarząd łata złomem, a nie automat pracy deskami); ocena stanu
      po wyborze, więc porównuje wybory z jednego okna (to, co było przed wyborem, się skraca);
-   - wyboru w wydarzeniu (`wyborWydarzenia`): każdy dozwolony wybór na kopii zarządu, najlepsza ocena, przy remisie niższy
+   - wyboru w wydarzeniu (`wyborWydarzenia`): każdy dozwolony wybór na kopiach zarządu, najlepsza ocena, przy remisie niższy
      indeks, prawdziwy zarząd i wejście bez zmian (JSON przed i po), okno bez dozwolonego wyboru daje 0;
+   - oceny wyboru bez znajomości losu (zadanie 6): kopie mają ziarna pochodne, a nie stan prawdziwego generatora, i jest ich
+     `KOPII_OCENY`, więc wybór silnika nie zależy od tego, czy hazard się uda, a losowania zmieniają się z oknem;
    - okna wieloetapowego (`odpowiedzNaWydarzenie`): wybór z `zostaje` (np. „Obejrzeć ręce” przy gościu w trybie zombie) nie
      zamyka okna, więc decydent czyta `pending` po każdym wyborze i odpowiada na kolejny krok;
    - uchwały (`wyborUchwaly`): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku blokuje go do końca
@@ -15,9 +17,10 @@
    Zarząd i wejście z atrapy (tests/unit/gov-atrapa.ts), bez symulacji; wybór wydarzeń w prawdziwej grze sprawdza
    ai-rozwoj.test.ts. */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type Decydent, grajDo } from '../../src/ai/gra.ts';
 import {
+  KOPII_OCENY,
   MAX_KROKOW_OKNA,
   najlepszyIndeks,
   ocenSkutki,
@@ -33,7 +36,7 @@ import { type Gosc, KTO, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts'
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import type { GovEffects, GovGosc, GovInput, GovState, LawOption, Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
-import { eventView } from '../../src/gov/wydarzenia.ts';
+import { eventView, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov, pending } from '../../src/gov/zarzad.ts';
 import { dayOf, TICKS_PER_DAY } from '../../src/sim/clock.ts';
 import { przygotujGre } from '../../tools/bot-osada.ts';
@@ -297,7 +300,7 @@ describe('wyborWydarzenia', () => {
     expect(wyborWydarzenia(gov, j, q)).toBe(1);
   });
 
-  it('wybór jest dokładny: prawdziwy wybór daje te same skutki co ocena na kopii (to samo losowanie)', () => {
+  it('kopia zarządu z tym samym stanem daje te same skutki co prawdziwy zarząd (podstawa oceny na kopiach)', () => {
     const { gov, i, p } = oknoUchodzcow(40);
     const k = wyborWydarzenia(gov, i, p);
     const kopia = structuredClone(gov);
@@ -305,6 +308,96 @@ describe('wyborWydarzenia', () => {
     const naprawde = chooseEvent(gov, i, k);
     expect(naprawde).toEqual(naKopii);
     expect(JSON.stringify(gov)).toBe(JSON.stringify(kopia));
+  });
+});
+
+// ---------------------------------------------------------------- ocena wyboru bez znajomości losu
+
+/* Silnik nie zna wyniku losowań, których gracz znać nie może. Prawdziwy wybór losuje generator zarządu (`GovState.rng`),
+   a gdyby ocena szła na kopii z tym samym stanem generatora, silnik wiedziałby z góry, czy np. przegrany w kłótni odejdzie
+   (30%), i omijałby te wybory, które się nie udadzą. Kopie mają więc ziarna pochodne, niezależne od stanu prawdziwego
+   generatora, a ocena wyboru to średnia z kilku kopii. Prawdziwa karta z losowym skutkiem, w której wybór silnika
+   zmieniałby się z losowaniem, nie istnieje (kłótnia ma wybór „mediacja”, który wygrywa zawsze), więc test podmienia
+   wybory karty na pewny zysk i hazard. */
+
+const klotnia = M1_EVENTS.find((e) => e.id === 'klotnia')!;
+
+/** Okno „Kłótnia o grafik” z podmienionymi wyborami (spy na definicji karty, przywracany po teście): wybór 0 to pewne 2 porcje
+    jedzenia (6 punktów oceny), wybór 1 to hazard: z szansą `szansa` 5 porcji (15 punktów), inaczej nic. Losuje generator
+    zarządu (`h.rng`), jak karty z losowym skutkiem. `wywolania` liczy uruchomienia `run` każdego wyboru, czyli kopie, na
+    których silnik oceniał wybory. */
+function oknoHazardu(szansa: number): { gov: GovState; i: GovInput; p: Wydarzenie; wywolania: [number, number] } {
+  const wywolania: [number, number] = [0, 0];
+  vi.spyOn(klotnia, 'choices').mockImplementation((h) => [
+    {
+      label: tx('Pewny zysk', 'Sure thing'),
+      ok: true,
+      run: () => {
+        wywolania[0]++;
+        h.addRes('jedzenie', 2);
+      },
+    },
+    {
+      label: tx('Hazard', 'Gamble'),
+      ok: true,
+      run: () => {
+        wywolania[1]++;
+        if (h.rng() < szansa) h.addRes('jedzenie', 5);
+      },
+    },
+  ]);
+  const gov = newGov(3);
+  const i = atrapa(40).input();
+  gov.ev.active = { id: 'klotnia', d: { a: i.people[0].id, b: i.people[1].id } };
+  const p = pending(gov, i);
+  if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+  return { gov, i, p, wywolania };
+}
+
+describe('wyborWydarzenia bez znajomości losu', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('wybór silnika nie zależy od stanu generatora prawdziwego zarządu, choć skutek hazardu od niego zależy', () => {
+    const { gov, i, p } = oknoHazardu(0.5);
+    const wybory = new Set<number>();
+    const skutki = new Set<number>();
+    for (let n = 1; n <= 24; n++) {
+      const zarzad = structuredClone(gov);
+      zarzad.rng.s = Math.imul(n, 0x9e3779b1) | 0;
+      // prawdziwy zarząd z tym stanem generatora: hazard raz się udaje (5 porcji), raz nie (0)
+      skutki.add(chooseEvent(structuredClone(zarzad), i, 1).stock.supplies);
+      wybory.add(wyborWydarzenia(zarzad, i, p));
+    }
+    expect([...skutki].sort()).toEqual([0, 5]);
+    // a silnik wybiera zawsze to samo: nie widzi, czy hazard się uda
+    expect([...wybory]).toHaveLength(1);
+  });
+
+  it('każdy wybór jest oceniany na kilku kopiach zarządu (średnia), nie na jednej', () => {
+    const { gov, i, p, wywolania } = oknoHazardu(0.5);
+    expect(KOPII_OCENY).toBeGreaterThanOrEqual(3);
+    wyborWydarzenia(gov, i, p);
+    expect(wywolania).toEqual([KOPII_OCENY, KOPII_OCENY]);
+  });
+
+  it('losowania w kopiach zmieniają się z oknem: hazard o szansie 1/2 wygrywa w części okien, nie we wszystkich i nie w żadnym', () => {
+    // gdyby ziarna kopii zależały tylko od okna i wyboru, ten sam hazard dostawałby te same losowania w każdym oknie tego
+    // rodzaju (zawsze wygrywałby albo zawsze przegrywał), a silnik przez całą grę wierzyłby w jedną, przypadkową szansę
+    const { gov, i, p } = oknoHazardu(0.5);
+    const okien = 200;
+    let hazard = 0;
+    for (let n = 0; n < okien; n++)
+      if (wyborWydarzenia(gov, { ...i, tick: i.tick + n * 20, screen: i.screen + n }, p) === 1) hazard++;
+    // z kilku kopii hazard (15 punktów przy trafieniu) przebija pewne 6 punktów przy kilku trafieniach z kopii: około połowy okien
+    expect(hazard).toBeGreaterThan(okien * 0.1);
+    expect(hazard).toBeLessThan(okien * 0.9);
+  });
+
+  it('prawdziwy zarząd losuje dalej swoim generatorem: ocena nie zużywa ani nie zmienia jego ziarna', () => {
+    const { gov, i, p } = oknoHazardu(0.5);
+    const przed = JSON.stringify(gov.rng);
+    wyborWydarzenia(gov, i, p);
+    expect(JSON.stringify(gov.rng)).toBe(przed);
   });
 });
 

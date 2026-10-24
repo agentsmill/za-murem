@@ -2,12 +2,20 @@
    przez ocenę skutków na kopii zarządu i uchwała według potrzeb. Karta nocy ma własną odpowiedź w src/ai/silnik.ts (warta,
    dyżur przy kozie), raport i epilog zwycięstwa idą odpowiedzią domyślną z src/ai/gra.ts.
 
-   Wydarzenie. Skutki wyboru zna tylko zarząd, który je liczy (`chooseEvent` zmienia stan zarządu, w tym jego ziarno, i
-   oddaje `GovEffects`), więc silnik próbuje każdy dozwolony wybór na głębokiej kopii zarządu (`structuredClone`), ocenia go
-   (`ocenSkutki`) i wybiera najlepszy; prawdziwy zarząd i wejście zostają nietknięte. Kopia startuje z tym samym ziarnem
-   i stanem co prawdziwy zarząd, więc prawdziwy wybór da dokładnie to, co ocena na kopii (także losowania w skutkach, np.
-   30% szansy, że przegrany w kłótni odejdzie). Przy remisie wygrywa niższy indeks (kolejność z okna). Okno bez dozwolonego
-   wyboru daje 0: wybór się nie uda, a okno dostanie odpowiedź domyślną albo zostanie zawieszone (src/ai/gra.ts).
+   Wydarzenie. Skutki wyboru zna tylko zarząd, który je liczy (`chooseEvent` zmienia stan zarządu, w tym jego generator, i
+   oddaje `GovEffects`), więc silnik próbuje każdy dozwolony wybór na głębokich kopiach zarządu (`structuredClone`), ocenia je
+   (`ocenSkutki`) i wybiera najlepszy; prawdziwy zarząd i wejście zostają nietknięte. Silnik nie zna wyniku losowań, których
+   gracz znać nie może (np. 30% szansy, że przegrany w kłótni odejdzie): kopia nie dostaje stanu prawdziwego generatora, tylko
+   ziarno pochodne (`ziarnoKopii`: skrót id okna, ticku i numeru kopii, bez losowania i bez zegara), a ocena wyboru
+   (`ocenaWyboru`) to średnia z `KOPII_OCENY` kopii. Wszystkie wybory okna dostają te same ziarna (wspólne liczby losowe), więc
+   porównanie dwóch wyborów nie zależy od tego, że jednemu trafiły się lepsze losowania, a tick w ziarnie sprawia, że kolejne
+   okna tego samego rodzaju dostają inne losowania (bez niego karta wracająca co dobę oceniałaby się zawsze na tych samych
+   losowaniach i silnik wierzyłby w jedną przypadkową szansę). Prawdziwy zarząd losuje dalej swoim generatorem, którego ocena
+   nie dotyka. Ocena wyboru, którego skutek nie zależy od losowania (wszystkie kopie równe), to ta jedna ocena bez dzielenia,
+   żeby remisy wyglądały co do bitu tak jak przy jednej kopii. Dziś żadne okno nie zmienia wyboru z losowaniem (jedyny losowy
+   skutek to odejście przegranego w kłótni, a „mediacja” wygrywa tam zawsze), więc reguła jest zabezpieczeniem na karty, które
+   dojdą z innych gałęzi. Przy remisie wygrywa niższy indeks (kolejność z okna). Okno bez dozwolonego wyboru daje 0: wybór się
+   nie uda, a okno dostanie odpowiedź domyślną albo zostanie zawieszone (src/ai/gra.ts).
 
    Ocena (`ocenSkutki`) liczy stan zarządu po wyborze i skutki, które z niego wyszły; stała część (zaufanie i wkurzenie
    sprzed wyboru) skraca się przy porównaniu wyborów z jednego okna:
@@ -62,6 +70,7 @@
    src/gov (zarząd) i src/ai/jedzenie.ts (miary zapasu); gra.ts, silnik.ts i warstwy importują się nawzajem, ale tu nikt nie
    używa cudzego importu przy ładowaniu modułu, tylko w ciele funkcji. */
 
+import { hashString } from '../core/rng.ts';
 import type { GovEffects, GovInput, GovState, Prompt, StockDelta } from '../gov/typy.ts';
 import { chooseEvent, pending } from '../gov/zarzad.ts';
 import { stacNaPrzyjecie, uchwalaNaGlod } from './jedzenie.ts';
@@ -87,6 +96,9 @@ export const WAGI = {
 
 /** ile kroków jednego okna wieloetapowego silnik odpowiada sam (potem odpowiedź domyślna z `krokGry`) */
 export const MAX_KROKOW_OKNA = 4;
+
+/** na ilu kopiach zarządu, każda z innym ziarnem generatora, silnik ocenia jeden wybór w wydarzeniu */
+export const KOPII_OCENY = 3;
 
 /** uchwała o wspólnym kotle (droga wspólnoty), pierwszy wybór pierwszego wieczoru */
 const KOCIOL = 'u_kociol';
@@ -143,16 +155,30 @@ export function najlepszyIndeks(oceny: readonly (number | null)[]): number {
   return Math.max(0, najlepszy);
 }
 
-/** Wybór w wydarzeniu: każdy dozwolony wybór na kopii zarządu (`structuredClone`), najlepsza ocena skutków, przy remisie
-    niższy indeks. Prawdziwy zarząd i wejście zostają bez zmian. */
+/** Ziarno generatora kopii nr `n` dla okna `id` w chwili `tick`: skrót tekstu (FNV-1a), więc bez losowania i bez zegara, i bez
+    związku ze stanem prawdziwego generatora zarządu. */
+export function ziarnoKopii(id: string, tick: number, n: number): number {
+  return Number.parseInt(hashString(`${id}|${tick}|${n}`), 16) | 0;
+}
+
+/** Ocena wyboru `k` w oknie `p`: średnia ocen skutków z `KOPII_OCENY` kopii zarządu, każda z ziarnem pochodnym (`ziarnoKopii`)
+    zamiast stanu prawdziwego generatora, więc silnik nie zna wyniku losowań. Skutek bez losowania daje na każdej kopii tę samą
+    ocenę i wtedy to ona (bez dzielenia). `null`: wybór niedozwolony. */
+export function ocenaWyboru(gov: GovState, i: GovInput, p: Wydarzenie, k: number): number | null {
+  if (!p.choices[k]?.ok) return null;
+  const oceny: number[] = [];
+  for (let n = 0; n < KOPII_OCENY; n++) {
+    const kopia = structuredClone(gov);
+    kopia.rng.s = ziarnoKopii(p.id, i.tick, n);
+    oceny.push(ocenSkutki(chooseEvent(kopia, i, k), kopia, i));
+  }
+  return oceny.every((o) => o === oceny[0]) ? oceny[0] : oceny.reduce((suma, o) => suma + o, 0) / oceny.length;
+}
+
+/** Wybór w wydarzeniu: każdy dozwolony wybór oceniony na kopiach zarządu bez znajomości losu (`ocenaWyboru`), najlepsza ocena,
+    przy remisie niższy indeks. Prawdziwy zarząd i wejście zostają bez zmian. */
 export function wyborWydarzenia(gov: GovState, i: GovInput, p: Wydarzenie): number {
-  return najlepszyIndeks(
-    p.choices.map((c, k) => {
-      if (!c.ok) return null;
-      const kopia = structuredClone(gov);
-      return ocenSkutki(chooseEvent(kopia, i, k), kopia, i);
-    }),
-  );
+  return najlepszyIndeks(p.choices.map((_, k) => ocenaWyboru(gov, i, p, k)));
 }
 
 /** Odpowiedź na okno wydarzenia razem z kolejnymi krokami: wybór (`wybierz`, czyli ręka gry), a gdy zarząd pyta dalej o to
