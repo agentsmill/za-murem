@@ -28,6 +28,7 @@ import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
+import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
 
 const KOD = process.argv.includes('--kod');
@@ -745,6 +746,9 @@ const SHOTS: Shot[] = [
   // Lista „moich ludzi” (src/ui/lista.ts): układ przy 1440, 1280, 1024 i na telefonie, angielski, tryb zombie, wszystkie
   // znaczniki stanu, klik i śledzenie kamery, klawisze E i Q, wyprawa, dwanaście osób, przybysze, panel budowy, język
   ...listaShots(OUT),
+  // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
+  // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
+  ...celeShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
   {

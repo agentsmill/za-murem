@@ -708,6 +708,9 @@ a.btn {
 }
 
 .goals {
+  /* dopełnienie u góry i po bokach jest zmienne, bo nagłówek rozdziału (niżej) wchodzi na nie ujemnym marginesem */
+  --goals-pt: 6px;
+  --goals-px: 10px;
   position: absolute;
   left: 8px;
   top: calc(var(--top-h, 56px) + 16px);
@@ -715,7 +718,12 @@ a.btn {
   background: rgb(31 35 38 / 0.92);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 6px 10px 8px;
+  padding: var(--goals-pt) var(--goals-px) 8px;
+  /* nie dalej niż karta osoby (--card-h mierzy main.ts): wyższa lista przewija się w środku */
+  max-height: calc(100% - var(--top-h, 56px) - 16px - var(--card-h, 0px) - 48px);
+  overflow-y: auto;
+  /* własny porządek warstw: z-index przyklejonego nagłówka zostaje w okienku i nie wychodzi nad sąsiednie panele */
+  isolation: isolate;
 }
 .goals-head {
   all: unset;
@@ -743,6 +751,27 @@ a.btn {
 .goals-head:focus-visible {
   outline: 2px solid var(--lamp);
   outline-offset: 2px;
+}
+/* Nagłówek rozdziału (bezpośrednie dziecko okienka; nagłówek okazji siedzi w jej bloku i przewija się z nią) przykleja się
+   do góry okienka: gdy ograniczone okienko (wyżej) przewija listę w środku, tytuł i licznik rozdziału zostają na widoku,
+   a lista jedzie pod nimi. Tło ma pełne, bo samo okienko jest półprzezroczyste i przez nagłówek świeciłby przejeżdżający
+   wiersz; z-index stawia go nad wierszami listy, które są pozycjonowane (`.goal`). Przyklejanie liczy się od pola bez
+   dopełnienia okienka, więc nagłówek wchodzi na dopełnienie u góry i po bokach ujemnym marginesem, a `top` ma o tyle samo
+   ujemny: nieprzewinięty stoi tam, gdzie stał (tytuł się nie rusza), a przyklejony zakrywa całą szerokość i górę pola, bez
+   pasa, przez który widać by przejeżdżającą listę. Szerokość 100% z `.goals-head` liczy się bez dopełnienia, więc razem
+   z nim sięga po obu stronach do krawędzi pola. Pod sobą nagłówek ma 4 px własnego dopełnienia, które oddaje ujemnym
+   marginesem dołu (zwija się z marginesem listy), więc lista zaczyna się tam, gdzie zaczynała. */
+.goals > .goals-head {
+  position: sticky;
+  top: calc(-1 * var(--goals-pt));
+  z-index: 1;
+  margin: calc(-1 * var(--goals-pt)) calc(-1 * var(--goals-px)) -4px;
+  padding: var(--goals-pt) var(--goals-px) 4px;
+  background: var(--slab-deep);
+}
+/* nagłówek przy samej krawędzi pola, więc obrys fokusu na zewnątrz ucinałby się o krawędź; ten idzie do środka */
+.goals > .goals-head:focus-visible {
+  outline-offset: -2px;
 }
 .goals-n {
   margin-left: auto;
@@ -1639,9 +1668,11 @@ a.btn {
     font-size: 14px;
   }
   .goals {
+    --goals-pt: 4px;
+    --goals-px: 8px;
     top: calc(var(--top-h, 96px) + 14px);
     width: calc(100% - 66px);
-    padding: 4px 8px 6px;
+    padding-bottom: 6px;
   }
   .goal {
     font-size: 13px;
