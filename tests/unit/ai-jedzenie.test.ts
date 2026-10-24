@@ -2,8 +2,8 @@
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 4). Powód warstwy: po ogrzanej sypialni gry kończy głód
    (dni 19–29, docs/ocena/2026-10-20-zima-w-grach-botow.md, sekcja 7 punkt 4): zapas startowy (40 porcji) schodzi do zera
    około 9. dnia, zarząd traci zdrowie, a bez zdrowych nie ma ani dyżuru przy kozie, ani warty. Pilnuje sześciu rzeczy:
-   - miar zapasu: `jedzenieNaGlowe` (surowe i ugotowane porcje na osobę zarządu; mieszkańcy siedziby jedzą własne porcje i
-     się nie liczą, tak jak w symulacji, zadanie 7) i `stacNaPrzyjecie` (po przyjęciu co najmniej 2 porcje na osobę
+   - miar zapasu: `jedzenieNaGlowe` (surowe i ugotowane porcje na osobę zarządu; mieszkańcy siedziby nie jedzą z zapasu
+     zarządu i się nie liczą, tak jak w symulacji, zadanie 7) i `stacNaPrzyjecie` (po przyjęciu co najmniej 2 porcje na osobę
      zarządu), z których korzystają wyprawy, uchwała o kotle, werbunek wędrowców i (zadanie 5) wydarzenia z przyjęciem;
    - wyprawy dziennej po jedzenie: poniżej 2 porcji na głowę, tylko między 8:00 a 15:00, jedna naraz, przez mapę miasta jak
      gracz (`Rece.wyslij` z celem z `celZMiejsca`), do najbliższego sklepu z zapasem poza mapą lokalną, z dwiema
@@ -19,7 +19,7 @@
      wyprawa naraz. Granice mają łapać brak warstwy: `ZM_JAK_BAZA=1 npx vitest run tests/unit/ai-jedzenie.test.ts` gra ten
      sam przebieg silnikiem bez wypraw po jedzenie i bez ogródka (jak silnik z zadania 3) i testy przebiegu mają wtedy padać.
      Cel z planu „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25” jest tu sprawdzony na tym przebiegu
-     (zmierzone 56); na wszystkich demach i ziarnach mierzy go bramka etapu (`npm run bot:osada`);
+     (zmierzone 57,3); na wszystkich demach i ziarnach mierzy go bramka etapu (`npm run bot:osada`);
    - determinizmu (zapis i wczytanie w trakcie wyprawy) i kosztu (warstwa najwyżej raz na 30 sekund przy ekranie). */
 
 import fs from 'node:fs';
@@ -110,7 +110,7 @@ function wejscieZ(g: GraAi, ludzie: number, porcje: number, ugotowane = 0, miesz
 }
 
 describe('miary zapasu', () => {
-  it('jedzenieNaGlowe liczy surowe i ugotowane porcje na osobę zarządu; mieszkańcy jedzą własne porcje i się nie liczą', () => {
+  it('jedzenieNaGlowe liczy surowe i ugotowane porcje na osobę zarządu; mieszkańcy siedziby nie jedzą z zapasu i się nie liczą', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
     // 10 surowych + 6 ugotowanych, 3 osoby zarządu + 5 mieszkańców: 16 / 3 (tak samo liczy okazję do werbunku symulacja,
     // `okazjaWerbunku` w src/sim/sim.ts: porcje na osobę z zarządu; pot dla zarządu `potTarget` też nie liczy mieszkańców)
@@ -180,7 +180,7 @@ describe('wyprawa dzienna po jedzenie', () => {
 
   it('przy zapasie na 2 porcje na głowę i więcej wyprawy nie ma', () => {
     const g = graNa(3, 9);
-    // zapas liczy się na osoby zarządu: mieszkańcy siedziby jedzą własne porcje (w tej grze są już mieszkańcy, więc test
+    // zapas liczy się na osoby zarządu: mieszkańcy siedziby nie jedzą z zapasu zarządu (w tej grze są już mieszkańcy, więc test
     // odróżnia obie miary)
     expect(wejscie(g).residents).toBeGreaterThan(0);
     const ludzi = wejscie(g).people.length;
@@ -571,8 +571,8 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   });
 
   it('cel etapu: w dniach 15–25 średnie najedzenie zarządu o 6:00 wynosi co najmniej 25, a gra dożywa 25. dnia', () => {
-    // Cel z planu („średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”) w tym przebiegu: średnia 56 (najgorszy dzień
-    // 46,8; po nocnym posiłku przy wielkim głodzie zarząd nie nocuje już głodny). W zadaniu 4, gdy silnik podpisywał `u_warty`
+    // Cel z planu („średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”) w tym przebiegu: średnia 57,3 (najgorszy dzień
+    // 52,1; po nocnym posiłku przy wielkim głodzie zarząd nie nocuje już głodny). W zadaniu 4, gdy silnik podpisywał `u_warty`
     // pierwszego wieczoru (blokuje kocioł), ten sam przebieg kończył się odwołaniem w 20. dniu, a najedzenie o 6:00 w dniach 3–11
     // wynosiło 16–29 (zarząd je dopiero poniżej 35, a dwie osoby czuwają całą noc bez posiłku). Cel na wszystkich demach i ziarnach
     // mierzy bramka etapu (`npm run bot:osada`, kolumny „głodni” i dzień końca); tu jest on sprawdzony na jednym przebiegu.

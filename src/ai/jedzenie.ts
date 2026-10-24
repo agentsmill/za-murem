@@ -4,15 +4,17 @@
    nie ma ani dyżuru przy kozie, ani warty, więc zimno wraca i wkurzenie rośnie do odwołania.
 
    Miara zapasu to porcje surowe i ugotowane (`GovStock.supplies` i `meals`) na głowę, czyli na osobę zarządu
-   (`jedzenieNaGlowe`). Z zapasu zarządu jedzą tylko osoby zarządu: mieszkańcy siedziby jedzą własne porcje i nie mają głodu
-   w symulacji (garnek `potTarget` liczy samo rdzeń), a symulacja liczy tak samo okazję do werbunku (`okazjaWerbunku`:
-   porcje na osobę z zarządu). Do zadania 7 mieszkańcy liczyli się w głowach (mieszkańcy przechodzą do zarządu przy awansach, a w zadaniu 4
-   wynik bez nich mieścił się w szumie), ale w Przymorzu i Lanciego jest ich 11–15 na 5–7 osób zarządu, więc zapas „na głowę”
-   wychodził 2–3 razy mniejszy, niż jest naprawdę: werbunek, przyjęcia i wyprawy po jedzenie uznawały zapas za zbyt mały. Z głowami
-   równymi osobom zarządu, razem z zaproszeniami bez wymogu wolnego łóżka (src/ai/rozwoj.ts), zarząd rośnie z 6–7 do 9–11 osób,
-   a średni dzień końca gry (żyje = 45) rośnie o 2,4 ± 0,8 (120 przebiegów, ziarna 11–50). `stacNaPrzyjecie` mówi, czy po
-   przyjęciu n osób zostaną co najmniej 2 porcje na osobę zarządu (korzysta z niego warstwa okien z zadania 5 przy wydarzeniach
-   z przyjęciem, ocena traktuje przy tym przyjętych mieszkańców jak jedzących: ostrożnie).
+   (`jedzenieNaGlowe`). Z zapasu zarządu jedzą tylko osoby zarządu: mieszkańcy siedziby nie jedzą z niego wcale i nie mają głodu
+   w symulacji (`stepSafe` w src/sim/needs.ts: zmienia się tylko bezpieczeństwo, reszta ich potrzeb stoi; garnek `potTarget` liczy
+   samo rdzeń), a symulacja liczy tak samo okazję do werbunku (`okazjaWerbunku`: porcje na osobę z zarządu). Do zadania 7
+   mieszkańcy liczyli się w głowach (mieszkańcy przechodzą do zarządu przy awansach, a w zadaniu 4 wynik bez nich mieścił się
+   w szumie), ale w Przymorzu i Lanciego jest ich 11–15 na 5–7 osób zarządu, więc zapas „na głowę” wychodził 2–3 razy mniejszy,
+   niż jest naprawdę: werbunek, przyjęcia i wyprawy po jedzenie uznawały zapas za zbyt mały. Z głowami równymi osobom zarządu,
+   razem z zaproszeniami bez wymogu wolnego łóżka (src/ai/rozwoj.ts), zarząd ma 8–9 osób rano 10. dnia i 10–11 w 20. dniu (wcześniej
+   6–7), a średni dzień końca gry (żyje = 45) rośnie o 2,4 ± 0,8 na ziarnach 11–50 (wariant wybrano na 11–20, więc to liczba
+   zawyżona) i o 1,7 ± 0,8 na ziarnach 31–65 spoza wyboru (przegląd zadania 7). `stacNaPrzyjecie` mówi, czy po przyjęciu n osób
+   zostaną co najmniej 2 porcje na osobę zarządu (korzysta z niego warstwa okien z zadania 5 przy wydarzeniach z przyjęciem, ocena
+   traktuje przy tym przyjętych mieszkańców jak jedzących: ostrożnie, choć w symulacji nie jedzą).
 
    `turaJedzenia` idzie co 30 sekund przy ekranie (pilnuje tego `silnik` w src/ai/silnik.ts) i robi dwie rzeczy:
    - wyprawa dzienna po jedzenie, gdy zapasu jest poniżej 2 porcji na głowę. Idzie tą drogą co gracz z mapy miasta
@@ -73,7 +75,7 @@ const MNOZNIK_LUPU_ZA_DWIE_OSOBY = 1.6;
 const MIN_LUP = 3;
 
 const porcje = (i: GovInput): number => i.stock.supplies + (i.stock.meals ?? 0);
-/** głowy: osoby zarządu, czyli ci, którzy jedzą z zapasu zarządu (mieszkańcy siedziby jedzą własne porcje) */
+/** głowy: osoby zarządu, czyli ci, którzy jedzą z zapasu zarządu (mieszkańcy siedziby nie jedzą z niego wcale: ich potrzeby stoją w miejscu) */
 const glowy = (i: GovInput): number => i.people.length;
 
 /** Porcje surowe i ugotowane w zapasie na osobę zarządu. */

@@ -6,8 +6,9 @@
    `turaRozwoju` idzie co 30 sekund przy ekranie (pilnuje tego `silnik` w src/ai/silnik.ts) i robi cztery rzeczy, każdą
    rękami gry (`Rece`), jak gracz z menu:
    - budowa z kolejki, najwyżej jeden plan naraz (także gdy plan czeka jeszcze w kolejce poleceń albo stoi plan ogródka
-     z warstwy jedzenia). Kolejka: łóżka piętrowe w mieszkaniu zarządu, gdy łóżek nie ma więcej niż osób w zarządzie (bez
-     wolnego łóżka werbunek wędrowca jest zablokowany, a zarząd śpi na podłodze); magazyn przy pełnym składzie drewna (20 sztuk
+     z warstwy jedzenia). Kolejka: łóżka piętrowe w mieszkaniu zarządu, gdy łóżek nie ma więcej niż osób w zarządzie (kto śpi
+     bez łóżka, śpi na podłodze: nastrój −5 na 16 godzin i wolniejszy odpoczynek, +8 na godzinę zamiast +12; wolne łóżko dodaje
+     też 0,15 do szansy zaproszenia wędrowca, ale werbunku nie blokuje, patrz niżej); magazyn przy pełnym składzie drewna (20 sztuk
      na dwóch kafelkach, `STACK` na kafelek); warsztat (deski z drewna, bez niego desek przybywa tylko z rozbiórki); pieczarkarnia
      i szklarnia po badaniach `t_grzyby` i `t_szklarnia`; zasieki na otwartej dziurze w siatce. Tylko rodzaje odblokowane
      (`isUnlocked`) i bez wykorzystanego limitu (`limitWhy`), po jednym stojącym albo planowanym (warsztat, magazyn, pieczarkarnia,
@@ -34,11 +35,13 @@
      jedzenia (`stacNaPrzyjecie`: porcje na osobę zarządu, bez mieszkańców). Wolne łóżko nie jest warunkiem: w symulacji dodaje
      0,15 do szansy zaproszenia (0,30 bazowo, +0,20 przy 2 porcjach na osobę zarządu, −0,30 po niedawnej napaści na obcych,
      `szansaWerbunku` w src/sim/wedrowcy.ts), a zwerbowany bez łóżka śpi na podłodze (nastrój −5). Do zadania 7 silnik żądał
-     wolnego łóżka i liczył zapas z mieszkańcami: w Przymorzu 11 miał 16–23 rozmów w 20 dni i ani jednego zaproszenia, a zarząd
-     stał na 6–7 osobach; teraz zaprasza, zarząd rośnie do 9–11 osób, a w 120 przebiegach (ziarna 11–50) średni dzień końca gry
-     rośnie o 2,4 ± 0,8 (Przymorze i Lanciego; w Zielonkach bez zmian: tam kończy się jedzenie, nie ludzie). Wędrowiec stoi przy
-     siatce 20–40 minut gry i godzinę po rozmowie, a warstwa idzie co 30 sekund przy ekranie, więc większość wędrowców dostaje
-     rozmowę i zaproszenie dokładnie jeden raz.
+     wolnego łóżka i liczył zapas z mieszkańcami: w Przymorzu 11–13 miał 15–23 rozmów w 20 dni i ani jednego zaproszenia, a zarząd
+     stał na 6–7 osobach; teraz zaprasza, zarząd ma 8–9 osób rano 10. dnia i 10–11 w 20. dniu. Średni dzień końca gry (żyje = 45)
+     rośnie o 2,4 ± 0,8 na ziarnach 11–50 (120 par; wariant wybrano na ziarnach 11–20, więc ta liczba jest zawyżona) i o 1,7 ± 0,8
+     na ziarnach 31–65 spoza wyboru (105 par, pomiar przeglądu); na zbiorze 51–65 (45 par, niezależnym od wyboru) Przymorze
+     +3,9 ± 2,5, Lanciego +0,1 ± 2,8 (czyli około zera), Zielonki bez zmian: tam kończy się jedzenie, nie ludzie. Wędrowiec stoi
+     przy siatce 20–40 minut gry i godzinę po rozmowie, a warstwa idzie co 30 sekund przy ekranie, więc większość wędrowców
+     dostaje rozmowę i zaproszenie dokładnie jeden raz.
 
    Warstwa czyta stan gry jak gracz (`wejscie`, `SimState`, świat) i działa tylko rękami; nie ma własnego stanu poza stanem gry
    (łóżka, plany, badania i tabela Pracy wynikają z niego, więc zapis i wczytanie w połowie nic nie zmieniają), niczego nie

@@ -657,7 +657,7 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
   });
 
   it('jedzenie na przyjęcie liczy się na osoby zarządu: mieszkańcy siedziby go nie zmniejszają', () => {
-    // zapas dokładnie na 2 porcje na osobę zarządu po przyjęciu jednej osoby; mieszkańców jest kilku (jedzą własne porcje),
+    // zapas dokładnie na 2 porcje na osobę zarządu po przyjęciu jednej osoby; mieszkańców jest kilku (nie jedzą z zapasu zarządu),
     // więc z nimi w głowach (po staremu) zapasu by nie starczało
     const { g } = poRozmowie();
     const zarzad = rdzen(g);
@@ -814,8 +814,9 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
 
   it('werbunek działa: do 10. dnia co najmniej dwa zaproszenia wędrowców, a zarząd rośnie z 4 do co najmniej 8 osób', () => {
     // Zmierzone w tym przebiegu: 4 zaproszenia i 9 osób w zarządzie rano 10. dnia (przed zmianą werbunku 0 zaproszeń w 20 dni
-    // przy 16–23 rozmowach i 7 osobach w zarządzie): zwerbowani wędrowcy trafiają do zarządu, a w przebiegach 11–50 (trzy dema,
-    // 120 przebiegów) większy zarząd to dłuższe przeżycie (średni dzień końca, żyje = 45: Przymorze 40,5 → 43,5, Lanciego 30,0 → 34,4).
+    // przy 15–23 rozmowach i 7 osobach w zarządzie): zwerbowani wędrowcy trafiają do zarządu. Większy zarząd to dłuższe przeżycie
+    // (średni dzień końca, żyje = 45): +2,4 ± 0,8 na ziarnach 11–50 (wariant wybrano na 11–20, więc to liczba zawyżona) i
+    // +1,7 ± 0,8 na ziarnach 31–65 spoza wyboru; Przymorze +3,9 ± 2,5, a Lanciego +0,1 ± 2,8 (około zera) na zbiorze 51–65.
     const rano10 = poranki.find((p) => p.dzien === 10);
     expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
     expect(zaproszenia.filter((d) => d <= 10).length).toBeGreaterThanOrEqual(2);
