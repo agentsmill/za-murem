@@ -730,9 +730,8 @@ export interface GovState {
   czytane?: number;
   /** goście z klocków (src/gov/wizyta.ts): `n` ile gości zarząd już zaplanował (id `g<n>`), `czytane` ile pierwszych
       wpisów `GovInput.goscie` to wizyty już zakończone i rozliczone, `aktywny` to jedyna wizyta, którą zarząd
-      prowadzi (jeden gość naraz), `czeka` to wizyta wylosowana w trybie zombie, której zarząd jeszcze nie zaplanował, bo przy siatce
-      kręci się za dużo szwendaczy (`CzekajacaWizyta`); pole od pierwszego planu, w grze bez obcych go nie ma */
-  goscie?: { n: number; czytane: number; aktywny?: AktywnyGosc; czeka?: CzekajacaWizyta };
+      prowadzi (jeden gość naraz); pole od pierwszego planu, w grze bez obcych go nie ma */
+  goscie?: { n: number; czytane: number; aktywny?: AktywnyGosc };
   /** Wskazówki na miejsca (wiadomość od gościa): klucz miejsca z okolicy (`Cel.klucz`) albo id celu z TARGETS → dzień
       gry, w którym je dostaliśmy. Następna wyprawa do tego miejsca ma ryzyko ×0,5 i łup ×1,5, po rozliczeniu wskazówka
       znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki. `bron`: wskazówka o miejscu z bronią (łańcuch „Głos z
@@ -770,16 +769,6 @@ export interface Napiecie {
   siatka?: number;
   zdrowie?: Record<string, number>;
   ugryzieni?: string[];
-}
-
-/** Wizyta wylosowana w trybie zombie, której plan czeka na spokój przy siatce (`ulicaWolna`): `co` to rodzaj (karta `gosc`,
-    `powrot` albo `krok` łańcucha z gościem, wtedy `id` kroku i jego dane `d` z `make`), `od` minuta gry losowania; po `CZEKA_MAX`
-    minutach bez spokoju wizyta przepada bez śladu (krok łańcucha kończy wtedy łańcuch po cichu, jak gość, który nie doszedł). */
-export interface CzekajacaWizyta {
-  co: 'gosc' | 'powrot' | 'krok';
-  od: number;
-  id?: string;
-  d?: unknown;
 }
 
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy

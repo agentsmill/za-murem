@@ -4,10 +4,11 @@
    wpływ na losowanie kart i na haczyki gości. */
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { tx } from '../../src/core/jezyk.ts';
 import { mnoznik, napiecie, ostrzej, SPOKOJ_DOBA } from '../../src/gov/narrator.ts';
 import type { GEventDef } from '../../src/gov/tresc.ts';
 import type { GovInput, GovPerson, GovState, NightReport } from '../../src/gov/typy.ts';
-import { krokPoId, podmienLancuchy } from '../../src/gov/watki.ts';
+import { type Krok, krokPoId, type Lancuch, podmienLancuchy } from '../../src/gov/watki.ts';
 import { planujGoscia } from '../../src/gov/wizyta.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { eventTick, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
@@ -349,5 +350,102 @@ describe('narrator: goście po dłuższym spokoju', () => {
     expect(po).toBeGreaterThan(zwykly);
     // równo doba to jeszcze nie spokój
     expect(udzialHaczyka(SPOKOJ_DOBA)).toBe(zwykly);
+  });
+});
+
+// ---------------------------------------------------------------- narrator i łańcuchy kart
+
+/** krok łańcucha do testów: `ton` i `nr` do wyboru, bez gościa i bez haków poza tym, co ustawia test */
+function krokTonu(lancuch: string, nr: number, ton: 'ostre' | 'lagodne' | undefined, hak?: string): Krok {
+  return {
+    id: `${lancuch}_${nr}`,
+    lancuch,
+    nr,
+    po: 0,
+    ...(hak ? { hak } : {}),
+    ...(ton ? { ton } : {}),
+    when: ['dzien', 'wieczor', 'noc'],
+    first: true,
+    w: () => 1,
+    make: () => ({}),
+    title: () => tx('Krok', 'Step'),
+    text: () => tx('Tekst', 'Text'),
+    choices: () => [{ label: tx('Tak', 'Yes'), ok: true, run: () => {} }],
+  };
+}
+
+/** zarząd z łańcuchami, zamrożoną zwykłą pulą i atrapą o 23:00 trzeciego dnia */
+function zLancuchami(seed: number, v: number, lancuchy: Lancuch[], watki: NonNullable<GovState['watki']>) {
+  podmienLancuchy(lancuchy);
+  const gov = newGov(seed, 'zwykly', true);
+  gov.napiecie = { v, t: 0, spokoj: 0 };
+  gov.watki = watki;
+  gov.ev.next = 0;
+  gov.ev.warm = 0;
+  gov.ev.lit = -1;
+  const i = wejscie(3, 23);
+  for (const e of M1_EVENTS) gov.ev.last[e.id] = gameMin(i);
+  return { gov, i };
+}
+
+describe('narrator: pierwsze kroki i dojrzałe kroki łańcuchów', () => {
+  const ziarna = Array.from({ length: 200 }, (_, k) => 300 + k);
+
+  it('pierwszy krok łańcucha wchodzi do puli z wagą razy mnożnik: przy wysokim napięciu łagodny wygrywa z ostrym', () => {
+    const lancuchy: Lancuch[] = [
+      { id: 'o', tryby: ['zwykly'], kroki: [krokTonu('o', 1, 'ostre'), krokTonu('o', 2, undefined, 'o.x')] },
+      { id: 'l', tryby: ['zwykly'], kroki: [krokTonu('l', 1, 'lagodne'), krokTonu('l', 2, undefined, 'l.x')] },
+    ];
+    const lagodne = (v: number): number => {
+      let n = 0;
+      for (const seed of ziarna) {
+        const { gov, i } = zLancuchami(seed, v, lancuchy, { wybrane: ['o', 'l'], haki: {}, krok: {} });
+        for (let k = 0; k < 10 && !gov.ev.active; k++)
+          eventTick(gov, { ...i, screen: 1000 + 200 * k }, emptyEffects(), false);
+        if (gov.ev.active?.id === 'l_1') n++;
+      }
+      return n;
+    };
+    const niskie = lagodne(5);
+    const wysokie = lagodne(80);
+    // waga 1 : 1 daje około połowy, 2 : 0,3 około 87%
+    expect(niskie).toBeGreaterThan(70);
+    expect(niskie).toBeLessThan(130);
+    expect(wysokie).toBeGreaterThan(150);
+  });
+
+  it('szansa dojrzałego kroku to SZANSA_KROKU razy mnożnik: ostry krok przy wysokim napięciu wypada rzadziej, łagodny pewnie', () => {
+    const wypada = (ton: 'ostre' | 'lagodne' | undefined, v: number, spokoj = 0): number => {
+      const lancuchy: Lancuch[] = [
+        { id: 'c', tryby: ['zwykly'], kroki: [krokTonu('c', 1, undefined), krokTonu('c', 2, ton, 'c.x')] },
+      ];
+      let n = 0;
+      for (const seed of ziarna) {
+        // pierwszy krok rozstrzygnięty dawno (hak `c.x` z minuty 0), drugi gotowy od razu
+        const { gov, i } = zLancuchami(seed, v, lancuchy, {
+          wybrane: ['c'],
+          haki: { 'c.x': { t: 0 }, c_1: { t: 0 } },
+          krok: { c: 1 },
+        });
+        gov.napiecie!.spokoj = spokoj;
+        eventTick(gov, { ...i, screen: 1000 }, emptyEffects(), false);
+        if (gov.ev.active?.id === 'c_2') n++;
+      }
+      return n;
+    };
+    // bez tonu 0,6 (jedna liczba z ziarna jak dotąd)
+    const zwykly = wypada(undefined, 80);
+    expect(zwykly).toBeGreaterThan(95);
+    expect(zwykly).toBeLessThan(145);
+    expect(wypada(undefined, 5)).toBe(zwykly);
+    // ostry przy wysokim napięciu: 0,6 × 0,3 = 0,18
+    const ostry = wypada('ostre', 80);
+    expect(ostry).toBeGreaterThan(15);
+    expect(ostry).toBeLessThan(60);
+    // łagodny przy wysokim napięciu: min(1, 0,6 × 2) = 1
+    expect(wypada('lagodne', 80)).toBe(ziarna.length);
+    // ostry po dobie spokoju: 0,6 × 2 → 1; łagodny przy niskim napięciu bez zmian
+    expect(wypada('ostre', 5, SPOKOJ_DOBA + 1)).toBe(ziarna.length);
+    expect(wypada('lagodne', 5)).toBe(zwykly);
   });
 });

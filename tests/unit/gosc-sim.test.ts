@@ -27,6 +27,7 @@ import {
   poStronie,
   przesuniecieWStrone,
   ranoGoscia,
+  SPOOK_GOSC,
   startGoscia,
 } from '../../src/sim/gosc.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
@@ -35,6 +36,7 @@ import { jobText } from '../../src/sim/orders.ts';
 import { gateTiles as gateTilesOf } from '../../src/sim/perimeter.ts';
 import { awansuj, createSim, type Pawn, RISE_TICKS, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
+import { SPOOK_R } from '../../src/sim/wedrowcy.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 
@@ -977,20 +979,39 @@ describe('śmierć i szwendacze', () => {
     expect(grupa(st).faza).toBe('poszedl');
   });
 
-  it('w trybie zombie szwendacz przy bramie płoszy gościa: poszedl', () => {
+  it('w trybie zombie szwendacz przy bramie, który podszedł na zasięg ugryzienia, płoszy gościa: poszedl', () => {
     const sim = gra(2, 10, { zombie: true });
     podBrame(sim, plan(2, 'n'));
     const st = sim.st;
     const m = czlonkowie(st);
     const lider = tileOf(m[0]);
     expect(lider).toBe(SPOT);
-    const z = spawnZombie(st, w, SPOT + 5, 16);
+    const z = spawnZombie(st, w, SPOT + 1, 16);
     run(sim, () => grupa(st).faza !== 'brama', 200, [z]);
     expect(grupa(st).faza).toBe('odchodzi');
     run(sim, () => grupa(st).faza === 'poszedl' || grupa(st).faza === 'zginal', 8000, [z]);
     expect(grupa(st).faza).toBe('poszedl');
     expect(kind(st, 'gosc')).toHaveLength(0);
     expect(st.things.filter((t) => t.kind === 'zwloki')).toHaveLength(0);
+  });
+
+  it('w trybie zombie szwendacz o kilka metrów od grupy jej nie płoszy (Task 16: promień SPOOK_GOSC, nie SPOOK_R), ale blisko nadal tak', () => {
+    expect(SPOOK_GOSC).toBeCloseTo(1.1, 10);
+    expect(SPOOK_GOSC).toBeLessThan(SPOOK_R);
+    const sim = gra(2, 10, { zombie: true });
+    podBrame(sim, plan(2, 'n'));
+    const st = sim.st;
+    // szwendacz 4 m od bramy (dalej niż zasięg ugryzienia, bliżej niż 6 m dawnego płoszenia): w pierwszych krokach grupa stoi
+    const z = spawnZombie(st, w, SPOT + 4, 16);
+    const p = czlonkowie(st)[0];
+    const d0 = Math.hypot(z.x - p.x, z.y - p.y);
+    expect(d0).toBeGreaterThan(SPOOK_GOSC);
+    expect(d0).toBeLessThan(SPOOK_R);
+    run(sim, () => false, 20, [z]);
+    expect(grupa(st).faza).toBe('brama');
+    // ale szwendacz, który podejdzie, nadal ją płoszy (albo gryzie): grupa nie stoi dalej pod bramą
+    run(sim, () => grupa(st).faza !== 'brama', 2000, [z]);
+    expect(['odchodzi', 'poszedl', 'zginal']).toContain(grupa(st).faza);
   });
 
   it('w trybie zombie goście są ofiarami: szwendacz bije gościa, który stoi mu na drodze', () => {

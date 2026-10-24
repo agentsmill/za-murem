@@ -197,7 +197,7 @@ function zakoncz(st: GovState, l: Lancuch): void {
 }
 
 /** Sprzątanie łańcuchów (co sekundę z `eventTick`, po `goscTick`): łańcuch, którego rozpoczęty krok nie jest ani otwartą
-    kartą, ani prowadzoną wizytą, ani odłożoną do spokoju przy siatce (`GovState.goscie.czeka`), a nie został rozstrzygnięty, kończy się po cichu; tak samo w grze bez obcych
+    kartą, ani prowadzoną wizytą, a nie został rozstrzygnięty, kończy się po cichu; tak samo w grze bez obcych
     (`GovInput.goscie` brak) łańcuch niezaczęty z jakimkolwiek krokiem z gościem i zaczęty z następnym krokiem z gościem.
     Bez `watki` nic nie robi. */
 export function porzadkuj(st: GovState, i: Pick<GovInput, 'goscie'>): void {
@@ -206,8 +206,6 @@ export function porzadkuj(st: GovState, i: Pick<GovInput, 'goscie'>): void {
   const otwarta = st.ev.active?.id;
   const wizyta = st.goscie?.aktywny;
   const kartaWizyty = wizyta && !wizyta.koniec ? wizyta.kartaId : undefined;
-  // krok z gościem odłożony do spokoju przy siatce (tryb zombie, `GovState.goscie.czeka`) jeszcze trwa
-  const czeka = st.goscie?.czeka?.co === 'krok' ? st.goscie.czeka.id : undefined;
   for (const id of w.wybrane) {
     const l = lancuch(id);
     if (!l) continue;
@@ -219,7 +217,7 @@ export function porzadkuj(st: GovState, i: Pick<GovInput, 'goscie'>): void {
     }
     const k = l.kroki[nr - 1];
     if (!rozstrzygniety(w, k)) {
-      if (k.id !== otwarta && k.id !== kartaWizyty && k.id !== czeka) zakoncz(st, l);
+      if (k.id !== otwarta && k.id !== kartaWizyty) zakoncz(st, l);
     } else if (l.kroki[nr].gosc && !i.goscie) zakoncz(st, l);
   }
 }

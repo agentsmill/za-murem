@@ -464,11 +464,13 @@ describe('mieszkańcy z generatora: awans do zarządu i zdrowie bohaterki', () =
 // ---------------------------------------------------------------- tryb zombie: ugryziony i dobicie
 
 describe('zombie: ugryziony naprawdę dostaje ugryzienie, a dobicie naprawdę zabija pionek', () => {
-  // w trybie zombie goście dochodzą do bramy tylko wtedy, gdy zarząd zaplanuje wizytę przy spokoju przy siatce (`ulicaWolna`;
-  // szwendacze płoszą grupę po drodze), więc testy biorą ziarna, w których spokój trafia się w ciągu 4 dób (zadanie 16: były 10 i 20)
+  // w trybie zombie goście nie zawsze dochodzą do bramy (szwendacz na zasięgu ugryzienia płoszy grupę w drodze, `SPOOK_GOSC`; na
+  // ziarnach 1–30 karta „Ocaleni pod bramą” otwiera się w 12 grach, a „Matka prosi o dobicie” przy zarządzie bez dzidy w 7), więc
+  // testy biorą ziarna, w których grupa dochodzi w ciągu czterech dób: zielonki 10 (dach) i przymorze 20 (dobicie), te same co od
+  // zadania 15, sprawdzone po zmianie promienia płoszenia
 
   it('dach: ocaleni z ukrytym ugryzieniem; wpuszczeni na noc dostają ugryzienie (gorączka u ugryzionego pionka)', () => {
-    const g = nowaGra(swiat('zielonki'), 1, 'dach', { mode: 'zombie' });
+    const g = nowaGra(swiat('zielonki'), 10, 'dach', { mode: 'zombie' });
     // kroki 1–2 pominięte: trzeci krok od razu
     g.gov.watki!.krok.dach = 2;
     g.gov.watki!.haki.dach_2 = { t: 0 };
@@ -489,7 +491,7 @@ describe('zombie: ugryziony naprawdę dostaje ugryzienie, a dobicie naprawdę za
   }, 300_000);
 
   it('dach: „Obejrzeć ręce” odsłania ugryzionego, a karta zostaje otwarta', () => {
-    const g = nowaGra(swiat('zielonki'), 1, 'dach', { mode: 'zombie' });
+    const g = nowaGra(swiat('zielonki'), 10, 'dach', { mode: 'zombie' });
     g.gov.watki!.krok.dach = 2;
     g.gov.watki!.haki.dach_2 = { t: 0 };
     const o = graj(g, ID('dach_3'), 4)!;
@@ -505,15 +507,11 @@ describe('zombie: ugryziony naprawdę dostaje ugryzienie, a dobicie naprawdę za
   }, 300_000);
 
   it('dobicie: osoba z dzidą bije ugryzionego chłopca przez siatkę, matka odchodzi; chłopiec nie stoi już pod bramą', () => {
-    const g = nowaGra(swiat('przymorze'), 1, 'dobicie', { mode: 'zombie' });
+    const g = nowaGra(swiat('przymorze'), 20, 'dobicie', { mode: 'zombie' });
     const o = graj(g, ID('dobicie_1'), 4)!;
     expect(o, 'matka z synem pod bramą').toBeTruthy();
     // bez dzidy w zarządzie dobicie jest niedostępne; z dzidą (wzięta po przyjściu matki) okno ma je w wyborach
     const dobic = (p: Okno) => p.choices.find((c) => c.label.pl.startsWith('Dobić przez siatkę'))!;
-    // karta otwiera się dopiero przy spokoju przy siatce, więc ktoś mógł już wziąć dzidę z zestawu startowego: zdejmujemy ją, żeby
-    // sprawdzić oba stany (zadanie 16)
-    for (const q of g.st.pawns) if (q.kind === 'core') q.weapon = null;
-    o.p = pending(g.gov, govInput(g.st, g.w, o.sek)) as Okno;
     expect(dobic(o.p).ok).toBe(false);
     for (const q of g.st.pawns) if (q.kind === 'core') q.weapon = 'dzida';
     const p2 = pending(g.gov, govInput(g.st, g.w, o.sek)) as Okno;

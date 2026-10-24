@@ -130,6 +130,7 @@ import {
   goscKoniec,
   najblizszaGodzina,
   ranoGoscia,
+  SPOOK_GOSC,
   startGoscia,
 } from './gosc.ts';
 import {
@@ -7952,11 +7953,11 @@ export class Sim {
     }
   }
 
-  /** Tryb zombie: szwendacz do SPOOK_R m od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
+  /** Tryb zombie: szwendacz do SPOOK_GOSC m (zasięg ugryzienia) od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
   private goscPlosz(g: GoscSim, m: Pawn[]): boolean {
     const st = this.st;
     if (modeOf(st) !== 'zombie' || (st.tick + g.pawns[0]) % THINK_EVERY !== 0) return false;
-    const r2 = SPOOK_R * SPOOK_R;
+    const r2 = SPOOK_GOSC * SPOOK_GOSC;
     for (const z of st.pawns) {
       if (z.kind !== 'zombie' || this.graveyard.has(z.id)) continue;
       for (const p of m) if ((z.x - p.x) ** 2 + (z.y - p.y) ** 2 <= r2) return true;
