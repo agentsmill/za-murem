@@ -32,7 +32,7 @@
    kozę z beczki (`t_kozy`), potem postawić ją w pokoju do spania; podpowiedź mówi, że koza w kuchni sypialni nie dogrzeje i że
    koza z beczki potrzebuje okna (rura), a tam, gdzie któryś pokój do spania okna nie ma, że trzeba łóżek piętrowych w pokoju
    z oknem i kozy tam. Na Lanciego żaden z czterech pokoi nie ma okna w zasięgu (okna mają tam tylko kuchnia i łazienka), więc
-   okazji tam nie ma: koza z beczki stanęłaby tylko w kuchni, a łóżka pietrowe wolno stawiać wyłącznie w pokojach. Dowód
+   okazji tam nie ma: koza z beczki stanęłaby tylko w kuchni, a łóżka piętrowe wolno stawiać wyłącznie w pokojach. Dowód
    w tests/unit/sciezka-okazje.test.ts. Okazja mija z końcem zimy (dzień 20), więc nie wisi bez końca. */
 
 import { L } from '../core/jezyk.ts';
