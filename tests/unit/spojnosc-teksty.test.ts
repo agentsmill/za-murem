@@ -1,4 +1,4 @@
-/* Teksty i logika po przeglądzie spójności przed wydaniem (raport: scratchpad spojnosc/gra-raport.md, punkty M1–M18): koniec
+/* Teksty i logika po przeglądzie spójności przed wydaniem (przegląd z 24.10.2026, punkty M1–M18 z jego raportu): koniec
    gry w kronice mówi tytułem zakończenia w obu językach (M1), temperatury poniżej zera mają prawdziwy minus (M2), skąd bierze
    się materiał brzmi po polsku jak zdanie (M3), karty gości mają zgodne zaimki i liczbę osób (M5, M6), kradzież mówi o porcjach
    (M7), cudzysłowy w nazwach z OSM są polskie (M8), postać z łańcucha nie dzieli pełnego imienia z gościem (M17), kobieta

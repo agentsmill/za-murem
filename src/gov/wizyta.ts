@@ -1094,16 +1094,13 @@ export function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
       h.log(
         tx(
           'Zawiniątko leży w składziku pod kluczem. Wrócą po nie przy pierwszej okazji.',
-          `The bundle sits in the storeroom under lock and key. ${onEn(g0)} will be back for it at the first opportunity.`,
+          `The bundle sits in the storeroom under lock and key. ${onEn(g)} will be back for it at the first opportunity.`,
         ),
       );
     },
   };
   const wiadomosc: GChoice = {
-    label: tx(
-      'Wysłuchać, co mają do powiedzenia',
-      wielu(g) ? 'Hear what they have to say' : `Hear what ${maEn(g, false)} to say`,
-    ),
+    label: tx('Wysłuchać, co mają do powiedzenia', `Hear what ${maEn(g, false)} to say`),
     ok: pod,
     run: () => {
       h.goscRozkaz(id, 'odejdz', 'nakarmiony');
