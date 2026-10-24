@@ -55,11 +55,23 @@
    rozkaz dla grupy (`goscRozkaz`) zapisuje zdarzenie z `JAK_ROZKAZU`, a wybory z innym sensem podają je same (leki,
    wymiana, przechowanie i wysłuchanie to pomoc przez siatkę, `nakarmiony`; wyrzucenie z łupem złapanego to `zlapany`;
    „Zatrzymać do rana” nie ma rozkazu, więc `zapamietajGoscia`). Noc w tej samej wizycie, która kończy się kradzieżą
-   (`goscTick`) albo złapaniem, poprawia wpis (`okradl`, `zlapany`) zamiast dokładać drugi. Gość zabity w całości oznacza
-   znajomego jako zmarłego. Powrót (`planujPowrot`): wydarzenie `powrot` z puli (`POWROT_EVENT`) planuje wizytę tego samego
+   (`goscTick`) albo złapaniem, poprawia wpis (`okradl`, `zlapany`) zamiast dokładać drugi. Znajomy jest zmarły (`Znajomy.zmarl`),
+   gdy wizyta kończy się śmiercią całej grupy albo tego, o którym wpis (`AktywnyGosc.znajomyIdx` nie ma już w `GovGosc.zywi`),
+   choć reszta grupy żyje. Powrót (`planujPowrot`): wydarzenie `powrot` z puli (`POWROT_EVENT`) planuje wizytę tego samego
    człowieka i wyglądu (`Gosc.wraca`, `skladPowrotu`), a karta `gosc` rozpoznaje go po imieniu i epitecie (`tekstPowrotu`)
    i zapowiada dar; dar przychodzi z wyborem, który nie jest odprawą (worek jedzenia rano przez `later`, wskazówka na
    miejsce jak wiadomość, rodzeństwo do przyjęcia jako druga osoba grupy).
+
+   Kroki łańcuchów z gościem (src/gov/watki-tresc.ts, `GEventDef.gosc` → `planujKarte`, ta sama droga co karty z 0.3). Kontrakt kroku
+   z `GoscKarty`: `osoby` (z generatora zarządu, imię inne niż w osiedlu), `kto` (archetyp albo rola karty), `strona` (wejście,
+   bez niej z ziarna zarządu), `look` (wygląd każdej osoby 4–15 jak w `AktywnyGosc.looks`: ten sam człowiek wraca z tą samą
+   twarzą), `chce` (czego prosi), `ugryziony` (indeks w `osoby`; ocaleni z ukrytym ugryzieniem, dach), `wraca` (id wpisu `Znajomy`
+   mówiącego: kolejny krok ten sam człowiek, jeden wpis w pamięci o znajomych). Host oddaje krokom: `grupa` (`GrupaKarty`: żywi,
+   mówiący pierwszy, `looks` każdej osoby do haka, `pod`: stoją pod bramą), `wskazowkaMiejsca` i `miejsceWskazowki` (wskazówka
+   z karty, nie od gościa, także z bronią), `znajomyWolny` (człowiek z haka żyje i nie mieszka u nas, inaczej krok ma wagę 0) i
+   `doPowrotu` bez ludzi z nieskończonych łańcuchów (`zajeciLudzie` w watki.ts; powrót z puli i krok łańcucha nie sprowadzą tego
+   samego człowieka naraz). `bezPowtorek` zdejmuje z gości z klocków to, co opowiadają wybrane łańcuchy (dobicie, dach; tylko
+   przy `GovState.lancuchy`), a narrator (`ostrzej`) po spokoju daje haczykom ×1,5.
 
    Zależności: zarząd nie importuje symulacji, host (`makeHost` w wydarzenia.ts) dostaje metody z `goscHost`. */
 
@@ -113,6 +125,8 @@ import {
   ZAPAS_ODMOWY,
   type Znajomy,
   zapamietaj,
+  znajdzZnajomego,
+  znajomyWolny,
 } from './znajomi.ts';
 
 // ---------------------------------------------------------------- stałe
@@ -192,8 +206,13 @@ export interface GoscHost {
   zapamietajGoscia(id: string, jak: JakId): void;
   /** wpis znajomego o tym id (kopia); null: nie ma takiego */
   znajomy(id: string): Znajomy | null;
-  /** czy ktoś może teraz wrócić jako gość (`doPowrotu` w osiedlu bez obecnych); waga wydarzenia `powrot` */
+  /** czy ktoś może teraz wrócić jako gość (`doPowrotu` w osiedlu bez obecnych i bez ludzi, których prowadzi nieskończony łańcuch);
+      waga wydarzenia `powrot` */
   doPowrotu(): boolean;
+  /** Czy człowiek z haka łańcucha (`zid`: id jego wpisu o znajomych, `osoba`: do znalezienia go po imieniu, gdy wpis ma inne id)
+      może wrócić pod bramę: żyje i nie mieszka u nas ani w zarządzie (`znajomyWolny`). Kto nie ma wpisu, jest wolny, o ile nie
+      ma go wśród obecnych i zmarłych po imieniu. Krok łańcucha, który sprowadza tego samego człowieka, ma wtedy wagę 0. */
+  znajomyWolny(zid: string, osoba?: Pick<Person, 'name' | 'f' | 'age'>): boolean;
   /** broń i amunicja z rzeczy gościa do magazynu (`fx.arms`, `fx.ammo`) */
   dajBron(id: string): void;
   dajAmunicje(k: 'naboje' | 'loftki' | 'belty', n: number): void;
@@ -243,7 +262,7 @@ export interface GrupaKarty {
 const kopia = <T>(v: T): T => structuredClone(v);
 
 /** Metody hosta dla gości na stanie zarządu, wejściu i skutkach bieżącego wywołania. */
-export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
+export function goscHost(st: GovState, i: GovInput, fx: GovEffects, zajeci: ReadonlySet<string> = new Set()): GoscHost {
   const nd = nightDay(i);
   const aktywny = (id: string) => {
     const a = st.goscie?.aktywny;
@@ -286,6 +305,7 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       { wizyta: a.gosc.id, odmowa },
     );
     a.znajomy = z.id;
+    a.znajomyIdx = k;
   };
   const rozkaz = (id: string, co: GoscRozkaz, jak?: JakId): void => {
     (fx.goscRozkaz ??= []).push({ id, co });
@@ -320,7 +340,13 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       const z = st.znajomi?.find((x) => x.id === id);
       return z ? kopia(z) : null;
     },
-    doPowrotu: () => !!doPowrotu(st, i.day, st.mode ?? 'zwykly', obecniWOsiedlu(i)),
+    doPowrotu: () => !!doPowrotu(st, i.day, st.mode ?? 'zwykly', obecniWOsiedlu(i), zajeci),
+    znajomyWolny: (zid, osoba) => {
+      const o = obecniWOsiedlu(i);
+      const z = znajdzZnajomego(st, zid, osoba);
+      if (z) return znajomyWolny(z, o);
+      return !osoba || !(o.imiona.has(osoba.name) || o.zmarli.has(osoba.name));
+    },
     dajBron: (id) => {
       (fx.arms ??= []).push(id);
     },
@@ -534,6 +560,7 @@ export function planujKarte(
     z prośbą o dobicie to łańcuch „dobicie”, ocaleni z ukrytym ugryzieniem to łańcuch „dach”. Bez tych łańcuchów pusty obiekt,
     więc losowania gości (i skróty gry) zostają takie jak dotąd. */
 function bezPowtorek(st: GovState): Pick<KontekstGoscia, 'bez'> {
+  if (!st.lancuchy) return {};
   const wybrane = st.watki?.wybrane ?? [];
   const kto: KtoId[] = wybrane.includes('dobicie') ? ['z_ugryzionym'] : [];
   const haczyk: HaczykId[] = wybrane.includes('dach') ? ['ugryziony'] : [];
@@ -570,11 +597,16 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
     do wyboru), zapisany jako aktywny, plan dla symulacji z wyglądem sprzed lat i znacznik powrotu na wpisie (`Znajomy.wrocil`,
     najwyżej jeden powrót na 4 doby). null (nic nie zmienione): gra bez obcych albo nikt nie może wrócić. Losuje tylko z ziarna
     zarządu; karty nie pokazuje, ta przychodzi pod bramą jak dla każdego gościa. */
-export function planujPowrot(st: GovState, i: GovInput, fx: GovEffects): Gosc | null {
+export function planujPowrot(
+  st: GovState,
+  i: GovInput,
+  fx: GovEffects,
+  zajeci: ReadonlySet<string> = new Set(),
+): Gosc | null {
   // gra bez obcych albo trwa inna wizyta (jedna naraz): nic się nie zmienia
   if (!i.goscie || (st.goscie?.aktywny && !st.goscie.aktywny.koniec)) return null;
   const mode = st.mode ?? 'zwykly';
-  const z = doPowrotu(st, i.day, mode, obecniWOsiedlu(i));
+  const z = doPowrotu(st, i.day, mode, obecniWOsiedlu(i), zajeci);
   if (!z) return null;
   const s = (st.goscie ??= { n: 0, czytane: 0 });
   s.n++;
@@ -706,8 +738,8 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
   const slowa = wordsOf(placeIn(i));
   const slowaEn = wordsEn(placeIn(i));
   if (KONCOWE.has(e.faza)) {
-    // zginęli wszyscy: znajomy nie wróci
-    if (e.faza === 'zginal' && a.znajomy) {
+    // zginęli wszyscy albo zginął ten, o którym zarząd pamięta (reszta grupy mogła przeżyć): znajomy nie wróci
+    if (a.znajomy && (e.faza === 'zginal' || (e.zywi.length > 0 && !e.zywi.includes(a.znajomyIdx ?? 0)))) {
       const x = st.znajomi?.find((y) => y.id === a.znajomy);
       if (x) x.zmarl = true;
     }

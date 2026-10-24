@@ -37,7 +37,7 @@ import { przyczynaEn } from '../content/data.en.ts';
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
 import { g, type Person } from '../content/people.ts';
-import { type Tx, tx, txOf } from '../core/jezyk.ts';
+import { type Tx, tx, txOf, wielka } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
 import type { ChceId, KtoId, Strona } from './goscie.ts';
 import type { Words, WordsEn } from './miejsce.ts';
@@ -451,7 +451,6 @@ const namesEn = (list: GovPerson[]) =>
 /** imiona w obu językach: „Ania, Bartek i Celina”, „Ania, Bartek and Celina” */
 export const peopleNamesTx = (list: GovPerson[]): Tx => tx(names(list), namesEn(list));
 
-const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 const dom = (h: GovHost) => h.place().kind === 'dom';
 /** sąsiedzi to domy: dom obok zamiast bloku obok (w samotnym miejscu wydarzenia z sąsiadami nie przychodzą) */
 const domyObok = (h: GovHost) => h.neighbours() === 'domy';

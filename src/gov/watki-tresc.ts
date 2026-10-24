@@ -32,12 +32,13 @@
    teksty nie losują wcale. */
 
 import { zawodEn } from '../content/data.en.ts';
-import { PROFS, type Prof, SURN } from '../content/data.ts';
+import { PROFS, type Prof } from '../content/data.ts';
 import { type Person, g as plec } from '../content/people.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { type Tx, tx, wielka } from '../core/jezyk.ts';
 import { ri } from '../core/rng.ts';
 import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
-import { type KtoId, osobyGrupy } from './goscie.ts';
+import { type KtoId, nazwiskoDla, osobyGrupy } from './goscie.ts';
+import { LICZBY_EN } from './goscie-teksty.ts';
 import type { GChoice, GovHost } from './tresc.ts';
 import type { GameMode, GovLokator, Punkt } from './typy.ts';
 import { najstarszaMieszkanka, type OsobaKarty, osob, osobaKarty, osobyNaPodlodze } from './warianty.ts';
@@ -62,7 +63,6 @@ const krok = (lancuch: string, nr: number, o: Omit<Krok, 'id' | 'lancuch' | 'nr'
   ...o,
 });
 
-const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const dom = (h: GovHost): boolean => h.place().kind === 'dom';
 /** angielski zaimek po płci osoby */
 const on = (p: { f: boolean }, he: string, she: string): string => (p.f ? she : he);
@@ -130,11 +130,6 @@ const zawod = (p: { prof: string }): { pl: string; en: string; enA: string } => 
 /** imiona zajęte w osiedlu (zarząd i mieszkańcy z osobą) */
 const imionaZajete = (h: GovHost): Set<string> => new Set([...h.alive(), ...h.lokatorzy()].map((p) => p.first));
 
-/** nazwisko w formie dla płci: Kowalski ↔ Kowalska, Nowak ↔ Nowak */
-function nazwiskoDla(nazwisko: string, f: boolean): string {
-  const para = SURN.find((s) => s[0] === nazwisko || s[1] === nazwisko);
-  return para ? para[f ? 1 : 0] : nazwisko;
-}
 const nazwiskoOsoby = (p: Pick<Person, 'name' | 'first'>): string => p.name.slice(p.first.length + 1);
 
 /** Nowy człowiek do kroku z gościem: z generatora zarządu (`GovHost.makePerson`), z płcią i wiekiem kroku, imieniem innym niż
@@ -176,25 +171,17 @@ function pierwsza(h: GovHost, d: D): { p: Person; look: number | undefined; zid:
   const p: Person = (gr?.osoby ?? d.osoby)[0];
   return { p, look: gr?.looks[0] ?? d.looks?.[0], zid: d.zid ?? p.id };
 }
+/** Czy człowiek z haka kroku 1 może jeszcze wrócić pod bramę (`GovHost.znajomyWolny`): żyje i nie mieszka już u nas ani nie jest
+    w zarządzie (przyjęty wcześniej innym krokiem albo powrotem znajomego z puli). Krok, który sprowadza tego samego człowieka,
+    ma wtedy wagę 0: nie wypada, nie planuje gościa i nie otwiera karty. Hak bez `zid` (stary zapis) albo bez danych nie blokuje. */
+const mozeWrocic = (h: GovHost, hak: string): boolean => {
+  const x = h.hakDane(hak)?.d as { p?: Person; zid?: string } | undefined;
+  return !x?.zid || h.znajomyWolny(x.zid, x.p);
+};
 /** miejsce grupy na mapie („Pokaż”) */
 const gdzieGrupy = (h: GovHost, d: D): Punkt | null => (d.gid ? (h.gosc(d.gid)?.wpis?.gdzie ?? null) : null);
 /** ilu spałoby na podłodze po przyjęciu `n` osób */
 const naPodlodze = (h: GovHost, n: number): number => Math.max(0, n - h.free());
-const LICZBY_EN = [
-  'no',
-  'one',
-  'two',
-  'three',
-  'four',
-  'five',
-  'six',
-  'seven',
-  'eight',
-  'nine',
-  'ten',
-  'eleven',
-  'twelve',
-];
 /** „five people”, „one person”; od trzynastu cyfrą (na początku zdania przez `wielka`) */
 const ludzieEn = (n: number): string =>
   `${n >= 0 && n < LICZBY_EN.length ? LICZBY_EN[n] : n} ${n === 1 ? 'person' : 'people'}`;
@@ -403,7 +390,7 @@ const SWIATLO: Lancuch = {
       po: 30,
       hak: 'swiatlo.wrocil',
       when: ['dzien', 'wieczor'],
-      w: () => 1,
+      w: (h) => (mozeWrocic(h, 'swiatlo.wrocil') ? 1 : 0),
       make: (h) => {
         const x = h.hakDane('swiatlo.wrocil')?.d as { p: Person; look?: number; zid: string; jak: string } | undefined;
         return x ? { osoby: [x.p], looks: x.look !== undefined ? [x.look] : undefined, zid: x.zid, jak: x.jak } : null;
@@ -438,8 +425,8 @@ const SWIATLO: Lancuch = {
         const w = wstep[d.jak] ?? wstep.noc;
         if (!chlopak) return brakGosci(h);
         return tx(
-          `${w.pl} ${wielka(s.brama.pod)} stoi ${chlopak.first} i nie podchodzi bliżej. Babcia od dwóch dni kaszle i prawie nie podnosi głowy znad poduszki. W ich budynku apteka jest pusta, a lekarz odpowiada tylko na hasło, którego nikt nie pamięta. Prosi o jedną paczkę leków i niczego nie obiecuje, bo nie ma czym zapłacić.`,
-          `${w.en} ${chlopak.first} is standing at ${e.brama} and does not come any closer. His grandmother has been coughing for two days and has barely lifted her head from the pillow. The pharmacy in their building is empty, and the doctor only answers to a password nobody remembers. He asks for one pack of meds and promises nothing, because he has nothing to pay with.`,
+          `${w.pl} ${wielka(s.brama.pod)} stoi ${chlopak.first} i nie podchodzi bliżej. Babcia kaszle i prawie nie podnosi głowy znad poduszki. W ich budynku apteka jest pusta, a lekarz odpowiada tylko na hasło, którego nikt nie pamięta. Prosi o jedną paczkę leków i niczego nie obiecuje, bo nie ma czym zapłacić.`,
+          `${w.en} ${chlopak.first} is standing at ${e.brama} and does not come any closer. His grandmother is coughing and has barely lifted her head from the pillow. The pharmacy in their building is empty, and the doctor only answers to a password nobody remembers. He asks for one pack of meds and promises nothing, because he has nothing to pay with.`,
         );
       },
       choices: (h, d) => {
@@ -582,10 +569,10 @@ const SZCZEKANIE: Lancuch = {
             `The bowl stands where you left it, licked clean. And beside it are ${slady.en}.`,
           ),
           przegonili: tx(
-            `Pies nie szczeka od zeszłej nocy. Za to przy siatce widać ${slady.pl}.`,
-            `The dog has not barked since last night. Instead, by the fence, there are ${slady.en}.`,
+            `Pies przestał szczekać. Za to przy siatce widać ${slady.pl}.`,
+            `The dog has stopped barking. Instead, by the fence, there are ${slady.en}.`,
           ),
-          nic: tx(`Rano przy siatce widać ${slady.pl}.`, `This morning, by the fence, there are ${slady.en}.`),
+          nic: tx(`Przy siatce widać ${slady.pl}.`, `By the fence there are ${slady.en}.`),
         };
         const w = wstep[d.jak] ?? wstep.nic;
         const zombie = h.tryb() === 'zombie';
@@ -983,7 +970,7 @@ const WODA: Lancuch = {
       po: 10,
       hak: 'woda.pierwsza',
       when: ['dzien'],
-      w: () => 1,
+      w: (h) => (mozeWrocic(h, 'woda.pierwsza') ? 1 : 0),
       make: (h) => {
         const x = h.hakDane('woda.pierwsza')?.d as { p: Person; look?: number; zid: string; jak: string } | undefined;
         if (!x) return null;
@@ -1065,7 +1052,8 @@ const WODA: Lancuch = {
       po: 14,
       hak: 'woda.druga',
       when: ['dzien', 'wieczor'],
-      w: () => 1,
+      // rodzice przychodzą po dzieci: dziewczynka z pierwszego kroku musi być wolna (żyć i nie mieszkać już u nas)
+      w: (h) => (mozeWrocic(h, 'woda.pierwsza') ? 1 : 0),
       make: (h) => {
         const x = h.hakDane('woda.druga')?.d as { osoby: Person[]; looks?: number[] } | undefined;
         if (!x?.osoby.length) return null;
@@ -1349,8 +1337,8 @@ const PLUCA: Lancuch = {
         const wstep =
           d.opieka > 0
             ? tx(
-                'Po tamtych lekach było lepiej do następnego dnia, a potem wróciło.',
-                'The meds helped until the next day, and then it came back.',
+                'Po tamtych lekach było lepiej, a potem wróciło.',
+                'The meds helped for a while, and then it came back.',
               )
             : tx('Tamto nie pomogło, a teraz jest gorzej.', 'That did not help, and now it is worse.');
         return tx(
@@ -1415,8 +1403,8 @@ const PLUCA: Lancuch = {
         const ona = plec(p, 'niego', 'niej');
         if (d.opieka >= 2)
           return tx(
-            `${pan(p)} siedzi rano na ławce ${dom(h) ? 'przed domem' : 'przed klatką'}, w szaliku, z kubkiem herbaty. ${plec(p, 'Przyniósł', 'Przyniosła')} do ${s.zarzad.dk} słoik ogórków ${piwnica(h).z} i zdanie, które zaczyna się od: „Wiecie, że pierwszy raz od lat ktoś mnie zapytał, jak się czuję?”. ${wspolnota.pl} już wie, ile dla ${ona} zrobiliście.`,
-            `${p.name} is sitting on the bench ${dom(h) ? 'outside the house' : 'outside the entrance'} in the morning, in a scarf, with a mug of tea. ${on(p, 'He', 'She')} has brought ${e.krotko} a jar of pickles from the ${piwnica(h).en} and a sentence that begins: “Do you know it is the first time in years that someone has asked how I feel?” ${wspolnota.en} already knows how much you did for ${on(p, 'him', 'her')}.`,
+            `${pan(p)} siedzi na ławce ${dom(h) ? 'przed domem' : 'przed klatką'}, w szaliku, z kubkiem herbaty. ${plec(p, 'Przyniósł', 'Przyniosła')} do ${s.zarzad.dk} słoik ogórków ${piwnica(h).z} i zdanie, które zaczyna się od: „Wiecie, że pierwszy raz od lat ktoś mnie zapytał, jak się czuję?”. ${wspolnota.pl} już wie, ile dla ${ona} zrobiliście.`,
+            `${p.name} is sitting on the bench ${dom(h) ? 'outside the house' : 'outside the entrance'}, in a scarf, with a mug of tea. ${on(p, 'He', 'She')} has brought ${e.krotko} a jar of pickles from the ${piwnica(h).en} and a sentence that begins: “Do you know it is the first time in years that someone has asked how I feel?” ${wspolnota.en} already knows how much you did for ${on(p, 'him', 'her')}.`,
           );
         if (d.opieka === 1)
           return tx(
@@ -1430,8 +1418,8 @@ const PLUCA: Lancuch = {
           ? `${wspolnota.en} knows that ${e.krotko} had meds, and looks at the ground when you walk past.`
           : `${wspolnota.en} knows there was nothing to help with, and still goes quiet when you walk past.`;
         return tx(
-          `${pan(p)} nie wstaje z tapczanu od wczoraj. ${winaPl} Kaszel ucichł, bo ${plec(p, 'zabrakło mu', 'zabrakło jej')} sił.`,
-          `${p.name} has not got up from the bed since yesterday. ${winaEn} The coughing has died down, because ${on(p, 'he', 'she')} has no strength left for it.`,
+          `${pan(p)} leży na tapczanie i nie wstaje. ${winaPl} Kaszel ucichł, bo ${plec(p, 'zabrakło mu', 'zabrakło jej')} sił.`,
+          `${p.name} lies on the sofa bed and does not get up. ${winaEn} The coughing has died down, because ${on(p, 'he', 'she')} has no strength left for it.`,
         );
       },
       choices: (h, d) => {
@@ -1601,7 +1589,7 @@ const OSTRZEGA: Lancuch = {
       po: 14,
       hak: 'ostrzega.start',
       when: ['dzien', 'wieczor'],
-      w: () => 1,
+      w: (h) => (mozeWrocic(h, 'ostrzega.start') ? 1 : 0),
       make: (h) => {
         const x = h.hakDane('ostrzega.start')?.d as
           | { p: Person; look?: number; zid: string; jak: string; noc: number }
@@ -1635,31 +1623,31 @@ const OSTRZEGA: Lancuch = {
           wynik === 'odparty'
             ? ostrzezony
               ? tx(
-                  `Tej nocy przyszli, tak jak ${mowil}. Warta była podwojona i odparliście ich.`,
+                  `Tamtej nocy przyszli, tak jak ${mowil}. Warta była podwojona i odparliście ich.`,
                   'They came that night, just as warned. The watch was doubled and you drove them off.',
                 )
               : tx(
-                  `Tej nocy przyszli, tak jak ${mowil}. Odparliście ich, choć ostrzeżenie zlekceważyliście.`,
+                  `Tamtej nocy przyszli, tak jak ${mowil}. Odparliście ich, choć ostrzeżenie zlekceważyliście.`,
                   'They came that night, just as warned. You drove them off, though you had brushed the warning aside.',
                 )
             : wynik === 'wtargnięcie'
               ? ostrzezony
                 ? tx(
-                    `Tej nocy przyszli, tak jak ${mowil}, i weszli na podwórko mimo podwojonej warty.`,
+                    `Tamtej nocy przyszli, tak jak ${mowil}, i weszli na podwórko mimo podwojonej warty.`,
                     'They came that night, just as warned, and got into the yard in spite of the doubled watch.',
                   )
                 : tx(
-                    `Tej nocy przyszli, tak jak ${mowil}, i weszli na podwórko. Warty nie podwajaliście.`,
+                    `Tamtej nocy przyszli, tak jak ${mowil}, i weszli na podwórko. Warty nie podwajaliście.`,
                     'They came that night, just as warned, and got into the yard. You had not doubled the watch.',
                   )
               : wynik === 'brak'
                 ? ostrzezony
                   ? tx(
-                      'Tej nocy nikt nie przyszedł. Może podwójna warta ich zniechęciła, a może kartka z adresami była stara.',
+                      'Tamtej nocy nikt nie przyszedł. Może podwójna warta ich zniechęciła, a może kartka z adresami była stara.',
                       'Nobody came that night. Perhaps the doubled watch put them off, or perhaps the list of addresses was out of date.',
                     )
                   : tx(
-                      'Tej nocy nikt nie przyszedł. Może koledzy się rozmyślili, a może kartka z adresami była stara.',
+                      'Tamtej nocy nikt nie przyszedł. Może koledzy się rozmyślili, a może kartka z adresami była stara.',
                       'Nobody came that night. Perhaps the colleagues changed their minds, or perhaps the list of addresses was out of date.',
                     )
                 : tx('Noc minęła.', 'The night passed.');
@@ -1956,7 +1944,7 @@ const AKTYWISTKA: Lancuch = {
       po: 20,
       hak: 'aktywistka.start',
       when: ['wieczor', 'noc'],
-      w: (h) => (zimno(h) ? 1 : 0),
+      w: (h) => (zimno(h) && mozeWrocic(h, 'aktywistka.start') ? 1 : 0),
       make: (h) => {
         const x = h.hakDane('aktywistka.start')?.d as
           | { p: Person; look?: number; zid: string; jak: string }
@@ -2207,7 +2195,7 @@ const DACH: Lancuch = {
       when: ['dzien'],
       w: () => 1,
       make: (h) => ({ jak: (h.hakDane('dach.start')?.d as { jak: string } | undefined)?.jak ?? 'nic' }),
-      title: () => tx('Po nocy ciszej', 'Quieter after the night'),
+      title: () => tx('Na dachu cicho', 'Quiet on the roof'),
       text: (h, d) => {
         const sas = sasiad(h);
         const noc: Record<string, Tx> = {
@@ -2226,8 +2214,8 @@ const DACH: Lancuch = {
         };
         const w = noc[d.jak] ?? noc.nic;
         return tx(
-          `Rano na dachu ${sas.d} nikogo nie widać. ${w.pl} Z dołu dochodzi szuranie, jakby szwendacze stali i czekali, aż ktoś zawoła jeszcze raz.`,
-          `In the morning there is nobody to be seen on the roof of ${sas.en}. ${w.en} From below comes a shuffling, as if the shamblers were standing there waiting for somebody to call again.`,
+          `Na dachu ${sas.d} nikogo nie widać. ${w.pl} Z dołu dochodzi szuranie, jakby szwendacze stali i czekali, aż ktoś zawoła jeszcze raz.`,
+          `There is nobody to be seen on the roof of ${sas.en}. ${w.en} From below comes a shuffling, as if the shamblers were standing there waiting for somebody to call again.`,
         );
       },
       choices: (h) => [
@@ -2289,12 +2277,12 @@ const DACH: Lancuch = {
         const wolali =
           n === 1
             ? tx(
-                `Mówi, że ${plec(jeden, 'to on wołał', 'to ona wołała')} z dachu ${sas.d}: całą noc, zanim ${plec(jeden, 'zszedł', 'zeszła')} po rynnie.`,
-                `${on(jeden, 'He', 'She')} says ${on(jeden, 'he', 'she')} was the one calling from the roof of ${sas.en}: all night, before ${on(jeden, 'he', 'she')} climbed down the drainpipe.`,
+                `Mówi, że ${plec(jeden, 'to on wołał', 'to ona wołała')} z dachu ${sas.d}, aż ${plec(jeden, 'zszedł', 'zeszła')} po rynnie.`,
+                `${on(jeden, 'He', 'She')} says ${on(jeden, 'he', 'she')} was the one calling from the roof of ${sas.en} until ${on(jeden, 'he', 'she')} climbed down the drainpipe.`,
               )
             : tx(
-                `Mówią, że to oni wołali z dachu ${sas.d}: całą noc, zanim zeszli po rynnie.`,
-                `They say they were the ones calling from the roof of ${sas.en}: all night, before they climbed down the drainpipe.`,
+                `Mówią, że to oni wołali z dachu ${sas.d}, aż zeszli po rynnie.`,
+                `They say they were the ones calling from the roof of ${sas.en} until they climbed down the drainpipe.`,
               );
         return tx(
           `${wielka(s.brama.pod)} ${stoi(n)}: ${imiona}. Twarze szare ze zmęczenia, na kurtkach kurz z dachu. ${wolali.pl}${reka.pl}${po.pl ? ` ${po.pl}` : ''}`,
@@ -2408,7 +2396,7 @@ const DOBICIE: Lancuch = {
       when: ['dzien', 'wieczor'],
       w: (h) => {
         const x = h.hakDane('dobicie.start')?.d as { jak?: string } | undefined;
-        return x && x.jak !== 'zostali' ? 1 : 0;
+        return x && x.jak !== 'zostali' && mozeWrocic(h, 'dobicie.start') ? 1 : 0;
       },
       make: (h) => {
         const x = h.hakDane('dobicie.start')?.d as { p: Person; look?: number; zid: string; jak: string } | undefined;
@@ -2609,8 +2597,8 @@ const GLOS: Lancuch = {
                 )
               : tx('Ci, co spali, mają minę, jakby wiedzieli.', 'Those who slept have the look of people who knew.');
         return tx(
-          `Słońce wstało, a ${s.brama.pod} nie widać żadnego wojska. Radio zamilkło w środku zdania. ${ludzie_.pl} W szumie, zanim zgasł, można było jeszcze wyłowić nazwę miejsca: opuszczony posterunek, z którego głos nadawał.`,
-          `The sun has come up, and there is no sign of any army at ${e.brama}. The radio fell silent in the middle of a sentence. ${ludzie_.en} In the static, before it died, you could still make out the name of a place: an abandoned checkpoint, the one the voice had been broadcasting from.`,
+          `Świt minął, a ${s.brama.pod} nie widać żadnego wojska. Radio zamilkło w środku zdania. ${ludzie_.pl} W szumie, zanim zgasł, można było jeszcze wyłowić nazwę miejsca: opuszczony posterunek, z którego głos nadawał.`,
+          `Dawn has passed, and there is no sign of any army at ${e.brama}. The radio fell silent in the middle of a sentence. ${ludzie_.en} In the static, before it died, you could still make out the name of a place: an abandoned checkpoint, the one the voice had been broadcasting from.`,
         );
       },
       choices: (h, d) => {

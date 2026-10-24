@@ -22,6 +22,10 @@
      (`ostrzej`) ×1,5 dla każdego haczyka poza prawdą, fach, który zarząd już ma, kusi mniej, pora i dom przesuwają
      „czego chce” i archetyp rodziny. Każda napaść na obcego odbiera 20% szansy na gościa: to nie waga klocka, tylko
      mnożnik wydarzenia (`wagaGoscia`).
+   - Wątki sezonu (`KontekstGoscia.bez`, w wizyta.ts `bezPowtorek`): gdy zarząd ma włączone łańcuchy (`GovState.lancuchy`), a `dobicie`
+     albo `dach` jest wybranym wątkiem, archetyp „ktoś z ugryzionym bliskim” (dobicie) i haczyk „ugryziony” u kogoś innego niż on
+     (ocaleni z ukrytym ugryzieniem, dach) mają wagę 0, bo tę opowieść prowadzi łańcuch. Bez łańcuchów pole `bez` nie powstaje
+     i losowania są takie jak dotąd. `nazwiskoDla` (forma nazwiska dla płci) jest stąd eksportowane też łańcuchom.
    - Osoby: `makePerson` z listy imion 0.3 (zarząd nie ma tabel generatora), fach z puli archetypu (dezerter tylko jako
      ochroniarz), wiek mówiącego z `KTO[kto].wiek`, reszta grupy z wiekiem rodziny (dzieci 4–15, dziadkowie 65–85); w rodzinie
      partner jest płci przeciwnej niż mówiący; rodzina, dzieci i ktoś z ugryzionym bliskim mają nazwisko mówiącego (forma
@@ -475,7 +479,7 @@ const doroslyProf = (lo: number, hi: number): Prof => ['mieszkaniec', 'mieszkank
 const przytnij = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
 /** forma nazwiska dla płci: Kowalski ↔ Kowalska, Nowak ↔ Nowak */
-function nazwiskoDla(nazwisko: string, f: boolean): string {
+export function nazwiskoDla(nazwisko: string, f: boolean): string {
   const para = SURN.find((s) => s[0] === nazwisko || s[1] === nazwisko);
   return para ? para[f ? 1 : 0] : nazwisko;
 }

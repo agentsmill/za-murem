@@ -47,8 +47,9 @@ export const GOV_VERSION = 1;
 export const LAW_HOUR = 19;
 export const LAW_MINUTE = 30;
 
-/** Nowy zarząd. `lancuchy`: łańcuchy kart i wątki sezonu włączone (pole `GovState.lancuchy`, zapis je zachowuje); domyślnie
-    wyłączone, i wtedy stan i losowania są takie, jak z pustą listą łańcuchów. */
+/** Nowy zarząd. `lancuchy`: łańcuchy kart i wątki sezonu włączone (pole `GovState.lancuchy`, zapis je zachowuje). Gra w przeglądarce
+    włącza je zawsze, chyba że adres ma `?lancuchy=0` (src/main.ts); sam `newGov` bez trzeciego argumentu daje zarząd bez łańcuchów
+    (testy samej puli kart), a wtedy stan i losowania są takie, jak z pustą listą łańcuchów. */
 export function newGov(seed: number, mode: GameMode = 'zwykly', lancuchy = false): GovState {
   const st: GovState = {
     v: 1,

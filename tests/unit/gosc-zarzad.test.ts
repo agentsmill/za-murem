@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry, nextRandom } from '../../src/core/rng.ts';
 import {
@@ -25,7 +25,6 @@ import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import { expRisk, makeCard, poscigNocy, raidChance, rozliczWyprawe } from '../../src/gov/noc.ts';
 import { TARGETS } from '../../src/gov/tresc.ts';
 import type { FazaGoscia, GovEffects, GovGosc, GovInput, GovPerson, GovState, Prompt } from '../../src/gov/typy.ts';
-import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { GOSC_EVENTS, GOSC_ZWLOKA, MIN_WAGA_GOSCIA, planujGoscia, WAGA_GOSCIA } from '../../src/gov/wizyta.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { eventTick, eventView, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -51,9 +50,9 @@ import { playWithGov } from './gov-play.ts';
 import { mockBlock, mockBlockM2 } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) działają w tym pliku jak w grze. Tylko dwa testy (plan gościa na samej puli kart i zapis w środku wizyty pod stałymi ziarnami)
-// sprawdza samą pulę kart i wywołuje na swój koszt `podmienLancuchy([])`; `afterEach` przywraca prawdziwą listę.
-afterEach(() => podmienLancuchy(null));
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>
@@ -230,8 +229,6 @@ describe('wydarzenie gosc: waga i plan', () => {
   }
 
   it('gdy wypada gosc, zarząd wysyła plan i nie pokazuje karty, póki gość nie ma fazy brama', () => {
-    // pula bez łańcuchów: pierwszy krok łańcucha mógłby wypaść zamiast karty gościa, którą ten test śledzi
-    podmienLancuchy([]);
     const s = tylkoGosc();
     const fx = emptyEffects();
     eventTick(s.gov, s.i, fx, false);
@@ -298,7 +295,10 @@ describe('wydarzenie gosc: waga i plan', () => {
       const haczyk: Record<string, number> = {};
       for (let seed = 1; seed <= 300; seed++) {
         const s = stan(null, { seed, mode: 'zombie' });
-        if (wybrane.length) s.gov.watki = { wybrane, haki: {}, krok: {} };
+        if (wybrane.length) {
+          s.gov.lancuchy = true;
+          s.gov.watki = { wybrane, haki: {}, krok: {} };
+        }
         const g = planujGoscia(s.gov, s.i, emptyEffects(), 'wieczor');
         kto[g.kto] = (kto[g.kto] ?? 0) + 1;
         haczyk[`${g.kto}/${g.haczyk}`] = (haczyk[`${g.kto}/${g.haczyk}`] ?? 0) + 1;
@@ -1917,8 +1917,6 @@ describe('spis gier z obcymi', () => {
   }, 600_000);
 
   it('ten sam przebieg po drugim razie, a zapis i wczytanie w połowie wizyty nie zmieniają go: gość idzie, stoi pod bramą z otwartą kartą, śpi u nas', async () => {
-    // pula bez łańcuchów: ziarna 21 i 22 mają tu wizytę z nocą u nas, a łańcuchy przesuwają losowanie gości
-    podmienLancuchy([]);
     const przeladuj = (g: Gra): Gra => {
       const st = JSON.parse(JSON.stringify(g.st)) as SimState;
       return { w: g.w, st, sim: new Sim(g.w, st), gov: loadGov(saveGov(g.gov)) };

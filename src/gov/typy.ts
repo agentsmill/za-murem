@@ -747,7 +747,7 @@ export interface GovState {
       ostatniego rozpoczętego kroku łańcucha (równy liczbie kroków: łańcuch skończony albo cicho zakończony). Pole od
       pierwszego wyboru wątków albo haka; gra bez łańcuchów i stary zapis go nie mają. */
   watki?: { wybrane: string[]; haki: Record<string, { t: number; d?: unknown }>; krok: Record<string, number> };
-  /** łańcuchy kart i wątki sezonu są włączone (adres `?lancuchy=1`, ustawia je start gry w `newGov`); brak pola albo fałsz: wyłączone,
+  /** łańcuchy kart i wątki sezonu są włączone (nowa gra w przeglądarce ma je domyślnie, wyłącza je `?lancuchy=0`; ustawia je start gry w `newGov`); brak pola albo fałsz: wyłączone,
       zarząd zachowuje się jak z pustą listą łańcuchów (żadnego wyboru wątków, losowania z ziarna ani stanu `watki`) */
   lancuchy?: boolean;
   /** narrator (src/gov/narrator.ts): krzywa napięcia, która przestawia wagi kart; pole powstaje przy pierwszym kroku narratora,
@@ -783,7 +783,10 @@ export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
   looks?: number[];
+  /** id wpisu `Znajomy`, który zrobiła ta wizyta (mówiący z chwili decyzji), i jego indeks w `Gosc.osoby` (`GovGosc.zywi` mówi,
+      czy żyje do końca wizyty); stary zapis bez indeksu liczy mówiącego jako 0 */
   znajomy?: string;
+  znajomyIdx?: number;
   karta: boolean;
   kartaId?: string;
   dane?: unknown;

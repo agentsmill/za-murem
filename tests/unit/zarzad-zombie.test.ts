@@ -1,10 +1,9 @@
 /* Zarząd w trybie zombie i broń w zarządzie (oba tryby): karta nocy z prognozą stada, posterunek przy siatce,
    wartość warty z bronią, ugryzienia i znaleziska z wypraw, zgony w raporcie, koniec gry „pustką”. */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { guardValue, weaponFactor } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState, NightCard } from '../../src/gov/typy.ts';
-import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { applyGov } from '../../src/sim/gov.ts';
@@ -13,9 +12,9 @@ import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { pl } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) działają w tym pliku jak w grze. Tylko jeden test (plan napadu pierwszej nocy w zwykłym trybie)
-// sprawdza samą pulę kart i wywołuje na swój koszt `podmienLancuchy([])`; `afterEach` przywraca prawdziwą listę.
-afterEach(() => podmienLancuchy(null));
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
 
 const HORDE = { near: 3, pressing: 1, killed: 0, breaches: 0, bites: 0, tonight: 8 };
 
@@ -74,9 +73,6 @@ describe('zarząd w trybie zombie', () => {
   });
 
   it('w zwykłym trybie plan napadu pierwszej nocy jest taki jak przed trybem zombie', () => {
-    // pula bez łańcuchów: plan napadu losuje ze strumienia zarządu, który łańcuchy przesuwają (wybór wątków), a test porównuje
-    // go ze spisanym planem sprzed trybu zombie
-    podmienLancuchy([]);
     // wzorzec zwykłego trybu po M2 (sama gałąź m2-razem, bez trybu zombie, daje te same liczby, 18.10.2026)
     const before = [
       [1, false, 1608, 'd1', 0],

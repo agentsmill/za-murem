@@ -11,7 +11,6 @@ import { mulberry } from '../../src/core/rng.ts';
 import { placeOf } from '../../src/gov/miejsce.ts';
 import type { FazaGoscia, GovEffects, GovGosc, GovInput, GovState, Prompt } from '../../src/gov/typy.ts';
 import { osob } from '../../src/gov/warianty.ts';
-import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { eventTick, eventView, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, confirmNight, govUpdate, loadGov, newGov, pending, saveGov } from '../../src/gov/zarzad.ts';
@@ -21,11 +20,9 @@ import { Atrapa, at, TPH, TPS } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
-// sprawdza karty z 0.3 z gościem pod bramą (uchodźcy, influencerka, aktywiści, dzieciaki, krypto, fachowiec). Przy włączonych
-// łańcuchach pada 24 z jego 38 testów, bo każdy czeka na jedną z tych kart w wyznaczonej chwili, a krok łańcucha wypada
-// zamiast niej; dlatego cały plik gra na samej puli (testy łańcuchów: watki-tresc*.test.ts).
-podmienLancuchy([]);
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
 
 const SZESC = ['uchodzcy', 'influencer', 'aktywisci', 'dzieci', 'krypto', 'fachowiec'] as const;
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;

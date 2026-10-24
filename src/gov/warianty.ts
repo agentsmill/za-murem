@@ -31,6 +31,7 @@
 import { TECH_DOMS } from '../content/data.ts';
 import { type EventChoice, eventDef } from '../content/events.ts';
 import { g, type Person } from '../content/people.ts';
+import { wielka } from '../core/jezyk.ts';
 import { pick, ri } from '../core/rng.ts';
 import { type KtoId, osobyGrupy } from './goscie.ts';
 import type { GoscKarty, GovHost, Pora } from './tresc.ts';
@@ -164,7 +165,6 @@ const dom = (h: GovHost) => h.place().kind === 'dom';
 const domyObok = (h: GovHost) => h.neighbours() === 'domy';
 /** w okolicy nie ma sąsiadów: wydarzenia o nich nie przychodzą (samotny dom w polu, samotny blok) */
 const nikt = (h: GovHost) => h.neighbours() === null;
-const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------- karty z gościem pod bramą
 

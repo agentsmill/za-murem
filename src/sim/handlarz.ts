@@ -2,7 +2,12 @@
    Czyste dane i funkcje dla symulacji, menu i rysowania. Handlarz chodzi tylko w grze z opcją SimOpts.obcy, więc
    losowanie ze st.rng (termin, oferty, wygląd) nie rusza gier i botów bez niej. Złom jest walutą, bo po wrakach
    i rozbiórce jest go za dużo, a deski i jedzenie są wąskim gardłem. Napisy w obu językach: menu, opisy prac
-   i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd). */
+   i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd).
+
+   Zarząd zmienia ofertę handlarza, który stoi pod bramą, w łańcuchu „Dług” (src/gov/watki-tresc.ts, skutek `GovEffects.handlarz`
+   stosuje src/sim/gov.ts): `lepszeOferty` robi każdą bieżącą ofertę tańszą o jedną czwartą (to, co handlarz bierze, nigdy poniżej 1)
+   i o jedną wymianę dłuższą, a `zlaSlawa` podnosi zła sławę o jeden poziom (bieżące oferty o połowę drożej, kolejne wizyty drożej
+   i rzadziej, `priced` i `nextTraderVisit`). Obie dotyczą tylko ofert, które stoją pod bramą; następna wizyta losuje towar jak dotąd. */
 
 import type { Person } from '../content/people.ts';
 import { nextRandom, type RngState } from '../core/rng.ts';

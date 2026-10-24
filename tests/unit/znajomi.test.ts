@@ -8,14 +8,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { type Gosc, KTO, type KtoId, osobyGrupy, skladPowrotu } from '../../src/gov/goscie.ts';
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import { confirm, poscigNocy } from '../../src/gov/noc.ts';
 import type { FazaGoscia, GovEffects, GovGosc, GovInput, GovLokator, GovState, RaidPlan } from '../../src/gov/typy.ts';
-import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { planujPowrot } from '../../src/gov/wizyta.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { eventTick, eventView, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -50,9 +49,9 @@ import { Atrapa, at, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) działają w tym pliku jak w grze. Tylko jeden test (karta „Uchodźcy” z puli zostawia znajomego)
-// sprawdza samą pulę kart i wywołuje na swój koszt `podmienLancuchy([])`; `afterEach` przywraca prawdziwą listę.
-afterEach(() => podmienLancuchy(null));
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>
@@ -367,8 +366,6 @@ describe('decyzja o gościu zostawia znajomego', () => {
   });
 
   it('karta z 0.3 z gościem (uchodźcy) też zostawia znajomego: przyjęci to przyjęty +2, odprawieni odprawiony 0', () => {
-    // pula bez łańcuchów: test czeka na kartę „uchodzcy” z puli, a krok łańcucha mógłby wypaść przed nią
-    podmienLancuchy([]);
     for (const [wybor, jak, n] of [
       ['Przyjąć wszystkich', 'przyjety', 2],
       ['Odprawić', 'odprawiony', 0],

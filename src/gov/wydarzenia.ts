@@ -95,6 +95,7 @@ import {
   SZANSA_KROKU,
   hak as ustawHak,
   wybierzWatki,
+  zajeciLudzie,
 } from './watki.ts';
 import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte, planujPowrot } from './wizyta.ts';
 import { POWROT_EVENT, zapamietaj } from './znajomi.ts';
@@ -438,7 +439,7 @@ export function makeHost(
       fx.moods.push({ id, why, d, hours });
     },
     pies: () => !!st.flags.dog || i.zwierzeta?.pies !== undefined,
-    watek: (id) => !!st.watki?.wybrane.includes(id),
+    watek: (id) => !!st.lancuchy && !!st.watki?.wybrane.includes(id),
     napadNocy: (dzien) => (st.reports ?? []).find((r) => r.day === dzien)?.raid ?? null,
     handlarz: () => (i.handlarz ? { tile: i.handlarz.tile, gdzie: { ...i.handlarz.gdzie } } : null),
     handlarzEfekt: (co) => {
@@ -515,7 +516,7 @@ export function makeHost(
       return s === null ? null : s === 'bloki' ? 'from the block next door' : 'from over the fence';
     },
     neighbours: () => sasiedzi(placeIn(i)),
-    ...goscHost(st, i, fx),
+    ...goscHost(st, i, fx, zajeciLudzie(st)),
   };
   return h;
 }
@@ -706,19 +707,19 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     ev = pickGovEvent(st, h, pora, firstNight(i));
   } else if (ev?.id === 'powrot') {
     // powrót znajomego: tak samo plan wizyty tego samego człowieka (src/gov/znajomi.ts), karta przychodzi pod bramą
-    planujPowrot(st, i, fx);
+    planujPowrot(st, i, fx, zajeciLudzie(st));
     ev = pickGovEvent(st, h, pora, firstNight(i));
-  } else if (ev) {
-    // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
-    // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
-    // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
-    const def = defOf(ev.id);
-    if (def?.gosc) {
-      if (planujKarte(st, i, fx, def, h, ev.d)) return;
-      // krok łańcucha z gościem nigdy nie otwiera się bez gościa (`gosc` nie wystawiło nikogo): krok jest rozpoczęty, a że nie
-      // ma karty ani wizyty, `porzadkuj` zakończy łańcuch po cichu w następnym kroku
-      if (jestKrok(def)) return;
-    }
+  }
+  // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`), albo krok łańcucha z gościem, wylosowana za pierwszym
+  // razem albo po ponownym losowaniu wyżej: wizyta zajmuje miejsce tej karty, więc nie pokazujemy jej od razu (inaczej każda
+  // taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy grupa stanie pod bramą;
+  // odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) zwykła karta idzie od razu.
+  const def = ev ? defOf(ev.id) : undefined;
+  if (def?.gosc) {
+    if (planujKarte(st, i, fx, def, h, ev?.d)) return;
+    // krok łańcucha z gościem nigdy nie otwiera się bez gościa (`gosc` nie wystawiło nikogo): krok jest rozpoczęty, a że nie
+    // ma karty ani wizyty, `porzadkuj` zakończy łańcuch po cichu w następnym kroku
+    if (jestKrok(def)) return;
   }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {

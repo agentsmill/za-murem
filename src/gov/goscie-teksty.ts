@@ -19,7 +19,7 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import { type Person, g as plec } from '../content/people.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { type Tx, tx, wielka } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
 import type { ChceId, Gosc, HaczykId, KtoId, MaId, Strona } from './goscie.ts';
@@ -127,24 +127,23 @@ export const SATYRA_KLUCZE = Object.keys(SATYRA);
 
 // ---------------------------------------------------------------- teksty
 
-const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-
 /** „3 osoby”, „5 osób”: forma rzeczownika po liczbie */
 const osobPl = (n: number): string => (n === 1 ? 'osoba' : n >= 2 && n <= 4 ? 'osoby' : 'osób');
-const LICZBY_EN = [
-  'No',
-  'One',
-  'Two',
-  'Three',
-  'Four',
-  'Five',
-  'Six',
-  'Seven',
-  'Eight',
-  'Nine',
-  'Ten',
-  'Eleven',
-  'Twelve',
+/** liczebniki angielskie małymi literami, od „no” (0) do „twelve” (12); na początku zdania przez `wielka` */
+export const LICZBY_EN = [
+  'no',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
 ];
 
 /** czasownik w 3. osobie liczby pojedynczej: ask → asks, have → has, do → does, hold → holds */
@@ -276,7 +275,7 @@ function kontekst(g: Gosc, s: Words, e: WordsEn): C {
     rz: opisRzeczy(g.rzecz),
     prof: zawodMowiacego(p),
     dzieciPl,
-    DzieciEn: n >= 2 && n < LICZBY_EN.length ? `${LICZBY_EN[n]} children` : `${n} children`,
+    DzieciEn: n >= 2 && n < LICZBY_EN.length ? `${wielka(LICZBY_EN[n])} children` : `${n} children`,
   };
 }
 

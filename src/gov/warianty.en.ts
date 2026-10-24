@@ -19,6 +19,7 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import type { Cost } from '../content/data.ts';
+import { wielka } from '../core/jezyk.ts';
 import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
 import { nazwaBudynkuEn } from '../world/classify.en.ts';
 import type { GovHost } from './tresc.ts';
@@ -44,7 +45,6 @@ const dom = (h: GovHost) => h.place().kind === 'dom';
 const domyObok = (h: GovHost) => h.neighbours() === 'domy';
 /** w okolicy nie ma sąsiadów */
 const nikt = (h: GovHost) => h.neighbours() === null;
-const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------- drobiazgi języka
 

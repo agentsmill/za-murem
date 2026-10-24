@@ -6,10 +6,13 @@
    dojrzałych kroków i pacing ma `eventTick` (wydarzenia.ts), a dwanaście prawdziwych łańcuchów leży w watki-tresc.ts i
    jest tu `LANCUCHY`.
 
-   Przełącznik. Łańcuchy są domyślnie wyłączone: grają tylko w zarządzie z `GovState.lancuchy` (adres gry `?lancuchy=1`, `newGov(seed,
-   mode, true)`; pole zostaje w zapisie). Bez niego `wybierzWatki`, `krokiGotowe` i `porzadkuj` nic nie robią, więc zarząd
-   zachowuje się dokładnie tak, jak z `podmienLancuchy([])`: żadnego wyboru wątków, żadnego losowania z ziarna, żadnego stanu
-   `watki`. Narrator, odstęp między kartami i czekanie gości w trybie zombie działają w obu ustawieniach.
+   Przełącznik. Łańcuchy grają w zarządzie z `GovState.lancuchy`. Nowa gra w przeglądarce ma je włączone (src/main.ts:
+   `newGov(seed, mode, true)`, wyłącza je adres `?lancuchy=0`); pole zostaje w zapisie, a zapis sprzed łańcuchów (bez pola) gra
+   dalej bez nich. Sam `newGov` bez trzeciego argumentu daje zarząd bez łańcuchów (testy i atrapy, które sprawdzają samą pulę
+   kart). Bez pola `wybierzWatki`, `krokiGotowe`, `porzadkuj`, `h.watek` i `bezPowtorek` nic nie robią, więc zarząd zachowuje się
+   dokładnie tak, jak z `podmienLancuchy([])`: żadnego wyboru wątków, żadnego losowania z ziarna, żadnego stanu `watki`.
+   Narrator i odstęp między kartami działają w obu ustawieniach, a goście w trybie zombie płoszą się dopiero na zasięg
+   ugryzienia (`SPOOK_GOSC` w symulacji) także w obu.
 
    Kontrakt.
    - Pusta lista (albo żaden łańcuch nie pasuje do trybu) nie robi nic: żadnego losowania z ziarna zarządu, żadnego zapisu
@@ -220,6 +223,25 @@ export function porzadkuj(st: GovState, i: Pick<GovInput, 'goscie'>): void {
       if (k.id !== otwarta && k.id !== kartaWizyty) zakoncz(st, l);
     } else if (l.kroki[nr].gosc && !i.goscie) zakoncz(st, l);
   }
+}
+
+/** Id znajomych (`Znajomy.id`, w haku jako `zid`), których prowadzi jeszcze nieskończony łańcuch wybranych wątków: kroki
+    z tym samym człowiekiem (`GoscKarty.wraca`) czytają go z haków łańcucha, więc powrót znajomego z puli (`doPowrotu`) go
+    omija, żeby ten sam człowiek nie wrócił naraz dwiema drogami. Pusty zbiór bez `lancuchy` i bez `watki`. */
+export function zajeciLudzie(st: Pick<GovState, 'lancuchy' | 'watki'>): ReadonlySet<string> {
+  const zajeci = new Set<string>();
+  const w = st.watki;
+  if (!w || !st.lancuchy) return zajeci;
+  for (const id of w.wybrane) {
+    const l = lancuch(id);
+    if (!l || (w.krok[id] ?? 0) >= l.kroki.length) continue;
+    for (const [hid, x] of Object.entries(w.haki)) {
+      if (!hid.startsWith(`${id}.`)) continue;
+      const zid = (x.d as { zid?: unknown } | undefined)?.zid;
+      if (typeof zid === 'string') zajeci.add(zid);
+    }
+  }
+  return zajeci;
 }
 
 /** Sprawdza łańcuch pod założenia silnika i konwencje; oddaje listę usterek (pustą, gdy wszystko gra). `zajete` to id kart,
