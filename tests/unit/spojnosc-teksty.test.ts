@@ -13,9 +13,12 @@ import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import { placeOf, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import { makeCard } from '../../src/gov/noc.ts';
 import type { GovGosc, GovInput } from '../../src/gov/typy.ts';
-import { eventView } from '../../src/gov/wydarzenia.ts';
+import { planujGoscia } from '../../src/gov/wizyta.ts';
+import { emptyEffects } from '../../src/gov/wspolne.ts';
+import { eventView, makeHost } from '../../src/gov/wydarzenia.ts';
 import { celZMiejsca } from '../../src/gov/wyprawy.ts';
 import { chooseEvent, govUpdate, newGov } from '../../src/gov/zarzad.ts';
+import { imionaPostaci, tekstPowrotu, type Znajomy } from '../../src/gov/znajomi.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu } from '../../src/ui/budowa.ts';
@@ -334,5 +337,118 @@ describe('M8: cudzysłowy w nazwach miejsc z OSM są typograficzne, osobno w ka�
     expect(cel.nazwa.pl).toBe('Szkoła (Niepubliczne Przedszkole \u201eNasze Przedszkole\u201d)');
     expect(cel.nazwa.en).toBe('School (Niepubliczne Przedszkole \u201cNasze Przedszkole\u201d)');
     expect(cel.nazwa.pl + cel.nazwa.en).not.toContain('"');
+  });
+});
+
+describe('M18: powracający gość, kobieta i mężczyzna, „rozgląda się jak ktoś, kto zna to miejsce”', () => {
+  const wejscie = (f: boolean) => {
+    const w = demoWorld('przymorze').w;
+    const g: Gosc = {
+      id: 'g1',
+      kto: 'wedrowiec',
+      chce: 'nocleg',
+      ma: 'nic',
+      haczyk: 'prawda',
+      skad: { strona: 'n', nazwa: frazaSkad('apteka', 'Pod Różą') },
+      osoby: osobyGrupy(mulberry(5), () => 1, 'wedrowiec', 1, new Set<string>()),
+    };
+    g.osoby[0].f = f;
+    const z: Znajomy = {
+      id: 'g1p0',
+      osoba: { first: g.osoby[0].first, name: g.osoby[0].name, f, age: 40 },
+      look: 3,
+      kto: 'wedrowiec',
+      jak: 'nocleg',
+      nastawienie: 1,
+      dzien: 1,
+      wizyty: 1,
+      ostatnio: 1,
+    };
+    return tekstPowrotu(g, z, wordsOfWorld(w), wordsEnOfWorld(w));
+  };
+
+  it('kobieta i mężczyzna czytają to samo zdanie bez „kto już tu była”', () => {
+    for (const f of [true, false]) {
+      const t = wejscie(f);
+      expect(t.pl, f ? 'kobieta' : 'mężczyzna').toContain(
+        'Rozgląda się po podwórku jak ktoś, kto dobrze zna to miejsce.',
+      );
+      expect(t.pl).not.toMatch(/kto już tu/);
+      expect(t.en).toContain(`${f ? 'She' : 'He'} looks around the yard like someone who has been here before.`);
+    }
+  });
+});
+
+describe('M17: nowy gość nie dostaje imienia postaci, którą gracz już zna', () => {
+  /** chłopiec z łańcucha zapisany w haku, jak zapisuje go karta z gościem (obiekt osoby w danych haka) */
+  const hakZOsoba = (first: string, surname = 'Kowalski') => ({
+    t: 100,
+    d: { p: { first, name: `${first} ${surname}`, f: false, age: 14 }, jak: 'miska' },
+  });
+  const wejscieGoscia = (seed: number): { gov: ReturnType<typeof newGov>; i: GovInput } => {
+    const gov = newGov(seed, 'zwykly');
+    const atr = new Atrapa(seed);
+    atr.tick = Math.round(((at(3, 16) - 15 * 60) * TPH) / 60);
+    return { gov, i: { ...atr.input(), screen: 1000, goscie: [], napady: [] } };
+  };
+
+  it('imionaPostaci: znajomi, prowadzony gość i ludzie z danych haków łańcuchów, także zagnieżdżeni', () => {
+    const gov = newGov(1);
+    expect(imionaPostaci(gov).size).toBe(0);
+    gov.znajomi = [
+      {
+        id: 'g0p0',
+        osoba: { first: 'Henryk', name: 'Henryk Nowak', f: false, age: 47 },
+        look: 9,
+        kto: 'wedrowiec',
+        jak: 'nocleg',
+        nastawienie: 1,
+        dzien: 1,
+        wizyty: 1,
+        ostatnio: 1,
+      },
+    ];
+    gov.watki = {
+      wybrane: [],
+      haki: {
+        'szczekanie.start': hakZOsoba('Adam'),
+        'puszki.start': { t: 5, d: { lok: 'l1', zdarzenie: { osoby: [{ first: 'Ewa', name: 'Ewa Lis', f: true }] } } },
+        'swiatlo.dali': { t: 7 },
+      },
+      krok: {},
+    };
+    expect([...imionaPostaci(gov)].sort()).toEqual(['Adam', 'Ewa', 'Henryk']);
+  });
+
+  it('gość z ziarna, który dostałby imię chłopca z łańcucha, dostaje inne (to samo ziarno, ten sam przebieg poza imieniem)', () => {
+    let sprawdzone = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const bez = wejscieGoscia(seed);
+      const g0 = planujGoscia(bez.gov, bez.i, emptyEffects(), 'dzien');
+      const imie = g0.osoby[0].first;
+      const z = wejscieGoscia(seed);
+      z.gov.watki = { wybrane: [], haki: { 'szczekanie.start': hakZOsoba(imie) }, krok: {} };
+      const g1 = planujGoscia(z.gov, z.i, emptyEffects(), 'dzien');
+      for (const p of g1.osoby) expect(p.first, `ziarno ${seed}`).not.toBe(imie);
+      sprawdzone++;
+    }
+    expect(sprawdzone).toBe(40);
+  });
+
+  it('host (karty i kroki łańcuchów) podaje te same imiona, więc nowy człowiek z łańcucha ich nie powtarza', () => {
+    const { gov, i } = wejscieGoscia(7);
+    gov.watki = { wybrane: [], haki: { 'szczekanie.start': hakZOsoba('Adam') }, krok: {} };
+    const h = makeHost(gov, i, emptyEffects());
+    expect([...h.imionaPostaci()]).toEqual(['Adam']);
+    // postać z łańcucha dostaje imię spoza zarządu, mieszkańców i znanych postaci: ta sama funkcja pilnuje dzieci i dorosłych
+    const zajete = new Set([...i.people.map((p) => p.first), ...h.imionaPostaci()]);
+    expect(zajete.has('Adam')).toBe(true);
+  });
+
+  it('postać z łańcucha nie dostaje imienia znajomego ani prowadzonego gościa', () => {
+    const { gov, i } = wejscieGoscia(7);
+    const g = planujGoscia(gov, i, emptyEffects(), 'dzien');
+    expect(gov.goscie?.aktywny?.gosc.osoby.map((p) => p.first)).toEqual(g.osoby.map((p) => p.first));
+    for (const p of g.osoby) expect(imionaPostaci(gov).has(p.first)).toBe(true);
   });
 });

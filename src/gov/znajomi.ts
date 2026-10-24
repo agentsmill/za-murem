@@ -248,6 +248,27 @@ export function znajdzZnajomego(
   );
 }
 
+/** Pierwsze imiona zmyślonych postaci, które zarząd już zna z kart, poza zarządem i mieszkańcami z osobą (tych pilnują
+    `zajete` w wizycie i `imionaZajete` w kartach): znajomi (goście z pamięci), prowadzony gość i ludzie zapisani w danych
+    haków łańcuchów (obiekt z polami `first` i `name` gdziekolwiek w JSON-ie haka). Nowa postać nie dostaje takiego
+    imienia, więc dwie różne osoby nie mają tego samego imienia i nazwiska w jednej grze: chłopiec z łańcucha „Adam
+    Kowalski” i gość „Adam Kowalski ze słoikami” czytały się jak jedna osoba. Tylko czyta. */
+export function imionaPostaci(st: Pick<GovState, 'znajomi' | 'goscie' | 'watki'>): Set<string> {
+  const out = new Set<string>();
+  for (const z of st.znajomi ?? []) out.add(z.osoba.first);
+  for (const p of st.goscie?.aktywny?.gosc.osoby ?? []) out.add(p.first);
+  const przejdz = (v: unknown): void => {
+    if (Array.isArray(v)) for (const x of v) przejdz(x);
+    else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (typeof o.first === 'string' && typeof o.name === 'string') out.add(o.first);
+      for (const x of Object.values(o)) przejdz(x);
+    }
+  };
+  for (const h of Object.values(st.watki?.haki ?? {})) przejdz(h.d);
+  return out;
+}
+
 // ---------------------------------------------------------------- wybór
 
 const najpierwNajdawniejszy = (a: Znajomy, b: Znajomy): number =>
@@ -453,7 +474,7 @@ function rozpoznanie(z: Znajomy, g: Gosc): Tx {
       );
     case 'nocleg':
       return tx(
-        `Rozgląda się po podwórku jak ktoś, kto już tu ${plec(p, 'był', 'była')}.`,
+        'Rozgląda się po podwórku jak ktoś, kto dobrze zna to miejsce.',
         `${he} looks around the yard like someone who has been here before.`,
       );
     case 'przyjety':

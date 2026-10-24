@@ -119,6 +119,7 @@ import { addStock, logGov, nightDay, porcje, portions, stockNow } from './wspoln
 import { celZMiejsca, MAX_OKOLICA_M, zostaloZMiejsca } from './wyprawy.ts';
 import {
   doPowrotu,
+  imionaPostaci,
   type JakId,
   obecniWOsiedlu,
   poprawJak,
@@ -208,6 +209,9 @@ export interface GoscHost {
   zapamietajGoscia(id: string, jak: JakId): void;
   /** wpis znajomego o tym id (kopia); null: nie ma takiego */
   znajomy(id: string): Znajomy | null;
+  /** pierwsze imiona postaci znanych z kart (znajomi, prowadzony gość, ludzie z haków łańcuchów): nowa postać ich nie powtarza
+      (`imionaPostaci` z src/gov/znajomi.ts) */
+  imionaPostaci(): ReadonlySet<string>;
   /** czy ktoś może teraz wrócić jako gość (`doPowrotu` w osiedlu bez obecnych i bez ludzi, których prowadzi nieskończony łańcuch);
       waga wydarzenia `powrot` */
   doPowrotu(): boolean;
@@ -343,6 +347,7 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects, zajeci: Read
       const z = st.znajomi?.find((x) => x.id === id);
       return z ? kopia(z) : null;
     },
+    imionaPostaci: () => imionaPostaci(st),
     doPowrotu: () => !!doPowrotu(st, i.day, st.mode ?? 'zwykly', obecniWOsiedlu(i), zajeci),
     znajomyWolny: (zid, osoba) => {
       const o = obecniWOsiedlu(i);
@@ -590,7 +595,11 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
     ...(ostrzej(st) ? { ostrzej: true } : {}),
     ...bezPowtorek(st),
   };
-  const zajete = new Set([...i.people.map((p) => p.first), ...(i.lokatorzy ?? []).map((l) => l.first)]);
+  const zajete = new Set([
+    ...i.people.map((p) => p.first),
+    ...(i.lokatorzy ?? []).map((l) => l.first),
+    ...imionaPostaci(st),
+  ]);
   const g = skladGoscia(rng, s.n, ctx, zajete);
   wystaw(st, i, fx, rng, g);
   return g;
@@ -614,7 +623,11 @@ export function planujPowrot(
   const s = (st.goscie ??= { n: 0, czytane: 0 });
   s.n++;
   const rng = rngOf(st.rng);
-  const zajete = new Set([...i.people.map((p) => p.first), ...(i.lokatorzy ?? []).map((l) => l.first)]);
+  const zajete = new Set([
+    ...i.people.map((p) => p.first),
+    ...(i.lokatorzy ?? []).map((l) => l.first),
+    ...imionaPostaci(st),
+  ]);
   const g = skladPowrotu(rng, s.n, z, { mode, okolica: i.okolica ?? [], dom: placeIn(i).kind === 'dom' }, zajete);
   z.wrocil = i.day;
   wystaw(st, i, fx, rng, g, undefined, z.look);
