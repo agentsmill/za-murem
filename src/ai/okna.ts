@@ -1,5 +1,5 @@
-/* Okna zarządu silnika osady AI, etap 1 (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 5): wybór w wydarzeniu
-   przez ocenę skutków na kopii zarządu i uchwała według potrzeb. Karta nocy ma własną odpowiedź w src/ai/silnik.ts (warta,
+/* Okna zarządu silnika osady AI, etap 1 (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 5 i 6): wybór w wydarzeniu
+   przez ocenę skutków na kopiach zarządu i uchwała według potrzeb. Karta nocy ma własną odpowiedź w src/ai/silnik.ts (warta,
    dyżur przy kozie), raport i epilog zwycięstwa idą odpowiedzią domyślną z src/ai/gra.ts.
 
    Wydarzenie. Skutki wyboru zna tylko zarząd, który je liczy (`chooseEvent` zmienia stan zarządu, w tym jego generator, i
