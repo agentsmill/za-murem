@@ -289,6 +289,39 @@ describe('wydarzenie gosc: waga i plan', () => {
     expect(stroje.size).toBeGreaterThan(3);
   });
 
+  it('wybrany wątek zajmuje miejsce gości z klocków: dobicie bez ugryzionego bliskiego, dach bez ocalałych z ukrytym ugryzieniem', () => {
+    /** ilu gości z klocków w trybie zombie miało dany archetyp i haczyk przy wybranych wątkach */
+    const rodzaje = (wybrane: string[]) => {
+      const kto: Record<string, number> = {};
+      const haczyk: Record<string, number> = {};
+      for (let seed = 1; seed <= 300; seed++) {
+        const s = stan(null, { seed, mode: 'zombie' });
+        if (wybrane.length) s.gov.watki = { wybrane, haki: {}, krok: {} };
+        const g = planujGoscia(s.gov, s.i, emptyEffects(), 'wieczor');
+        kto[g.kto] = (kto[g.kto] ?? 0) + 1;
+        haczyk[`${g.kto}/${g.haczyk}`] = (haczyk[`${g.kto}/${g.haczyk}`] ?? 0) + 1;
+      }
+      return { kto, haczyk };
+    };
+    // kontrola: bez wątków ten archetyp i ten haczyk wypadają
+    const zwykle = rodzaje([]);
+    expect(zwykle.kto.z_ugryzionym ?? 0).toBeGreaterThan(5);
+    expect(zwykle.haczyk['ocaleni/ugryziony'] ?? 0).toBeGreaterThan(0);
+    // dobicie: nikt z ugryzionym bliskim, ocaleni z ukrytym ugryzieniem zostają
+    const dobicie = rodzaje(['dobicie']);
+    expect(dobicie.kto.z_ugryzionym ?? 0).toBe(0);
+    expect(dobicie.haczyk['ocaleni/ugryziony'] ?? 0).toBeGreaterThan(0);
+    // dach: ocaleni (i nikt inny poza z_ugryzionym) bez ukrytego ugryzienia, a ugryziony bliski nadal prosi o dobicie
+    const dach = rodzaje(['dach']);
+    const ugryzieni = Object.keys(dach.haczyk).filter(
+      (k) => k.endsWith('/ugryziony') && k !== 'z_ugryzionym/ugryziony',
+    );
+    expect(ugryzieni).toEqual([]);
+    expect(dach.kto.z_ugryzionym ?? 0).toBeGreaterThan(5);
+    // wątki bez związku z gośćmi z klocków niczego nie zmieniają
+    expect(rodzaje(['swiatlo', 'list'])).toEqual(zwykle);
+  });
+
   it('najwyżej jeden gość naraz: dopóki wizyta trwa, nowy nie wypada; po jej końcu następny ma id g2', () => {
     const s = tylkoGosc();
     const plany: string[] = [];

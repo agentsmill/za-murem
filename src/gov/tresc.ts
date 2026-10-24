@@ -937,9 +937,9 @@ export const NEW_EVENTS: GEventDef[] = [
     first: true,
     once: true,
     when: ['noc'],
-    // gdy łańcuch „Światło w oknie” (src/gov/watki-tresc.ts) jest wątkiem sezonu, to jego pierwszy krok zajmuje miejsce tej
-    // karty, a chłopak z babcią naprawdę staje potem pod bramą
-    w: (h) => (h.place().near === 'nikt' || h.watek('swiatlo') ? 0 : 0.8),
+    // gdy łańcuch „Światło w oknie” albo „Ktoś woła z dachu” (src/gov/watki-tresc.ts) jest wątkiem sezonu, to jego pierwszy krok
+    // zajmuje miejsce tej karty, a chłopak z babcią albo ocaleni naprawdę stają potem pod bramą
+    w: (h) => (h.place().near === 'nikt' || h.watek('swiatlo') || h.watek('dach') ? 0 : 0.8),
     make: () => ({}),
     title: () => tx('Światło w oknie naprzeciwko', 'A light in the window opposite'),
     text: (h) =>

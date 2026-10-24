@@ -52,7 +52,9 @@ export interface Krok extends GEventDef {
   hak?: string;
   /** Karta, która ma sens tylko chwilę (handlarz pod bramą stoi najwyżej kilka godzin gry): dojrzały i dostępny (`w(h) > 0`) krok
       wypada od razu, bez czekania na odstęp między wydarzeniami i na losowanie, ale najwcześniej `QUIET` sekund po ostatniej decyzji
-      gracza i nie pierwszej nocy. Tego kroku nie obejmuje szansa `SZANSA_KROKU` ani kolejność dojrzewania, więc niczego nie losuje. */
+      gracza i nie pierwszej nocy. Tego kroku nie obejmuje szansa `SZANSA_KROKU` ani kolejność dojrzewania, więc niczego nie losuje.
+      Krok pilny nie ma gościa (`gosc`): karta z gościem czeka, aż grupa dojdzie do bramy, więc nie mogłaby wypaść od razu
+      (`sprawdzLancuch` to odrzuca). */
   pilny?: boolean;
 }
 
@@ -231,6 +233,7 @@ export function sprawdzLancuch(l: Lancuch, zajete: ReadonlySet<string> = new Set
     if (n === 0 && k.hak) bledy.push(`${k.id}: pierwszy krok nie czeka na hak`);
     if (k.hak && !k.hak.startsWith(`${l.id}.`)) bledy.push(`${k.id}: hak ${k.hak} poza przestrzenią ${l.id}.`);
     if (!(k.po >= 0)) bledy.push(`${k.id}: po ${k.po}`);
+    if (k.pilny && k.gosc) bledy.push(`${k.id}: krok pilny z gościem (karta wypadłaby przed gościem pod bramą)`);
   });
   return bledy;
 }

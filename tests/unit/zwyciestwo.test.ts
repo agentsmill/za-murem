@@ -594,11 +594,12 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // src/gov/watki-tresc.ts): pierwszy tick zarządu wybiera wątki sezonu z ziarna zarządu (`wybierzWatki`), a pierwsze kroki
     // wybranych łańcuchów wchodzą do puli, czyli inne losowanie; atrapa nie ma obcych ani mieszkańców z generatora, więc do
     // wyboru zostają tylko „List z 2026” i „Pies ujada nocami”, który zajmuje miejsce karty „Pies przy siatce” (były f90d5ef8, 949f8cf5
-    // i 76e72ff9).
+    // i 76e72ff9; potem 668ba3fa, 4ce4129e i 65a73c2f). Dziewiąty raz w rundzie poprawek 1 zadania 15: „List z 2026” przestał
+    // być krokiem pierwszej nocy (satyra i lore dopiero od drugiego dnia), czyli inna pula tej nocy, inne losowanie.
     const przebiegi = [
-      [1, 'propozycja', '668ba3fa'],
-      [3, 'zawsze-warta', '4ce4129e'],
-      [5, 'losowo', '65a73c2f'],
+      [1, 'propozycja', 'ef7e6dca'],
+      [3, 'zawsze-warta', 'a38f0d27'],
+      [5, 'losowo', 'a76369a8'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

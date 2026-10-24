@@ -921,6 +921,23 @@ describe('hak i sprawdzanie łańcuchów', () => {
     expect(sprawdzLancuch({ id: 'k', tryby: OBA, kroki: [krok('k', 1)] }).join()).toContain('1 kroków zamiast 2–4');
   });
 
+  it('sprawdzLancuch: krok pilny z gościem to usterka (pilna karta wypadałaby przed gościem pod bramą)', () => {
+    const gosc: Krok['gosc'] = () => ({ osoby: [], kto: 'dziecko' });
+    const zly: Lancuch = {
+      id: 'p',
+      tryby: OBA,
+      kroki: [{ ...krok('p', 1, { gosc }), pilny: true }, krok('p', 2, { po: 1 })],
+    };
+    expect(sprawdzLancuch(zly)).toEqual(['p_1: krok pilny z gościem (karta wypadłaby przed gościem pod bramą)']);
+    // pilny bez gościa i gość bez pilnego są w porządku
+    const dobry: Lancuch = {
+      id: 'p',
+      tryby: OBA,
+      kroki: [{ ...krok('p', 1), pilny: true }, krok('p', 2, { po: 1, gosc })],
+    };
+    expect(sprawdzLancuch(dobry)).toEqual([]);
+  });
+
   it('sprawdzLancuchy: to samo id kroku w dwóch łańcuchach, powtórzony łańcuch i id powtórzone w łańcuchu to usterki', () => {
     expect(sprawdzLancuchy([A, B, G], new Set(M1_EVENTS.map((e) => e.id)))).toEqual([]);
     // krok `b_2` w dwóch różnych łańcuchach (id kroku to id karty, więc musi być unikalne w całej grze)

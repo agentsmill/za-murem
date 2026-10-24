@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLOK, placeOf } from '../../src/gov/miejsce.ts';
 import type { GovInput, GovState } from '../../src/gov/typy.ts';
-import { krokPoId } from '../../src/gov/watki.ts';
+import { LANCUCHY } from '../../src/gov/watki.ts';
 import { M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { ackReport, chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { Atrapa, TPH, TPS } from './gov-atrapa.ts';
@@ -14,6 +14,12 @@ import { pl } from './po-angielsku.ts';
 
 const base = new Atrapa(1).input();
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
+/** Kroki łańcuchów dozwolone pierwszej nocy: tylko te trzy, które zajmują miejsce kart „Światło w oknie naprzeciwko” (światło
+    w oknie i głos z dachu) i „Pies przy siatce” z puli pierwszej nocy. Reszta łańcuchów (list z 2026, puszki, płuca, satyra) dopiero od drugiego dnia (decyzja
+    Mateusza, 17.10.2026): nikt nie dopisuje tu kroku tylko dlatego, że chce się go zobaczyć wcześniej. */
+const KROKI_PIERWSZEJ_NOCY = new Set(['swiatlo_1', 'szczekanie_1', 'dach_1']);
+const wolnoPierwszejNocy = (id: string): boolean =>
+  id === 'dym' || KROKI_PIERWSZEJ_NOCY.has(id) || !!byId.get(id)?.first;
 
 /** wejście w sekundzie s przy ekranie przy 1× */
 function inp(s: number, over: Partial<GovInput> = {}): GovInput {
@@ -188,12 +194,8 @@ describe('pierwsza noc', () => {
         const ev = gov.ev.active;
         if (ev && ev !== had) {
           const first = atr.day === 1 || (atr.day === 2 && atr.hour < 8);
-          if (first)
-            expect(
-              ev.id === 'dym' || (byId.get(ev.id) ?? krokPoId(ev.id))?.first,
-              `${ev.id} dnia ${atr.day} o ${atr.hour}`,
-            ).toBe(true);
-          else if (!(byId.get(ev.id) ?? krokPoId(ev.id))?.first) later++;
+          if (first) expect(wolnoPierwszejNocy(ev.id), `${ev.id} dnia ${atr.day} o ${atr.hour}`).toBe(true);
+          else if (!wolnoPierwszejNocy(ev.id)) later++;
         }
         const p = pending(gov, atr.input());
         if (p?.k === 'wydarzenie')
@@ -214,6 +216,14 @@ describe('pierwsza noc', () => {
     }
     // drugiego dnia przychodzą też wydarzenia spoza pierwszej nocy (satyra, ludzie, handel)
     expect(later).toBeGreaterThan(0);
+  });
+
+  it('flaga first mają tylko trzy kroki łańcuchów: światło w oknie, głos z dachu i pies, nie list z 2026 ani satyra', () => {
+    const zFlaga = LANCUCHY.flatMap((l) => l.kroki)
+      .filter((k) => k.first)
+      .map((k) => k.id)
+      .sort();
+    expect(zFlaga).toEqual([...KROKI_PIERWSZEJ_NOCY].sort());
   });
 
   it('rytm pierwszego dnia przy 1×: decyzja zarządu w każdej minucie do karty nocy', () => {

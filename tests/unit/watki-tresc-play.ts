@@ -231,7 +231,7 @@ export function kopia(s: Swiat): Swiat {
 }
 
 /** skutki zarządu stosowane w udawanym świecie: zapasy i potrzeby przez atrapę, a ludzie, wizyty i zwierzęta tutaj */
-function zastosuj(s: Swiat, fx: GovEffects): void {
+export function zastosuj(s: Swiat, fx: GovEffects): void {
   s.atr.apply(fx);
   s.skutki.push(fx);
   if (fx.gosc) {

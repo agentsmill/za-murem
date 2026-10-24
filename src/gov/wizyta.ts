@@ -73,6 +73,7 @@ import {
   AMUNICJA,
   BRON,
   type Gosc,
+  type HaczykId,
   type KontekstGoscia,
   type KtoId,
   opisMiejsca,
@@ -528,6 +529,16 @@ export function planujKarte(
   return true;
 }
 
+/** Czego goście z klocków nie powtarzają, gdy to samo opowiada wybrany wątek sezonu (`KontekstGoscia.bez`): ugryziony bliski
+    z prośbą o dobicie to łańcuch „dobicie”, ocaleni z ukrytym ugryzieniem to łańcuch „dach”. Bez tych łańcuchów pusty obiekt,
+    więc losowania gości (i skróty gry) zostają takie jak dotąd. */
+function bezPowtorek(st: GovState): Pick<KontekstGoscia, 'bez'> {
+  const wybrane = st.watki?.wybrane ?? [];
+  const kto: KtoId[] = wybrane.includes('dobicie') ? ['z_ugryzionym'] : [];
+  const haczyk: HaczykId[] = wybrane.includes('dach') ? ['ugryziony'] : [];
+  return kto.length || haczyk.length ? { bez: { kto, haczyk } } : {};
+}
+
 /** Planuje wizytę: składa gościa z klocków (ziarno zarządu), zapisuje go jako aktywnego i oddaje symulacji plan
     (`fx.gosc`: osoby z id `g<n>p<i>`, wygląd każdej, strona wejścia, ugryziona osoba). Okolica idzie z wejścia bez zmian
     (nazwy już przefiltrowane przez hosta). Karty nie pokazuje: ta przychodzi, gdy grupa stoi pod bramą (`goscTick`). */
@@ -544,6 +555,7 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
     znane: znaneDziedziny(i),
     napady: i.napady?.length ?? 0,
     dom: placeIn(i).kind === 'dom',
+    ...bezPowtorek(st),
   };
   const zajete = new Set([...i.people.map((p) => p.first), ...(i.lokatorzy ?? []).map((l) => l.first)]);
   const g = skladGoscia(rng, s.n, ctx, zajete);

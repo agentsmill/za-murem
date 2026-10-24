@@ -7,9 +7,22 @@
 
 import { describe, expect, it } from 'vitest';
 import { LANCUCHY, sprawdzLancuchy } from '../../src/gov/watki.ts';
-import { M1_EVENTS } from '../../src/gov/wydarzenia.ts';
+import { eventView, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
+import { chooseEvent } from '../../src/gov/zarzad.ts';
 import { polskieSlowa } from './po-angielsku.ts';
-import { BLOK, DOM, lancuch, nowySwiat, obaJezyki, przejdz, SCEN, wejscie } from './watki-tresc-play.ts';
+import {
+  BLOK,
+  DOM,
+  dalej,
+  lancuch,
+  nowySwiat,
+  obaJezyki,
+  przejdz,
+  SCEN,
+  type Swiat,
+  wejscie,
+  zastosuj,
+} from './watki-tresc-play.ts';
 
 const IDY = [
   'swiatlo',
@@ -106,6 +119,12 @@ const ZAKAZANE = [
   'iPhone',
 ];
 
+/** Słowa, które w słowniku miejsca (`wordsOf`, `wordsEn` w src/gov/miejsce.ts) i w tekstach kart należą tylko do bloku: w domu ma
+    ich nie być (brama → furtka, zarząd → komitet, spółdzielnia i osiedle → ulica, piwnica → szopa, klatka i piętro). */
+const SLOWA_BLOKU_PL = /bram|zarząd|piwnic|spółdziel|osiedl|klatk|piętr|pawilon|świetlic|czynsz/i;
+/** to samo po angielsku; „garden gate” jest domowe, samo „gate” blokowe */
+const SLOWA_BLOKU_EN = /(?<!garden )\bgate\b|\bboard\b|\bestate\b|co-op|basement|stairwell|\bflat\b|block next door/i;
+
 describe('każdy łańcuch przechodzi do końca przez każdą gałąź wyborów', () => {
   for (const id of IDY) {
     it(`${id}: wszystkie gałęzie bez wyjątku, ostatni krok osiągalny, teksty w obu językach`, () => {
@@ -148,16 +167,37 @@ describe('teksty: angielski bez polskich słów, bez pięter, numerów mieszkań
             for (const nazwa of ZAKAZANE) expect(jezyk, `${t.krok}: ${nazwa}`).not.toContain(nazwa);
           }
         }
-        // dom: ani klatki, ani bloku w polskich tekstach (poza mieszkańcami „z waszego domu”)
-        if (sc.o.place === DOM)
-          for (const t of w.teksty)
-            expect(t.tx.pl, `${t.krok} (dom): słowa bloku`).not.toMatch(
-              /klatk|piętr|spółdziel|pawilon|świetlic|czynsz/i,
-            );
+        // dom: ani słowa bloku w tytułach, tekstach, napisach wyborów i wpisach kroniki (wszystko, co kroki wypisały po drodze)
+        if (sc.o.place === DOM) {
+          const wpisy = w.konce.flatMap((k) => [...k.gov.log.map((x) => x.txt), ...k.gov.later.map((x) => x.line)]);
+          const wszystko = [
+            ...w.teksty.map((t) => ({ gdzie: t.krok, tx: t.tx })),
+            ...wpisy.map((tx) => ({ gdzie: 'kronika', tx })),
+          ];
+          for (const t of wszystko) {
+            expect(t.tx.pl, `${t.gdzie} (dom): słowa bloku po polsku`).not.toMatch(SLOWA_BLOKU_PL);
+            expect(t.tx.en, `${t.gdzie} (dom): słowa bloku po angielsku`).not.toMatch(SLOWA_BLOKU_EN);
+          }
+        }
       }
       expect(sprawdzone).toBeGreaterThan(10);
     });
   }
+
+  it('kontrola: w bloku słowa bloku występują (wyrażenia z testu domu nie są puste)', () => {
+    let pl = 0;
+    let en = 0;
+    for (const id of IDY) {
+      const sc = SCEN[id].find((x) => x.o.place !== DOM);
+      if (!sc) continue;
+      for (const t of przejdz(lancuch(id), nowySwiat(id, sc.o)).teksty) {
+        if (SLOWA_BLOKU_PL.test(t.tx.pl)) pl++;
+        if (SLOWA_BLOKU_EN.test(t.tx.en)) en++;
+      }
+    }
+    expect(pl).toBeGreaterThan(10);
+    expect(en).toBeGreaterThan(10);
+  });
 
   it('teksty nie zawierają pauz ani wykrzykników z sufitu', () => {
     // wystarczy jedna ścieżka każdego łańcucha: te same zdania wracają na pozostałych
@@ -178,5 +218,79 @@ describe('teksty: angielski bez polskich słów, bez pięter, numerów mieszkań
 describe('świat BLOK i DOM są rozróżnialne dla kroków', () => {
   it('BLOK i DOM mają różne rodzaje miejsca', () => {
     expect(BLOK.kind).not.toBe(DOM.kind);
+  });
+});
+
+// ---------------------------------------------------------------- karty mówią tylko to, co robi gra
+
+/** wybór o indeksie `k` na otwartej karcie i skutki w udawanym świecie */
+const wybierz = (s: Swiat, k: number): void => zastosuj(s, chooseEvent(s.gov, wejscie(s), k));
+/** okno otwartej karty */
+const okno = (s: Swiat) => {
+  const v = eventView(s.gov, wejscie(s));
+  if (!v) throw new Error('brak otwartej karty');
+  return v;
+};
+
+describe('dlug: kartę długu da się zawsze zamknąć', () => {
+  /** świat po „Wziąć na kredyt” i z otwartą kartą długu (handlarz stoi pod bramą) */
+  const naDlugu = (): Swiat => {
+    const s = nowySwiat('dlug', { handlarz: true });
+    expect(dalej(s)).toBe(true);
+    expect(s.gov.ev.active?.id).toBe('dlug_1');
+    wybierz(s, 0);
+    expect(dalej(s)).toBe(true);
+    expect(s.gov.ev.active?.id).toBe('dlug_2');
+    return s;
+  };
+
+  it('handlarz odszedł, zanim gracz odpowiedział: jest dokładnie jeden wybór i zamyka kartę', () => {
+    const s = naDlugu();
+    s.handlarz = undefined;
+    const ok = okno(s)
+      .choices.map((c, k) => [c, k] as const)
+      .filter(([c]) => c.ok);
+    expect(ok).toHaveLength(1);
+    wybierz(s, ok[0][1]);
+    expect(s.gov.ev.active).toBeNull();
+    expect(s.gov.watki?.haki['dlug.zwloka']).toBeDefined();
+  });
+
+  it('handlarz stoi, a gracz nie ma ani złomu, ani jedzenia: zostaje „Nie oddawać”, wybór dla odszedłego jest wyłączony', () => {
+    const s = naDlugu();
+    s.atr.scrap = 0;
+    s.atr.supplies = 0;
+    const v = okno(s);
+    const dostepne = v.choices.filter((c) => c.ok).map((c) => c.label.pl);
+    expect(dostepne).toEqual(['Nie oddawać']);
+  });
+});
+
+describe('płuca: zarząd nie jest obwiniany o leki, których nie miał', () => {
+  /** tekst trzeciej karty po „Posadzić przy kozie” i „Nie dawać”, przy `leki` sztukach leków w apteczce */
+  const trzeciaKarta = (leki: number): string => {
+    const s = nowySwiat('pluca');
+    s.atr.meds = leki;
+    expect(dalej(s)).toBe(true);
+    expect(s.gov.ev.active?.id).toBe('pluca_1');
+    wybierz(s, 1);
+    expect(dalej(s)).toBe(true);
+    expect(s.gov.ev.active?.id).toBe('pluca_2');
+    const nie = okno(s).choices.findIndex((c) => c.label.pl === 'Nie dawać');
+    wybierz(s, nie);
+    expect(dalej(s)).toBe(true);
+    expect(s.gov.ev.active?.id).toBe('pluca_3');
+    const v = okno(s);
+    return `${v.text.pl} || ${v.text.en}`;
+  };
+
+  it('z lekami w apteczce mieszkańcy wiedzą, że zarząd je miał', () => {
+    expect(trzeciaKarta(6)).toMatch(/miał leki.*had meds/);
+  });
+
+  it('bez leków nie ma takiego zarzutu', () => {
+    const t = trzeciaKarta(0);
+    expect(t).not.toMatch(/miał leki|had meds/);
+    expect(t).toMatch(/nie było czym pomóc.*nothing to help with/);
   });
 });

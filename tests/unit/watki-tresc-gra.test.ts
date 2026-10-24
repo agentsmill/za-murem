@@ -517,13 +517,21 @@ describe('zombie: ugryziony naprawdę dostaje ugryzienie, a dobicie naprawdę za
     const w = wizyta(g);
     expect(w.pionki).toHaveLength(2);
     const chlopiec = w.pionki[1];
+    const imieChlopca = imie(g, chlopiec.id);
+    expect(imieChlopca).toBe(w.a.gosc.osoby[1].name);
     expect(o.p.text.pl).toContain(w.a.gosc.osoby[1].first);
     const fx = wybierz(g, o, 'Dobić przez siatkę dzidą');
     expect(fx.goscRozkaz?.map((r) => r.co)).toEqual(['dobij', 'odejdz']);
     for (let t = 0; t < 400; t++) g.sim.step();
     expect(g.st.pawns.some((q) => q.id === chlopiec.id && q.kind === 'gosc')).toBe(false);
-    // chłopiec nie żyje: zwłoki albo wpis o zgonie
-    expect((g.st.dead ?? []).length).toBeGreaterThan(0);
+    // umarł ten chłopiec, nie ktokolwiek: wpis o zgonie z jego imieniem i jego zwłoki na mapie
+    const zgon = (g.st.dead ?? []).findIndex((d) => d.name === imieChlopca);
+    expect(zgon, `wpis o zgonie ${imieChlopca}`).toBeGreaterThanOrEqual(0);
+    expect(g.st.dead![zgon].kind).toBe('gosc');
+    expect(
+      g.st.things.some((t) => t.kind === 'zwloki' && t.dead === zgon),
+      'zwłoki chłopca',
+    ).toBe(true);
   }, 300_000);
 });
 
