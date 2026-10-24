@@ -13,7 +13,9 @@
    zmieniają gospodarkę pomiaru: `--sasiedzi` (od dnia 2 jedna osoba chodzi do sąsiadów po łup) i `--jedzenie` (zapas
    jedzenia nie spada poniżej progu, jakby głodu nie było). Bez nich bot głoduje od dnia 7–10 i zimą badania prawie
    stoją, bo głodna osoba z zarządu nie siedzi przy stole; `--jedzenie` mierzy wtedy samo tempo, bez tego zakłócenia.
-   Pomiar niczego nie wymusza: cele tempa są policzone obok liczb (tak/nie), a błąd wykonania daje tylko zły argument. */
+   Pomiar niczego nie wymusza: cele tempa są policzone obok liczb (tak/nie), a błąd wykonania daje tylko zły argument.
+   Gra bez łańcuchów kart (`playWithGov` bez opcji `lancuchy`, zarząd z `newGov` bez przełącznika): pomiar dotyczy tempa badań,
+   a łańcuchy dokładałyby gości i zajmowały ludzi przy stole; gra w przeglądarce ma je domyślnie, boty `bot` i `bot:zombie` też. */
 
 import fs from 'node:fs';
 import path from 'node:path';

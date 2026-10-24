@@ -24,15 +24,22 @@
    zgonie kogoś z imieniem (zarząd albo mieszkaniec z osobą; dane karty `{ id, name, f, cause, cialo? }`) w trzech
    wyborach: pochować pod trzepakiem (w domu w ogrodzie; wszystkim nastrój „Pożegnaliśmy: Imię” +2 na dobę, kopie
    `doSprawdzenia()` za −10 odpoczynku), pożegnać przy kozie (nastrój +1) albo bez ceremonii (wkurzenie +1). W trybie
-   zombie `cialo` (dobite albo nie) idzie do tekstu; bez ciała zamiast grobu tabliczka. */
+   zombie `cialo` (dobite albo nie) idzie do tekstu; bez ciała zamiast grobu tabliczka.
+   Kroki łańcuchów kart (src/gov/watki.ts) to też `GEventDef`; host dostaje od nich `hak(id, d?)` i `hakDane(id)`, którymi
+   wybór na karcie ustawia i czyta fakty zwalniające następny krok. Treść dwunastu łańcuchów (src/gov/watki-tresc.ts) bierze od
+   hosta jeszcze: `pies()` (flaga `dog` albo wpis o psie), `watek(id)` (łańcuch jest wątkiem sezonu; karta `pies` ustępuje
+   wtedy łańcuchowi „Szczekanie”), `napadNocy(dzien)` (wynik nocy z raportu), `handlarz()` i `handlarzEfekt(...)` (handlarz
+   pod bramą, `GovInput.handlarz`; lepsza oferta albo zła sława w symulacji) oraz `wskazowkaMiejsca(...)` i
+   `miejsceWskazowki(...)` (wskazówka na miejsce z kategorii albo cel z TARGETS, także z bronią). `GoscKarty` ma dla tych
+   kroków `look` (twarze), `chce`, `ugryziony` (ukryte ugryzienie) i `wraca` (ten sam znajomy w pamięci zarządu). */
 
 import { przyczynaEn } from '../content/data.en.ts';
 import { LAW, type LawPath } from '../content/data.ts';
 import type { EventHost } from '../content/events.ts';
 import { g, type Person } from '../content/people.ts';
-import { type Tx, tx, txOf } from '../core/jezyk.ts';
+import { type Tx, tx, txOf, wielka } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
-import type { KtoId, Strona } from './goscie.ts';
+import type { ChceId, KtoId, Strona } from './goscie.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
 import type { Cialo, GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
@@ -294,6 +301,18 @@ export interface GovHost extends EventHost, GoscHost {
   /** kafelek podwórka przy siatce od strony garaży (`garaze`) albo najbliższego budynku mieszkalnego (`blok`), z
       `GovInput.strony`; bez niej kafelek największej otwartej dziury, a gdy i jej kafelków nie ma, null */
   kafelekPrzySiatce(strona: 'garaze' | 'blok'): number | null;
+  /** czy gra ma psa albo go miała: flaga `dog` (przygarnięty) albo jakikolwiek wpis o psie w `GovInput.zwierzeta` (żyje albo
+      zginął). Łańcuch „Szczekanie” nie oferuje psa, gdy to prawda. */
+  pies(): boolean;
+  /** czy łańcuch historii o tym id jest wątkiem sezonu tej gry (src/gov/watki.ts); karty, które dublują jego treść, ustępują mu */
+  watek(id: string): boolean;
+  /** wynik napadu nocy `dzien` (dzień, w którym noc się zaczęła: `NightReport.day`) z raportu porannego, a null, gdy raportu tej
+      nocy jeszcze nie ma albo już go nie ma wśród ostatnich dziesięciu; raport rano to prawda o tej nocy, kroki łańcucha mówią to samo */
+  napadNocy(dzien: number): 'brak' | 'odparty' | 'wtargnięcie' | null;
+  /** handlarz stoi pod bramą z wózkiem (`GovInput.handlarz`): jego kafelek i punkt mapy; null: nikogo (gra bez obcych też) */
+  handlarz(): { tile: number; gdzie: Punkt } | null;
+  /** skutek dla handlarza pod bramą (`GovEffects.handlarz`): lepsza oferta albo zła sława; bez handlarza w symulacji nic nie robi */
+  handlarzEfekt(co: 'oferta' | 'slawa'): void;
   /** chwilowy nastrój jednej osoby (zarządu albo mieszkańca z osobą) na `hours` godzin gry; powód to polski napis
       z src/content/nastroje.en.ts, jak w `moodAll` */
   moodOf(id: string, why: string, d: number, hours: number): void;
@@ -316,6 +335,12 @@ export interface GovHost extends EventHost, GoscHost {
   wyrzuc(id: string): void;
   /** osoba zarządu idzie sprawdzić kafelek (numer kafelka mapy), stoi tam 10 minut gry i wraca do zajęć */
   sprawdz(id: string, tile: number): void;
+  /** Hak łańcucha kart (src/gov/watki.ts): zapisuje fakt `id` z minutą gry i danymi `d` (zwykły JSON, `Tx` w środku wolno).
+      Wybór na karcie kroku ustawia nim hak, od którego liczy się odstęp następnego kroku; id z przestrzenią łańcucha
+      (`swiatlo.dali`). Ponowne ustawienie przesuwa czas. */
+  hak(id: string, d?: unknown): void;
+  /** hak o danym id (kopia: minuta gry i dane) albo null, gdy go nie ma; do tekstów i wyborów dalszych kroków */
+  hakDane(id: string): { t: number; d?: unknown } | null;
   /** wpis do kroniki: zdanie w obu językach albo polski wpis z 0.3 (angielski daje EVENTS_EN z warianty.en.ts) */
   log(txt: string | Tx, big?: boolean): void;
   /** skutek na rano: zmiana zapasów i linia do raportu */
@@ -358,6 +383,9 @@ export interface GEventDef<D = any> {
   /** zwroty do podmiany w kronice z wyborów tego wydarzenia (według miejsca; tylko polskie wpisy z 0.3) */
   log?: (h: GovHost) => Record<string, string> | null;
   w: (h: GovHost) => number;
+  /** ton karty dla narratora (src/gov/narrator.ts): `ostre` (zagrożenie, strata) tracą wagę przy wysokim napięciu, a zyskują po dobie
+      spokoju; `lagodne` (drobiazgi, znaleziska, satyra) zyskują przy wysokim napięciu; bez pola karta jest zwykła (waga bez zmian) */
+  ton?: 'ostre' | 'lagodne';
   make: (h: GovHost) => D | null;
   /** miejsce wydarzenia na mapie w kafelkach (przycisk „Pokaż” w oknie); brak funkcji albo null: karta bez miejsca */
   gdzie?: (h: GovHost, d: D) => Punkt | null;
@@ -379,6 +407,17 @@ export interface GoscKarty {
   osoby: Person[];
   kto: KtoId | 'sasiad' | 'aktywisci' | 'influencer' | 'dzieci';
   strona?: Strona;
+  /** Dla kroków łańcuchów (src/gov/watki-tresc.ts), które sprowadzają tych samych ludzi drugi raz albo gościa z ukrytym
+      ugryzieniem. `look`: wygląd pionka każdej osoby (4–15, w kolejności `osoby`), z poprzedniej wizyty (`GrupaKarty.looks`);
+      bez niego albo przy innej długości wygląd losuje zarząd. `chce`: czego chce gość (domyślnie nocleg). `ugryziony`: indeks
+      w `osoby` ukrytego ugryzienia (tryb zombie): gość ma haczyk `ugryziony`, a wpuszczony albo przyjęty dostaje ugryzienie
+      (`goscRozkaz(…, 'ugryziony')` robi karta). */
+  look?: readonly number[];
+  chce?: ChceId;
+  ugryziony?: number;
+  /** id wpisu `Znajomy` mówiącego, gdy ten sam człowiek wraca (kolejny krok łańcucha): decyzja o nim poprawia ten wpis zamiast
+      zakładać drugi (pionek jest za każdym razem nowy, więc inaczej to byłby dla zarządu inny człowiek) */
+  wraca?: string;
 }
 
 /** wybór wydarzenia w grze: jak EventChoice z 0.3, ale z napisem w obu językach */
@@ -412,7 +451,6 @@ const namesEn = (list: GovPerson[]) =>
 /** imiona w obu językach: „Ania, Bartek i Celina”, „Ania, Bartek and Celina” */
 export const peopleNamesTx = (list: GovPerson[]): Tx => tx(names(list), namesEn(list));
 
-const wielka = (s: string) => s[0].toUpperCase() + s.slice(1);
 const dom = (h: GovHost) => h.place().kind === 'dom';
 /** sąsiedzi to domy: dom obok zamiast bloku obok (w samotnym miejscu wydarzenia z sąsiadami nie przychodzą) */
 const domyObok = (h: GovHost) => h.neighbours() === 'domy';
@@ -502,6 +540,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'slady',
+    ton: 'ostre',
     first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
@@ -548,6 +587,7 @@ export const NEW_EVENTS: GEventDef[] = [
     // „Ślady przy siatce” w trybie zombie: ścieżkę wydeptało stado, nie ludzie, więc „udawać” odpada (podbijało napad
     // szabrowników, a ich w tym trybie nie ma); zamiast niego warta z dzidą. Warunek, pora i odstęp jak w slady.
     id: 'slady_z',
+    ton: 'ostre',
     first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
@@ -592,6 +632,7 @@ export const NEW_EVENTS: GEventDef[] = [
     // prawdziwy szwendacz przy siatce (GovInput.horde.przy): karta ma jego miejsce na mapie („Pokaż”), a „Dobić dzidą”
     // wysyła na niego osobę z dzidą. Pora dzień, bo noc ma własne karty o stadzie.
     id: 'szwendacz',
+    ton: 'ostre',
     gap: 6,
     when: ['dzien'],
     tryby: ['zombie'],
@@ -642,10 +683,13 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'pies',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['wieczor', 'noc'],
-    w: () => 0.7,
+    // pies z łańcucha „Szczekanie” (src/gov/watki-tresc.ts) ustawia tę samą flagę: drugiego już nie przygarniamy, a gdy ten
+    // łańcuch jest wątkiem sezonu, pies przychodzi jego drogą (pies ujada, ślady, pies przychodzi sam), nie z tej karty
+    w: (h) => (h.flag('dog') || h.watek('szczekanie') ? 0 : 0.7),
     make: () => ({}),
     title: () => tx('Pies przy siatce', 'A dog at the fence'),
     text: () =>
@@ -680,6 +724,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'halas',
+    ton: 'ostre',
     first: true,
     gap: 4,
     when: ['noc'],
@@ -748,6 +793,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'krzyk',
+    ton: 'ostre',
     first: true,
     when: ['noc'],
     // krzyk niesie się od sąsiadów: bez nich w okolicy nie ma skąd
@@ -896,10 +942,13 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'sygnal',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['noc'],
-    w: (h) => (h.place().near === 'nikt' ? 0 : 0.8),
+    // gdy łańcuch „Światło w oknie” albo „Ktoś woła z dachu” (src/gov/watki-tresc.ts) jest wątkiem sezonu, to jego pierwszy krok
+    // zajmuje miejsce tej karty, a chłopak z babcią albo ocaleni naprawdę stają potem pod bramą
+    w: (h) => (h.place().near === 'nikt' || h.watek('swiatlo') || h.watek('dach') ? 0 : 0.8),
     make: () => ({}),
     title: () => tx('Światło w oknie naprzeciwko', 'A light in the window opposite'),
     text: (h) =>
@@ -918,11 +967,12 @@ export const NEW_EVENTS: GEventDef[] = [
         ok: true,
         run: () => {
           h.mood(1, 0);
+          // nikt nie staje rano pod bramą (zrobi to dopiero łańcuch „Światło w oknie”): ta karta mówi tylko o oknie
           h.later(
             {},
             tx(
-              `Rano ${h.words().brama.pod} stał chłopak z ${domyObok(h) ? 'domu' : 'bloku'} naprzeciwko. Mieszka z babcią i dwoma kocami. Dziękował, że ktoś w ogóle odpowiedział.`,
-              `In the morning a lad from the ${domyObok(h) ? 'house' : 'block'} opposite was waiting at ${h.wordsEn().brama}. He lives with his gran and two blankets. He thanked you for answering at all.`,
+              `Rano w oknie ${domyObok(h) ? 'domu' : 'bloku'} naprzeciwko było już ciemno. Ktoś tam odmigał trzy razy i poszedł spać.`,
+              `In the morning the window of the ${domyObok(h) ? 'house' : 'block'} opposite was dark. Someone there flashed back three times and went to bed.`,
             ),
           );
         },
@@ -944,6 +994,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'kot',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['noc'],
@@ -1068,6 +1119,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'latarka',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['dzien', 'wieczor'],
@@ -1118,6 +1170,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'domofon',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: () => 0.8,
@@ -1168,6 +1221,7 @@ export const NEW_EVENTS: GEventDef[] = [
   {
     // z sytuacji, nie z losowania: koza pierwszy raz się pali, ktoś widzi dym i przychodzi (wydarzenia.ts, eventTick)
     id: 'dym',
+    ton: 'lagodne',
     once: true,
     when: ['dzien', 'wieczor', 'noc'],
     w: () => 0,

@@ -137,6 +137,12 @@ export interface PlayOpts {
   /** karta nocy nie wysyła nikogo na wyprawę (zostaje sen z propozycji); dla testów, które liczą tylko wyprawy dzienne:
       po wolniejszym zmęczeniu zarząd co noc proponuje wyprawę, bo ma siły na daleką drogę */
   bezWyprawNocnych?: boolean;
+  /** łańcuchy kart i wątki sezonu włączone (`newGov(seed, mode, true)`, jak gra w przeglądarce bez `?lancuchy=0`: boty z tools/ grają
+      tak, testy samej puli kart bez opcji, czyli bez łańcuchów) */
+  lancuchy?: boolean;
+  /** tylko do pomiarów (spis kart, goście, narrator): po każdym kroku zarządu (co sekundę przy ekranie) stan zarządu, wejście
+      i skutki kroku; niczego nie zmienia w grze */
+  obserwuj?: (gov: GovState, i: GovInput, fx: GovEffects) => void;
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -291,7 +297,7 @@ export function playWithGov(
     ...(opts.obcy ? { obcy: true } : {}),
   });
   const sim = new Sim(w, st);
-  const gov = newGov(seed, opts.mode);
+  const gov = newGov(seed, opts.mode, opts.lancuchy);
   // mapa miasta jak w grze (main.ts): stan miasta w zarządzie od początku, okolica w każdym wejściu
   const miasto = opts.miasto;
   if (miasto) wlaczMiasto(gov);
@@ -343,6 +349,7 @@ export function playWithGov(
     apply(st, w, fxu);
     miasto?.po?.(fxu, iu);
     zw?.po?.(gov, iu, fxu);
+    opts.obserwuj?.(gov, iu, fxu);
     // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
     const res = fxu.raidResult;
     if (res && night) {
@@ -512,7 +519,8 @@ export interface LawsRun {
 }
 
 /** Gra bez zarządu z uchwałami o jedzeniu od startu: samouczek i drzewo na opał, kiedy drewna mało (jak w playWithGov),
-    przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. */
+    przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. Zarządu nie ma wcale, więc i łańcuchów kart
+    (`lancuchy` dotyczy tylko `playWithGov`); pomiar racji i kotła nie zależy od gości z kart. */
 export function playLaws(
   w: World,
   seed: number,

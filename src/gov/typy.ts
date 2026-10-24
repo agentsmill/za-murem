@@ -176,6 +176,10 @@ export interface GovGosc {
   zywi: number[];
   ukradl: number;
   przyjety?: boolean;
+  /** indeksy w `PlanGoscia.osoby` członków grupy, którzy zginęli jako goście (szwendacz, dobicie, strzał); zostają po `poszedl`
+      i `zginal`, gdy `zywi` jest już puste. Zarząd oznacza po nich zmarłych znajomych (`Znajomy.idx`). Pole tylko wtedy, gdy ktoś
+      zginął; stary stan go nie ma. */
+  zmarli?: number[];
 }
 
 /** Polecenie zarządu dla gościa (`GovEffects.goscRozkaz`), dotyczy całej grupy:
@@ -280,6 +284,10 @@ export interface GovInput {
       `cat`, wysyła wtedy `GovEffects.zwierze` (świeże przygarnięcie i stary zapis z flagą bez pionka to ten sam
       przypadek). Bez pola (gra bez zwierząt): żadnego. */
   zwierzeta?: ZwierzetaStan;
+  /** handlarz pod bramą (tylko w grze z obcymi, `SimOpts.obcy`): stoi z wózkiem i czeka (kroki łańcucha „Dług”,
+      src/gov/watki-tresc.ts); `tile` to kafelek handlarza, `gdzie` ten sam jako punkt mapy (przycisk „Pokaż”). Pola nie ma,
+      gdy handlarza nie ma pod bramą (idzie, odszedł, uciekł, nie żyje) i w grze bez obcych. */
+  handlarz?: { tile: number; gdzie: Punkt };
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
       lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
@@ -426,6 +434,10 @@ export interface GovEffects {
   /** zwierzęta, które symulacja ma wystawić jako pionki: pies (z flagi `dog`) i kot (z flagi `cat`), gdy symulacja nie
       ma o nich wpisu w `GovInput.zwierzeta`; wystawienie jest idempotentne. Tablica powstaje przy pierwszym zwierzęciu */
   zwierze?: ('pies' | 'kot')[];
+  /** skutki dla handlarza pod bramą, który stoi z wózkiem (`GovInput.handlarz`; bez niego symulacja nic nie robi):
+      `oferta` to lepsza oferta (każda jego oferta tańsza o jedną czwartą i o jedną wymianę dłuższa), `slawa` to zła sława u
+      handlarzy (poziom +1, jak po napaści: ceny następnych wizyt w górę, wizyty rzadziej, a bieżące oferty o połowę drożej) */
+  handlarz?: { oferta?: boolean; slawa?: boolean };
 }
 
 /** Stan zwierząt w symulacji (`SimState.zwierzeta`, odczyt `GovInput.zwierzeta`): pies żyje albo zginął, kot żyje i nie
@@ -726,12 +738,41 @@ export interface GovState {
   goscie?: { n: number; czytane: number; aktywny?: AktywnyGosc };
   /** Wskazówki na miejsca (wiadomość od gościa): klucz miejsca z okolicy (`Cel.klucz`) albo id celu z TARGETS → dzień
       gry, w którym je dostaliśmy. Następna wyprawa do tego miejsca ma ryzyko ×0,5 i łup ×1,5, po rozliczeniu wskazówka
-      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki */
-  wskazowki?: Record<string, { dzien: number }>;
+      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki. `bron`: wskazówka o miejscu z bronią (łańcuch „Głos z
+      radia”): rozliczenie tej wyprawy dokłada do łupu pewną broń i amunicję (`znalezionaBron` w src/gov/noc.ts) */
+  wskazowki?: Record<string, { dzien: number; bron?: true }>;
   /** pamięć o ludziach (src/gov/znajomi.ts): gość po decyzji zarządu o nim i mieszkaniec wyrzucony bramą, jeden wpis na
       człowieka; dodatni wraca jako gość, ujemny w zwykłym trybie idzie z szabrownikami. Pole od pierwszego wpisu, gra bez
       gości i stary zapis go nie mają. */
   znajomi?: Znajomy[];
+  /** łańcuchy kart i wątki sezonu (src/gov/watki.ts): `wybrane` to id łańcuchów wybranych na tę grę (do trzech, z ziarna
+      zarządu przy pierwszym wydarzeniu; puste: jeszcze nie wybierano), `haki` to fakty ustawiane wyborami na kartach
+      (id → minuta gry `t` i zwykłe dane JSON `d`; silnik dopisuje hak o id każdego rozstrzygniętego kroku), `krok` to numer
+      ostatniego rozpoczętego kroku łańcucha (równy liczbie kroków: łańcuch skończony albo cicho zakończony). Pole od
+      pierwszego wyboru wątków albo haka; gra bez łańcuchów i stary zapis go nie mają. */
+  watki?: { wybrane: string[]; haki: Record<string, { t: number; d?: unknown }>; krok: Record<string, number> };
+  /** łańcuchy kart i wątki sezonu są włączone (nowa gra w przeglądarce ma je domyślnie, wyłącza je `?lancuchy=0`; ustawia je start gry w `newGov`); brak pola albo fałsz: wyłączone,
+      zarząd zachowuje się jak z pustą listą łańcuchów (żadnego wyboru wątków, losowania z ziarna ani stanu `watki`) */
+  lancuchy?: boolean;
+  /** narrator (src/gov/narrator.ts): krzywa napięcia, która przestawia wagi kart; pole powstaje przy pierwszym kroku narratora,
+      w starym zapisie go nie ma (wtedy mnożniki wag to 1) */
+  napiecie?: Napiecie;
+}
+
+/** Napięcie narratora: `v` 0–100, `t` minuta gry ostatniej aktualizacji, `spokoj` minuty gry z `v` poniżej 20 (zerowane, gdy
+    `v` dojdzie do 20). Reszta to liczniki zdarzeń już policzonych, żeby każde liczyło się raz (także po zapisie i wczytaniu):
+    `zgony` (długość `GovInput.dead`), `raport` (dzień ostatniego policzonego raportu rano), `siatka` (`horde.breaches`), `zdrowie`
+    (zdrowie osób przy poprzednim kroku: nagły spadek to rana) i `ugryzieni` (id ugryzionych już policzonych). Brak liczników
+    (stan złożony ręcznie, zapis sprzed narratora) znaczy: pierwszy krok narratora ustawia je na stan teraźniejszy. */
+export interface Napiecie {
+  v: number;
+  t: number;
+  spokoj: number;
+  zgony?: number;
+  raport?: number;
+  siatka?: number;
+  zdrowie?: Record<string, number>;
+  ugryzieni?: string[];
 }
 
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy
@@ -746,6 +787,7 @@ export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
   looks?: number[];
+  /** id wpisu `Znajomy`, który zrobiła ta wizyta (mówiący z chwili decyzji) */
   znajomy?: string;
   karta: boolean;
   kartaId?: string;
