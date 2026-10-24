@@ -6,9 +6,10 @@
    psa, handlarz, napad zgodny z raportem, ugryziony i dobicie. */
 
 import { describe, expect, it } from 'vitest';
-import { LANCUCHY, sprawdzLancuchy } from '../../src/gov/watki.ts';
+import { LANCUCHY, sprawdzLancuchy, zajeciLudzie } from '../../src/gov/watki.ts';
 import { eventView, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent } from '../../src/gov/zarzad.ts';
+import { doPowrotu, obecniWOsiedlu } from '../../src/gov/znajomi.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import {
   BLOK,
@@ -322,5 +323,114 @@ describe('płuca: zarząd nie jest obwiniany o leki, których nie miał', () => 
     const t = trzeciaKarta(0);
     expect(t).not.toMatch(/miał leki|had meds/);
     expect(t).toMatch(/nie było czym pomóc.*nothing to help with/);
+  });
+});
+
+// ---------------------------------------------------------------- ten sam człowiek wraca tylko wtedy, gdy jest wolny
+
+/** Kroki łańcuchów, które sprowadzają pod bramę tego samego człowieka co poprzedni krok: łańcuch, opcje świata, kroki do
+    rozegrania (pierwszy dostępny wybór) i krok, który ma wtedy wypaść. */
+const POWROTY: { id: string; o: Parameters<typeof nowySwiat>[1]; kroki: string[]; nastepny: string }[] = [
+  { id: 'swiatlo', o: {}, kroki: ['swiatlo_1', 'swiatlo_2'], nastepny: 'swiatlo_3' },
+  { id: 'woda', o: {}, kroki: ['woda_1'], nastepny: 'woda_2' },
+  { id: 'woda', o: {}, kroki: ['woda_1', 'woda_2'], nastepny: 'woda_3' },
+  { id: 'ostrzega', o: { napad: 'odparty' }, kroki: ['ostrzega_1'], nastepny: 'ostrzega_2' },
+  { id: 'aktywistka', o: { zimno: true }, kroki: ['aktywistka_1'], nastepny: 'aktywistka_2' },
+  { id: 'dobicie', o: { mode: 'zombie' }, kroki: ['dobicie_1'], nastepny: 'dobicie_2' },
+];
+
+describe('krok łańcucha, który sprowadza tego samego człowieka, wypada tylko wtedy, gdy człowiek jest wolny', () => {
+  /** gra łańcuch do chwili tuż przed krokiem `nastepny`, potem `zmien` zmienia świat; oddaje świat i to, czy krok się otworzył */
+  function doKroku(w: (typeof POWROTY)[number], zmien?: (s: Swiat) => void) {
+    const s = nowySwiat(w.id, w.o);
+    for (const krok of w.kroki) {
+      expect(dalej(s), `${krok} otwiera się`).toBe(true);
+      expect(s.gov.ev.active?.id).toBe(krok);
+      wybierz(
+        s,
+        okno(s).choices.findIndex((c) => c.ok),
+      );
+    }
+    expect(s.gov.znajomi?.length, `${w.nastepny}: ktoś jest w pamięci o znajomych`).toBeGreaterThan(0);
+    zmien?.(s);
+    const wizytPrzed = s.wizyty.length;
+    const otwarta = dalej(s);
+    return { s, otwarta, nowaWizyta: s.wizyty.length > wizytPrzed };
+  }
+
+  for (const w of POWROTY) {
+    const nazwa = `${w.id}: ${w.nastepny}`;
+    it(`${nazwa}: człowiek wolny, więc krok wypada i planuje gościa`, () => {
+      const { s, otwarta, nowaWizyta } = doKroku(w);
+      expect(otwarta).toBe(true);
+      expect(s.gov.ev.active?.id).toBe(w.nastepny);
+      expect(nowaWizyta).toBe(true);
+    });
+
+    it(`${nazwa}: człowiek zmarły (Znajomy.zmarl): krok nie wypada, nie planuje gościa i nie rusza łańcucha`, () => {
+      const { s, otwarta, nowaWizyta } = doKroku(w, (x) => {
+        for (const z of x.gov.znajomi ?? []) z.zmarl = true;
+      });
+      expect(otwarta).toBe(false);
+      expect(nowaWizyta).toBe(false);
+      expect(s.gov.ev.active).toBeNull();
+      expect(s.gov.watki?.krok[w.id]).toBe(w.kroki.length);
+    });
+
+    it(`${nazwa}: człowiek mieszka już u nas (pionek wśród mieszkańców): krok nie wypada ani nie planuje gościa`, () => {
+      const { otwarta, nowaWizyta, s } = doKroku(w, (x) => {
+        const pionek = x.atr.people[0].pawn;
+        for (const z of x.gov.znajomi ?? []) z.pion = pionek;
+        expect(obecniWOsiedlu(wejscie(x)).pionki.has(pionek)).toBe(true);
+      });
+      expect(otwarta).toBe(false);
+      expect(nowaWizyta).toBe(false);
+      expect(s.gov.watki?.krok[w.id]).toBe(w.kroki.length);
+    });
+
+    it(`${nazwa}: człowiek wśród zmarłych po imieniu: krok nie wypada`, () => {
+      const { otwarta, nowaWizyta } = doKroku(w, (x) => {
+        // zgon sprzed ponad dwóch dób (`min` 0): bez karty pogrzebu, tylko lista zmarłych po imieniu
+        x.zmarli = (x.gov.znajomi ?? []).map((z) => ({
+          id: '',
+          name: z.osoba.name,
+          cause: 'test',
+          tick: 0,
+          f: z.osoba.f,
+          min: 0,
+        }));
+      });
+      expect(otwarta).toBe(false);
+      expect(nowaWizyta).toBe(false);
+    });
+  }
+
+  it('powrót znajomego z puli omija człowieka z nieskończonego łańcucha, a po końcu łańcucha może go wziąć', () => {
+    const w = POWROTY[0];
+    const s = nowySwiat(w.id, w.o);
+    for (const krok of w.kroki) {
+      expect(dalej(s)).toBe(true);
+      expect(s.gov.ev.active?.id).toBe(krok);
+      wybierz(
+        s,
+        okno(s).choices.findIndex((c) => c.ok),
+      );
+    }
+    const chlopak = s.gov.znajomi![0];
+    expect(chlopak.nastawienie).toBeGreaterThan(0);
+    const obecni = obecniWOsiedlu(wejscie(s));
+    const dzien = 10;
+    // łańcuch czeka na krok 3: ten sam człowiek ma wrócić jako krok, nie jako powrót z puli
+    expect([...zajeciLudzie(s.gov)]).toEqual([chlopak.id]);
+    expect(doPowrotu(s.gov, dzien, 'zwykly', obecni, zajeciLudzie(s.gov))).toBeNull();
+    expect(doPowrotu(s.gov, dzien, 'zwykly', obecni)?.id).toBe(chlopak.id);
+    // łańcuch skończony (krok 3 rozegrany): człowiek znów jest do wzięcia z puli
+    s.gov.watki!.krok.swiatlo = 3;
+    expect(zajeciLudzie(s.gov).size).toBe(0);
+    expect(doPowrotu(s.gov, dzien, 'zwykly', obecni, zajeciLudzie(s.gov))?.id).toBe(chlopak.id);
+    // łańcuchy wyłączone: nikogo nie zajmują
+    s.gov.watki!.krok.swiatlo = 2;
+    delete s.gov.lancuchy;
+    expect(zajeciLudzie(s.gov).size).toBe(0);
   });
 });

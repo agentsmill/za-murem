@@ -82,6 +82,8 @@ export interface Swiat {
   zimno?: boolean;
   /** gra bez obcych: `GovInput.goscie` brak */
   bezObcych?: boolean;
+  /** lista zmarłych w wejściu (`GovInput.dead`), do sprawdzania, czy ktoś z łańcucha już nie żyje */
+  zmarli?: NonNullable<GovInput['dead']>;
 }
 
 const naLokatora = (p: Person, pawn: number, id: string): GovLokator => ({
@@ -218,6 +220,7 @@ export function wejscie(s: Swiat): GovInput {
     lokatorzy: s.lok.map((l) => ({ ...l, skills: { ...l.skills }, traits: [...l.traits], needs: { ...l.needs } })),
     ...(s.bezObcych ? {} : { goscie: s.wizyty }),
     napady: [],
+    ...(s.zmarli ? { dead: s.zmarli } : {}),
     ...(s.psy ? { zwierzeta: s.psy } : {}),
     ...(s.handlarz ? { handlarz: s.handlarz } : {}),
     ...(s.okolica ? { okolica: s.okolica } : {}),

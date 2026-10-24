@@ -37,6 +37,7 @@ import { wyslijWyprawe } from './gov/dzienne.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
+import { lancuchyZAdresu } from './gov/watki.ts';
 import { celZMiejsca, wlaczMiasto } from './gov/wyprawy.ts';
 import {
   ackReport,
@@ -848,7 +849,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   portrety.reset();
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
-  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st), params.get('lancuchy') !== '0');
+  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st), lancuchyZAdresu(params));
   // ścieżka celów: z zapisu (zapis bez pola albo z polem o złym kształcie zaczyna od pierwszego dnia, a po pierwszym
   // raporcie od drugiego), nowa gra od początku
   sciezka = saved ? stanZZapisu(saved.cele, st, gov) : nowyStanSciezki();

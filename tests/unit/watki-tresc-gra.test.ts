@@ -13,11 +13,12 @@ import { hashString } from '../../src/core/rng.ts';
 import { expRisk } from '../../src/gov/noc.ts';
 import { TARGETS } from '../../src/gov/tresc.ts';
 import type { GameMode, GovEffects, GovState, Prompt } from '../../src/gov/typy.ts';
-import { lancuchy } from '../../src/gov/watki.ts';
+import { lancuchy, zajeciLudzie } from '../../src/gov/watki.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { celZTarget, maWskazowke } from '../../src/gov/wyprawy.ts';
-import { chooseEvent, confirmNight, govUpdate, newGov, pending } from '../../src/gov/zarzad.ts';
+import { chooseEvent, confirmNight, govUpdate, loadGov, newGov, pending, saveGov } from '../../src/gov/zarzad.ts';
+import { doPowrotu, obecniWOsiedlu } from '../../src/gov/znajomi.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { createSim, Sim, type SimOpts, type SimState } from '../../src/sim/sim.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -56,15 +57,22 @@ function nowaGra(
   return { w, st, sim: new Sim(w, st), gov };
 }
 
-/** Gra do chwili, w której otwiera się okno wydarzenia spełniające `czy` (inne okna odpowiadane od ręki: karta nocy
-    zatwierdzona, raport przeczytany, uchwała odłożona, inne wydarzenia pierwszym dostępnym wyborem); null po `dni` dobach. */
-function graj(g: Gra, czy: (p: Okno) => boolean, dni = 8): { p: Okno; sek: number } | null {
+/** Pętla gry: co sekundę przy ekranie krok zarządu, potem okna (inne okna odpowiadane od ręki: karta nocy zatwierdzona, raport
+    przeczytany, uchwała odłożona, inne wydarzenia pierwszym dostępnym wyborem). Oddaje okno spełniające `czy` (nieodpowiedziane)
+    albo, gdy `stop` stało się prawdą, `{ p: null }`; null po `dni` dobach. */
+function petla(
+  g: Gra,
+  dni: number,
+  czy: (p: Okno) => boolean,
+  stop?: (g: Gra) => boolean,
+): { p: Okno | null; sek: number } | null {
   const koniec = g.st.tick + dni * DZIEN;
   while (g.st.tick < koniec) {
     g.sim.step();
     if (g.st.tick % TPS) continue;
     const sek = g.st.tick / TPS;
     applyGov(g.st, g.w, govUpdate(g.gov, govInput(g.st, g.w, sek)));
+    if (stop?.(g)) return { p: null, sek };
     for (let k = 0; k < 6; k++) {
       const i = govInput(g.st, g.w, sek);
       const p = pending(g.gov, i);
@@ -91,6 +99,13 @@ function graj(g: Gra, czy: (p: Okno) => boolean, dni = 8): { p: Okno; sek: numbe
   }
   return null;
 }
+
+/** Gra do chwili, w której otwiera się okno wydarzenia spełniające `czy`; null po `dni` dobach. */
+const graj = (g: Gra, czy: (p: Okno) => boolean, dni = 8): { p: Okno; sek: number } | null =>
+  petla(g, dni, czy) as { p: Okno; sek: number } | null;
+
+/** Gra do chwili, w której `stop` jest prawdą (false po `dni` dobach). */
+const dopoki = (g: Gra, stop: (g: Gra) => boolean, dni = 3): boolean => petla(g, dni, () => false, stop) !== null;
 
 /** wybór o danym początku napisu (rzuca, gdy go nie ma albo jest niedostępny); skutki idą do symulacji */
 function wybierz(g: Gra, o: { p: Okno; sek: number }, prefix: string): GovEffects {
@@ -250,6 +265,121 @@ describe('ci sami ludzie pod bramą w kolejnych krokach', () => {
     for (let t = 0; t < 4000; t++) g.sim.step();
     expect(g.st.pawns.filter((q) => q.kind === 'core')).toHaveLength(core0 + 1);
     expect(g.st.pawns.find((q) => q.id === w2.pionki[0].id)!.kind).toBe('core');
+  }, 240_000);
+});
+
+// ---------------------------------------------------------------- zapis i wczytanie w środku łańcucha
+
+describe('zapis i wczytanie w środku łańcucha nie zmieniają przebiegu (prawdziwa symulacja)', () => {
+  /** zapis i wczytanie jak w przeglądarce: stan symulacji i zarządu przez JSON, ten sam świat */
+  const przeladuj = (g: Gra): Gra => {
+    const st = JSON.parse(JSON.stringify(g.st)) as SimState;
+    return { w: g.w, st, sim: new Sim(g.w, st), gov: loadGov(saveGov(g.gov)) };
+  };
+
+  /** „Światło w oknie” do końca (krok 1, gość w drodze, krok 2, hak i krok 3 w drodze, krok 3); z `zapisy` gra jest zapisana i
+      wczytana w trzech chwilach: gość kroku 2 idzie ulicą, karta kroku 2 jest otwarta, hak `swiatlo.wrocil` czeka na krok 3 */
+  function rozegraj(zapisy: boolean) {
+    let g = nowaGra(swiat('przymorze'), 5, 'swiatlo');
+    const zapis = () => {
+      if (zapisy) g = przeladuj(g);
+    };
+    let o = graj(g, ID('swiatlo_1'))!;
+    wybierz(g, o, 'Odpowiedzieć latarką');
+    // krok 2 zaplanowany: gość idzie do bramy, karta jeszcze się nie otworzyła
+    expect(
+      dopoki(g, (x) => x.gov.goscie?.aktywny?.kartaId === 'swiatlo_2' && x.gov.goscie.aktywny.karta === false),
+      'gość kroku 2 w drodze',
+    ).toBe(true);
+    zapis();
+    o = graj(g, ID('swiatlo_2'))!;
+    expect(o, 'krok 2').toBeTruthy();
+    zapis();
+    wybierz(g, o, 'Wpuścić na noc');
+    expect(g.gov.watki!.haki['swiatlo.wrocil'], 'hak po kroku 2').toBeTruthy();
+    zapis();
+    // krok 3 czeka na dojrzewanie haka; zapasy leków do wyboru
+    o = graj(g, ID('swiatlo_3'))!;
+    expect(o, 'krok 3').toBeTruthy();
+    zapasy(g, o.sek, { meds: 3 });
+    zapis();
+    wybierz(g, o, 'Dać leki');
+    return {
+      hash: g.sim.hash(),
+      gov: saveGov(g.gov),
+      krok: g.gov.watki!.krok,
+      haki: Object.keys(g.gov.watki!.haki).sort(),
+      znajomi: g.gov.znajomi,
+    };
+  }
+
+  it('swiatlo: ten sam skrót symulacji i ten sam zapis zarządu z zapisami w trzech chwilach i bez nich', () => {
+    const bez = rozegraj(false);
+    const z = rozegraj(true);
+    expect(bez.krok.swiatlo, 'łańcuch przeszedł do końca').toBe(3);
+    expect(z.krok).toEqual(bez.krok);
+    expect(z.haki).toEqual(bez.haki);
+    expect(z.znajomi).toEqual(bez.znajomi);
+    expect(z.gov).toBe(bez.gov);
+    expect(z.hash).toBe(bez.hash);
+  }, 600_000);
+});
+
+// ---------------------------------------------------------------- ten sam człowiek: tylko żywy, tylko wolny, tylko raz
+
+describe('ten sam człowiek wraca tylko wtedy, gdy żyje i nie mieszka u nas (prawdziwa symulacja)', () => {
+  /** „Światło w oknie” do chwili tuż przed krokiem 3: chłopak spędził noc, rano odszedł, w pamięci zarządu jest jako znajomy */
+  function poNocyChlopaka() {
+    const g = nowaGra(swiat('przymorze'), 5, 'swiatlo');
+    let o = graj(g, ID('swiatlo_1'))!;
+    wybierz(g, o, 'Odpowiedzieć latarką');
+    o = graj(g, ID('swiatlo_2'))!;
+    expect(o, 'krok 2').toBeTruthy();
+    const chlopak = wizyta(g).a.gosc.osoby[0];
+    wybierz(g, o, 'Wpuścić na noc');
+    const z = g.gov.znajomi!.find((x) => x.osoba.name === chlopak.name)!;
+    expect(z, 'chłopak jest w pamięci o znajomych').toBeTruthy();
+    expect(z.nastawienie).toBeGreaterThan(0);
+    return { g, z, n: g.gov.goscie!.n };
+  }
+
+  it('człowiek zmarły: krok 3 nie otwiera karty i nie planuje nowej wizyty przez kilka dób', () => {
+    const { g, z, n } = poNocyChlopaka();
+    z.zmarl = true;
+    expect(graj(g, ID('swiatlo_3'), 4)).toBeNull();
+    expect(g.gov.goscie!.n, 'żadnej nowej wizyty').toBe(n);
+    expect(g.gov.watki!.krok.swiatlo, 'łańcuch stoi na kroku 2').toBe(2);
+  }, 240_000);
+
+  it('człowiek mieszka już u nas (pionek w osiedlu): krok 3 nie otwiera karty', () => {
+    const { g, z, n } = poNocyChlopaka();
+    // chłopak „został”: jego wpis wskazuje pionek rdzenia, który jest w osiedlu
+    z.pion = g.st.pawns.find((q) => q.kind === 'core')!.id;
+    expect(obecniWOsiedlu(govInput(g.st, g.w, 0)).pionki.has(z.pion)).toBe(true);
+    expect(graj(g, ID('swiatlo_3'), 4)).toBeNull();
+    expect(g.gov.goscie!.n).toBe(n);
+  }, 240_000);
+
+  it('człowiek wolny: krok 3 otwiera się z tym samym chłopakiem (kontrola obu poprzednich)', () => {
+    const { g, z } = poNocyChlopaka();
+    const o = graj(g, ID('swiatlo_3'), 4)!;
+    expect(o).toBeTruthy();
+    expect(o.p.text.pl).toContain(z.osoba.first);
+  }, 240_000);
+
+  it('powrót znajomego z puli nie bierze chłopaka, którego prowadzi nieskończony łańcuch; z wyłączonymi łańcuchami bierze', () => {
+    const { g, z } = poNocyChlopaka();
+    // minęły dni od nocy: chłopak mógłby wrócić z puli
+    z.ostatnio -= 5;
+    const i = govInput(g.st, g.w, 0);
+    const host = () => makeHost(g.gov, i, emptyEffects());
+    expect([...zajeciLudzie(g.gov)]).toEqual([z.id]);
+    expect(host().doPowrotu(), 'łańcuch go prowadzi').toBe(false);
+    expect(doPowrotu(g.gov, i.day + 6, 'zwykly', obecniWOsiedlu(i), zajeciLudzie(g.gov))).toBeNull();
+    // bez łańcuchów (stary zapis, `?lancuchy=0`) nikt go nie zajmuje
+    delete g.gov.lancuchy;
+    expect(zajeciLudzie(g.gov).size).toBe(0);
+    expect(host().doPowrotu()).toBe(true);
   }, 240_000);
 });
 

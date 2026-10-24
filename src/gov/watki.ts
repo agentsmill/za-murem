@@ -84,6 +84,10 @@ export const WATKOW = 3;
 /** szansa przy każdym losowaniu, że krok z dojrzałym hakiem wypadnie przed zwykłą pulą */
 export const SZANSA_KROKU = 0.6;
 
+/** Czy nowa gra z tym adresem ma łańcuchy kart: tak, chyba że adres ma `?lancuchy=0` (każda inna wartość, także `1`, i brak
+    parametru je włączają). Zapisana gra trzyma swoją wartość (`GovState.lancuchy`) i adresu nie czyta. */
+export const lancuchyZAdresu = (params: Pick<URLSearchParams, 'get'>): boolean => params.get('lancuchy') !== '0';
+
 /** prawdziwe łańcuchy gry: dwanaście, z src/gov/watki-tresc.ts */
 export const LANCUCHY: readonly Lancuch[] = LANCUCHY_TRESC;
 
