@@ -2,12 +2,28 @@
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md): tick danego dnia gry, rzecz do dołożenia do stanu gry i ręce-szpieg,
    które tylko zapisują ruchy decydenta. Testy zimy, jedzenia i rozwoju miały po własnej kopii każdego z nich; tu jest jedna,
    a szpieg zapisuje wszystko naraz (ruchy jako tekst, polecenia gry, wyprawy i uchwały), żeby każdy test brał to, co mu trzeba.
+   Do tego świeży świat dema (`swiezySwiat`) dla testów, które porównują kilka gier: gra zmienia swój świat w miejscu.
    Plik nie jest testem (nazwa bez `.test`) i niczego nie sprawdza. */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import type { GraAi, Rece } from '../../src/ai/gra.ts';
+import { hashString } from '../../src/core/rng.ts';
 import type { Cel } from '../../src/gov/wyprawy.ts';
 import { TICKS_PER_DAY, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import type { Command, Thing } from '../../src/sim/sim.ts';
+import { buildWorld, type World } from '../../src/world/world.ts';
+
+/** Świeży świat dema, zbudowany tak jak `demoWorld` z tests/unit/sasiedzi-pomoc.ts (ziarno z adresu), ale bez pamięci
+    podręcznej. Gra zmienia siatkę swojego świata w miejscu (`ustawSiatke`, `initFence` i `dociagnijSiatke` w src/sim/sim.ts:
+    ścięte drzewo z linii obwodu staje się kafelkiem siatki, a przywrócenie nie jest dokładną odwrotnością), więc druga gra
+    na tym samym obiekcie świata startuje od innego stanu niż pierwsza. Test, który porównuje kilka gier (równoważność z
+    `playWithGov`, przeplot, zapis i wczytanie), daje każdej własny świat; w przeglądarce każdy start też buduje świat od
+    nowa. Budowa trwa 20–60 ms. */
+export function swiezySwiat(klucz: string): World {
+  const d = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, `../../public/demo/${klucz}.json`), 'utf8'));
+  return buildWorld(d.geo, { seed: Number.parseInt(hashString(d.addr), 16) || 2051, street: d.street });
+}
 
 /** tick danego dnia gry o pełnej godzinie (gra zaczyna się o 15:00 dnia 1; godzina przed 15:00 to ten sam dzień) */
 export const tickDnia = (dzien: number, godzina: number): number =>

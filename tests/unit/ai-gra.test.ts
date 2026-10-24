@@ -1,9 +1,12 @@
 /* Gra prowadzona przez decydenta (src/ai/gra.ts) i silnik podstawowy (src/ai/silnik.ts), etap 1 osady AI
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje siedmiu rzeczy:
    - równoważności: silnik podstawowy w pętli gry daje te same skróty co `playWithGov(..., 'zawsze-warta', ...)`,
-     także z okolicą miasta, obcymi i drogami do zwycięstwa, a na Lanciego (ziarno 14) przez 10 dni oraz na Zielonkach
+     także z okolicą miasta, obcymi i drogami do zwycięstwa, a na Lanciego (ziarno 12) przez 10 dni oraz na Zielonkach
      (ziarno 19, mieszkańcy z adresu jak w przeglądarce) przez 10 dni, czyli także po pierwszym przydziale warty na karcie
-     nocy (8. i 9. dzień), którego krótkie przebiegi nie dosięgają; test z mieszkańcami z adresu daje każdej pętli świeży świat;
+     nocy (8.–10. dzień), którego krótkie przebiegi nie dosięgają (obie pętle muszą go mieć po 7 albo 8 dobach, w tej samej
+     sekundzie). Każda pętla, każda gra porównywana z inną i każda gra wczytana z zapisu dostaje własny, świeży świat
+     (`swiezySwiat`): gra zmienia siatkę świata w miejscu (`ustawSiatke`, `initFence`, `dociagnijSiatke`), więc druga gra
+     na tym samym obiekcie startuje od innego stanu i skróty rozjeżdżają się bez żadnego błędu silnika;
    - determinizmu: dwie gry w jednym procesie przeplatane nierówno, zapis i wczytanie w połowie (także w środku
      sekundy) i odtworzenie ruchów rąk z dziennika na świeżej grze dają ten sam przebieg;
    - rąk gry: każde działanie decydenta idzie przez `Rece` i do dziennika, wyprawa dzienna wychodzi przez `wyslij`;
@@ -40,7 +43,8 @@ import { pending } from '../../src/gov/zarzad.ts';
 import { wygrajDroge } from '../../src/gov/zwyciestwo.ts';
 import { hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { przygotujGre } from '../../tools/bot-osada.ts';
-import { playWithGov } from './gov-play.ts';
+import { swiezySwiat } from './ai-pomoc.ts';
+import { type PlayResult, playWithGov } from './gov-play.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
@@ -133,12 +137,24 @@ function odtwarzacz(dziennik: readonly RuchRak[]): Decydent {
   };
 }
 
+/** Gałąź przydziału warty na karcie nocy (zdjęcie chorego z warty, najbardziej wypoczęty na pierwszy posterunek) jest naprawdę
+    w przebiegu obu pętli: obie przydzieliły wartę po `dni` dobach od startu i w tej samej sekundzie przy ekranie. Gdy zmiana
+    w grze przesunie trajektorię i gałąź zniknie, test pada tu, a nie na pustym warunku. */
+function sprawdzGalazWarty(g: GraAi, wzor: PlayResult, dni: number): void {
+  const silnikowa = g.dziennik!.find((m) => m.t === 'noc' && m.klucz.startsWith('warta:'));
+  const wzorcowa = wzor.decisions.find((d) => d.kind === 'przydział' && d.text.includes(': warta '));
+  expect(silnikowa).toBeDefined();
+  expect(wzorcowa).toBeDefined();
+  expect(silnikowa!.s * TICKS_PER_SECOND).toBeGreaterThan(dni * TICKS_PER_DAY);
+  expect(wzorcowa!.s * TICKS_PER_SECOND).toBeGreaterThan(dni * TICKS_PER_DAY);
+  expect(wzorcowa!.s).toBe(silnikowa!.s);
+}
+
 describe('równoważność z playWithGov', () => {
   it('silnik podstawowy daje ten sam skrót co playWithGov zawsze-warta przez 3 dni', () => {
-    const w = demoWorld('przymorze');
-    const g = nowaGraAi(w, 11);
+    const g = nowaGraAi(swiezySwiat('przymorze'), 11);
     grajDo(g, silnikPodstawowy, 3 * TICKS_PER_DAY);
-    const wzor = playWithGov(w, 11, 'zawsze-warta', 3, 4);
+    const wzor = playWithGov(swiezySwiat('przymorze'), 11, 'zawsze-warta', 3, 4);
     expect(g.sim.st.tick).toBe(3 * TICKS_PER_DAY);
     expect(g.sim.hash()).toBe(wzor.hash);
     // zarząd ten sam co u wzorca: te same uchwały, karty i wydarzenia
@@ -146,11 +162,10 @@ describe('równoważność z playWithGov', () => {
   });
 
   it('z okolicą miasta, obcymi i drogami do zwycięstwa też ten sam skrót co playWithGov z tymi opcjami', () => {
-    const w = demoWorld('przymorze');
     const okolica = okolicaZGeo(demo.geo);
-    const g = nowaGraAi(w, 12, { obcy: true, okolica, ludnosc2021: 900 });
+    const g = nowaGraAi(swiezySwiat('przymorze'), 12, { obcy: true, okolica, ludnosc2021: 900 });
     grajDo(g, silnikPodstawowy, 3 * TICKS_PER_DAY);
-    const wzor = playWithGov(w, 12, 'zawsze-warta', 3, 4, {
+    const wzor = playWithGov(swiezySwiat('przymorze'), 12, 'zawsze-warta', 3, 4, {
       obcy: true,
       miasto: { okolica },
       zwyciestwo: { ludnosc2021: 900 },
@@ -163,32 +178,27 @@ describe('równoważność z playWithGov', () => {
     ['zielonki', 12],
     ['lanciego', 13],
   ])('na demie %s (ziarno %i) też ten sam skrót co playWithGov przez 2 dni', (demoKlucz, ziarno) => {
-    const w = demoWorld(demoKlucz);
-    const g = nowaGraAi(w, ziarno);
+    const g = nowaGraAi(swiezySwiat(demoKlucz), ziarno);
     grajDo(g, silnikPodstawowy, 2 * TICKS_PER_DAY);
-    const wzor = playWithGov(w, ziarno, 'zawsze-warta', 2, 4);
+    const wzor = playWithGov(swiezySwiat(demoKlucz), ziarno, 'zawsze-warta', 2, 4);
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   });
 
-  it('Lanciego, ziarno 14, 10 dni z obcymi i okolicą: ten sam skrót co playWithGov, także po przydziale warty na karcie', () => {
-    // tu pierwsza karta nocy bez warty z propozycji zarządu wypada 8. dnia (sekunda przy ekranie 6920): wtedy wchodzi
+  it('Lanciego, ziarno 12, 10 dni z obcymi i okolicą: ten sam skrót co playWithGov, także po przydziale warty na karcie', () => {
+    // tu pierwsza karta nocy bez warty z propozycji zarządu wypada 9. dnia (sekunda przy ekranie 7880): wtedy wchodzi
     // gałąź przydziału warty (zdjęcie chorego z warty, najbardziej wypoczęty na pierwszy posterunek), której 2–3-dniowe
-    // przebiegi nie dosięgają
-    const w = demoWorld('lanciego');
+    // przebiegi nie dosięgają. Ziarno 14, które tu stało, po scaleniu nocnego posiłku nie dochodzi do przydziału warty przez
+    // 12 dni (na świeżym świecie skróty są równe, ale gałęzi w przebiegu nie ma); ziarna 11, 12 i 15 ją mają
     const okolica = okolicaZGeo(demoLanciego.geo);
-    const g = nowaGraAi(w, 14, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
+    const g = nowaGraAi(swiezySwiat('lanciego'), 12, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
     grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
-    const wzor = playWithGov(w, 14, 'zawsze-warta', 10, 4, {
+    const wzor = playWithGov(swiezySwiat('lanciego'), 12, 'zawsze-warta', 10, 4, {
       obcy: true,
       miasto: { okolica },
       zwyciestwo: { ludnosc2021: 900 },
     });
-    // gałąź jest naprawdę w przebiegu: obie pętle przydzieliły wartę na karcie nocy po 7. dniu
-    const wartaZKarty = g.dziennik!.find((m) => m.t === 'noc' && m.klucz.startsWith('warta:'));
-    expect(wartaZKarty).toBeDefined();
-    expect(wartaZKarty!.s * TICKS_PER_SECOND).toBeGreaterThan(7 * TICKS_PER_DAY);
-    expect(wzor.decisions.some((d) => d.kind === 'przydział' && d.text.includes(': warta '))).toBe(true);
+    sprawdzGalazWarty(g, wzor, 7);
     expect(g.sim.st.tick).toBe(10 * TICKS_PER_DAY);
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
@@ -196,9 +206,8 @@ describe('równoważność z playWithGov', () => {
 
   it('Zielonki, ziarno 19, 10 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
     // z mieszkańcami z generatora przebieg jest inny niż na świecie z `demoWorld`: pierwsza karta nocy bez warty z propozycji
-    // zarządu wypada tu w sekundzie 7880 (9. dzień; Lanciego 14 miało ją w sekundzie 9800, ale po wydarzeniach ze znajomymi
-    // i zwierzętami nie dochodzi do niej przez 11 dni). Każda pętla dostaje własny, świeży świat: gra zmienia siatkę świata
-    // (wspólny płot, `fenceBaza`), więc druga gra na tym samym świecie startuje od innego stanu (Zielonki 11: skróty
+    // zarządu wypada tu w sekundzie 7880 (9. dzień). Każda pętla dostaje własny, świeży świat (`przygotujGre` buduje go od
+    // nowa): gra zmienia siatkę świata, więc druga gra na tym samym obiekcie startuje od innego stanu (Zielonki 11: skróty
     // rozjeżdżają się już w dniu 2, choć na świeżych światach są równe)
     const silnikGra = await przygotujGre('zielonki', 19, false);
     const wzorGra = await przygotujGre('zielonki', 19, false);
@@ -217,12 +226,7 @@ describe('równoważność z playWithGov', () => {
       miasto: { okolica: wzorGra.opts.okolica! },
       zwyciestwo: { ludnosc2021: wzorGra.opts.ludnosc2021 },
     });
-    // gałąź jest naprawdę w przebiegu: obie pętle przydzieliły wartę na karcie nocy (po 8. dniu, czyli po tym, co krótkie
-    // przebiegi widzą); gdy zmiana w grze przesunie trajektorię i gałąź zniknie, test pada tu, a nie na pustym warunku
-    const wartaZKarty = g.dziennik!.find((m) => m.t === 'noc' && m.klucz.startsWith('warta:'));
-    expect(wartaZKarty).toBeDefined();
-    expect(wartaZKarty!.s * TICKS_PER_SECOND).toBeGreaterThan(8 * TICKS_PER_DAY);
-    expect(wzor.decisions.some((d) => d.kind === 'przydział' && d.text.includes(': warta '))).toBe(true);
+    sprawdzGalazWarty(g, wzor, 8);
     expect(g.sim.st.tick).toBe(10 * TICKS_PER_DAY);
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
@@ -247,14 +251,14 @@ describe('determinizm', () => {
   it('dwie gry przeplatane krok po kroku mają te same skróty co każda osobno', () => {
     const doba = TICKS_PER_DAY;
     const solo = (demoKlucz: string, ziarno: number): string => {
-      const g = nowaGraAi(demoWorld(demoKlucz), ziarno);
+      const g = nowaGraAi(swiezySwiat(demoKlucz), ziarno);
       grajDo(g, silnik, doba);
       return skrotGry(g);
     };
     const przymorze = solo('przymorze', 11);
     const zielonki = solo('zielonki', 12);
-    const a = nowaGraAi(demoWorld('przymorze'), 11);
-    const b = nowaGraAi(demoWorld('zielonki'), 12);
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11);
+    const b = nowaGraAi(swiezySwiat('zielonki'), 12);
     // nierówno: siedem kroków jednej gry, trzy drugiej, ten sam decydent w obu
     while (a.sim.st.tick < doba || b.sim.st.tick < doba) {
       for (let k = 0; k < 7 && a.sim.st.tick < doba; k++) krokGry(a, silnik);
@@ -265,16 +269,16 @@ describe('determinizm', () => {
   });
 
   it('zapis i wczytanie w połowie nie zmieniają przebiegu', () => {
-    const w = demoWorld('przymorze');
-    const ciagla = nowaGraAi(w, 11);
+    const ciagla = nowaGraAi(swiezySwiat('przymorze'), 11);
     grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
     // po pierwszej półminucie (pamięć silnika już zapisana), po pełnej dobie i w środku sekundy; między sekundami
     // decydent nie ma żadnego stanu poza pamięcią w grze (pamięć niepustą sprawdza osobny test silnika podstawowego)
     for (const przerwa of [700, TICKS_PER_DAY, TICKS_PER_DAY + 7]) {
-      const a = nowaGraAi(w, 11);
+      const a = nowaGraAi(swiezySwiat('przymorze'), 11);
       grajDo(a, silnik, przerwa);
       const zapis = JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi;
-      const b = wczytajGre(w, zapis);
+      // wczytana gra dostaje świeży świat, jak w przeglądarce (nowy start buduje świat od nowa)
+      const b = wczytajGre(swiezySwiat('przymorze'), zapis);
       expect(b.pamiec).toEqual(a.pamiec);
       expect(skrotGry(b)).toBe(skrotGry(a));
       grajDo(b, silnik, 2 * TICKS_PER_DAY);
@@ -283,16 +287,15 @@ describe('determinizm', () => {
   });
 
   it('zapis jest głęboką kopią: gra po zapisie ani po wczytaniu nie rusza zapisu', () => {
-    const w = demoWorld('przymorze');
-    const a = nowaGraAi(w, 11);
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11);
     grajDo(a, silnik, TICKS_PER_DAY);
     const zapis = zapiszGre(a);
     const json = JSON.stringify(zapis);
     grajDo(a, silnik, TICKS_PER_DAY + 2000);
     expect(JSON.stringify(zapis)).toBe(json);
     // ten sam zapis wczytany dwa razy to dwie niezależne gry z tym samym przebiegiem
-    const b = wczytajGre(w, zapis);
-    const c = wczytajGre(w, zapis);
+    const b = wczytajGre(swiezySwiat('przymorze'), zapis);
+    const c = wczytajGre(swiezySwiat('przymorze'), zapis);
     grajDo(b, silnik, TICKS_PER_DAY + 2000);
     expect(JSON.stringify(zapis)).toBe(json);
     grajDo(c, silnik, TICKS_PER_DAY + 2000);
@@ -301,8 +304,7 @@ describe('determinizm', () => {
   });
 
   it('odtworzenie ruchów rąk z dziennika na świeżej grze daje ten sam stan', () => {
-    const w = demoWorld('przymorze');
-    const g = nowaGraAi(w, 11, { dziennik: true });
+    const g = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
     // karta nocy z propozycji zarządu ma już wartę, więc silnik niczego na niej nie przydziela; ten decydent dokłada
     // przydziały (wartę każdemu, kto może), żeby dziennik miał też ruchy 'noc'
     const zPrzydzialami: Decydent = {
@@ -323,7 +325,7 @@ describe('determinizm', () => {
       expect(rodzaje).toContain(t);
     // sekundy rosną razem z dziennikiem
     for (let k = 1; k < dziennik.length; k++) expect(dziennik[k].s).toBeGreaterThanOrEqual(dziennik[k - 1].s);
-    const swieza = nowaGraAi(w, 11);
+    const swieza = nowaGraAi(swiezySwiat('przymorze'), 11);
     grajDo(swieza, odtwarzacz(dziennik), 2 * TICKS_PER_DAY);
     expect(swieza.sim.hash()).toBe(g.sim.hash());
     expect(JSON.stringify(swieza.gov)).toBe(JSON.stringify(g.gov));
@@ -332,8 +334,7 @@ describe('determinizm', () => {
 
 describe('pamięć silnika podstawowego', () => {
   it('drzewo, do którego nikt nie doszedł, idzie do pominiętych, a następne polecenie dostaje inne', () => {
-    const w = demoWorld('przymorze');
-    const g = nowaGraAi(w, 11, { dziennik: true });
+    const g = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
     /** drzewa z poleceń ścięcia po samouczku (samouczek ma sekundę 0) */
     const scinane = (): number[] =>
       g.dziennik!.flatMap((m) => (m.s > 0 && m.t === 'polecenie' && m.c.t === 'chop' ? [m.c.tree] : []));
@@ -347,7 +348,7 @@ describe('pamięć silnika podstawowego', () => {
     expect(drugie).not.toBe(pierwsze);
     expect(g.pamiec).toEqual({ v: 1, pominieteDrzewa: [pierwsze], zlecone: drugie });
     // pamięć jedzie w zapisie: wczytana gra pomija te same drzewa i idzie dalej tak samo (drugie drzewo też bez dojścia)
-    const kopia = wczytajGre(w, JSON.parse(JSON.stringify(zapiszGre(g))) as ZapisGryAi);
+    const kopia = wczytajGre(swiezySwiat('przymorze'), JSON.parse(JSON.stringify(zapiszGre(g))) as ZapisGryAi);
     expect(kopia.pamiec).toEqual(g.pamiec);
     g.sim.st.cmds.length = 0;
     kopia.sim.st.cmds.length = 0;
@@ -589,12 +590,11 @@ describe('tempo przeglądarki', () => {
   });
 
   it('opcja jedzie w zapisie gry: wczytana gra potwierdza raporty tak samo jak gra bez przerwy', () => {
-    const w = demoWorld('przymorze');
-    const ciagla = nowaGraAi(w, 11, { tempoPrzegladarki: true });
+    const ciagla = nowaGraAi(swiezySwiat('przymorze'), 11, { tempoPrzegladarki: true });
     grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
-    const a = nowaGraAi(w, 11, { tempoPrzegladarki: true });
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11, { tempoPrzegladarki: true });
     grajDo(a, silnik, TICKS_PER_DAY);
-    const b = wczytajGre(w, JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
+    const b = wczytajGre(swiezySwiat('przymorze'), JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
     expect(b.opts.tempoPrzegladarki).toBe(true);
     grajDo(b, silnik, 2 * TICKS_PER_DAY);
     expect(skrotGry(b)).toBe(skrotGry(ciagla));
