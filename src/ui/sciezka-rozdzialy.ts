@@ -927,7 +927,7 @@ function deskiSkadJeszcze(o: OdczytCelow): { pl: string; en: string } {
   const dotyk = o.touch;
   if (o.words.szukanie.obok === null)
     return {
-      pl: ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na meblu, „Rozebrać …”.`,
+      pl: ` Meble z przeszukanych pustych mieszkań też dają deski i części: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na meblu, „Rozebrać …”.`,
       en: ` Searched empty flats’ furniture gives planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} a piece, “Take apart the …”.`,
     };
   if (sasiedzi(placeOfWorld(o.w)) !== 'domy') return { pl: '', en: '' };

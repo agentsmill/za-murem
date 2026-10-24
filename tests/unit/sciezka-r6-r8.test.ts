@@ -1313,7 +1313,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
             ? ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
                 zombie ? ZA_SIATKA_PL : ''
               }`
-            : ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${
+            : ` Meble z przeszukanych pustych mieszkań też dają deski i części: ${
                 dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
               } na meblu, „Rozebrać …”.`) + ulicaPl(dotyk);
         const koniecEn = (dotyk: boolean): string =>
