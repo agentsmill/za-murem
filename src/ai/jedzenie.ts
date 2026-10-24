@@ -5,7 +5,7 @@
 
    Miara zapasu to porcje surowe i ugotowane (`GovStock.supplies` i `meals`) na głowę, czyli na osobę zarządu i mieszkańca
    (`jedzenieNaGlowe`). Jedzą z zapasu tylko osoby zarządu (mieszkańcy siedziby nie mają głodu w symulacji), ale mieszkańcy
-   przechodzą do zarządu przy awansach i przyjęciach, więc liczą się z góry (pomiar: bez mieszkańców w głowach wyniki te same).
+   przechodzą do zarządu przy awansach i przyjęciach, więc liczą się z góry (pomiar: bez mieszkańców w głowach wynik w granicach szumu).
    `stacNaPrzyjecie` mówi, czy po przyjęciu n osób zostaną co najmniej 2 porcje na głowę (korzysta z niego warstwa okien
    z zadania 5 przy wydarzeniach z przyjęciem).
 
@@ -16,7 +16,7 @@
      a 15:00 (wraca przed zmrokiem: najdłuższa, jednej osoby do miejsca w zasięgu mapy, trwa niecałe cztery godziny), jedna
      naraz, z dwiema najzdrowszymi osobami, które dadzą radę (`canGo`). Wyjątek: wyprawa nie zabiera ostatniej osoby ze
      zdrowiem co najmniej 40 (`ZDROWIE_DYZURU` z zima.ts), bo ta tej nocy czuwa przy kozie; idą wtedy słabsi, a gdy może iść
-     tylko jedna osoba, idzie sama (głód nie czeka na drugą; pomiar: z obowiązkowymi dwiema osobami wynik ten sam).
+     tylko jedna osoba, idzie sama (głód nie czeka na drugą; pomiar: z obowiązkowymi dwiema osobami wynik w granicach szumu).
      Cel to miejsce, z którego da się wynieść jedzenie. Spodziewany łup dwóch osób to środek przedziału łupu razy 1,6
      (mnożnik za dwie osoby w `rozliczWyprawe`), ucięty do tego, co zostało w miejscu, i do udźwigu. Z miejsc, z których
      wyjdzie co najmniej `MIN_LUP` porcji (sklepy spożywcze), wybiera najbliższe; gdy takich nie ma, to z największym łupem

@@ -1,18 +1,21 @@
 /* Warstwa jedzenia silnika osady AI (src/ai/jedzenie.ts, `silnik` w src/ai/silnik.ts), etap 1 osady AI
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 4). Powód warstwy: po ogrzanej sypialni gry kończy głód
    (dni 19–29, docs/ocena/2026-10-20-zima-w-grach-botow.md, sekcja 7 punkt 4): zapas startowy (40 porcji) schodzi do zera
-   około 9. dnia, zarząd traci zdrowie, a bez zdrowych nie ma ani dyżuru przy kozie, ani warty. Pilnuje pięciu rzeczy:
+   około 9. dnia, zarząd traci zdrowie, a bez zdrowych nie ma ani dyżuru przy kozie, ani warty. Pilnuje sześciu rzeczy:
    - miar zapasu: `jedzenieNaGlowe` (surowe i ugotowane porcje na osobę zarządu i mieszkańca) i `stacNaPrzyjecie` (po
      przyjęciu co najmniej 2 porcje na głowę), z których korzystają wyprawy, uchwała o kotle i (zadanie 5) wydarzenia
      z przyjęciem;
    - wyprawy dziennej po jedzenie: poniżej 2 porcji na głowę, tylko między 8:00 a 15:00, jedna naraz, przez mapę miasta jak
      gracz (`Rece.wyslij` z celem z `celZMiejsca`), do najbliższego sklepu z zapasem poza mapą lokalną, z dwiema
      najzdrowszymi osobami, ale tak, żeby ktoś zdrowy został na dyżur przy kozie tej nocy;
-   - ogródka: od 2. dnia jeden na podwórku, gdy go nie ma;
+   - ogródka: od 2. dnia jeden na podwórku, gdy go nie ma, ale dopiero gdy plan pracowni przestał czekać na deski (w Zielonkach
+     ogródek stawiany razem z planem pracowni zjadał jej deski i koza z beczki nie stawała);
    - uchwały o wspólnym kotle: przy mniej niż 1 porcji na głowę silnik woli ją od innych (gdy ścieżka „wspólnota” jest jeszcze
      otwarta: po `u_warty` kocioł jest zablokowany);
-   - przebiegu w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce: obcy, mieszkańcy z adresu, okolica), determinizmu
-     (zapis i wczytanie w trakcie wyprawy) i kosztu (warstwa najwyżej raz na 30 sekund przy ekranie). */
+   - przebiegu w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce: obcy, mieszkańcy z adresu, okolica): wyprawa
+     w każdym dniu głodu, zapas i zdrowie zarządu w pierwszych dwóch tygodniach, okno godzin i jedna wyprawa naraz; cel z planu
+     „zarząd rano nie głoduje do 25. dnia” jest oznaczony jako oczekiwana porażka (`it.fails`), bo gra kończy się wcześniej;
+   - determinizmu (zapis i wczytanie w trakcie wyprawy) i kosztu (warstwa najwyżej raz na 30 sekund przy ekranie). */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -548,12 +551,13 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     expect(dwunasty.rano.zdrowie).toBeGreaterThanOrEqual(70);
   });
 
-  // Cel z planu: „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”. Nie jest osiągnięty: gra z samą wyprawą,
-  // ogródkiem i kotłem na głód kończy się odwołaniem przed 25. dniem (Przymorze 11: dzień 21–22, wkurzenie z zimna rano
-  // i z głodu rano, zdrowie zarządu na zero), a najedzenie o 6:00 jest zaniżone, gdy zapas jest: zarząd je dopiero poniżej 35
-  // (HUNGRY) i nie ma nocnego posiłku, więc o 6:00 ma średnio 12–29 także przy pełnym spiżarni (dni 3–8). Wspólny kocioł
-  // (posiłki o 13:00 i 19:00) podniósłby tę średnią, ale `u_warty` z pierwszego wieczoru go blokuje. Test zacznie przechodzić,
-  // gdy kolejne zadania (okna z kotłem, zima) doprowadzą grę do 25. dnia z syconym zarządem; wtedy trzeba zdjąć `it.fails`.
+  // Cel z planu: „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”. Nie jest osiągnięty z dwóch powodów.
+  // Po pierwsze gra z wyprawą, ogródkiem i kotłem na głód kończy się odwołaniem przed 25. dniem (Przymorze 11: dzień 20,
+  // wkurzenie z zimna i głodu rano, średnie zdrowie zarządu 6 w 19. dniu). Po drugie najedzenie o 6:00 jest zaniżone także
+  // przy pełnej spiżarni: zarząd je dopiero poniżej 35 (HUNGRY), a dwie osoby czuwają całą noc bez posiłku, więc o 6:00 ma
+  // średnio 16–29 (dni 3–11, zapas jest). Wspólny kocioł (posiłki o 13:00 i 19:00) podniósłby tę średnią do 40–65, ale
+  // `u_warty` z pierwszego wieczoru go blokuje. Test zacznie przechodzić, gdy kolejne zadania (okna z kotłem, zima)
+  // doprowadzą grę do 25. dnia z syconym zarządem; wtedy trzeba zdjąć `it.fails`.
   it.fails('do 25. dnia zarząd rano nie głoduje (średnie najedzenie o 6:00 w dniach 15–25 co najmniej 25)', () => {
     expect(g.gov.over).toBeNull();
     const rano = dni.filter((d) => d.dzien >= 15 && d.dzien <= 25);
