@@ -232,6 +232,36 @@ const okno = (s: Swiat) => {
   return v;
 };
 
+describe('ostrzega: ochroniarz i ochroniarka mówią jednym rodzajem w każdym zdaniu', () => {
+  it('dwanaście ziaren: tytuł, teksty, wybory i wpisy w kronice zgodne z płcią bohatera, po polsku i po angielsku', () => {
+    const widziane = { m: 0, f: 0 };
+    for (let seed = 1; seed <= 12; seed++) {
+      const w = przejdz(lancuch('ostrzega'), nowySwiat('ostrzega', { napad: 'odparty', seed }));
+      const wpisy = w.konce.flatMap((k) => k.gov.log.map((x) => x.txt));
+      const pl = [...w.teksty.map((t) => t.tx.pl), ...wpisy.map((t) => t.pl)].join('\n');
+      const en = [...w.teksty.map((t) => t.tx.en), ...wpisy.map((t) => t.en)].join('\n');
+      const kobieta = /młoda ochroniarka/.test(pl);
+      expect(kobieta || /młody ochroniarz/.test(pl), `ziarno ${seed}: kto stoi pod bramą`).toBe(true);
+      if (kobieta) {
+        widziane.f++;
+        expect(pl, `ziarno ${seed} (ochroniarka)`).not.toMatch(
+          /młody ochroniarz|Ochroniarz (poszedł|siedzi)|Pilnował |mówił(?!a)|Dezerter prosi|wyleciał(?!a)|wyrzucił go|przesiedział(?!a)|Powiedział(?!a),|(?<![a-z])sam,/,
+        );
+        expect(en, `ziarno ${seed} (ochroniarka)`).not.toMatch(/\bhe\b|\bhis\b|\bhim\b|Thank him|send him/i);
+      } else {
+        widziane.m++;
+        expect(pl, `ziarno ${seed} (ochroniarz)`).not.toMatch(
+          /młoda ochroniarka|Ochroniarka (poszła|siedzi)|Pilnowała|mówiła|Dezerterka|wyleciała|wyrzucił ją|przesiedziała|Powiedziała,|sama,/,
+        );
+        expect(en, `ziarno ${seed} (ochroniarz)`).not.toMatch(/\bshe\b|\bher\b|Thank her|send her/i);
+      }
+    }
+    // próba ma sens tylko wtedy, gdy trafiły się oba rodzaje
+    expect(widziane.m).toBeGreaterThan(0);
+    expect(widziane.f).toBeGreaterThan(0);
+  });
+});
+
 describe('dlug: kartę długu da się zawsze zamknąć', () => {
   /** świat po „Wziąć na kredyt” i z otwartą kartą długu (handlarz stoi pod bramą) */
   const naDlugu = (): Swiat => {
