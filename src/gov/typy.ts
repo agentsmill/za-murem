@@ -176,6 +176,10 @@ export interface GovGosc {
   zywi: number[];
   ukradl: number;
   przyjety?: boolean;
+  /** indeksy w `PlanGoscia.osoby` członków grupy, którzy zginęli jako goście (szwendacz, dobicie, strzał); zostają po `poszedl`
+      i `zginal`, gdy `zywi` jest już puste. Zarząd oznacza po nich zmarłych znajomych (`Znajomy.idx`). Pole tylko wtedy, gdy ktoś
+      zginął; stary stan go nie ma. */
+  zmarli?: number[];
 }
 
 /** Polecenie zarządu dla gościa (`GovEffects.goscRozkaz`), dotyczy całej grupy:
@@ -783,10 +787,8 @@ export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
   looks?: number[];
-  /** id wpisu `Znajomy`, który zrobiła ta wizyta (mówiący z chwili decyzji), i jego indeks w `Gosc.osoby` (`GovGosc.zywi` mówi,
-      czy żyje do końca wizyty); stary zapis bez indeksu liczy mówiącego jako 0 */
+  /** id wpisu `Znajomy`, który zrobiła ta wizyta (mówiący z chwili decyzji) */
   znajomy?: string;
-  znajomyIdx?: number;
   karta: boolean;
   kartaId?: string;
   dane?: unknown;

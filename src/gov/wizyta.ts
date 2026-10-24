@@ -56,8 +56,10 @@
    wymiana, przechowanie i wysłuchanie to pomoc przez siatkę, `nakarmiony`; wyrzucenie z łupem złapanego to `zlapany`;
    „Zatrzymać do rana” nie ma rozkazu, więc `zapamietajGoscia`). Noc w tej samej wizycie, która kończy się kradzieżą
    (`goscTick`) albo złapaniem, poprawia wpis (`okradl`, `zlapany`) zamiast dokładać drugi. Znajomy jest zmarły (`Znajomy.zmarl`),
-   gdy wizyta kończy się śmiercią całej grupy albo tego, o którym wpis (`AktywnyGosc.znajomyIdx` nie ma już w `GovGosc.zywi`),
-   choć reszta grupy żyje. Powrót (`planujPowrot`): wydarzenie `powrot` z puli (`POWROT_EVENT`) planuje wizytę tego samego
+   gdy zginęła cała grupa (faza `zginal`) albo on sam, choć reszta grupy żyje: symulacja zapisuje na wizycie indeksy zmarłych
+   w planie (`GovGosc.zmarli`, zostają po `poszedl` i `zginal`, bo wtedy `zywi` jest już puste), a wpis `Znajomy` pamięta
+   wizytę i swój indeks w niej (`wizyta`, `idx`); `oznaczZmarlych` łączy jedno z drugim co sekundę, także gdy wizyta nie jest już
+   prowadzona (po rozkazie, który ją zamyka). Powrót (`planujPowrot`): wydarzenie `powrot` z puli (`POWROT_EVENT`) planuje wizytę tego samego
    człowieka i wyglądu (`Gosc.wraca`, `skladPowrotu`), a karta `gosc` rozpoznaje go po imieniu i epitecie (`tekstPowrotu`)
    i zapowiada dar; dar przychodzi z wyborem, który nie jest odprawą (worek jedzenia rano przez `later`, wskazówka na
    miejsce jak wiadomość, rodzeństwo do przyjęcia jako druga osoba grupy).
@@ -297,6 +299,8 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects, zajeci: Read
         prof: o.prof,
         ...(pion !== undefined ? { pion } : {}),
         look: lookOsoby(a, k),
+        // indeks w planie: wizyta zgłasza po nim, że ten człowiek zginął (`GovGosc.zmarli`, `oznaczZmarlych`)
+        idx: k,
         kto: a.gosc.kto,
         jak,
         dzien: i.day,
@@ -305,7 +309,6 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects, zajeci: Read
       { wizyta: a.gosc.id, odmowa },
     );
     a.znajomy = z.id;
-    a.znajomyIdx = k;
   };
   const rozkaz = (id: string, co: GoscRozkaz, jak?: JakId): void => {
     (fx.goscRozkaz ??= []).push({ id, co });
@@ -673,11 +676,28 @@ function nocnyZgon(g: Gosc): Tx {
 }
 
 /**
+ * Znajomi, którzy zginęli jako goście, choć reszta ich grupy żyje (albo zginęli już po decyzji zarządu, gdy wizyta nie była już
+ * prowadzona): symulacja zapisuje na wizycie indeksy zmarłych w planie (`GovGosc.zmarli`, także po `poszedl`, kiedy `zywi` jest
+ * puste), a wpis `Znajomy` z tej wizyty (`wizyta`) i tym indeksem (`idx`) dostaje `zmarl`, więc nie wraca z puli (`doPowrotu`)
+ * ani jako krok łańcucha (`znajomyWolny`). Co sekundę, niezależnie od tego, czy wizyta jest jeszcze prowadzona.
+ */
+function oznaczZmarlych(st: GovState, i: GovInput): void {
+  const lista = st.znajomi;
+  if (!lista?.length) return;
+  for (const w of i.goscie ?? []) {
+    if (!w.zmarli?.length) continue;
+    for (const z of lista)
+      if (!z.zmarl && z.wizyta === w.id && z.idx !== undefined && w.zmarli.includes(z.idx)) z.zmarl = true;
+  }
+}
+
+/**
  * Prowadzi wizytę zarządu co sekundę przy ekranie (z `eventTick`). Bez `GovInput.goscie` (gra bez obcych) i bez aktywnej
  * wizyty nie robi nic. Oddaje kartę do pokazania (`gosc` pod bramą, `zlapany`), gdy `zajete` jest fałszem (nic innego nie
  * czeka na decyzję); flaga karty ustawia się dopiero wtedy, więc zajęty zarząd dostaje ją przy najbliższej okazji.
  */
 export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: boolean): ActiveEvent | null {
+  oznaczZmarlych(st, i);
   const s = st.goscie;
   const a = s?.aktywny;
   const ev = wizytaKarty(st.ev.active) !== null ? st.ev.active : null;
@@ -738,8 +758,8 @@ export function goscTick(st: GovState, i: GovInput, fx: GovEffects, zajete: bool
   const slowa = wordsOf(placeIn(i));
   const slowaEn = wordsEn(placeIn(i));
   if (KONCOWE.has(e.faza)) {
-    // zginęli wszyscy albo zginął ten, o którym zarząd pamięta (reszta grupy mogła przeżyć): znajomy nie wróci
-    if (a.znajomy && (e.faza === 'zginal' || (e.zywi.length > 0 && !e.zywi.includes(a.znajomyIdx ?? 0)))) {
+    // zginęli wszyscy: znajomy nie wróci (śmierć tylko jego, gdy reszta grupy żyje, oznacza `oznaczZmarlych` z markera wizyty)
+    if (e.faza === 'zginal' && a.znajomy) {
       const x = st.znajomi?.find((y) => y.id === a.znajomy);
       if (x) x.zmarl = true;
     }

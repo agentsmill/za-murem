@@ -268,6 +268,66 @@ describe('ci sami ludzie pod bramą w kolejnych krokach', () => {
   }, 240_000);
 });
 
+// ---------------------------------------------------------------- mówiący zginął, reszta grupy żyje
+
+describe('mówiący zginął, choć reszta grupy żyje: znajomy zmarły nie wraca (prawdziwa symulacja)', () => {
+  /** „Światło w oknie”: chłopak z babcią wpuszczeni na noc, a chłopak (mówiący, indeks 0) ginie, babcia dożywa poranka i odchodzi */
+  function chlopakZginalBabciaOdeszla() {
+    const g = nowaGra(swiat('przymorze'), 5, 'swiatlo');
+    let o = graj(g, ID('swiatlo_1'))!;
+    wybierz(g, o, 'Odpowiedzieć latarką');
+    o = graj(g, ID('swiatlo_2'))!;
+    expect(o, 'krok 2').toBeTruthy();
+    const dwa = wizyta(g);
+    expect(dwa.pionki).toHaveLength(2);
+    const chlopak = dwa.a.gosc.osoby[0];
+    const idWizyty = dwa.a.gosc.id;
+    wybierz(g, o, 'Wpuścić na noc');
+    const z = g.gov.znajomi!.find((x) => x.osoba.name === chlopak.name)!;
+    expect(z.idx, 'wpis zna indeks chłopaka w planie wizyty').toBe(0);
+    expect(z.wizyta).toBe(idWizyty);
+    // chłopak ginie (szwendacz, strzał, dobicie: to samo `die`), babcia przeżywa
+    g.sim.wound(dwa.pionki[0], 1000);
+    const faza = () => g.st.goscie!.find((v) => v.id === idWizyty)!.faza;
+    expect(
+      dopoki(g, () => faza() === 'poszedl', 2),
+      'babcia rano odchodzi: wizyta kończy się jako poszedl',
+    ).toBe(true);
+    // symulacja po poszedl nie ma żywych: odczyt niesie tylko marker zmarłych
+    expect(govInput(g.st, g.w, 0).goscie!.find((v) => v.id === idWizyty)).toMatchObject({
+      faza: 'poszedl',
+      pawns: [],
+      zywi: [],
+      zmarli: [0],
+    });
+    return { g, z, chlopak };
+  }
+
+  it('wpis chłopaka jest zmarły, mimo że babcia z jego grupy odeszła żywa (faza poszedl, nie zginal)', () => {
+    const { g, z } = chlopakZginalBabciaOdeszla();
+    expect(z.zmarl).toBe(true);
+    expect(g.gov.goscie?.aktywny).toBeUndefined();
+  }, 240_000);
+
+  it('krok 3 łańcucha nie wypada i nie planuje gościa: chłopak nie wraca', () => {
+    const { g } = chlopakZginalBabciaOdeszla();
+    const wizyt = g.gov.goscie!.n;
+    expect(graj(g, ID('swiatlo_3'), 4)).toBeNull();
+    expect(g.gov.goscie!.n).toBe(wizyt);
+    expect(g.gov.watki!.krok.swiatlo).toBe(2);
+  }, 240_000);
+
+  it('powrót znajomego z puli go nie bierze (nawet po wyłączeniu łańcuchów i po upływie dni)', () => {
+    const { g, z } = chlopakZginalBabciaOdeszla();
+    z.ostatnio -= 5;
+    const i = govInput(g.st, g.w, 0);
+    expect(doPowrotu(g.gov, i.day + 6, 'zwykly', obecniWOsiedlu(i), zajeciLudzie(g.gov))).toBeNull();
+    delete g.gov.lancuchy;
+    expect(doPowrotu(g.gov, i.day + 6, 'zwykly', obecniWOsiedlu(i))).toBeNull();
+    expect(makeHost(g.gov, i, emptyEffects()).doPowrotu()).toBe(false);
+  }, 240_000);
+});
+
 // ---------------------------------------------------------------- zapis i wczytanie w środku łańcucha
 
 describe('zapis i wczytanie w środku łańcucha nie zmieniają przebiegu (prawdziwa symulacja)', () => {

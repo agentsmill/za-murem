@@ -54,6 +54,10 @@ export interface GoscSim {
   kafelek: number;
   /** ilu członków zginęło (wszyscy: faza `zginal`) */
   zgin?: number;
+  /** indeksy w `pawns` (w planie `PlanGoscia.osoby`) członków, którzy zginęli jako goście (szwendacz, dobicie, strzał), w kolejności
+      zgonów; zostają po końcu wizyty, bo odczyt dla zarządu po `poszedl` i `zginal` nie ma już żywych (`GovGosc.zywi` puste).
+      Kto odszedł za mapę albo został mieszkańcem, tu nie trafia. Pole opcjonalne: stary zapis go nie ma. */
+  zmarli?: number[];
   /** tick, od którego mówiący stoi na swoim miejscu pod bramą (reszta ma GOSC_ZBIERZ na dojście) */
   przy?: number;
   /** po rozkazie `noc`: tick porannego wyjścia i tick 2:00, o którym kłamca rusza po jedzenie */

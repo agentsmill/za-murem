@@ -1975,54 +1975,111 @@ describe('spis gier z obcymi', () => {
   }, 600_000);
 });
 
-// ---------------------------------------------------------------- znajomy zmarły: mówiący zginął, reszta grupy żyje
+// ---------------------------------------------------------------- znajomy zmarły: zginął, choć reszta grupy żyje
 
 describe('znajomy, który zginął, choć reszta jego grupy przeżyła, nie wraca', () => {
-  /** Rodzina trzech osób wpuszczona na noc, a potem wizyta kończy się w fazie `faza` z żywymi `zywi` (indeksy w planie). */
-  function nocPotemKoniec(zywi: number[], faza: FazaGoscia = 'poszedl', przedNoca?: number[]) {
+  // Kształty wejścia są takie, jakie wystawia symulacja (src/sim/gov.ts `goscieOdczyt`): za życia grupy `zywi` i `pawns` bez zmarłych,
+  // po `poszedl` i `zginal` oba puste, a indeksy zmarłych w planie zawsze w `zmarli` (tu dowód na prawdziwej symulacji:
+  // tests/unit/gosc-sim.test.ts „zmarli w odczycie” i watki-tresc-gra.test.ts).
+  /** Rodzina trzech osób wpuszczona na noc (wpis o mówiącym, indeks 0, albo o pierwszej żywej osobie, gdy `przedNoca` skraca grupę). */
+  function wpuszczona(przedNoca?: { zywi: number[]; zmarli: number[] }) {
     const g = reczny({ kto: 'rodzina', ilu: 3 });
-    const s = stan(g, przedNoca ? { wpis: { zywi: przedNoca, pawns: przedNoca.map((k) => 100 + k) } } : {});
+    const s = stan(
+      g,
+      przedNoca
+        ? { wpis: { zywi: przedNoca.zywi, pawns: przedNoca.zywi.map((k) => 100 + k), zmarli: przedNoca.zmarli } }
+        : {},
+    );
     wybierz(s, 'Wpuścić na noc');
     expect(s.gov.znajomi).toHaveLength(1);
-    // rano wizyta kończy się: symulacja zostawia przy życiu tylko wskazane osoby
-    eventTick(s.gov, zFaza(s, faza, { zywi, pawns: zywi.map((k) => 100 + k) }, { hour: 8 }), emptyEffects(), false);
     return s;
   }
+  /** wizyta w danej chwili: faza, żywi (indeksy w planie) i zmarli */
+  const tik = (s: Stan, faza: FazaGoscia, zywi: number[], zmarli: number[], input: Partial<GovInput> = { hour: 8 }) =>
+    eventTick(
+      s.gov,
+      zFaza(s, faza, { zywi, pawns: zywi.map((k) => 100 + k), ...(zmarli.length ? { zmarli } : {}) }, input),
+      emptyEffects(),
+      false,
+    );
 
-  it('mówiący zginął w nocy, dwoje innych dożyło poranka: wpis jest zmarły, a powrót go pomija', () => {
-    const s = nocPotemKoniec([1, 2]);
+  it('mówiący zginął w nocy, dwoje innych śpi dalej: wpis jest zmarły od razu, a powrót go pomija', () => {
+    const s = wpuszczona();
     const z = s.gov.znajomi![0];
+    expect(z.idx).toBe(0);
+    tik(s, 'w_srodku', [1, 2], [0], { hour: 3 });
     expect(z.zmarl).toBe(true);
     // choćby nastawienie było dodatnie, a ostatnie spotkanie dawne, zmarły nie wraca
     expect(z.nastawienie).toBeGreaterThan(0);
     expect(doPowrotu(s.gov, 9, 'zwykly', obecniWOsiedlu(s.i))).toBeNull();
   });
 
-  it('wszyscy dożyli poranka: znajomy żyje i może wrócić', () => {
-    const s = nocPotemKoniec([0, 1, 2]);
+  it('rano reszta grupy odchodzi (poszedl, zywi puste jak w symulacji): wpis nadal zmarły, wizyta zamknięta', () => {
+    const s = wpuszczona();
+    tik(s, 'w_srodku', [1, 2], [0], { hour: 3 });
+    tik(s, 'poszedl', [], [0]);
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+    expect(s.gov.goscie?.aktywny).toBeUndefined();
+    expect(doPowrotu(s.gov, 9, 'zwykly', obecniWOsiedlu(s.i))).toBeNull();
+  });
+
+  it('mówiący zginął dopiero po rozkazie, który zamyka wizytę (odprawa): marker na wpisie wizyty wystarcza', () => {
+    const s = stan(reczny({ kto: 'rodzina', ilu: 3 }));
+    wybierz(s, 'Odprawić');
+    expect(s.gov.goscie?.aktywny?.koniec).toBe(true);
+    // wizyta nie jest już prowadzona, ale grupa idzie ulicą i szwendacz zabija mówiącego
+    tik(s, 'odchodzi', [1, 2], [0], { hour: 17 });
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+    tik(s, 'poszedl', [], [0], { hour: 18 });
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+  });
+
+  it('wszyscy dożyli poranka albo zginął ktoś inny: znajomy żyje i może wrócić', () => {
+    const s = wpuszczona();
     const z = s.gov.znajomi![0];
+    tik(s, 'poszedl', [], []);
     expect(z.zmarl).toBeUndefined();
     expect(doPowrotu(s.gov, 9, 'zwykly', obecniWOsiedlu(s.i))?.id).toBe(z.id);
+    // zginęła osoba 2, mówiący (0) żyje
+    const t = wpuszczona();
+    tik(t, 'poszedl', [], [2]);
+    expect(t.gov.znajomi![0].zmarl).toBeUndefined();
   });
 
   it('zginęła cała grupa: jak dotąd zmarły', () => {
-    const s = nocPotemKoniec([], 'zginal');
+    const s = wpuszczona();
+    tik(s, 'zginal', [], [0, 1, 2]);
     expect(s.gov.znajomi![0].zmarl).toBe(true);
   });
 
-  it('mówiący zginął jeszcze przed decyzją: wpis dotyczy pierwszej żywej osoby, a ta dożyła poranka', () => {
-    // przy decyzji żyją tylko osoby 1 i 2; wpis jest o osobie 1 (nie o zmarłej 0), więc jej dalsze życie rozstrzyga o wpisie
-    const s = nocPotemKoniec([1, 2], 'poszedl', [1, 2]);
+  it('mówiący zginął jeszcze przed decyzją: wpis dotyczy pierwszej żywej osoby (indeks 1), a zmarła nie jest znajomym', () => {
+    const s = wpuszczona({ zywi: [1, 2], zmarli: [0] });
     const z = s.gov.znajomi![0];
+    expect(z.idx).toBe(1);
+    // zmarła 0 nie ma wpisu, więc jej marker niczego nie oznacza; wpis o osobie 1 żyje do końca wizyty
+    tik(s, 'poszedl', [], [0]);
     expect(z.zmarl).toBeUndefined();
-    expect(s.gov.goscie?.aktywny).toBeUndefined();
   });
 
-  it('zginął ten, o którym wpis, choć tamci dożyli: zmarły; zginął ktoś inny: żyje', () => {
-    // wpis o osobie 1 (osoba 0 zginęła przed decyzją); potem ginie osoba 1, zostaje 2
-    const s = nocPotemKoniec([2], 'poszedl', [1, 2]);
+  it('wpis o osobie 1 (osoba 0 zginęła przed decyzją): jej śmierć po decyzji oznacza zmarłego', () => {
+    const s = wpuszczona({ zywi: [1, 2], zmarli: [0] });
+    tik(s, 'poszedl', [], [0, 1]);
     expect(s.gov.znajomi![0].zmarl).toBe(true);
-    // wpis o osobie 0; ginie osoba 2, żyją 0 i 1
-    expect(nocPotemKoniec([0, 1]).gov.znajomi![0].zmarl).toBeUndefined();
+  });
+
+  it('marker innej wizyty nie oznacza znajomego z tej (wizyta g2 z zabitym indeksem 0, wpis z wizyty g1)', () => {
+    const s = wpuszczona();
+    const obca: GovGosc = {
+      id: 'g2',
+      faza: 'poszedl',
+      tile: 5,
+      gdzie: { x: 5, y: 0 },
+      pawns: [],
+      zywi: [],
+      ukradl: 0,
+      zmarli: [0],
+    };
+    eventTick(s.gov, { ...s.i, goscie: [...s.i.goscie!, obca] }, emptyEffects(), false);
+    expect(s.gov.znajomi![0].zmarl).toBeUndefined();
   });
 });

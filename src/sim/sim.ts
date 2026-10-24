@@ -8232,12 +8232,14 @@ export class Sim {
     this.goscOdeslij(m, true);
   }
 
-  /** Śmierć członka wizyty: licznik zgonów, a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
+  /** Śmierć członka wizyty: licznik zgonów, jego indeks w planie (`GoscSim.zmarli`, dla pamięci zarządu o znajomych), a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
       `dropSack`), więc zapasów brakuje o tyle mniej (`ukradl` 0). */
   private goscZginal(p: Pawn): void {
     const g = this.st.goscie?.find((x) => x.pawns.includes(p.id));
     if (!g) return;
     g.zgin = (g.zgin ?? 0) + 1;
+    const k = g.pawns.indexOf(p.id);
+    if (k >= 0) (g.zmarli ??= []).push(k);
     if (g.zl === p.id) g.ukradl = 0;
   }
 

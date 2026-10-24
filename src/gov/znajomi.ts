@@ -51,7 +51,8 @@ export type JakId = 'nakarmiony' | 'nocleg' | 'przyjety' | 'odprawiony' | 'okrad
     zapis go nie ma), `jak` ostatnie zdarzenie, `nastawienie` suma zdarzeń w −2..2. `dzien` to dzień pierwszego wpisu, `wizyty` ile
     razy o nim decydowano, `ostatnio` dzień ostatniego wpisu. Pola pomocnicze: `wizyta` i `przed` (poprawka w tej samej
     wizycie), `wrocil` (dzień ostatniego powrotu gościem), `napad` (dzień, w którym poszedł z szabrownikami; raz),
-    `zmarl` (zginął na oczach zarządu: nie wraca). */
+    `zmarl` (zginął na oczach zarządu: nie wraca), `idx` (indeks osoby w planie wizyty `wizyta`: po nim wizyta mówi, że ten człowiek
+    zginął, `GovGosc.zmarli`; bez `wizyta` nie ma sensu). */
 export interface Znajomy {
   id: string;
   osoba: Pick<Person, 'first' | 'name' | 'f' | 'age'>;
@@ -71,6 +72,7 @@ export interface Znajomy {
   wrocil?: number;
   napad?: number;
   zmarl?: boolean;
+  idx?: number;
 }
 
 /** zmiana nastawienia za zdarzenie */
@@ -150,6 +152,7 @@ export function zapamietaj(
       wizyty: 1,
       ostatnio: d,
       ...(opcje.wizyta !== undefined ? { wizyta: opcje.wizyta, przed: 0 } : {}),
+      ...(opcje.wizyta !== undefined && z.idx !== undefined ? { idx: z.idx } : {}),
     };
     lista.push(nowy);
     return nowy;
@@ -169,6 +172,9 @@ export function zapamietaj(
     if (opcje.wizyta !== undefined) x.wizyta = opcje.wizyta;
     else delete x.wizyta;
   }
+  // indeks w planie dotyczy wizyty z `x.wizyta`: nowa wizyta bez indeksu (zdarzenie bez planu) go zdejmuje
+  if (z.idx !== undefined && opcje.wizyta !== undefined) x.idx = z.idx;
+  else if (!poprawka) delete x.idx;
   return x;
 }
 

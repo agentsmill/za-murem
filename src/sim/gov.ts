@@ -272,7 +272,8 @@ function zmarli(st: SimState, zombie: boolean): NonNullable<GovInput['dead']> {
 }
 
 /** Wizyty gości dla zarządu (`GovInput.goscie`): wszystkie po kolei, z fazą, kafelkiem mówiącego (a gdy już go nie ma,
-    pierwszego żywego albo ostatnim znanym), numerami żywych pionków (mówiący pierwszy) i porcjami wziętymi przez grupę. */
+    pierwszego żywego albo ostatnim znanym), numerami żywych pionków (mówiący pierwszy), porcjami wziętymi przez grupę
+    i indeksami zmarłych w planie (`zmarli`, także po `poszedl` i `zginal`, kiedy żywych już nie ma). */
 function goscieOdczyt(st: SimState, w: World): GovGosc[] {
   return (st.goscie ?? []).map((g) => {
     // po `poszedl` i `zginal` nikogo już nie ma (zakończone wizyty zostają w liście, więc nie szukamy po próżnicy)
@@ -295,6 +296,7 @@ function goscieOdczyt(st: SimState, w: World): GovGosc[] {
       zywi: zywi.map((z) => z.k),
       ukradl: g.ukradl,
       ...(g.przyjety ? { przyjety: true } : {}),
+      ...(g.zmarli?.length ? { zmarli: [...g.zmarli] } : {}),
     };
   });
 }

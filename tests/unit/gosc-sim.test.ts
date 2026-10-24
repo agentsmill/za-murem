@@ -979,6 +979,57 @@ describe('śmierć i szwendacze', () => {
     expect(grupa(st).faza).toBe('poszedl');
   });
 
+  it('zmarli w odczycie: indeks zabitego w planie zostaje na wizycie także po poszedl, gdzie zywi i pawns są puste', () => {
+    const sim = gra(2, 10);
+    podBrame(sim, plan(3, 'n'));
+    const st = sim.st;
+    const odczyt = () => govInput(st, w, 0).goscie![0];
+    // nikt nie zginął: pola nie ma
+    expect('zmarli' in odczyt()).toBe(false);
+    const [a] = czlonkowie(st);
+    // zginął mówiący (indeks 0): żyją 1 i 2, marker na wizycie
+    sim.wound(a, 1000);
+    sim.step();
+    expect(odczyt()).toMatchObject({ faza: 'brama', zywi: [1, 2], zmarli: [0] });
+    expect(grupa(st).zmarli).toEqual([0]);
+    // reszta odchodzi: po poszedl nikogo już nie ma, a zmarły dalej jest wymieniony (to jedyny ślad, kto zginął)
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'odejdz') });
+    run(sim, () => grupa(st).faza === 'poszedl' || grupa(st).faza === 'zginal', 8000);
+    expect(grupa(st).faza).toBe('poszedl');
+    expect(odczyt()).toMatchObject({ faza: 'poszedl', pawns: [], zywi: [], zmarli: [0] });
+  });
+
+  it('zmarli w odczycie: dobicie ugryzionego mówiącego i śmierć reszty są w kolejności zgonów, a zginal ma wszystkich', () => {
+    const sim = gra(2, 10, { zombie: true });
+    podBrame(sim, plan(3, 'n', 1, 0));
+    const st = sim.st;
+    // dobicie zabija osobę o indeksie `ugryziony` (0, mówiący), reszta stoi dalej
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'dobij') });
+    sim.step();
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'brama', zywi: [1, 2], zmarli: [0] });
+    const [b, c] = czlonkowie(st);
+    sim.wound(c, 1000);
+    sim.wound(b, 1000);
+    sim.step();
+    sim.step();
+    expect(grupa(st).faza).toBe('zginal');
+    expect(govInput(st, w, 0).goscie![0]).toMatchObject({ faza: 'zginal', pawns: [], zywi: [], zmarli: [0, 2, 1] });
+  });
+
+  it('zmarli w odczycie: kto został mieszkańcem albo odszedł za mapę, nie jest zmarłym gościem', () => {
+    const sim = gra(2, 10);
+    podBrame(sim, plan(2, 'n'));
+    const st = sim.st;
+    wyslij(sim, { goscRozkaz: rozkazy('g1', 'zostan') });
+    run(sim, () => kind(st, 'gosc').length === 0, 400);
+    expect(czlonkowie(st).every((p) => p.kind !== 'gosc')).toBe(true);
+    // przyjęty, a potem zabity jako mieszkaniec: zgon idzie listą zmarłych osiedla (GovInput.dead), nie markerem wizyty
+    const [a] = czlonkowie(st);
+    sim.wound(a, 1000);
+    sim.step();
+    expect('zmarli' in govInput(st, w, 0).goscie![0]).toBe(false);
+  });
+
   it('w trybie zombie szwendacz przy bramie, który podszedł na zasięg ugryzienia, płoszy gościa: poszedl', () => {
     const sim = gra(2, 10, { zombie: true });
     podBrame(sim, plan(2, 'n'));
