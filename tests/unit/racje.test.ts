@@ -82,8 +82,9 @@ describe('uchwały o jedzeniu w symulacji', () => {
 
   it('racje: mniejsze porcje, zapasy starczają dłużej, najedzenie i nastrój niżej, ale nikt nie głoduje do zera', () => {
     const r = threeDays({ foodMult: 0.75 });
-    // zjedzone co najmniej o 15% mniej, najedzenie i nastrój niżej
-    expect(r.eaten).toBeLessThanOrEqual(base.eaten * 0.85);
+    // zjedzone mniej niż bez uchwały, najedzenie i nastrój niżej; od nocnego posiłku przy wielkim głodzie (glod-w-nocy.test.ts)
+    // oszczędność to około 7% (13 porcji wobec 14 w trzy doby), wcześniej co najmniej 15%, bo racje głodziły śpiących do rana
+    expect(r.eaten).toBeLessThan(base.eaten);
     expect(r.food).toBeLessThan(base.food - 5);
     expect(r.mood).toBeLessThan(base.mood - 2);
     expect(r.minFood).toBeGreaterThan(3);
