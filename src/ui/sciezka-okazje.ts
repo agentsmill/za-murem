@@ -8,6 +8,13 @@
    napad), potem zima (O8, dodana 20.10.2026 po badaniu zimy), na końcu goście (O2 handlarz, O1 wędrowiec, O7 obca ekipa).
    Widać najwyżej jedną: ważniejsza wypiera niższą, a niższa wraca, gdy ważniejsza się skończy.
 
+   Goście pod bramą nie mają okazji (zadanie 13): goście z klocków, karty z 0.3 z gościem (`uchodzcy`, `influencer`, `dzieci`,
+   „Fachowiec” w domu) i kroki łańcuchów z grupą pod bramą to pionki rodzaju `gosc`, a ich karta sama prowadzi decyzję
+   („Przyjąć do spółdzielni”, „Wpuścić na noc”, „Odprawić”), więc okazja podpowiadałaby to samo drugi raz. Żaden wyzwalacz poniżej
+   nie czyta grupy pod bramą; pilnuje tego tests/unit/sciezka-nowi.test.ts („okazje a karta gościa”). Co innego okazje, które
+   gość wywoła skutkiem decyzji albo śmiercią (napad za pościgiem, ugryzienie przyjętego, zwłoki po zabitym gościu): to już
+   osobne zdarzenia, a karta gościa jest wtedy zamknięta.
+
    Wyzwalacze czytają odczyt gry z jednej chwili (`OdczytCelow`): pionki wędrowca, handlarza i obcej ekipy, napad z migawki
    (`snap.raid`), stado (`snap.zombies.pressing`), ugryzienie (`snap.people[].bite`), zwłoki (rzeczy `zwloki` z `fuel`).
    Okazja, która dotyczy jednego pionka albo jednej rzeczy (wędrowiec, handlarz, ugryziony, zwłoki), trzyma jej id w stanie

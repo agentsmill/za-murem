@@ -24,6 +24,12 @@
    krok otwiera pierwszy rozdział po ostatnim rozstrzygniętym i ścieżka rusza dalej; bez żadnego wpisu (stan ustawiony
    ręcznie do zrzutu) „koniec” zostaje. Cel, który wygrał z terminem w tym samym kroku, jest zaliczony; cel przepadły
    nie wraca.
+   Zapas. Cel rozdziału może mieć zapasowy warunek zaliczenia (`DefCelu.zapas`): gdy nic nie zależy od gracza (R4 „Przyjmijcie
+   kogoś nowego” w trybie zombie, kiedy nikt nie poprosił o miejsce), cel zalicza się sam, ale tylko jeśli nie zrobił się zwykłą
+   drogą w tym samym kroku. Silnik zapisuje takie zaliczenie w `StanSciezki.zapasem`, żeby dopisek pod celem wiedział, czemu cel
+   zaliczył się sam, także po zapisie i wczytaniu. Zapas mierzy czas, który gracz widział (`OdczytCelow.ekran`, sekundy przy
+   ekranie jak tempo kart zarządu), od chwili otwarcia rozdziału (`StanSciezki.odEkran`), a nie doby gry, bo przy szybszym tempie
+   doby biegną szybciej niż karty.
    Zaliczenie jest trwałe, przepadnięcie też. `widokSciezki(stan, odczyt)` robi z zapisanego stanu to, co rysuje okienko
    (tytuł, cele z tekstem, podpowiedzią, dopiskiem „czeka” i znacznikiem przepadnięcia, bieżący cel); niczego nie
    zalicza, więc przed nim woła się krok. Tekst i podpowiedź celu dostają też stan ścieżki, żeby cel mógł nieść w tekście
@@ -117,12 +123,19 @@ export interface StanSciezki {
   /** bieżący rozdział głównej ścieżki i tick jego otwarcia */
   rozdzial: KluczRozdzialu;
   od: number;
+  /** Sekunda przy ekranie otwarcia rozdziału (`OdczytCelow.ekran`, z ułamkiem): tempo kart idzie z czasu przy ekranie, a nie z doby
+      gry, więc zapas celu „nowi” w zombie mierzy go od tej chwili. Pole od tej zmiany, w starym zapisie i w stanie ze świata
+      bez licznika czasu go nie ma (zapas liczy wtedy doby gry od `od`). */
+  odEkran?: number;
   /** liczniki z chwili otwarcia rozdziału do warunków „od otwarcia” */
   start: StartRozdzialu;
   /** zaliczone cele głównej ścieżki i okazji: klucz ('r1.przeszukaj', 'o2.wymiana') → tick zaliczenia */
   zrobione: Record<string, number>;
   /** cele, które przepadły (termin minął) */
   przepadle: string[];
+  /** Cele rozdziałów zaliczone zapasem (`DefCelu.zapas`), nie czynnością gracza: klucze jak w `zrobione`. Pole powstaje przy
+      pierwszym takim zaliczeniu; dopisek pod celem (`DefCelu.uwaga`) pyta o nie, żeby powiedzieć, czemu cel zaliczył się sam. */
+  zapasem?: string[];
   /** zdarzenia interfejsu bez śladu w stanie gry: 'lista', 'mieszkaniec', 'budynek', 'drogi' → tick ostatniego */
   ui: Record<string, number>;
   /** otwarta okazja: klucz, tick otwarcia, licznik zabitych przy otwarciu, pionek albo rzecz, której dotyczy */
@@ -159,8 +172,9 @@ const mapaLiczb = (x: unknown): boolean => jestObiektem(x) && Object.values(x).e
 const naLiscie = (lista: readonly string[], x: unknown): boolean => typeof x === 'string' && lista.includes(x);
 
 /** Czy to stan ścieżki w poprawnym kształcie: wersja 1, rozdział z listy, liczby skończone, `zrobione` i `ui` jako
-    mapy liczb, `przepadle` jako lista tekstów, okazja pusta albo z kluczem z listy i tickiem. Pola dopisane przez
-    nowszą wersję nie przeszkadzają. Czyta tylko kształt, niczego nie poprawia. */
+    mapy liczb, `przepadle` jako lista tekstów, okazja pusta albo z kluczem z listy i tickiem, a czas przy ekranie
+    z otwarcia (`odEkran`) i cele zaliczone zapasem (`zapasem`), jeśli są, jako liczba i lista tekstów. Pola dopisane
+    przez nowszą wersję nie przeszkadzają. Czyta tylko kształt, niczego nie poprawia. */
 export function jestStanSciezki(x: unknown): x is StanSciezki {
   if (!jestObiektem(x) || x.v !== 1 || !naLiscie(KLUCZE_ROZDZIALOW, x.rozdzial) || !jestLiczba(x.od)) return false;
   const start = x.start;
@@ -170,6 +184,10 @@ export function jestStanSciezki(x: unknown): x is StanSciezki {
     if (start[k] !== undefined && !(Array.isArray(start[k]) && start[k].every(jestLiczba))) return false;
   if (!mapaLiczb(x.zrobione) || !mapaLiczb(x.ui)) return false;
   if (!Array.isArray(x.przepadle) || !x.przepadle.every((k) => typeof k === 'string')) return false;
+  // czas przy ekranie z otwarcia i cele zaliczone zapasem: pola z nowszej wersji stanu, więc zapis bez nich jest poprawny
+  if (x.odEkran !== undefined && !jestLiczba(x.odEkran)) return false;
+  if (x.zapasem !== undefined && !(Array.isArray(x.zapasem) && x.zapasem.every((k) => typeof k === 'string')))
+    return false;
   const o = x.okazja;
   if (o === undefined) return true;
   return (
@@ -189,6 +207,7 @@ function kopia(s: StanSciezki): StanSciezki {
     v: 1,
     rozdzial: s.rozdzial,
     od: s.od,
+    ...(s.odEkran !== undefined ? { odEkran: s.odEkran } : {}),
     start: {
       uchwaly: s.start.uchwaly,
       raporty: s.start.raporty,
@@ -201,6 +220,7 @@ function kopia(s: StanSciezki): StanSciezki {
     },
     zrobione: { ...s.zrobione },
     przepadle: [...s.przepadle],
+    ...(s.zapasem ? { zapasem: [...s.zapasem] } : {}),
     ui: { ...s.ui },
     ...(o
       ? {
@@ -278,6 +298,10 @@ export interface OdczytCelow {
   /** wejście zarządu z tej samej chwili (`govInput`); null: bez zarządu. Z niego cele czytają to, co liczy karta nocy
       (`paleniska`) albo ocena dróg do zwycięstwa */
   input: GovInput | null;
+  /** Sekundy przy ekranie od startu gry bez pauzy i z otwartymi oknami zarządu odliczonymi, z ułamkiem: ten sam czas, z którego
+      zarząd odmierza tempo kart (`GovInput.screen` to jego część całkowita), ale bez liczenia wejścia zarządu. Bez pola
+      (odczyt ręczny) cele, które mierzą czas przy ekranie, liczą doby gry. */
+  ekran?: number;
   touch: boolean;
   /** słowa miejsca po polsku i po angielsku (w domu komitet, furtka, dom) */
   words: Words;
@@ -308,6 +332,10 @@ export interface DefCelu {
   jak(o: OdczytCelow, s: StanSciezki): string;
   zrobiony(o: OdczytCelow, s: StanSciezki): boolean;
   czeka?(o: OdczytCelow, s: StanSciezki): string | null;
+  /** Zapasowy warunek zaliczenia (tylko rozdziały): cel, którego gracz nie ma jak zrobić, bo nic od niego nie zależy (nikt nie
+      poprosił o miejsce), zalicza się sam. Sprawdza się po `zrobiony`, który wygrywa, i przed `przepadl`; silnik zapisuje
+      takie zaliczenie w `StanSciezki.zapasem`, żeby `uwaga` wiedziała, czemu cel zaliczył się sam. */
+  zapas?(o: OdczytCelow, s: StanSciezki): boolean;
   /** dopisek celu już zaliczonego, który mówi, czemu zaliczył się bez czynności gracza (zapas celu „nowi” w trybie zombie), inaczej null */
   uwaga?(o: OdczytCelow, s: StanSciezki): string | null;
   przepadl?(o: OdczytCelow, s: StanSciezki): boolean;
@@ -458,6 +486,16 @@ function krokOkazji(t: StanSciezki, o: OdczytCelow, okazje: readonly DefOkazji[]
   }
 }
 
+/** Otwarcie rozdziału `k` w tej chwili (zmienia `t`): tick, czas przy ekranie (bez licznika w odczycie pole znika) i liczniki
+    „od otwarcia”. */
+function otworzRozdzial(t: StanSciezki, k: KluczRozdzialu, o: OdczytCelow): void {
+  t.rozdzial = k;
+  t.od = o.st.tick;
+  if (o.ekran !== undefined) t.odEkran = o.ekran;
+  else delete t.odEkran;
+  t.start = licznikiStartu(o.st, o.gov);
+}
+
 /** Krok ścieżki: nowy stan z odczytu gry (wejście i odczyt zostają nietknięte). Zalicza cele otwartego rozdziału, których
     warunek jest prawdziwy, i oznacza przepadłe (zaliczenie wygrywa z terminem, a rozstrzygnięty cel nie zmienia się już
     nigdy). Gdy rozdział jest skończony, otwiera następny: zapisuje tick otwarcia i liczniki `start` z tej chwili, a cele
@@ -482,11 +520,7 @@ export function krokSciezki(
   if (t.rozdzial === 'koniec') {
     const ostatni = ostatniRozstrzygniety(t, rozdzialy);
     const dalej = ostatni < 0 ? undefined : rozdzialy.slice(ostatni + 1).find((n) => n.jest?.(o) !== false);
-    if (dalej && (dalej.otwiera ? dalej.otwiera(o) : true)) {
-      t.rozdzial = dalej.k;
-      t.od = tick;
-      t.start = licznikiStartu(o.st, o.gov);
-    }
+    if (dalej && (dalej.otwiera ? dalej.otwiera(o) : true)) otworzRozdzial(t, dalej.k, o);
   }
   // każdy obieg zostawia otwarty późniejszy rozdział niż poprzedni, więc kończy się najwyżej po jednym na rozdział
   for (let obieg = 0; obieg <= rozdzialy.length; obieg++) {
@@ -497,7 +531,10 @@ export function krokSciezki(
       const klucz = kluczCelu(d.k, c);
       if (zaliczony(t, klucz) || przepadly(t, klucz)) continue;
       if (c.zrobiony(o, t)) t.zrobione[klucz] = tick;
-      else if (c.przepadl?.(o, t)) t.przepadle.push(klucz);
+      else if (c.zapas?.(o, t)) {
+        t.zrobione[klucz] = tick;
+        (t.zapasem ??= []).push(klucz);
+      } else if (c.przepadl?.(o, t)) t.przepadle.push(klucz);
     }
     const nastepny = rozdzialy.slice(k + 1).find((n) => n.jest?.(o) !== false);
     if (!nastepny) {
@@ -505,9 +542,7 @@ export function krokSciezki(
       break;
     }
     if (!(nastepny.otwiera ? nastepny.otwiera(o) : skonczony(d, t, o))) break;
-    t.rozdzial = nastepny.k;
-    t.od = tick;
-    t.start = licznikiStartu(o.st, o.gov);
+    otworzRozdzial(t, nastepny.k, o);
   }
   krokOkazji(t, o, okazje);
   return t;

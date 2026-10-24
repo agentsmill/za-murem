@@ -7,7 +7,7 @@
    ataku na szwendaczu przez siatkę), `uzbrojeni` (zwykły: broń u `min(2, osób)` osób) albo `dzidy` (zombie: karta nocy
    zatwierdzona po otwarciu rozdziału z `min(2, osób)` przydziałami `warta:siatka` u osób z dzidą). R4: `uchwala` (podpis
    po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (przyjęcie
-   od otwarcia, w zombie zapas po trzech dobach; reguły A i B w sciezka-nowi.test.ts), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
+   od otwarcia, w zombie zapas po czasie przy ekranie równym trzem dobom przy 1×; reguły A i B, goście pod bramą i okazje w sciezka-nowi.test.ts; tu teksty), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów (R3 „Praca” stoi między R2 a R4,
    jego cele sprawdza sciezka-praca.test.ts), przejścia R2 → R3 → R4 → R5 → R6 (dalej R6–R8 i „koniec” w
@@ -1474,7 +1474,7 @@ describe('teksty R4', () => {
       });
       expect(slowa(g, false, 'nowi')).toEqual({
         text: 'Przyjmijcie kogoś nowego.',
-        how: `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od ${dom ? 'furtki' : 'bramy'}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
+        how: `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Gość ${dom ? 'pod furtką' : 'pod bramą'} ma kartę z „Pokaż”, a gdy prosi o miejsce, z wyborem „Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”. Przyjęci idą od ${dom ? 'furtki' : 'bramy'}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
       });
       ustawJezyk('en');
       expect(slowa(g, false, 'uchwala')).toEqual({
@@ -1487,8 +1487,32 @@ describe('teksty R4', () => {
       });
       expect(slowa(g, false, 'nowi')).toEqual({
         text: 'Take someone new in.',
-        how: `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
+        how: `Event cards bring people to you: “Take everyone in”, “Put him to work”. A guest at ${dom ? 'the garden gate' : 'the gate'} has a card with “Show” and, if they ask for a place, “Take them into ${dom ? 'the house' : 'the co-op'}”. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
       });
+      ustawJezyk('pl');
+    }
+  });
+
+  it('nowi w trybie zombie: ocalali pod bramą i bez „Przyjąć wszystkich”, którego karty zombie nie mają', () => {
+    for (const key of ['przymorze', 'zielonki'] as const) {
+      const dom = wDomu(key);
+      const g = wRozdziale(key, 'zombie', 'r4');
+      const pl = slowa(g, false, 'nowi');
+      expect(pl).toEqual({
+        text: 'Przyjmijcie kogoś nowego.',
+        how: `Ludzi przyprowadzają karty wydarzeń. Ocalali ${dom ? 'pod furtką' : 'pod bramą'} mają kartę z „Pokaż”, a gdy proszą o miejsce, z wyborem „Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”; liczy się też „Wciągnąć do roboty”. Przyjęci idą od ${dom ? 'furtki' : 'bramy'}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
+      });
+      expect(pl.how).not.toContain('Przyjąć wszystkich');
+      // mysz i dotyk czytają to samo zdanie
+      expect(slowa(g, true, 'nowi').how).toBe(pl.how);
+      ustawJezyk('en');
+      const en = slowa(g, false, 'nowi');
+      expect(en).toEqual({
+        text: 'Take someone new in.',
+        how: `Event cards bring people to you. Survivors at ${dom ? 'the garden gate' : 'the gate'} have a card with “Show” and, if they ask for a place, “Take them into ${dom ? 'the house' : 'the co-op'}”; “Put him to work” counts too. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
+      });
+      expect(en.how).not.toContain('Take everyone in');
+      expect(polskieSlowa(en.how)).toEqual([]);
       ustawJezyk('pl');
     }
   });

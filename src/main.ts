@@ -2079,6 +2079,8 @@ function odczytCelow(snap: SimSnapshot): OdczytCelow {
       wejscie ??= gov ? input() : null;
       return wejscie;
     },
+    // czas przy ekranie z ułamkiem: zapas celu „Przyjmijcie kogoś nowego” w zombie mierzy go, nie doby gry (tempo kart idzie z niego)
+    ekran: screen,
     touch: touchUI,
     words,
     wordsEn: wordsE,
@@ -3781,11 +3783,13 @@ if (attrib) bars.observe(attrib);
     },
     rozdzial: (k, dobyTemu = 0) => {
       if (!sim) return;
-      // jak otwarcie rozdziału przez krok ścieżki: tick i liczniki „od otwarcia” z tej chwili (tick cofnięty o `dobyTemu` dób)
+      // jak otwarcie rozdziału przez krok ścieżki: tick, czas przy ekranie i liczniki „od otwarcia” z tej chwili (tick cofnięty
+      // o `dobyTemu` dób, a czas przy ekranie o tyle, ile te doby zajmują przy tempie 1×)
       sciezka = {
         ...sciezka,
         rozdzial: k,
         od: sim.st.tick - Math.round(dobyTemu * TICKS_PER_DAY),
+        odEkran: screen - (dobyTemu * TICKS_PER_DAY) / TICKS_PER_SECOND,
         start: licznikiStartu(sim.st, gov),
       };
       const snap = snapNow();

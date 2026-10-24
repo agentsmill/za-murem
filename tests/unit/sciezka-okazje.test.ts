@@ -75,6 +75,7 @@ import {
 } from './sciezka-mapy.ts';
 import {
   bezAutomatu,
+  bezObcych,
   type Demo,
   doPierwszegoRaportu,
   type Gra,
@@ -85,6 +86,7 @@ import {
   krokiSymulacji,
   odczyt,
   odczytZ,
+  poRaporcieZObcymi,
   przezZapis,
   TRYBY,
   widok,
@@ -99,33 +101,6 @@ const KOMBINACJE_ZWYKLE = DEMA2.map((key) => [key, 'zwykly'] as const);
 const KOMBINACJE_ZOMBIE = DEMA2.map((key) => [key, 'zombie'] as const);
 
 /* ---------------------------------------------------------------- gry i kroki */
-
-/** Gry z wędrowcami, handlarzem i ekipami (`obcy`) po pierwszym raporcie (drugi dzień około 6:00), liczone raz na demo i
-    tryb; test dostaje klon. Ścieżka w tych grach jest świeża: bez okazji i bez wpisów okazji w `zrobione`, żeby to, co
-    działo się w pierwszą noc (napad, stado), nie wpływało na testy. */
-const bazy = new Map<string, Gra>();
-
-function poRaporcieZObcymi(key: Demo, mode: GameMode): Gra {
-  const klucz = `${key}:${mode}`;
-  let b = bazy.get(klucz);
-  if (!b) {
-    const w = demoWorld(key);
-    b = graZSymulacji(key, mode, 5, new Sim(w, createSim(w, 5, { core: 4, mode, obcy: true })));
-    doPierwszegoRaportu(b);
-    b.sciezka = stanZZapisu(undefined, b.sim.st, b.gov);
-    bazy.set(klucz, b);
-  }
-  return klon(b);
-}
-
-/** Gra bez losowych wizyt: nikt nie przyjdzie, dopóki test tego nie zażąda (zegary obcych ustawione na teraz). */
-function bezObcych(g: Gra): Gra {
-  const o = g.sim.st.obcy!;
-  o.next = -1;
-  o.wnext = -1;
-  o.enext = -1;
-  return g;
-}
 
 /** Krok ścieżki na odczycie bez zarządu (okazje czytają tylko symulację, a wejście zarządu kosztuje milisekundy). */
 function krokTani(g: Gra): void {

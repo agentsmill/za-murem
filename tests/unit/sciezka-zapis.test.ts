@@ -60,6 +60,7 @@ const bogaty = (): StanSciezki => ({
   v: 1,
   rozdzial: 'r4',
   od: 98765,
+  odEkran: 4938.25,
   start: {
     uchwaly: 2,
     raporty: 3,
@@ -72,6 +73,7 @@ const bogaty = (): StanSciezki => ({
   },
   zrobione: { 'r0.drewno': 2081, 'r1.przeszukaj': 40000, 'o2.wymiana': 61000 },
   przepadle: ['r1.drewno2'],
+  zapasem: ['r4.nowi'],
   ui: { lista: 51000, drogi: 70000 },
   okazja: { k: 'o4', od: 97000, zabici: 5, cel: 12 },
 });
@@ -202,6 +204,22 @@ describe('kształt stanu ścieżki', () => {
     }
   });
 
+  it('czas przy ekranie z otwarcia i lista celów zaliczonych zapasem są opcjonalne, ale jeśli są, to liczba i lista tekstów', () => {
+    const stary = (): StanSciezki => {
+      const s = bogaty();
+      delete s.odEkran;
+      delete s.zapasem;
+      return s;
+    };
+    expect(jestStanSciezki(stary())).toBe(true);
+    expect(jestStanSciezki({ ...stary(), odEkran: 0 })).toBe(true);
+    expect(jestStanSciezki({ ...stary(), zapasem: [] })).toBe(true);
+    for (const zle of ['12', Number.NaN, Number.POSITIVE_INFINITY, null, {}, [1]])
+      expect(jestStanSciezki({ ...stary(), odEkran: zle }), `odEkran ${String(zle)}`).toBe(false);
+    for (const zle of ['r4.nowi', {}, [1], [null], [['r4.nowi']], null])
+      expect(jestStanSciezki({ ...stary(), zapasem: zle }), `zapasem ${String(zle)}`).toBe(false);
+  });
+
   it('odrzuca to, co nie jest stanem', () => {
     for (const zle of [undefined, null, 0, 5, 'r1', true, [], [bogaty()], () => 1])
       expect(jestStanSciezki(zle), String(zle)).toBe(false);
@@ -315,6 +333,10 @@ describe('stan ścieżki z zapisu', () => {
     expect(s.start.osoby).toEqual(raw.start.osoby);
     expect(s.start.osoby).not.toBe(raw.start.osoby);
     expect(s.start.zarzad).not.toBe(raw.start.zarzad);
+    // czas przy ekranie z otwarcia i cele zaliczone zapasem przechodzą przez kopię, lista jako osobna tablica
+    expect(s.odEkran).toBe(raw.odEkran);
+    expect(s.zapasem).toEqual(raw.zapasem);
+    expect(s.zapasem).not.toBe(raw.zapasem);
     expect(s.zrobione).not.toBe(raw.zrobione);
     expect(s.przepadle).not.toBe(raw.przepadle);
     expect(s.ui).not.toBe(raw.ui);
