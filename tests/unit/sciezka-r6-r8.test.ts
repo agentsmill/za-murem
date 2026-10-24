@@ -1243,12 +1243,13 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
         const g = wRozdziale(key, mode, 'r6');
         const lokumPl = dom ? 'waszego domu' : 'waszego mieszkania';
         const lokumEn = dom ? 'your house' : 'your flat';
-        // na samym końcu w zombie: deski z innych klatek i zza ulicy, polecenie „Budować …” z menu planu (w domu bez klatek)
+        // na samym końcu w zombie: deski z innych klatek i zza ulicy, polecenie „Budować …” z menu planu (w domu bez klatek);
+        // menu planu jest tylko dla zaznaczonej osoby, więc zdanie zaczyna od zaznaczenia kogoś
         const ulicaPl = (dotyk: boolean): string =>
           zombie
             ? ` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: ${
-                dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
-              } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`
+                dotyk ? 'stuknijcie osobę i przytrzymajcie plan' : 'zaznaczcie osobę i prawy przycisk na planie'
+              }, „Budować …” (uwaga na szwendacze).`
             : '';
         const ulicaEn = (dotyk: boolean): string =>
           zombie
@@ -1270,7 +1271,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
                 zombie ? ZA_SIATKA_EN : ''
               }`
             : ` Searched empty flats’ furniture gives planks and parts: ${
-                dotyk ? 'press and hold on' : 'right-click'
+                dotyk ? 'tap a person and press and hold on' : 'select a person and right-click'
               } a piece, “Take apart the …”.`) + ulicaEn(dotyk);
         const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części pochodzą z przeszukiwania i z warsztatu („Zrobić część ze złomu”).`;
         const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and the workshop (“Make a part from scrap”).`;
@@ -1280,7 +1281,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
           how: `Budowa, zakładka Dom: ${srodekPl}${koniecPl(false)}`,
         });
         expect(slowa(g, true, 'pracownia').how, `${opis} dotyk`).toBe(
-          `Przycisk Budowa u góry, zakładka Dom: ${srodekPl}${koniecPl(true)}`,
+          `Budowa, zakładka Dom: ${srodekPl}${koniecPl(true)}`,
         );
         if (dom) expect(slowa(g, false, 'pracownia').how, `${opis} bez słów z bloku`).not.toMatch(FORBIDDEN_DOM);
         ustawJezyk('en');
@@ -1288,9 +1289,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
           text: 'Build a research room.',
           how: `Build, Home tab: ${srodekEn}${koniecEn(false)}`,
         });
-        expect(slowa(g, true, 'pracownia').how, `${opis} touch`).toBe(
-          `The Build button at the top, Home tab: ${srodekEn}${koniecEn(true)}`,
-        );
+        expect(slowa(g, true, 'pracownia').how, `${opis} touch`).toBe(`Build, Home tab: ${srodekEn}${koniecEn(true)}`);
         if (dom) expect(slowa(g, false, 'pracownia').how).not.toMatch(/\b(flat|stairwell|block)\b/i);
         ustawJezyk('pl');
       }
@@ -1327,6 +1326,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
       // samotny dom: nie ma do kogo iść, więc ani sąsiadów, ani szwendaczy, ani mebli
       const samotny = jak(placeWorld([bud(0, 'dom', 0, 0)]));
       for (const re of [SASIEDNIE, SZWENDACZE, MEBLE])
+        // na dotyku też samo „Budowa”: zwinięte okienko na telefonie mieści tylko 8 linii podpowiedzi, a ta jest najdłuższa
         expect(oba(samotny, re), `${mode} samotny dom ${re}`).toEqual([false, false]);
       expect(samotny.pl).toContain('waszego domu');
       // dom z blokami obok: sąsiedzi to nie domy
@@ -1356,12 +1356,14 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
             expect(pl.includes(` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: `), opis).toBe(true);
             expect(
               pl.includes(
-                touch ? 'przytrzymajcie palec na planie, „Budować …”' : 'prawy przycisk na planie, „Budować …”',
+                touch
+                  ? 'stuknijcie osobę i przytrzymajcie plan, „Budować …”'
+                  : 'zaznaczcie osobę i prawy przycisk na planie, „Budować …”',
               ),
               opis,
             ).toBe(true);
             // zdanie jest na samym końcu podpowiedzi, po dopisku o skąd jeszcze deski
-            expect(pl.endsWith('(najlepiej bez szwendaczy blisko).'), opis).toBe(true);
+            expect(pl.endsWith('(uwaga na szwendacze).'), opis).toBe(true);
             if (dom) expect(pl, opis).not.toMatch(FORBIDDEN_DOM);
           }
           ustawJezyk('en');
@@ -1377,7 +1379,11 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
               true,
             );
             expect(
-              en.includes(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”'),
+              en.includes(
+                touch
+                  ? 'tap a person and press and hold on the plan, “Build …”'
+                  : 'select a person and right-click the plan, “Build …”',
+              ),
               opis,
             ).toBe(true);
             expect(en.endsWith('(best if no shamblers near).'), opis).toBe(true);
@@ -1402,6 +1408,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
     expect(mebel, 'w pustym mieszkaniu stoi mebel do rozebrania').toBeDefined();
     const ids = rdzen(g.sim).map((p) => p.id);
     const napisMenu = (): string =>
+            // najpierw zaznaczenie osoby, potem plan: menu planu nie istnieje bez zaznaczonej osoby
       commandsAt(st, w, ids, mebel!.y * w.size + mebel!.x).find((m) => m.cmd.t === 'dismantle')!.label;
     expect(napisMenu().startsWith('Rozebrać ')).toBe(true);
     expect(slowa(g, false, 'pracownia').how).toContain('„Rozebrać …”');

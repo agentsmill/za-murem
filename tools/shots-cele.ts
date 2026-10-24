@@ -1268,11 +1268,11 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(
             `${name} ${k}`,
             jak,
-            dotyk ? 'przytrzymajcie palec na planie' : 'prawy przycisk na planie',
+            dotyk ? 'stuknijcie osobę i przytrzymajcie plan' : 'zaznaczcie osobę i prawy przycisk na planie',
             dom ? 'Po deski zza ulicy:' : 'Po deski z innych klatek i zza ulicy:',
             '„Budować …”',
           );
-          if (!jak.endsWith('(najlepiej bez szwendaczy blisko).'))
+          if (!jak.endsWith('(uwaga na szwendacze).'))
             throw new Error(`${name} ${k}: dopisek nie jest na końcu podpowiedzi: …${jak.slice(-120)}`);
           console.log(`  ${k}: ${biezacy.tekst} (${jak.length} znaków podpowiedzi)`);
           await sprawdzUklad(page, `${name} ${w}×${h}, ${k}`, dotyk);
@@ -1286,7 +1286,9 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(
             `${name} ${k} EN`,
             jakEn,
-            dotyk ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”',
+            dotyk
+              ? 'tap a person and press and hold on the plan, “Build …”'
+              : 'select a person and right-click the plan, “Build …”',
             dom ? 'For planks across the street:' : 'For planks from other stairwells or across the street:',
           );
           if (!jakEn.endsWith('(best if no shamblers near).'))

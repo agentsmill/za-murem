@@ -58,7 +58,8 @@
    własne pomieszczenia i automat dają ich za mało: w bloku z mebli przeszukanych pustych mieszkań („Rozebrać …”), w domu
    jednorodzinnym z domami obok (Zielonki) z sąsiednich domów, a w zombie z dopiskiem o szwendaczach jak w pukaniu. W zombie
    podpowiedzi ogródka i pracowni dopisują też, że gdy deski leżą w innych klatkach albo za ulicą i budowa nie rusza, pomaga
-   „Budować …” z menu planu (`budowaPoDeskiUlica`): automat bierze tam deski tylko z miejsc dostępnych bez ulicy.
+   zaznaczenie osoby i „Budować …” z menu planu (`budowaPoDeskiUlica`): automat bierze tam deski tylko z miejsc dostępnych
+   bez ulicy.
    R7 „Sąsiedzi” uczy pukania (praca przy drzwiach z pukaniem, wynik pukania albo spotkanie), rozmowy w oknie spotkania
    (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
@@ -891,16 +892,21 @@ const ZA_SIATKA = {
     dojdzie bez ulicy (`startBuild` w src/sim/sim.ts), więc plan, któremu deski leżą w pokojach innych klatek albo za
     ulicą, stoi bez wykonawcy, a pasek zapasów mówi, że starczy. Jedyne wyjście to polecenie „Budować …” z menu planu
     (src/ui/budowa.ts): zaznaczona osoba idzie po deski każdą drogą, także ulicą, więc najlepiej wtedy, gdy żaden szwendacz
-    nie jest blisko. W domu jednorodzinnym nie ma klatek, więc zdanie mówi tylko o ulicy. */
+    nie jest blisko (po polsku krótko „uwaga na szwendacze”, po angielsku „best if no shamblers near”). To menu istnieje
+    tylko dla zaznaczonej osoby z zarządu (`buildItems` bez niej daje pustą listę), więc zdanie zaczyna od zaznaczenia
+    kogoś, jak podpowiedź stołu pracowni. W domu jednorodzinnym nie ma klatek, więc zdanie mówi tylko o ulicy. Polski
+    tekst na dotyku jest krótki celowo („przytrzymajcie plan”, nie „przytrzymajcie palec na planie”): pracownia w zombie
+    na telefonie mieści się w 8 liniach podpowiedzi, a każda dodatkowa wypycha zwinięte okienko na panel budowy
+    (scenariusz `cele-zombie-budowa-telefon`). */
 function budowaPoDeskiUlica(o: OdczytCelow): { pl: string; en: string } {
   if (!zombieMode(o.st, o.gov)) return { pl: '', en: '' };
   const blok = o.words.szukanie.obok === null;
   return {
     pl: ` Po deski ${blok ? 'z innych klatek i ' : ''}zza ulicy: ${
-      o.touch ? 'przytrzymajcie palec' : 'prawy przycisk'
-    } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`,
+      o.touch ? 'stuknijcie osobę i przytrzymajcie plan' : 'zaznaczcie osobę i prawy przycisk na planie'
+    }, „Budować …” (uwaga na szwendacze).`,
     en: ` For planks ${blok ? 'from other stairwells or ' : ''}across the street: ${
-      o.touch ? 'press and hold on' : 'right-click'
+      o.touch ? 'tap a person and press and hold on' : 'select a person and right-click'
     } the plan, “Build …” (best if no shamblers near).`,
   };
 }
@@ -945,7 +951,10 @@ const R6: DefRozdzialu = {
       tekst: () => L('Postawcie pracownię.', 'Build a research room.'),
       jak: (o) => {
         const koszt = costText(BUILDS.pracownia.cost);
-        const b = budowaZakladka(o.touch);
+        // „Budowa” bez „Przycisk Budowa u góry” także na dotyku: to najdłuższa podpowiedź w zombie, a zwinięte okienko na telefonie
+        // ma w sobie całą podpowiedź bieżącego celu i mieści tylko 8 linii (każda dodatkowa wypycha je na panel budowy); gracz zna
+        // już przycisk z ogródka i obwodu, a zdanie o zaznaczeniu osoby przed „Budować …” (`budowaPoDeskiUlica`) zajmuje te linie
+        const b = budowaZakladka(false);
         const skad = deskiSkadJeszcze(o);
         const ulica = budowaPoDeskiUlica(o);
         // angielski tekst jest krótki celowo (bez „from” przed „the workshop”, bez „too”, „Houses next door”): dłuższy w zombie
