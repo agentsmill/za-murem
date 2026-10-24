@@ -1240,22 +1240,35 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
         const g = wRozdziale(key, mode, 'r6');
         const lokumPl = dom ? 'waszego domu' : 'waszego mieszkania';
         const lokumEn = dom ? 'your house' : 'your flat';
+        // na samym końcu w zombie: deski z innych klatek i zza ulicy, polecenie „Budować …” z menu planu (w domu bez klatek)
+        const ulicaPl = (dotyk: boolean): string =>
+          zombie
+            ? ` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: ${
+                dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
+              } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`
+            : '';
+        const ulicaEn = (dotyk: boolean): string =>
+          zombie
+            ? ` For planks ${dom ? '' : 'from other stairwells or '}across the street: ${
+                dotyk ? 'press and hold on' : 'right-click'
+              } the plan, “Build …” (best with no shamblers near).`
+            : '';
         const koniecPl = (dotyk: boolean): string =>
-          dom
+          (dom
             ? ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
                 zombie ? ZA_SIATKA_PL : ''
               }`
             : ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${
                 dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
-              } na meblu, „Rozebrać …”.`;
+              } na meblu, „Rozebrać …”.`) + ulicaPl(dotyk);
         const koniecEn = (dotyk: boolean): string =>
-          dom
+          (dom
             ? ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
                 zombie ? ZA_SIATKA_EN : ''
               }`
             : ` Furniture from searched empty flats gives planks and parts too: ${
                 dotyk ? 'press and hold on' : 'right-click'
-              } a piece, “Take apart the …”.`;
+              } a piece, “Take apart the …”.`) + ulicaEn(dotyk);
         const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`;
         const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and from the workshop (“Make a part from scrap”).`;
         const opis = `${key} ${mode}`;
@@ -1284,7 +1297,8 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
     const pracownia = ROZDZIALY.find((r) => r.k === 'r6')!.cele.find((c) => c.key === 'pracownia')!;
     const SASIEDNIE = /sąsiednie domy|houses next door/;
     const MEBLE = /„Rozebrać …”|“Take apart the …”/;
-    const SZWENDACZE = /szwendacze|shamblers/;
+    // dopisek o wyjściu za siatkę (`ZA_SIATKA`); zdanie o „Budować …” (inny test) też wspomina szwendaczy, ale nie o wyjściu
+    const SZWENDACZE = /Za siatką są szwendacze|There are shamblers out there/;
     for (const mode of TRYBY) {
       const g = wRozdziale('zielonki', mode, 'r6');
       const zombie = mode === 'zombie';
@@ -1322,6 +1336,53 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
       expect(oba(blokZDomami, SASIEDNIE), `${mode} blok: sąsiedzi`).toEqual([false, false]);
       expect(oba(blokZDomami, SZWENDACZE), `${mode} blok: szwendacze`).toEqual([false, false]);
     }
+  });
+
+  it('pracownia: dopisek o „Budować …” z menu planu tylko w zombie (blok: także o innych klatkach, dom: tylko o ulicy), mysz i dotyk, po polsku i po angielsku', () => {
+    for (const key of DEMA)
+      for (const mode of TRYBY) {
+        const zombie = mode === 'zombie';
+        const dom = wDomu(key);
+        const g = wRozdziale(key, mode, 'r6');
+        for (const touch of [false, true]) {
+          const pl = cel(g, 'pracownia', { touch }).how;
+          const opis = `${key} ${mode} ${touch ? 'dotyk' : 'mysz'}`;
+          expect(pl.includes('„Budować …”'), `pl ${opis}`).toBe(zombie);
+          if (zombie) {
+            expect(pl.includes('z innych klatek i zza ulicy'), `klatki tylko w bloku ${opis}`).toBe(!dom);
+            expect(pl.includes(` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: `), opis).toBe(true);
+            expect(
+              pl.includes(
+                touch ? 'przytrzymajcie palec na planie, „Budować …”' : 'prawy przycisk na planie, „Budować …”',
+              ),
+              opis,
+            ).toBe(true);
+            // zdanie jest na samym końcu podpowiedzi, po dopisku o skąd jeszcze deski
+            expect(pl.endsWith('(najlepiej bez szwendaczy blisko).'), opis).toBe(true);
+            if (dom) expect(pl, opis).not.toMatch(FORBIDDEN_DOM);
+          }
+          ustawJezyk('en');
+          const en = cel(g, 'pracownia', { touch }).how;
+          ustawJezyk('pl');
+          expect(en.includes('“Build …”'), `en ${opis}`).toBe(zombie);
+          if (zombie) {
+            expect(
+              en.includes('from other stairwells or across the street'),
+              `stairwells only in a block ${opis}`,
+            ).toBe(!dom);
+            expect(en.includes(` For planks ${dom ? '' : 'from other stairwells or '}across the street: `), opis).toBe(
+              true,
+            );
+            expect(
+              en.includes(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”'),
+              opis,
+            ).toBe(true);
+            expect(en.endsWith('(best with no shamblers near).'), opis).toBe(true);
+            expect(polskieSlowa(en), en).toEqual([]);
+            if (dom) expect(en, opis).not.toMatch(/\b(flat|stairwell|block)\b/i);
+          }
+        }
+      }
   });
 
   it('pracownia w bloku: „Rozebrać …” i “Take apart the …” z podpowiedzi to napis z prawdziwego menu meblu w przeszukanym pustym mieszkaniu', () => {

@@ -39,7 +39,9 @@
    wiedza jak w `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie), żeby zarząd bez fachu ery 1 nie utknął w rozdziale.
    Podpowiedź pracowni mówi na końcu, skąd jeszcze deski i części (`deskiSkadJeszcze`), bo pracownia bierze 14 desek, a
    własne pomieszczenia i automat dają ich za mało: w bloku z mebli przeszukanych pustych mieszkań („Rozebrać …”), w domu
-   jednorodzinnym z domami obok (Zielonki) z sąsiednich domów, a w zombie z dopiskiem o szwendaczach jak w pukaniu.
+   jednorodzinnym z domami obok (Zielonki) z sąsiednich domów, a w zombie z dopiskiem o szwendaczach jak w pukaniu. W zombie
+   podpowiedzi ogródka i pracowni dopisują też, że gdy deski leżą w innych klatkach albo za ulicą i budowa nie rusza, pomaga
+   „Budować …” z menu planu (`budowaPoDeskiUlica`): automat bierze tam deski tylko z miejsc dostępnych bez ulicy.
    R7 „Sąsiedzi” uczy pukania (praca przy drzwiach z pukaniem, wynik pukania albo spotkanie), rozmowy w oknie spotkania
    (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
@@ -607,9 +609,10 @@ const R5: DefRozdzialu = {
       jak: (o) => {
         const koszt = costText(BUILDS.ogrodek.cost);
         const b = budowaZakladka(o.touch);
+        const ulica = budowaPoDeskiUlica(o);
         return L(
-          `${b}, zakładka Podwórko: ${BUILDS.ogrodek.name} (${koszt}) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.`,
-          `${b}, Yard tab: ${BUILDS_EN.ogrodek.name} (${koszt}) on a free bit of the yard. It grows food after a few days; not much in autumn.`,
+          `${b}, zakładka Podwórko: ${BUILDS.ogrodek.name} (${koszt}) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.${ulica.pl}`,
+          `${b}, Yard tab: ${BUILDS_EN.ogrodek.name} (${koszt}) on a free bit of the yard. It grows food after a few days; not much in autumn.${ulica.en}`,
         );
       },
       zrobiony: (o) => o.st.things.some((t) => t.kind === 'ogrodek'),
@@ -666,6 +669,25 @@ const ZA_SIATKA = {
   en: ' There are shamblers out there: go by day, with a spear.',
 } as const;
 
+/** Dopisek trybu zombie do podpowiedzi budowli z materiałem (ogródek R5.3, pracownia R6.1), z pierwszą spacją; w zwykłym
+    trybie pusty. Automat pracy ludzi zaczyna w zombie budowę tylko wtedy, gdy cały brakujący materiał leży tam, dokąd
+    dojdzie bez ulicy (`startBuild` w src/sim/sim.ts), więc plan, któremu deski leżą w pokojach innych klatek albo za
+    ulicą, stoi bez wykonawcy, a pasek zapasów mówi, że starczy. Jedyne wyjście to polecenie „Budować …” z menu planu
+    (src/ui/budowa.ts): zaznaczona osoba idzie po deski każdą drogą, także ulicą, więc najlepiej wtedy, gdy żaden szwendacz
+    nie jest blisko. W domu jednorodzinnym nie ma klatek, więc zdanie mówi tylko o ulicy. */
+function budowaPoDeskiUlica(o: OdczytCelow): { pl: string; en: string } {
+  if (!zombieMode(o.st, o.gov)) return { pl: '', en: '' };
+  const blok = o.words.szukanie.obok === null;
+  return {
+    pl: ` Po deski ${blok ? 'z innych klatek i ' : ''}zza ulicy: ${
+      o.touch ? 'przytrzymajcie palec' : 'prawy przycisk'
+    } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`,
+    en: ` For planks ${blok ? 'from other stairwells or ' : ''}across the street: ${
+      o.touch ? 'press and hold on' : 'right-click'
+    } the plan, “Build …” (best with no shamblers near).`,
+  };
+}
+
 /** Skąd jeszcze deski i części na pracownię: zdanie na końcu podpowiedzi celu `pracownia` (z pierwszą spacją; puste, gdy
     nie ma co dopisać). Pracownia bierze 14 desek, a własne pomieszczenia i sam automat pracy ludzi dają ich za mało
     (dom na Zielonkach 7 do 8 w sześć dób, mapy blokowe w zombie około 12 z 14 do ósmego dnia, osiedle zapasowe w zwykłym
@@ -708,9 +730,10 @@ const R6: DefRozdzialu = {
         const koszt = costText(BUILDS.pracownia.cost);
         const b = budowaZakladka(o.touch);
         const skad = deskiSkadJeszcze(o);
+        const ulica = budowaPoDeskiUlica(o);
         return L(
-          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}`,
-          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${skad.en}`,
+          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}${ulica.pl}`,
+          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${skad.en}${ulica.en}`,
         );
       },
       // postawiona wcześniej zalicza od razu przy otwarciu rozdziału; sam plan budowy nie wystarcza

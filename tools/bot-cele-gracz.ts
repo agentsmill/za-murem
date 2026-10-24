@@ -301,17 +301,36 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
   const wewnatrz = (tile: number): boolean =>
     podworkoSiatki.has(tile) || kafleSiatki.has(tile) || (!!hs && (hs.room[tile] >= 0 || hs.doors.includes(tile)));
 
-  /** cel pracy w siedzibie dalej niż 30 m od kozy: siedziba bywa długim blokiem, a jego dalsze klatki są otwarte na ulicę */
-  const zaDaleko = (tile: number): boolean => {
+  /** cel pracy w siedzibie dalej niż `promien` m od kozy (30): siedziba bywa długim blokiem, a jego dalsze klatki są otwarte
+      na ulicę */
+  const zaDaleko = (tile: number, promien = 30): boolean => {
     const koza = st.things.find((t) => t.kind === 'koza');
     const kx = koza ? koza.x : drzwiHq % size;
     const ky = koza ? koza.y : Math.floor(drzwiHq / size);
-    return Math.hypot((tile % size) - kx, Math.floor(tile / size) - ky) > 30;
+    return Math.hypot((tile % size) - kx, Math.floor(tile / size) - ky) > promien;
   };
 
   /** Czy droga osoby do celu wychodzi na ulicę (w trybie zombie człowiek przerywa taką pracę, zanim ktoś zginie). Czyta
       drogę, którą wyznaczyła symulacja po poleceniu. */
   const drogaNaZewnatrz = (p: Pawn): boolean => p.path.slice(p.pi).some((t) => !wewnatrz(t));
+
+  /** Odcinek ulicą (albo do dalszej klatki) jest wolny: za dnia, osoba zdrowa i nieugryziona, cel nie dalej niż 60 m od kozy,
+      a żaden szwendacz nie jest bliżej niż 10 kafelków (tyle, co reguła `szwendaczBlisko` w symulacji) od osoby ani od żadnego
+      kafelka reszty jej drogi na ulicy. Tak ocenia człowiek, który po „Budować …” z menu planu patrzy, czy po drodze ktoś
+      stoi; bot sprawdza to co sekundę, więc szwendacz, który się pojawi, przerywa odcinek. */
+  const ulicaWolna = (p: Pawn): boolean => {
+    const h = hourOf(st.tick);
+    if (h < 7 || h >= 18 || (p.needs?.health ?? 0) < 50 || p.bite !== undefined) return false;
+    if (p.job && zaDaleko(p.job.tile, 60)) return false;
+    const szwendacze = st.pawns.filter((q) => q.kind === 'zombie' && !q.away);
+    if (!szwendacze.length) return true;
+    const punkty = [Math.floor(p.y) * size + Math.floor(p.x), ...p.path.slice(p.pi).filter((t) => !wewnatrz(t))];
+    return punkty.every((t) => {
+      const tx = t % size;
+      const ty = Math.floor(t / size);
+      return szwendacze.every((q) => Math.max(Math.abs(Math.floor(q.x) - tx), Math.abs(Math.floor(q.y) - ty)) >= 10);
+    });
+  };
 
   /** Drewno do zapasu `cel` sztuk (skład, luzem, w rękach): jedno polecenie ścięcia albo spalenia naraz. W zombie najpierw
       drzewo w obrębie siatki, potem mebel. */
@@ -1106,10 +1125,15 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       const c: Ctx = { g, o, v, s, h: hourOf(st.tick), wolni: wolniZarzadu(st) };
       kolejka = [];
       // zombie: praca z polecenia w siedzibie, której droga wychodzi na ulicę (meble, pomieszczenia i drzwi z drugiego końca
-      // bloku), idzie do kosza, zanim ktoś zginie; gospodarka, która tę pracę zleciła, uzna cel za nieosiągalny
+      // bloku), idzie do kosza, zanim ktoś zginie; gospodarka, która tę pracę zleciła, uzna cel za nieosiągalny. Wyjątek:
+      // budowa („Budować …” z menu planu idzie po deski ulicą i do innych klatek), dopóki odcinek jest wolny od szwendaczy
       if (g.tryb === 'zombie')
         for (const p of rdzen(st))
           if (p.job?.order && W_SIEDZIBIE.has(p.job.t) && (drogaNaZewnatrz(p) || zaDaleko(p.job.tile))) {
+            if (p.job.t === 'build' && ulicaWolna(p)) {
+              if (mozna(`ulica:${p.id}`, c.s, 60)) gadaj('build: odcinek ulicą wolny od szwendaczy, idziemy');
+              continue;
+            }
             if (p.job.t === 'burn') zle.add(`mebel:${p.job.target}`);
             const koza = st.things.find((t) => t.kind === 'koza');
             polecenie(

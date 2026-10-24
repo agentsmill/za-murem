@@ -1204,6 +1204,48 @@ export function celeShots(out: string): ShotCele[] {
       },
     });
 
+  /** Zombie, R5 (z `miasto=0` ogródek jest jedynym celem, więc bieżącym) i R6 (bieżąca pracownia): dopisek o „Budować …”
+      z menu planu (deski w innych klatkach albo za ulicą) stoi na końcu podpowiedzi bieżącego celu, w domu bez klatek, a okienko
+      z nim niczego nie zasłania (na telefonie zwinięte okienko ma w sobie całą podpowiedź bieżącego celu, więc długie zdanie
+      wypycha je na panel budowy: pracownia mieści się w 8 liniach, każda dodatkowa to 17 px i nachodzenie). Sprawdza polski
+      tekst, jak reszta scenariuszy układu; po angielsku okienko pracowni w zombie jest na telefonie o linię za wysokie, bo
+      sama angielska podpowiedź ma 284 znaki bez tego zdania (do poprawienia skróceniem istniejącego tekstu, nie dopisku). */
+  const zombieBudowa = (name: string, demo: string, dom: boolean, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        await start(page, base, `demo=${demo}&tryb=zombie&miasto=0&${GRA}&godzina=11`);
+        for (const [k, cel] of [
+          ['r5', 'ogrodek'],
+          ['r6', 'pracownia'],
+        ] as const) {
+          await rozdzial(page, k);
+          await poPodpowiedziStartowej(page);
+          await ustawOkienko(page, true, dotyk);
+          const wr = await wiersze(page, 'rozdzial');
+          const biezacy = wr.find((x) => x.klasy.includes('now'));
+          if (biezacy?.key !== cel) throw new Error(`${name} ${k}: bieżący cel to ${biezacy?.key}, nie ${cel}`);
+          const jak = biezacy.jak ?? '';
+          zawiera(
+            `${name} ${k}`,
+            jak,
+            dotyk ? 'przytrzymajcie palec na planie' : 'prawy przycisk na planie',
+            dom ? 'Po deski zza ulicy:' : 'Po deski z innych klatek i zza ulicy:',
+            '„Budować …”',
+          );
+          if (!jak.endsWith('(najlepiej bez szwendaczy blisko).'))
+            throw new Error(`${name} ${k}: dopisek nie jest na końcu podpowiedzi: …${jak.slice(-120)}`);
+          console.log(`  ${k}: ${biezacy.tekst} (${jak.length} znaków podpowiedzi)`);
+          await sprawdzUklad(page, `${name} ${w}×${h}, ${k}`, dotyk);
+          await zrzut(page, `${name}-${k}`);
+        }
+      },
+    });
+
   /** Cel czekający: R1 w ciągu dnia z trzema pierwszymi celami zrobionymi (w stanie gry). Bieżący jest wtedy cel drewna, a dyżur
       przy kozie czeka do karty nocy: przyciemniony, z przerywanym kółkiem i dopiskiem „czeka do 20:00”, bez podpowiedzi. */
   const czeka = (name: string): ShotCele =>
@@ -1822,6 +1864,10 @@ export function celeShots(out: string): ShotCele[] {
     spotkanie('cele-spotkanie-telefon', 390, 844),
     tablica('cele-r6-tablica', 1440, 900),
     tablica('cele-r6-tablica-telefon', 390, 844),
+    zombieBudowa('cele-zombie-budowa', 'przymorze', false, 1440, 900),
+    zombieBudowa('cele-zombie-budowa-telefon', 'przymorze', false, 390, 844),
+    zombieBudowa('cele-zombie-budowa-dom', 'zielonki', true, 1440, 900),
+    zombieBudowa('cele-zombie-budowa-dom-telefon', 'zielonki', true, 390, 844),
     czeka('cele-czeka'),
     handlarz('cele-okazja-handlarz'),
     ugryzienie('cele-okazja-ugryzienie'),
