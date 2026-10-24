@@ -55,8 +55,14 @@
      się o tyle później, a godziny celów we wszystkich pozostałych rozdziałach zostają co do minuty takie jak bez R3;
    - `karty` dopisuje analizę R4 „Przyjmijcie kogoś nowego” (okno od otwarcia R4 do zaliczenia celu albo końca gry): karty
      zdarzeń, w tym karty gości i kroki łańcuchów, ile z nich oferowało przyjęcie i ile przyjęto (wraz ze zmianą ludności po
-     dwóch godzinach gry), rozmowy, pytania o rękę i zaproszenia wędrowców przy siatce, zmiany ludności i godzinę celu `nowi`.
-     Każdy przebieg kończy ta analiza jedną linią `R4LINIA klucz=wartość …` do zbiorczego parsowania skryptem;
+     dwóch godzinach gry), rozmowy, pytania o rękę i zaproszenia wędrowców przy siatce, zmiany ludności i godzinę celu `nowi`
+     (z `zapasem=1`, gdy zaliczył go zapas w zombie, a nie przyjęcie). Każdy przebieg kończy ta analiza jedną linią `R4LINIA
+     klucz=wartość …` do zbiorczego parsowania skryptem; ma też długość okna w sekundach przy ekranie (`dlugosc`) i liczby kart
+     oraz próśb o przyjęcie w pierwszych 360, 480, 760 i 1880 s od otwarcia R4 (`kart360 prosb360 …`: trzy doby gry przy 8×, 6×,
+     3× i 1× w prawdziwej grze, gdzie doba trwa przy ekranie 120, 160, 253 i 627 s, bo noc po karcie nocy biegnie 6×; 1880 s to
+     próg zapasu `EKRAN_NOWI_ZAPAS`). Bot gra stałe 1× bez przyspieszania nocy (sekunda przy ekranie to 20 ticków, doba gry
+     to 960 s), więc dla niego 1880 s to około dwóch dób gry; okna pokazują, co zobaczyłby gracz szybszego tempa, gdyby zapas
+     liczył doby gry;
    - `bezsmierci` i `przybysz` są wyłącznie do analizy, nie do tabeli: pierwszy nie pozwala zarządowi marnieć (zdrowie,
      jedzenie, siły i ciepło nie spadają poniżej połowy, ugryzienie znika), żeby było widać, jak daleko szłaby ścieżka w
      trybie zombie, gdyby kolonia przetrwała; drugi przyjmuje do zarządu jedną osobę w dobę po otwarciu R4, jakby ją
@@ -89,7 +95,7 @@ import { createSim, Sim, type SimState } from '../src/sim/sim.ts';
 import { populacja, snapshot } from '../src/sim/snapshot.ts';
 import type { GameMode } from '../src/sim/tryb.ts';
 import { krokSciezki, nowyStanSciezki, type StanSciezki, type WidokSciezki, widokSciezki } from '../src/ui/sciezka.ts';
-import { ROZDZIALY } from '../src/ui/sciezka-rozdzialy.ts';
+import { EKRAN_NOWI_ZAPAS, ROZDZIALY } from '../src/ui/sciezka-rozdzialy.ts';
 import { okolicaZGeo } from '../tests/unit/miasto-play.ts';
 import { type Gra, type Gracz, nowyGracz, odczyt, wejscie } from './bot-cele-gracz.ts';
 import {
@@ -201,6 +207,8 @@ interface Zdarzenie {
   tick: number;
   co: 'otwarcie' | 'koniec' | 'cel' | 'przepadl' | 'okazja' | 'okazja-koniec';
   klucz: string;
+  /** cel zaliczył zapas (`DefCelu.zapas`), nie czynność gracza */
+  zapasem?: boolean;
 }
 
 /** id kroków łańcuchów kart (karty łańcucha liczy analiza R4 osobno od kart gości) */
@@ -236,6 +244,8 @@ interface AnalizaR4 {
   otwarcie: number | null;
   /** tick zaliczenia celu `nowi`; null, gdy go nie zaliczono */
   nowi: number | null;
+  /** cel `nowi` zaliczył zapas (zombie, `EKRAN_NOWI_ZAPAS` sekund przy ekranie bez przyjęcia), nie przyjęcie */
+  nowiZapasem: boolean;
   /** koniec okna: zaliczenie `nowi` albo koniec przebiegu (przegrana, limit dni) */
   koniec: number;
   karty: KartaR4[];
@@ -283,7 +293,8 @@ function roznica(przed: StanSciezki, po: StanSciezki, tick: number): Zdarzenie[]
     if (po.rozdzial !== 'koniec') z.push({ tick: po.od, co: 'otwarcie', klucz: po.rozdzial });
   }
   for (const k of Object.keys(po.zrobione))
-    if (!Object.hasOwn(przed.zrobione, k)) z.push({ tick: po.zrobione[k], co: 'cel', klucz: k });
+    if (!Object.hasOwn(przed.zrobione, k))
+      z.push({ tick: po.zrobione[k], co: 'cel', klucz: k, ...(po.zapasem?.includes(k) ? { zapasem: true } : {}) });
   for (const k of po.przepadle) if (!przed.przepadle.includes(k)) z.push({ tick, co: 'przepadl', klucz: k });
   if (przed.okazja?.k !== po.okazja?.k || przed.okazja?.od !== po.okazja?.od) {
     if (przed.okazja) z.push({ tick, co: 'okazja-koniec', klucz: przed.okazja.k });
@@ -700,7 +711,8 @@ function analizaR4(
   koniecTick: number,
 ): AnalizaR4 {
   const otwarcie = zdarzenia.find((z) => z.co === 'otwarcie' && z.klucz === 'r4')?.tick ?? null;
-  const nowi = zdarzenia.find((z) => z.co === 'cel' && z.klucz === 'r4.nowi')?.tick ?? null;
+  const zaliczenie = zdarzenia.find((z) => z.co === 'cel' && z.klucz === 'r4.nowi');
+  const nowi = zaliczenie?.tick ?? null;
   const koniec = nowi ?? koniecTick;
   const wOknie = (tick: number): boolean => otwarcie !== null && tick >= otwarcie && tick <= koniec;
   const w0 = werbunek0 ?? { rozmowy: 0, rece: 0, zaproszenia: 0 };
@@ -708,6 +720,7 @@ function analizaR4(
   return {
     otwarcie,
     nowi,
+    nowiZapasem: !!zaliczenie?.zapasem,
     koniec,
     karty: karty.filter((k) => wOknie(k.tick)),
     // zmiana ludności po wyborze karty wpada w następnej sekundzie, czyli tuż po zaliczeniu celu
@@ -718,6 +731,21 @@ function analizaR4(
         ? { rozmowy: 0, rece: 0, zaproszenia: 0 }
         : { rozmowy: w1.rozmowy - w0.rozmowy, rece: w1.rece - w0.rece, zaproszenia: w1.zaproszenia - w0.zaproszenia },
   };
+}
+
+/** Okna czasu przy ekranie od otwarcia R4 (sekundy), w których analiza liczy karty: trzy doby gry przy 8×, 6×, 3× i 1× w prawdziwej
+    grze. Doba trwa tam przy ekranie 120, 160, 253 i 627 s (14 godzin dnia w tempie gracza i 10 godzin nocy po karcie nocy 6×,
+    chyba że gracz gra już szybciej), a bot gra stałe 1× i widzi w tych oknach tyle samo kart co gracz, bo karty idą w sekundach
+    przy ekranie. Zapas celu `nowi` w zombie (`EKRAN_NOWI_ZAPAS`) to ostatnie okno; pozostałe pokazują, ile kart i próśb o
+    przyjęcie zobaczyłby gracz szybszego tempa, gdyby zapas liczył doby gry. */
+const OKNA_EKRANU = [360, 480, 760, EKRAN_NOWI_ZAPAS] as const;
+
+/** Ile kart i ile z nich z prośbą o przyjęcie padło w pierwszych `sekund` sekundach przy ekranie od otwarcia R4 (karty w oknie
+    analizy, które kończy zaliczenie `nowi` albo koniec przebiegu: dla krótszego okna liczby są tylko dolnym ograniczeniem). */
+function kartyWOknie(a: AnalizaR4, sekund: number): { kart: number; prosb: number } {
+  const od = a.otwarcie ?? 0;
+  const w = a.karty.filter((k) => k.tick - od <= sekund * TICKS_PER_SECOND);
+  return { kart: w.length, prosb: w.filter((k) => k.proszacy).length };
 }
 
 /** liczby z analizy R4 do jednej linii i do tabeli zbiorczej */
@@ -768,12 +796,16 @@ function wypiszR4(r: Wynik, a: AnalizaR4): void {
   );
   if (a.otwarcie === null) {
     console.log(
-      `R4LINIA demo=${r.demo} tryb=${r.tryb} ziarno=${PRZESUNIECIE} bezsmierci=${BEZ_SMIERCI ? 1 : 0} otwarcie=NIE nowi=NIE koniec=${hhmm(a.koniec).replace(' ', '·')} przegrana=${r.koniec.przegrana?.split(',')[0] ?? '-'} kart=0 gosci=0 lancuchowych=0 prosacych=0 przyjeto=0 wpuscic=0 wyszarzonych=0 pierwszakarta=NIE pierwszaprosba=NIE pierwszewpuszczenie=NIE przybylo=0 ubylo=0 wedrowcy=0 rozmowy=0 rece=0 zaproszenia=0`,
+      `R4LINIA demo=${r.demo} tryb=${r.tryb} ziarno=${PRZESUNIECIE} bezsmierci=${BEZ_SMIERCI ? 1 : 0} otwarcie=NIE nowi=NIE koniec=${hhmm(a.koniec).replace(' ', '·')} przegrana=${r.koniec.przegrana?.split(',')[0] ?? '-'} zapasem=0 dlugosc=0 kart=0 gosci=0 lancuchowych=0 prosacych=0 przyjeto=0 wpuscic=0 wyszarzonych=0 pierwszakarta=NIE pierwszaprosba=NIE pierwszewpuszczenie=NIE przybylo=0 ubylo=0 wedrowcy=0 rozmowy=0 rece=0 zaproszenia=0${OKNA_EKRANU.map((o) => ` kart${o}=0 prosb${o}=0`).join('')}`,
     );
     return;
   }
   const inne = new Map<string, number>();
   for (const k of a.karty) if (k.id !== 'gosc' && !k.lancuch) inne.set(k.id, (inne.get(k.id) ?? 0) + 1);
+  if (a.nowiZapasem)
+    console.log(
+      `    cel zaliczył zapas po ${Math.round((a.koniec - (a.otwarcie ?? a.koniec)) / TICKS_PER_SECOND)} s przy ekranie (próg ${EKRAN_NOWI_ZAPAS} s), nikt nie został przyjęty`,
+    );
   console.log(
     `    kart zdarzeń ${n.kart}, w tym gości ${n.gosci} i kroków łańcuchów ${n.lancuchowych}; kart z wyborem przyjęcia (goście, łańcuchy, „Fachowiec”) ${n.prosacych}, przyjęto ${n.przyjeto}; inne: ${[...inne].map(([k, c]) => `${k} ${c}`).join(', ') || 'brak'}`,
   );
@@ -791,7 +823,7 @@ function wypiszR4(r: Wynik, a: AnalizaR4): void {
     );
   // jedna linia do zbiorczego parsowania (python), klucze=wartości
   console.log(
-    `R4LINIA demo=${r.demo} tryb=${r.tryb} ziarno=${PRZESUNIECIE} bezsmierci=${BEZ_SMIERCI ? 1 : 0} otwarcie=${hhmm(a.otwarcie).replace(' ', '·')} nowi=${a.nowi !== null ? hhmm(a.nowi).replace(' ', '·') : 'NIE'} koniec=${hhmm(a.koniec).replace(' ', '·')} przegrana=${r.koniec.przegrana?.split(',')[0] ?? '-'} kart=${n.kart} gosci=${n.gosci} lancuchowych=${n.lancuchowych} prosacych=${n.prosacych} przyjeto=${n.przyjeto} wpuscic=${n.wpuscic} wyszarzonych=${n.wyszarzonych} pierwszakarta=${n.pierwszaKarta === null ? 'NIE' : hhmm(n.pierwszaKarta).replace(' ', '·')} pierwszaprosba=${n.pierwszaProsba === null ? 'NIE' : hhmm(n.pierwszaProsba).replace(' ', '·')} pierwszewpuszczenie=${n.pierwszeWpuszczenie === null ? 'NIE' : hhmm(n.pierwszeWpuszczenie).replace(' ', '·')} przybylo=${n.przybylo} ubylo=${n.ubylo} wedrowcy=${a.wedrowcy} rozmowy=${a.werbunek.rozmowy} rece=${a.werbunek.rece} zaproszenia=${a.werbunek.zaproszenia}`,
+    `R4LINIA demo=${r.demo} tryb=${r.tryb} ziarno=${PRZESUNIECIE} bezsmierci=${BEZ_SMIERCI ? 1 : 0} otwarcie=${hhmm(a.otwarcie).replace(' ', '·')} nowi=${a.nowi !== null ? hhmm(a.nowi).replace(' ', '·') : 'NIE'} koniec=${hhmm(a.koniec).replace(' ', '·')} przegrana=${r.koniec.przegrana?.split(',')[0] ?? '-'} zapasem=${a.nowiZapasem ? 1 : 0} dlugosc=${Math.round((a.koniec - (a.otwarcie ?? a.koniec)) / TICKS_PER_SECOND)} kart=${n.kart} gosci=${n.gosci} lancuchowych=${n.lancuchowych} prosacych=${n.prosacych} przyjeto=${n.przyjeto} wpuscic=${n.wpuscic} wyszarzonych=${n.wyszarzonych} pierwszakarta=${n.pierwszaKarta === null ? 'NIE' : hhmm(n.pierwszaKarta).replace(' ', '·')} pierwszaprosba=${n.pierwszaProsba === null ? 'NIE' : hhmm(n.pierwszaProsba).replace(' ', '·')} pierwszewpuszczenie=${n.pierwszeWpuszczenie === null ? 'NIE' : hhmm(n.pierwszeWpuszczenie).replace(' ', '·')} przybylo=${n.przybylo} ubylo=${n.ubylo} wedrowcy=${a.wedrowcy} rozmowy=${a.werbunek.rozmowy} rece=${a.werbunek.rece} zaproszenia=${a.werbunek.zaproszenia}${OKNA_EKRANU.map((o) => ` kart${o}=${kartyWOknie(a, o).kart} prosb${o}=${kartyWOknie(a, o).prosb}`).join('')}`,
   );
 }
 

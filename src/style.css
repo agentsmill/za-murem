@@ -854,8 +854,9 @@ a.btn {
   font-style: italic;
   color: var(--ink-dim);
 }
-/* dopisek celu, który zaliczył się sam („Nikt nie zapukał: …”): jak „czeka”, ale pod przekreślonym celem, więc sam nie
-   może być przekreślony; przekreślenie rodzica dziedziczy każdy blok w środku, a nie dziedziczy go element inline-block */
+/* dopisek celu już zaliczonego („Nikt nie został przyjęty, więc cel zaliczył się sam. …”, „Wkurzenie spada, gdy …”): jak
+   „czeka”, ale pod przekreślonym celem, więc sam nie może być przekreślony; przekreślenie rodzica dziedziczy każdy blok
+   w środku, a nie dziedziczy go element inline-block */
 .goal-uwaga {
   display: inline-block;
   box-sizing: border-box;

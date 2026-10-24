@@ -6,8 +6,8 @@
    R2: `sily` (zdarzenie interfejsu `lista`), `ognisko` (zwykły: ognisko płonie po 18:00) albo `dzgnij` (zombie: polecenie
    ataku na szwendaczu przez siatkę), `uzbrojeni` (zwykły: broń u `min(2, osób)` osób) albo `dzidy` (zombie: karta nocy
    zatwierdzona po otwarciu rozdziału z `min(2, osób)` przydziałami `warta:siatka` u osób z dzidą). R4: `uchwala` (podpis
-   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (przyjęcie
-   od otwarcia, w zombie zapas po trzech dobach; reguły A i B w sciezka-nowi.test.ts), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
+   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana, a po raporcie niesie lekcję o tym, co obniża wkurzenie), `nowi` (przyjęcie
+   od otwarcia, w zombie zapas po czasie przy ekranie równym trzem dobom gry przy 1×, czyli 1880 s; reguły A i B, goście pod bramą i okazje w sciezka-nowi.test.ts; tu teksty), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów (R3 „Praca” stoi między R2 a R4,
    jego cele sprawdza sciezka-praca.test.ts), przejścia R2 → R3 → R4 → R5 → R6 (dalej R6–R8 i „koniec” w
@@ -145,9 +145,13 @@ const raport = (dAnger: number, day = 2): NightReport => ({
   dAnger,
 });
 
-/** Dopisek czekającego celu „wkurzenie” (R4.2): niesie lekcję, bo podpowiedź czekającego celu się nie pokazuje, a dopisek tak. */
-const CZEKA_RANO = 'Raport rano. Wkurzenie spada, gdy ludzie są najedzeni i w cieple.';
-const CZEKA_RANO_EN = 'Morning report. Anger drops when people are fed and warm.';
+/** Dopisek czekającego celu „wkurzenie” (R4.2): prawdziwy powód czekania, jak „czeka do 20:00” i „czeka do zebrania”. */
+const CZEKA_RANO = 'czeka do rana';
+const CZEKA_RANO_EN = 'waiting for morning';
+/** Lekcja o wkurzeniu: dopisek zaliczonego celu (`uwaga`), bo podpowiedź celu, który czeka, się nie pokazuje. Ten sam w obu trybach
+    (bez ogniska: w zombie R2 każe unikać światła nocą). */
+const LEKCJA_WKURZENIE = 'Wkurzenie spada, gdy ludzie są najedzeni i w cieple.';
+const LEKCJA_WKURZENIE_EN = 'Anger drops when people are fed and warm.';
 
 /** skutki zarządu z jednym polem ustawionym przez test */
 function skutki(f: (e: GovEffects) => void): GovEffects {
@@ -699,6 +703,8 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
       g.gov.reports.push(raport(dAnger));
       expect(cel(g, 'wkurzenie').done, `dAnger ${dAnger}`).toBe(true);
       expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
+      // lekcja jest ogólna, nie zależy od tego, w którą stronę poszło wkurzenie
+      expect(cel(g, 'wkurzenie').uwaga, `dAnger ${dAnger}`).toBe(LEKCJA_WKURZENIE);
       expect(g.sciezka.zrobione).toHaveProperty(['r4.wkurzenie']);
       // zaliczenie jest trwałe, także gdy raportów nie ma już na liście
       g.gov.reports = [];
@@ -706,28 +712,40 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
     }
   });
 
-  it('dopisek czekającego celu niesie lekcję o wkurzeniu (ten sam w obu trybach, bez ogniska) i jest w HTML okienka', () => {
+  it('czekający cel mówi tylko, na co czeka; lekcję o wkurzeniu niesie dopisek zaliczonego (ten sam w obu trybach), oba w HTML okienka', () => {
     const g = poPierwszymRaporcie(key, mode);
     otworz(g, 'r4');
+    const html = (touch: boolean): string => celeHtml(widok(g, { touch }), { otwarte: true, touch });
     for (const touch of [false, true]) {
       expect(cel(g, 'wkurzenie', { touch }).czeka).toBe(CZEKA_RANO);
-      expect(celeHtml(widok(g, { touch }), { otwarte: true, touch })).toContain(
-        `<small class="goal-czeka">${CZEKA_RANO}</small>`,
-      );
+      expect(cel(g, 'wkurzenie', { touch }).uwaga, 'przed raportem nie ma lekcji').toBeUndefined();
+      expect(html(touch)).toContain(`<small class="goal-czeka">${CZEKA_RANO}</small>`);
+      expect(html(touch)).not.toContain(LEKCJA_WKURZENIE);
     }
     ustawJezyk('en');
     for (const touch of [false, true]) {
       expect(cel(g, 'wkurzenie', { touch }).czeka).toBe(CZEKA_RANO_EN);
-      expect(celeHtml(widok(g, { touch }), { otwarte: true, touch })).toContain(
-        `<small class="goal-czeka">${CZEKA_RANO_EN}</small>`,
-      );
+      expect(html(touch)).toContain(`<small class="goal-czeka">${CZEKA_RANO_EN}</small>`);
+      expect(html(touch)).not.toContain(LEKCJA_WKURZENIE_EN);
     }
     ustawJezyk('pl');
-    // dopisek znika razem z czekaniem: po porannym raporcie cel jest zaliczony i nie ma dopisku
+    // po porannym raporcie cel jest zaliczony, nie czeka i niesie lekcję (pod przekreślonym celem, w osobnym elemencie)
     g.gov.reports.push(raport(1));
-    expect(cel(g, 'wkurzenie')).toMatchObject({ done: true });
-    expect(cel(g, 'wkurzenie').czeka).toBeUndefined();
-    expect(celeHtml(widok(g), { otwarte: true, touch: false })).not.toContain('Raport rano. Wkurzenie');
+    for (const touch of [false, true]) {
+      expect(cel(g, 'wkurzenie', { touch })).toMatchObject({ done: true, uwaga: LEKCJA_WKURZENIE });
+      expect(cel(g, 'wkurzenie', { touch }).czeka).toBeUndefined();
+      expect(html(touch)).toContain(`<small class="goal-uwaga">${LEKCJA_WKURZENIE}</small>`);
+      expect(html(touch)).not.toContain(CZEKA_RANO);
+    }
+    ustawJezyk('en');
+    for (const touch of [false, true]) {
+      expect(cel(g, 'wkurzenie', { touch }).uwaga).toBe(LEKCJA_WKURZENIE_EN);
+      expect(html(touch)).toContain(`<small class="goal-uwaga">${LEKCJA_WKURZENIE_EN}</small>`);
+      expect(polskieSlowa(LEKCJA_WKURZENIE_EN)).toEqual([]);
+    }
+    ustawJezyk('pl');
+    // lekcja nie wchodzi do zwiniętego okienka, które pokazuje tylko bieżący cel
+    expect(celeHtml(widok(g), { otwarte: false, touch: false })).not.toContain(LEKCJA_WKURZENIE);
   });
 
   it('raport sprzed otwarcia rozdziału niczego nie zalicza, nawet gdy wkurzenie wtedy spadło', () => {
@@ -743,13 +761,15 @@ describe.each(KOMBINACJE)('R4 wkurzenie: %s %s', (key, mode) => {
     graj(g, (x) => doba(x) === 3 && godzina(x) >= 5, {}, 3000);
     expect(g.gov.reports).toHaveLength(1);
     expect(cel(g, 'wkurzenie')).toMatchObject({ done: false, czeka: CZEKA_RANO });
+    expect(cel(g, 'wkurzenie').uwaga).toBeUndefined();
     expect(g.sciezka.zrobione).not.toHaveProperty(['r4.wkurzenie']);
     const p = graj(g, () => false, { stoj: ['raport'] }, 600);
     expect(p?.k).toBe('raport');
     expect(g.gov.reports).toHaveLength(2);
     expect(g.gov.reports[1].day).toBe(2);
-    // zaliczony przy samym raporcie, niezależnie od znaku zmiany wkurzenia
+    // zaliczony przy samym raporcie, niezależnie od znaku zmiany wkurzenia, i od razu z lekcją pod spodem
     expect(cel(g, 'wkurzenie').done).toBe(true);
+    expect(cel(g, 'wkurzenie').uwaga).toBe(LEKCJA_WKURZENIE);
     expect(g.sciezka.zrobione).toHaveProperty(['r4.wkurzenie']);
   });
 });
@@ -1474,7 +1494,7 @@ describe('teksty R4', () => {
       });
       expect(slowa(g, false, 'nowi')).toEqual({
         text: 'Przyjmijcie kogoś nowego.',
-        how: `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od ${dom ? 'furtki' : 'bramy'}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
+        how: `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Gość ${dom ? 'pod furtką' : 'pod bramą'} ma kartę z „Pokaż”, a gdy prosi o miejsce, z wyborem „Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”. Przyjęci idą od ${dom ? 'furtki' : 'bramy'}, a komunikat o ich drodze ma ten sam „Pokaż”. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
       });
       ustawJezyk('en');
       expect(slowa(g, false, 'uchwala')).toEqual({
@@ -1487,8 +1507,32 @@ describe('teksty R4', () => {
       });
       expect(slowa(g, false, 'nowi')).toEqual({
         text: 'Take someone new in.',
-        how: `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
+        how: `Event cards bring people to you: “Take everyone in”, “Put him/her to work”. A guest at ${dom ? 'the garden gate' : 'the gate'} has a card with “Show” and, if they ask for a place, “Take him/her/them into ${dom ? 'the house' : 'the co-op'}”. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and the notice about them coming in has the same “Show”. Every newcomer is a pair of hands and another mouth to feed.`,
       });
+      ustawJezyk('pl');
+    }
+  });
+
+  it('nowi w trybie zombie: ocaleni pod bramą i bez „Przyjąć wszystkich”, którego karty zombie nie mają', () => {
+    for (const key of ['przymorze', 'zielonki'] as const) {
+      const dom = wDomu(key);
+      const g = wRozdziale(key, 'zombie', 'r4');
+      const pl = slowa(g, false, 'nowi');
+      expect(pl).toEqual({
+        text: 'Przyjmijcie kogoś nowego.',
+        how: `Ludzi przyprowadzają karty wydarzeń. Ocaleni ${dom ? 'pod furtką' : 'pod bramą'} mają kartę z „Pokaż”, a gdy proszą o miejsce, z wyborem „Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”; liczy się też „Wciągnąć do roboty”. Przyjęci idą od ${dom ? 'furtki' : 'bramy'}, a komunikat o ich drodze ma ten sam „Pokaż”. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
+      });
+      expect(pl.how).not.toContain('Przyjąć wszystkich');
+      // mysz i dotyk czytają to samo zdanie
+      expect(slowa(g, true, 'nowi').how).toBe(pl.how);
+      ustawJezyk('en');
+      const en = slowa(g, false, 'nowi');
+      expect(en).toEqual({
+        text: 'Take someone new in.',
+        how: `Event cards bring people to you. Survivors at ${dom ? 'the garden gate' : 'the gate'} have a card with “Show” and, if they ask for a place, “Take him/her/them into ${dom ? 'the house' : 'the co-op'}”; “Put him/her to work” counts too. Newcomers walk in from ${dom ? 'the garden gate' : 'the gate'}, and the notice about them coming in has the same “Show”. Every newcomer is a pair of hands and another mouth to feed.`,
+      });
+      expect(en.how).not.toContain('Take everyone in');
+      expect(polskieSlowa(en.how)).toEqual([]);
       ustawJezyk('pl');
     }
   });

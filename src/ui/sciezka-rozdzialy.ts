@@ -22,9 +22,16 @@
    da się już podpisać ani po odnowieniu, chyba że jest zaliczony: stąd `jest(o, s)` ze stanem ścieżki), odczytu porannego
    raportu (obserwacja jak `sily`: raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie, bo o 6:00 rośnie ono
    prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego; raport rozpoznaje się po dniu nocy, nie po numerze
-   na liście, która ma sufit 10 wpisów; cel czeka do rana i nie bywa bieżący, więc jego podpowiedź się nie pokazuje, a lekcję
-   niesie dopisek czekania „Raport rano. Wkurzenie spada, gdy ludzie są najedzeni i w cieple.”, ten sam w obu trybach),
-   nowych ludzi (ludność większa niż przy otwarciu) i kart mieszkańców albo budynków (zdarzenie interfejsu). Wariant
+   na liście, która ma sufit 10 wpisów; do raportu cel czeka z prawdziwym powodem („czeka do rana”) i nie bywa bieżący, więc
+   jego podpowiedź się nie pokazuje; lekcję niesie dopisek zaliczonego celu `uwaga`: „Wkurzenie spada, gdy ludzie są najedzeni
+   i w cieple.”, ten sam w obu trybach),
+   nowych ludzi (przyjęcia od otwarcia rozdziału, nie ludność netto: `przyjetoKogos` porównuje numery pionków zarządu i mieszkańców
+   z chwili otwarcia z dzisiejszymi, więc awans „Wciągnąć do roboty”, grupa gości, zaproszony wędrowiec i sąsiedzi się liczą,
+   a zgon po drodze, wyrzucenie bramą, pies, kot i handlarz nie; w zombie po 1880 s przy ekranie (`EKRAN_NOWI_ZAPAS`: trzy
+   doby gry u gracza w tempie 1×, dzień po 40 s na godzinę i noc po karcie nocy 6×), bez przyjęcia cel zalicza się sam zapasem
+   `nowiZapas`, z dopiskiem „Nikt nie został przyjęty, więc cel zaliczył się sam”; podpowiedź mówi o gościu pod bramą, jego
+   karcie z „Pokaż” i wyborze „Przyjąć do …”, a w zombie o ocalałych i bez „Przyjąć wszystkich”, którego karty zombie nie
+   mają) i kart mieszkańców albo budynków (zdarzenie interfejsu). Wariant
    „ludzie” w bloku z mieszkańcami z generatora liczy tylko pionki `resident` z osobą, bo `snap.lokatorzy` ma też
    lokatorów sąsiednich budynków (pionki `sasiad` podczas spotkania), którzy nie powinni przestawiać tekstu w domu.
 
@@ -62,8 +69,9 @@
    tych 130 sztuk; tekst celu mówi więc „zacznijcie”, a ekran dróg dalej „otoczcie”). Po R8 okienko pokazuje wiersze dróg z
    „co dalej” (`wierszeDrog`).
 
-   Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
-   te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
+   Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `lupZMiasta` i `pionkiLudzi` (numery
+   pionków, z których cel „Przyjmijcie kogoś nowego” widzi przyjęcia; `ludnoscPodZarzadem` zostaje tylko dla zapisu sprzed list
+   numerów): te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
    sprawdzenia, więc obie strony porównania nie rozjadą się. */
 
 import { L, tr } from '../core/jezyk.ts';
@@ -371,20 +379,81 @@ export function przyjetoKogos(st: SimState, s: StanSciezki): boolean {
   );
 }
 
-/** Ile dób przy otwartym R4 czeka cel „Przyjmijcie kogoś nowego” w trybie zombie, zanim zaliczy się sam. */
+/** Ile dób gry czekał cel „Przyjmijcie kogoś nowego” w trybie zombie, zanim zaliczył się sam, w zapisie sprzed czasu przy ekranie:
+    ten stan nie ma `odEkran`, więc `nowiZapas` i `nowiZaliczoneZapasem` liczą tyle dób gry od otwarcia rozdziału. Dla nowych
+    zapisów próg to `EKRAN_NOWI_ZAPAS`, a nie ta stała; hak zrzutów `zm.rozdzial` przelicza nią doby na czas przy ekranie. */
 export const DOBY_NOWI_ZAPAS = 3;
 
-/** Zapas celu `nowi` (tylko zombie): od otwarcia R4 minęły trzy doby gry, a nikt nie został przyjęty. W trybie zombie karta,
-    która prosi o miejsce, bywa rzadka (średnio jedna na 8 do 12 dób), więc cel nie może czekać na nią w nieskończoność. */
-export const nowiZapas = (o: OdczytCelow, s: StanSciezki): boolean =>
-  zombieMode(o.st, o.gov) && o.st.tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
+/** Próg zapasu w sekundach przy ekranie: trzy doby gry u gracza, który gra w tempie 1×. Zarząd odmierza tempo kart w sekundach
+    przy ekranie (odstęp 110 do 200 s: `GAP_PO`, `GAP_ROZRZUT`), a nie w dobach gry, więc próg mierzy się tym, co gracz widział.
+    Doba gry przy 1× trwa przy ekranie około 627 s, bo noc po karcie nocy biegnie 6× (`NIGHT_PACE` w `src/main.ts`, chyba że
+    gracz gra już szybciej): 14 godzin dnia od porannego raportu do karty nocy po 40 s to 560 s, a 10 godzin nocy po 40 / 6 s to
+    około 67 s. Trzy takie doby to 1880 s. Przy szybszym tempie dnia doba jest krótsza (3×: 253 s, 6×: 160 s, 8×: 120 s), więc
+    trzy doby gry to tam 760, 480 i 360 s, ledwie kilka kart; 1880 s przy ekranie to u każdego około dziesięciu kart. Bot ścieżki
+    gra stałe 1× bez przyspieszania nocy (sekunda przy ekranie to 20 ticków, doba gry to 960 s), więc dla niego 1880 s to około
+    dwóch dób gry.
+    Literał, nie wzór z `DOBY_NOWI_ZAPAS`: tamta stała opisuje zapisy sprzed czasu przy ekranie (doby gry) i nie może się ruszyć
+    razem z progiem. Test w `tests/unit/sciezka-nowi.test.ts` liczy sekundy przy ekranie po zegarze gry (`CARD_HOUR`, `MORNING`,
+    `TICKS_PER_HOUR`, `SPEEDS[3]`) i przypina ten literał. */
+export const EKRAN_NOWI_ZAPAS = 1880;
 
-/** Czy zaliczony cel `nowi` zaliczył zapas, a nie przyjęcie: zaliczony nie wcześniej niż po trzech dobach od otwarcia R4 w
-    trybie zombie (przyjęcie zaliczyłoby go w tym samym kroku, w którym je zobaczyło, więc wcześniej). */
-export const nowiZaliczoneZapasem = (o: OdczytCelow, s: StanSciezki): boolean => {
-  const tick = s.zrobione['r4.nowi'];
-  return zombieMode(o.st, o.gov) && tick !== undefined && tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
+/** Zapas celu `nowi` (tylko zombie): od otwarcia R4 minęło tyle czasu przy ekranie, ile gracz przy 1× widzi w trzy doby gry
+    (`EKRAN_NOWI_ZAPAS`), a nikt nie został przyjęty (zwykłe zaliczenie wygrywa w silniku). W trybie zombie karta, która prosi
+    o miejsce (goście płoszeni na zasięg ugryzienia, kroki łańcuchów, wędrowcy przy siatce), bywa rzadka, a kolonia często ginie
+    przed nią: w grach bota przyjęcie zaliczało cel w mniej więcej połowie przebiegów w tym czasie, więc cel nie może czekać
+    na nią w nieskończoność. Stan albo odczyt bez czasu przy ekranie (zapis sprzed tej miary) liczy doby gry od otwarcia, jak
+    dawniej. */
+export const nowiZapas = (o: OdczytCelow, s: StanSciezki): boolean => {
+  if (!zombieMode(o.st, o.gov)) return false;
+  if (o.ekran !== undefined && s.odEkran !== undefined) return o.ekran - s.odEkran >= EKRAN_NOWI_ZAPAS;
+  return o.st.tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
 };
+
+/** Czy zaliczony cel `nowi` zaliczył zapas, a nie przyjęcie: silnik zapisuje zapas w stanie (`StanSciezki.zapasem`), więc to
+    przeżywa zapis i wczytanie, także gdy potem ktoś zostanie przyjęty. Zapis sprzed tego śladu i sprzed czasu przy ekranie
+    zaliczał zapas po trzech dobach gry i niczego nie zostawiał, więc poznaje się go po czasie zaliczenia (przyjęcie zaliczyłoby
+    cel w tym samym kroku, w którym je zobaczyło, czyli wcześniej niż po trzech dobach). */
+export const nowiZaliczoneZapasem = (o: OdczytCelow, s: StanSciezki): boolean => {
+  if (s.zapasem?.includes('r4.nowi')) return true;
+  const tick = s.zrobione['r4.nowi'];
+  return (
+    s.zapasem === undefined &&
+    s.odEkran === undefined &&
+    zombieMode(o.st, o.gov) &&
+    tick !== undefined &&
+    tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY
+  );
+};
+
+/** Podpowiedź celu `nowi`: skąd biorą się nowi ludzie i co kliknąć. Karty wydarzeń przyprowadzają ich pod bramę: gość ma kartę
+    z „Pokaż” (kamera jedzie na grupę, okno zostaje) i, gdy prosi o miejsce, z wyborem „Przyjąć do spółdzielni” (w domu „Przyjąć
+    do domu”); uchodźcy mają „Przyjąć wszystkich”, a karta „Fachowiec” „Wciągnąć do roboty”. W zombie nie ma kart uchodźców,
+    więc podpowiedź nie obiecuje „Przyjąć wszystkich”, a pod bramą stoją ocaleni, jak w tytule ich karty („Ocaleni pod bramą”).
+    „Pokaż” ma w podpowiedzi jedno znaczenie, pokazanie ludzi na mapie: ten sam przycisk jest na karcie gościa i w komunikacie
+    „N osób idzie od bramy” (src/ui/przybycie.ts), a podpowiedź mówi to wprost, zamiast cytować drugi, inny „Pokaż”. Napisy
+    wyborów idą z kart (src/gov/wizyta.ts, src/gov/warianty.ts), a słowo o miejscu z jego słownika; po angielsku zaimek w napisie
+    karty zależy od gościa (him, her albo them), więc podpowiedź cytuje wszystkie trzy warianty („Take him/her/them into …”,
+    „Put him/her to work”). */
+function nowiJak(o: OdczytCelow): string {
+  const zombie = zombieMode(o.st, o.gov);
+  const dom = placeOfWorld(o.w).kind === 'dom';
+  const b = o.words.brama;
+  const dokad = dom ? 'domu' : 'spółdzielni';
+  const gate = o.wordsEn.brama;
+  const dokadEn = dom ? 'the house' : 'the co-op';
+  return L(
+    `${
+      zombie
+        ? `Ludzi przyprowadzają karty wydarzeń. Ocaleni ${b.pod} mają kartę z „Pokaż”, a gdy proszą o miejsce, z wyborem „Przyjąć do ${dokad}”; liczy się też „Wciągnąć do roboty”.`
+        : `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Gość ${b.pod} ma kartę z „Pokaż”, a gdy prosi o miejsce, z wyborem „Przyjąć do ${dokad}”.`
+    } Przyjęci idą od ${b.d}, a komunikat o ich drodze ma ten sam „Pokaż”. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
+    `${
+      zombie
+        ? `Event cards bring people to you. Survivors at ${gate} have a card with “Show” and, if they ask for a place, “Take him/her/them into ${dokadEn}”; “Put him/her to work” counts too.`
+        : `Event cards bring people to you: “Take everyone in”, “Put him/her to work”. A guest at ${gate} has a card with “Show” and, if they ask for a place, “Take him/her/them into ${dokadEn}”.`
+    } Newcomers walk in from ${gate}, and the notice about them coming in has the same “Show”. Every newcomer is a pair of hands and another mouth to feed.`,
+  );
+}
 
 /** Łup zabrany z miejsc z mapy miasta (suma `gov.miasto.zabrano`, dzienne i nocne wyprawy); zero bez mapy miasta. */
 export const lupZMiasta = (gov: GovState | null): number =>
@@ -657,36 +726,33 @@ const R4: DefRozdzialu = {
       },
       // obserwacja jak `sily`: zalicza poranny raport po otwarciu rozdziału, jakkolwiek zmieniło się wkurzenie (o 6:00 rośnie
       // ono prawie każdej nocy, a karty wydarzeń nie pokazują skutku dla niego, więc gracz nie ma na nie dźwigni). Do raportu
-      // cel czeka (nie bywa bieżący, więc jego podpowiedź się nie pokazuje), a lekcję niesie dopisek czekania, ten sam
-      // w obu trybach: bez ogniska, bo w zombie R2 każe unikać światła nocą
-      czeka: (o, s) =>
-        raportyPoOtwarciu(o, s).length
-          ? null
-          : L(
-              'Raport rano. Wkurzenie spada, gdy ludzie są najedzeni i w cieple.',
-              'Morning report. Anger drops when people are fed and warm.',
-            ),
+      // cel czeka z prawdziwym powodem, jak inne czekające cele („czeka do 20:00”, „czeka do zebrania”); czekający nie bywa
+      // bieżący, więc jego podpowiedź się nie pokazuje, i tylko dlatego ścieżka prowadzi dalej do `nowi`. Lekcję o tym, co
+      // obniża wkurzenie, niesie dopisek zaliczonego celu: gracz czyta ją tuż po raporcie, który ją ilustruje. Ten sam w obu
+      // trybach: bez ogniska, bo w zombie R2 każe unikać światła nocą
+      czeka: (o, s) => (raportyPoOtwarciu(o, s).length ? null : L('czeka do rana', 'waiting for morning')),
+      uwaga: () =>
+        L('Wkurzenie spada, gdy ludzie są najedzeni i w cieple.', 'Anger drops when people are fed and warm.'),
       zrobiony: (o, s) => raportyPoOtwarciu(o, s).length > 0,
     },
     {
       key: 'nowi',
       tekst: () => L('Przyjmijcie kogoś nowego.', 'Take someone new in.'),
-      // zaliczony zapasem (zombie, trzy doby bez przyjęcia) mówi pod celem, czemu: nikt nie poprosił, a karta zapyta, gdy ktoś poprosi
+      // zaliczony zapasem (zombie, tyle czasu przy ekranie co trzy doby przy 1× bez przyjęcia) mówi pod celem, czemu: nikt nie
+      // został przyjęty, więc cel zaliczył się sam. Zdanie jest prawdziwe także wtedy, gdy ktoś prosił o miejsce, a gracz go odprawił
       uwaga: (o, s) =>
         nowiZaliczoneZapasem(o, s)
           ? L(
-              'Nikt nie zapukał: gdy ktoś poprosi o miejsce, karta zapyta.',
-              'Nobody knocked: when someone asks for a place, a card will ask you.',
+              'Nikt nie został przyjęty, więc cel zaliczył się sam. Gdy ktoś poprosi o miejsce, karta zapyta.',
+              'Nobody was taken in, so the goal completed itself. When someone asks for a place, a card will ask you.',
             )
           : null,
-      jak: (o) =>
-        L(
-          `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od ${o.words.brama.d}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
-          `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${o.wordsEn.brama}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
-        ),
+      jak: nowiJak,
       // liczą się przyjęcia od otwarcia rozdziału, nie ludność netto (zgon ich nie cofa, a awans mieszkańca kartą „Wciągnąć do
-      // roboty” w bloku też jest przyjęciem do zarządu); w zombie po trzech dobach bez przyjęcia cel zalicza się sam
-      zrobiony: (o, s) => przyjetoKogos(o.st, s) || nowiZapas(o, s),
+      // roboty” w bloku też jest przyjęciem do zarządu); w zombie po czasie przy ekranie równym trzem dobom przy 1× bez przyjęcia
+      // cel zalicza się sam (`zapas`, silnik zapisuje jego powód)
+      zrobiony: (o, s) => przyjetoKogos(o.st, s),
+      zapas: nowiZapas,
     },
     {
       key: 'ludzie',
