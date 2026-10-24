@@ -13328,7 +13328,8 @@ function zwyciestwoShots(): Shot[] {
       pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
       en: 'Put a shared fence round the first building next door.',
     },
-    ludnosc: { pl: 'Zbierzcie 10 osób pod zarządem.', en: 'Get 10 people under the board.' },
+    // w domu słowo zarządu idzie ze słownika miejsca: komitet ulicy
+    ludnosc: { pl: 'Zbierzcie 10 osób pod komitetem ulicy.', en: 'Get 10 people under the street committee.' },
   };
   /** ostatni kamień ludności z licznikiem poranków `n`: zdanie o siedmiu porankach dosłownie */
   const dalejSeria = (n: number): Tx => ({

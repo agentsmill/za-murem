@@ -33,14 +33,17 @@
 
    Powrót po 20:00 przesuwa się na 6:00 następnego dnia, ale nie przed koniec drogi (`powrotMin`); osoba na wyprawie ma
    na karcie nocy tylko sen (src/gov/noc.ts), więc wyprawa wysłana o 19:00 nie psuje karty o 20:00. Numer wyprawy jest
-   unikalny wśród tych, które są w drodze. Bez hypot, sin i cos; napisy od razu po polsku i angielsku. */
+   unikalny wśród tych, które są w drodze. Powody odmów mówią słowami miejsca (`GovInput.place`, słownik z
+   src/gov/miejsce.ts): w domu „z komitetu” i „za furtkę” zamiast „z zarządu” i „za bramę”. Bez hypot, sin i cos; napisy
+   od razu po polsku i angielsku. */
 
 import { g } from '../content/people.ts';
 import { type Tx, tx, txJoin } from '../core/jezyk.ts';
 import { naMapieLokalnej } from '../world/miasto.ts';
+import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { CARD_HOUR, canGo, expRisk, MORNING, rozliczWyprawe } from './noc.ts';
 import { peopleNamesTx } from './tresc.ts';
-import type { GovEffects, GovInput, GovPerson, GovState, Wyprawa } from './typy.ts';
+import type { GovEffects, GovInput, GovPerson, GovPlace, GovState, Wyprawa } from './typy.ts';
 import { clockOf, emptyEffects, gameMin, logGov } from './wspolne.ts';
 import {
   type Cel,
@@ -66,14 +69,14 @@ function osoby(i: GovInput, ids: readonly string[]): { ppl: GovPerson[] } | { br
   return { ppl };
 }
 
-/** Dlaczego ta osoba nie pójdzie na tę wyprawę albo null, gdy może. */
-function dlaczegoNie(st: GovState, p: GovPerson, cel: Cel): Tx | null {
+/** Dlaczego ta osoba nie pójdzie na tę wyprawę albo null, gdy może. Brama (w domu furtka) ze słownika miejsca. */
+function dlaczegoNie(st: GovState, p: GovPerson, cel: Cel, place: GovPlace): Tx | null {
   if (p.away || wDrodze(st, p.id))
     return tx(`${p.name} jest już na wyprawie.`, `${p.name} is already out on a supply run.`);
   if (p.bitten)
     return tx(
-      `${p.name} ${g(p, 'jest ugryziony', 'jest ugryziona')} i nie wyjdzie za bramę.`,
-      `${p.name} has been bitten and is not going past the gate.`,
+      `${p.name} ${g(p, 'jest ugryziony', 'jest ugryziona')} i nie wyjdzie za ${wordsOf(place).brama.b}.`,
+      `${p.name} has been bitten and is not going past ${wordsEn(place).brama}.`,
     );
   if (!canGo(p, cel)) return tx(`${p.name} nie ma sił na taką drogę.`, `${p.name} is in no shape for that walk.`);
   return null;
@@ -92,11 +95,18 @@ export function powodOdmowy(st: GovState, i: GovInput, cel: Cel, ids?: readonly 
   if (cel.odl > MAX_DROGA_M) return tx('Za daleko na jeden dzień.', 'Too far for one day.');
   if (zostaloZMiejsca(st, cel) <= 0) return tx('To miejsce jest wybrane do cna.', 'This place has been picked clean.');
   if (ids) {
+    // słowa zarządu według miejsca: w domu komitet ulicy zamiast zarządu
+    const place = placeIn(i);
     const znalezione = osoby(i, ids);
-    if ('brak' in znalezione) return tx('Nie ma takiej osoby w zarządzie.', 'There is no such person on the board.');
-    if (!znalezione.ppl.length) return tx('Wybierz kogoś z zarządu.', 'Select someone from the board.');
+    if ('brak' in znalezione)
+      return tx(
+        `Nie ma takiej osoby w ${wordsOf(place).zarzad.l}.`,
+        `There is no such person on ${wordsEn(place).krotko}.`,
+      );
+    if (!znalezione.ppl.length)
+      return tx(`Wybierz kogoś z ${wordsOf(place).zarzad.dk}.`, `Select someone from ${wordsEn(place).krotko}.`);
     for (const p of znalezione.ppl) {
-      const nie = dlaczegoNie(st, p, cel);
+      const nie = dlaczegoNie(st, p, cel, place);
       if (nie) return nie;
     }
   }

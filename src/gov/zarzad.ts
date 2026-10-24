@@ -176,7 +176,7 @@ function mourn(st: GovState, i: GovInput, fx: GovEffects): void {
       d.id || d.f !== undefined
         ? tx(`${d.name} nie żyje, ${why}.`, `${d.name} has died ${whyEn}.`)
         : tx(
-            `Nie żyje jeden z mieszkańców, ${why}.`,
+            `Nie żyje jeden z ${wordsOf(placeIn(i)).mieszkancy.d}, ${why}.`,
             `One of the ${wordsEn(placeIn(i)).mieszkancy} has died ${whyEn}.`,
           );
     if (d.id) mood(st, -5, 8);

@@ -6,6 +6,7 @@
    napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. */
 
 import { type Lang, poZmianieJezyka, type Tx, tr, tx, ustawJezyk } from '../core/jezyk.ts';
+import type { Words, WordsEn } from '../gov/miejsce.ts';
 import { esc } from './tekst.ts';
 
 export const JEZYK_KEY = 'za-murem-0.4-jezyk';
@@ -195,6 +196,11 @@ export const STATYCZNE: readonly Statyczny[] = [
     ),
   },
 ];
+
+/** Podpowiedź przycisku „Do broni!” ze słowami miejsca: w domu „z komitetu” zamiast „z zarządu”. Napis statyczny
+    (STATYCZNE, `#btnAlarm`) ma wersję z bloku, a gra nadpisuje nią podpowiedź, kiedy zna świat (`alarmButton` w src/main.ts). */
+export const alarmTytul = (w: Pick<Words, 'zarzad'>, e: Pick<WordsEn, 'krotko'>): Tx =>
+  tx(`Wszyscy zdolni z ${w.zarzad.dk} na wartę`, `Everyone fit on ${e.krotko} goes on watch`);
 
 /** wpisuje napisy statyczne w bieżącym języku (brakujące elementy pomija) */
 export function nalozStatyczne(root: ParentNode = document): void {

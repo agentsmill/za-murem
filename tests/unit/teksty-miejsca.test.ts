@@ -1,22 +1,29 @@
 /* Teksty spoza zarządu według miejsca (słownik wspólnoty z src/gov/miejsce.ts): w domu jednorodzinnym (Zielonki)
    okna, pomoc, samouczek, cele, pasek, karta osoby i domu, menu budowy i poleceń i powód nastroju bez słów z bloku
    (także bez mieszkania: lokum komitetu to dom), a cel drugiego dnia „Przeszukajcie dom” da się zaliczyć; w bloku
-   (Przymorze) po staremu. */
+   (Przymorze) po staremu. Do tego epilogi zwycięstwa, drogi i cel R8, powody odmów w oknie planu wyprawy, podpowiedź
+   „Do broni!”, panel Pracy i linia o zgonie bez bramy, zarządu, spółdzielni, klatek, trzepaka i piwnicy w domu. */
 
 import { describe, expect, it } from 'vitest';
-import { BLOK, placeOf, waszeLokum, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
-import type { Prompt } from '../../src/gov/typy.ts';
+import type { LawPath } from '../../src/content/data.ts';
+import { powodOdmowy } from '../../src/gov/dzienne.ts';
+import { BLOK, placeOf, waszeLokum, wordsEnOfWorld, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
+import type { GovInput, Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
+import { celZMiejsca, wlaczMiasto } from '../../src/gov/wyprawy.ts';
 import { govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
+import { type Droga, ocenDrogi, wlaczZwyciestwo } from '../../src/gov/zwyciestwo.ts';
 import { canPlace } from '../../src/sim/budowle.ts';
 import { START_MINUTES, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandsAt, jobText } from '../../src/sim/orders.ts';
 import { gateTiles } from '../../src/sim/perimeter.ts';
+import { PROGI_DOMYSLNE, type Priorytet, RODZAJE } from '../../src/sim/praca.ts';
 import { createSim, type Job, Sim, STAY_MEAL } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu, buildPanelHtml } from '../../src/ui/budowa.ts';
 import { goalsOf } from '../../src/ui/cele.ts';
+import { alarmTytul } from '../../src/ui/jezyk.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { aptCard, aptState, aptView } from '../../src/ui/mieszkania.ts';
 import {
@@ -30,15 +37,25 @@ import {
   type Sheet,
 } from '../../src/ui/okna.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
+import { opisRodzaju, pracaPanelHtml, type WidokPracy } from '../../src/ui/praca.ts';
 import { comingText } from '../../src/ui/przybycie.ts';
+import { nowyStanSciezki } from '../../src/ui/sciezka.ts';
+import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
 import { govFence } from '../../src/ui/siatka.ts';
+import { planWyprawySheet } from '../../src/ui/wyprawa.ts';
+import { drogiSheet, epilogSheet, type StatyEpilogu } from '../../src/ui/zwyciestwo.ts';
+import { Atrapa } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { pl } from './po-angielsku.ts';
-import { celeR1 } from './sciezka-pomoc.ts';
+import { celeR1, odczytZ } from './sciezka-pomoc.ts';
 
 /** słowa z bloku, których w domu nie ma w tekstach interfejsu, także mieszkanie i mieszkańcy (w domu jednorodzinnym
     lokum komitetu to dom, a ludzie to sąsiedzi); łóżka piętrowe to nazwa łóżek, więc bez „piętr” */
 const BLOKOWE = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
+
+/** słowa z bloku, których w epilogach zwycięstwa, drogach, oknie planu wyprawy, podpowiedzi alarmu, panelu Pracy i linii
+    o zgonie w domu nie ma (lista z przeglądu spójności); „osiedl” zostaje w nazwie drogi „Nowe osiedle”, więc nie wchodzi */
+const BLOKOWE_MIEJSCA = /bram|zarząd|spółdziel|klatk|trzepak|piwnic/i;
 
 /** gra na demie: symulacja z czterema osobami zarządu i słowa miejsca */
 function game(key: string) {
@@ -287,6 +304,131 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
   });
 });
 
+describe('w domu: zwycięstwo, wyprawa, alarm, Praca i zgon bez bramy, zarządu, spółdzielni, klatek, trzepaka i piwnicy', () => {
+  const { w, seed, words } = game('zielonki');
+  const e = wordsEnOfWorld(w);
+  const place = placeOf(w);
+  const STATY: StatyEpilogu = { dzien: 12, ludzi: 63, zmarli: 2, uchwaly: 3, spis: 2623 };
+  const DROGI: Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
+  const SCIEZKI: (LawPath | null)[] = [null, 'porzadek', 'wspolnota', 'tech', 'base'];
+  const body = (d: Droga, path: LawPath | null, mode: 'zwykly' | 'zombie' = 'zwykly') =>
+    visible(epilogSheet(d, path, mode, STATY, words, e).body);
+
+  it('epilogi: pięć dróg, każda ścieżka uchwał i oba tryby mówią furtką, komitetem, płotami i trawnikami', () => {
+    for (const d of DROGI)
+      for (const path of SCIEZKI)
+        for (const mode of ['zwykly', 'zombie'] as const)
+          for (const t of sheetTexts(epilogSheet(d, path, mode, STATY, words, e)))
+            expect(t, `${d} ${path} ${mode}`).not.toMatch(BLOKOWE_MIEJSCA);
+    expect(body('ludnosc', null)).toContain(
+      'Na podwórku znowu jest gwarno. Na płotach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin koszenia trawników.',
+    );
+    expect(body('ludnosc', null)).toContain('Komitet ulicy dalej się spiera, czy to już osada, czy jeszcze ulica.');
+    expect(body('ludnosc', 'porzadek')).toContain(
+      'Furtka zamyka się o dwudziestej, a straż zna każdego nowego z imienia.',
+    );
+    expect(body('ludnosc', 'wspolnota')).toContain('Każdy dom ma swoje zebranie i swoją kłótnię o grafik');
+    expect(body('technologia', null)).toContain('kładą nowe linie od waszej furtki przez całe miasto');
+    expect(body('technologia', null, 'zombie')).toContain('wychodzą z furtki i czyszczą miasto');
+  });
+
+  it('drogi do zwycięstwa: „co dalej” ludności i serii poranków mówi komitetem, ekran dróg bez zarządu', () => {
+    const i: GovInput = { ...new Atrapa(seed).input(), place };
+    const gov = newGov(seed);
+    wlaczZwyciestwo(gov);
+    const ludnosc = (kamienie: number) => {
+      gov.zwyciestwo!.kamienie = { ludnosc: kamienie };
+      return ocenDrogi(gov, i).find((d) => d.droga === 'ludnosc')!;
+    };
+    expect(ludnosc(0).dalej!.pl).toBe('Zbierzcie 10 osób pod komitetem ulicy.');
+    expect(ludnosc(1).dalej!.pl).toBe('Zbierzcie 25 osób pod komitetem ulicy.');
+    expect(ludnosc(2).dalej!.pl).toBe('Zbierzcie 50 osób pod komitetem ulicy.');
+    expect(ludnosc(4).dalej!.pl).toContain('o 6:00 nikt z komitetu nie jest głodny');
+    for (let k = 0; k <= 4; k++) {
+      gov.zwyciestwo!.kamienie = { ludnosc: k };
+      const ocena = ocenDrogi(gov, i);
+      for (const d of ocena)
+        for (const t of [d.dalej?.pl, d.wkrotce?.pl]) expect(t ?? '', `${d.droga} ${k}`).not.toMatch(BLOKOWE_MIEJSCA);
+      expect(visible(drogiSheet(ocena).body), `ekran dróg, ${k} kamieni`).not.toMatch(BLOKOWE_MIEJSCA);
+    }
+  });
+
+  it('cel R8 „ludność”: z drogi i zapasowy, oba pod komitetem ulicy', () => {
+    const r8 = ROZDZIALY.find((r) => r.k === 'r8')!.cele.find((c) => c.key === 'ludnosc')!;
+    const gov = newGov(seed);
+    const o = odczytZ(new Sim(w, createSim(w, seed, { core: 4 })).st, w, gov);
+    // bez dróg w zarządzie nie ma „co dalej” z ekranu dróg: zdanie zapasowe
+    expect(r8.tekst(o, nowyStanSciezki())).toBe('Zbierzcie więcej osób pod komitetem ulicy.');
+    wlaczZwyciestwo(gov);
+    const z = odczytZ(new Sim(w, createSim(w, seed, { core: 4 })).st, w, gov);
+    expect(r8.tekst(z, nowyStanSciezki())).toBe('Zbierzcie 10 osób pod komitetem ulicy.');
+    for (const t of [r8.tekst(o, nowyStanSciezki()), r8.tekst(z, nowyStanSciezki()), r8.jak(z, nowyStanSciezki())])
+      expect(t).not.toMatch(BLOKOWE_MIEJSCA);
+  });
+
+  it('okno planu wyprawy: powody odmów mówią komitetem i furtką', () => {
+    const atr = new Atrapa(seed);
+    const st = newGov(seed);
+    wlaczMiasto(st);
+    const i: GovInput = { ...atr.input(), day: 2, hour: 10, minute: 0, place };
+    let cel = celZMiejsca({ klucz: 'poi:0:2', kat: 'apteka', x: 200, y: 0, odl: 200, nazwa: '' });
+    for (let k = 0; cel.zapas === null || cel.zapas < 6; k++)
+      cel = celZMiejsca({ klucz: `poi:${k}:2`, kat: 'apteka', x: 200, y: 0, odl: 200, nazwa: '' });
+    expect(powodOdmowy(st, i, cel, [])!.pl).toBe('Wybierz kogoś z komitetu.');
+    expect(powodOdmowy(st, i, cel, ['s999'])!.pl).toBe('Nie ma takiej osoby w komitecie.');
+    const ugryziona: GovInput = { ...i, people: i.people.map((p, k) => (k === 0 ? { ...p, bitten: true } : p)) };
+    expect(powodOdmowy(st, ugryziona, cel, [i.people[0].id])!.pl).toMatch(/nie wyjdzie za furtkę\.$/);
+    // okno planu pokazuje ten sam powód nad podsumowaniem; imiona osób zostają poza sprawdzeniem (losowe nazwiska)
+    const bezImion = (t: string) => i.people.reduce((a, p) => a.replaceAll(p.name, ''), t);
+    const plan = planWyprawySheet(cel, i, st, new Set());
+    expect(visible(plan.body)).toContain('Wybierz kogoś z komitetu.');
+    for (const t of sheetTexts(plan)) expect(bezImion(t)).not.toMatch(BLOKOWE_MIEJSCA);
+    const zUgryzionym = planWyprawySheet(cel, ugryziona, st, new Set([i.people[0].id]));
+    expect(visible(zUgryzionym.body)).toContain('nie wyjdzie za furtkę.');
+  });
+
+  it('podpowiedź „Do broni!” z komitetem', () => {
+    expect(alarmTytul(words, e).pl).toBe('Wszyscy zdolni z komitetu na wartę');
+    expect(alarmTytul(game('przymorze').words, wordsEnOfWorld(demoWorld('przymorze').w)).pl).toBe(
+      'Wszyscy zdolni z zarządu na wartę',
+    );
+  });
+
+  it('panel Pracy: naprawy w domu, ostrzeżenie o Ogniu i pusty zarząd mówią komitetem', () => {
+    const prio = RODZAJE.map(() => 0 as Priorytet);
+    const widok: WidokPracy = {
+      wiersze: [{ osoba: 0, imie: 'Anna', zawod: 'Hydraulik', prio, stale: null, zaSiatke: false }],
+      widoczne: RODZAJE.filter((r) => r !== 'badania'),
+      progi: { ...PROGI_DOMYSLNE },
+      zombie: false,
+      touch: false,
+      kol: 'naprawy',
+      zlecen: 3,
+    };
+    const html = pracaPanelHtml(widok, false, words, e);
+    expect(html).not.toMatch(BLOKOWE_MIEJSCA);
+    expect(html).not.toMatch(/mieszkani/i);
+    expect(html).toContain('Łatanie dziur w siatce i naprawy w naszym domu.');
+    expect(html).toContain('Nikt w komitecie nie ma włączonego Ognia');
+    expect(opisRodzaju('naprawy', false, words, e)).toBe('Łatanie dziur w siatce i naprawy w naszym domu.');
+    const pusty = pracaPanelHtml({ ...widok, wiersze: [] }, false, words, e);
+    expect(pusty).toContain('Nikogo w komitecie.');
+    expect(pusty).not.toMatch(BLOKOWE_MIEJSCA);
+  });
+
+  it('zgon bezimiennego mieszkańca: „jeden z sąsiadów”', () => {
+    const gov = newGov(seed);
+    const i: GovInput = {
+      ...new Atrapa(seed).input(),
+      place,
+      dead: [{ id: '', name: 'Ktoś', cause: 'rany', tick: 0 }],
+    };
+    govUpdate(gov, i);
+    const linia = gov.log.map((l) => l.txt.pl).find((t) => t.startsWith('Nie żyje'));
+    expect(linia).toBe('Nie żyje jeden z sąsiadów, od ran.');
+  });
+});
+
 describe('w bloku po staremu (Przymorze)', () => {
   const { words } = game('przymorze');
 
@@ -350,6 +492,54 @@ describe('w bloku po staremu (Przymorze)', () => {
     expect(body).toContain('Brakuje: deski 20, złom 10. Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.');
     expect(body).toContain('Brakuje: złom 14, części 10. Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.');
     expect(canPlace(sim.st, w, 'warsztat', 0, 0, 0).why).toBe('Tylko w pokoju w naszym mieszkaniu.');
+  });
+
+  it('epilogi, „co dalej” ludności, alarm i panel Pracy po staremu: brama, klatki, trzepak, zarząd, spółdzielnia', () => {
+    const { w, seed } = game('przymorze');
+    const e = wordsEnOfWorld(w);
+    const STATY: StatyEpilogu = { dzien: 12, ludzi: 63, zmarli: 2, uchwaly: 3 };
+    const body = (path: LawPath | null, d: Droga = 'ludnosc', mode: 'zwykly' | 'zombie' = 'zwykly') =>
+      visible(epilogSheet(d, path, mode, STATY, words, e).body);
+    expect(body(null)).toContain(
+      'Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka.',
+    );
+    expect(body(null)).toContain('Zarząd dalej się spiera, czy to już osada, czy jeszcze spółdzielnia.');
+    expect(body('porzadek')).toContain('Brama zamyka się o dwudziestej, a straż zna każdego nowego z imienia.');
+    expect(body('wspolnota')).toContain('Każda klatka ma swoje zebranie');
+    expect(body(null, 'technologia')).toContain('od waszej bramy');
+    expect(body(null, 'technologia', 'zombie')).toContain('wychodzą z bramy');
+    // bez słów miejsca epilog mówi jak w bloku
+    for (const path of [null, 'porzadek', 'wspolnota'] as const)
+      expect(epilogSheet('ludnosc', path, 'zwykly', STATY)).toEqual(
+        epilogSheet('ludnosc', path, 'zwykly', STATY, words, e),
+      );
+    const i: GovInput = { ...new Atrapa(seed).input(), place: placeOf(w) };
+    const gov = newGov(seed);
+    wlaczZwyciestwo(gov);
+    const ludnosc = ocenDrogi(gov, i).find((d) => d.droga === 'ludnosc')!;
+    expect(ludnosc.dalej!.pl).toBe('Zbierzcie 10 osób pod zarządem.');
+    gov.zwyciestwo!.kamienie = { ludnosc: 4 };
+    expect(ocenDrogi(gov, i).find((d) => d.droga === 'ludnosc')!.dalej!.pl).toContain(
+      'o 6:00 nikt z zarządu nie jest głodny',
+    );
+    expect(alarmTytul(words, e).pl).toBe('Wszyscy zdolni z zarządu na wartę');
+    expect(opisRodzaju('naprawy', false, words, e)).toBe('Łatanie dziur w siatce i naprawy w naszych mieszkaniach.');
+    const widok: WidokPracy = {
+      wiersze: [],
+      widoczne: RODZAJE.filter((r) => r !== 'badania'),
+      progi: { ...PROGI_DOMYSLNE },
+      zombie: false,
+      touch: false,
+      kol: null,
+      zlecen: 0,
+    };
+    expect(pracaPanelHtml(widok, false, words, e)).toContain('Nikogo w zarządzie.');
+    // zgon bezimiennego mieszkańca: „jeden z mieszkańców”
+    const gov2 = newGov(seed);
+    govUpdate(gov2, { ...i, dead: [{ id: '', name: 'Ktoś', cause: 'rany', tick: 0 }] });
+    expect(gov2.log.map((l) => l.txt.pl).find((t) => t.startsWith('Nie żyje'))).toBe(
+      'Nie żyje jeden z mieszkańców, od ran.',
+    );
   });
 
   it('cel drugiego dnia i pomoc: puste mieszkania, mieszkanie zarządu bez przeszukiwania', () => {

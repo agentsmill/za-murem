@@ -1116,7 +1116,9 @@ const R8: DefRozdzialu = {
       // tekst to „co dalej” drogi ludnościowej z ekranu dróg, w tym samym brzmieniu
       tekst: (o, s) => {
         const dalej = drogaLudnosciPrzyOtwarciu(o, s)?.dalej;
-        return dalej ? tr(dalej) : L('Zbierzcie więcej osób pod zarządem.', 'Get more people under the board.');
+        return dalej
+          ? tr(dalej)
+          : L(`Zbierzcie więcej osób pod ${o.words.zarzad.n}.`, `Get more people under ${o.wordsEn.zarzad}.`);
       },
       jak: (o, s) => {
         const d = drogaLudnosciPrzyOtwarciu(o, s);

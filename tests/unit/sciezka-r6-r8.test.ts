@@ -908,7 +908,7 @@ describe.each(KOMBINACJE)('R8 ludnosc: %s %s', (key, mode) => {
     g.gov.zwyciestwo!.dniCelu = 3;
     otworz(g, 'r8');
     expect(cel(g, 'ludnosc').text).toBe(
-      'Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej 50 (3 z 7).',
+      `Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z ${wDomu(key) ? 'komitetu' : 'zarządu'} nie jest głodny, a zaufanie wynosi co najmniej 50 (3 z 7).`,
     );
     expect(cel(g, 'ludnosc').text).toBe(droga(g).dalej!.pl);
   });
@@ -1082,7 +1082,11 @@ describe.each(KOMBINACJE)('widok po R8: drogi, na które gra ma następny krok (
       ...(PLOT_NA_MAPIE[key]
         ? [{ nazwa: 'Za Murem', dalej: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.', postep: null }]
         : []),
-      { nazwa: 'Nowe osiedle', dalej: 'Zbierzcie 10 osób pod zarządem.', postep: `${ludzie} z ${cal}` },
+      {
+        nazwa: 'Nowe osiedle',
+        dalej: `Zbierzcie 10 osób pod ${dom ? 'komitetem ulicy' : 'zarządem'}.`,
+        postep: `${ludzie} z ${cal}`,
+      },
     ]);
     // lek (w zombie „Lek”) i cuda mają „Wkrótce”, więc ich w okienku nie ma
     expect(nazwy(g)).not.toContain('Cuda');
@@ -1124,8 +1128,7 @@ describe.each(KOMBINACJE)('widok po R8: drogi, na które gra ma następny krok (
     expect(wiersze(g)).toEqual([
       {
         nazwa: 'Nowe osiedle',
-        dalej:
-          'Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej 50 (5 z 7).',
+        dalej: `Utrzymajcie cel 7 poranków z rzędu: o 6:00 nikt z ${dom ? 'komitetu' : 'zarządu'} nie jest głodny, a zaufanie wynosi co najmniej 50 (5 z 7).`,
         postep: `${ludzie} z ${cal}`,
       },
     ]);
@@ -1143,7 +1146,7 @@ describe.each(KOMBINACJE)('widok po R8: drogi, na które gra ma następny krok (
     expect(pelny).toContain('<span>Drogi do zwycięstwa</span>');
     expect(pelny).toContain('data-blok="drogi"');
     expect(pelny).toContain('Prąd bez miedzi: Postawcie pracownię w pokoju');
-    expect(pelny).toContain('Nowe osiedle: Zbierzcie 10 osób pod zarządem.');
+    expect(pelny).toContain(`Nowe osiedle: Zbierzcie 10 osób pod ${dom ? 'komitetem ulicy' : 'zarządem'}.`);
     expect(pelny).toContain(
       `<small class="goal-postep">${populacja(g.sim.st).razem} z ${celLudnosci(wejscie(g), mode)}</small>`,
     );
@@ -1759,7 +1762,7 @@ describe.each(WSZYSTKIE)('przejście R6 → R7 → R8 → „koniec” samymi po
     expect(v.rozdzial).toBeNull();
     expect(v.drogi!.map((r) => r.nazwa)).toEqual(['Nowe osiedle']);
     expect(v.drogi![0].dalej).toBe(
-      `Zbierzcie ${[10, 25, 50, 63][kamienLudnosci + 1] ?? ''} osób pod zarządem.`.replace(
+      `Zbierzcie ${[10, 25, 50, 63][kamienLudnosci + 1] ?? ''} osób pod ${mapa === 'zielonki' ? 'komitetem ulicy' : 'zarządem'}.`.replace(
         '63',
         String(Math.ceil(celLudnosci(wejscie(g), mode) / 2)),
       ),
