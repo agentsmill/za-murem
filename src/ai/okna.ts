@@ -20,6 +20,17 @@
    - przyjęcia ±4 na osobę (nowi do zarządu, nowi mieszkańcy, żywi członkowie grupy gościa przyjętej rozkazem `zostan` albo
      `zarzad`): +4, gdy po przyjęciu starcza 2 porcje na głowę (`stacNaPrzyjecie` z src/ai/jedzenie.ts), inaczej −4;
    - koniec gry (odwołanie, exodus, pustka po wyborze) −1000: żaden zysk nie wart jest końca.
+   Do wag z planu dochodzą dwie z pomiaru (30 przebiegów, ziarna 11–20, trzy dema; liczby to średni dzień końca gry):
+   - pożar −15 (`GovEffects.fire`: spalony mebel przy kozie, strach i gorszy nastrój wszystkich). Karta „Pożar od kozy” wraca co
+     dobę, a „Ewakuować klatkę” kosztuje według planu tylko wkurzenie +2, więc wygrywała z „Gasić wszyscy razem” (drewno −3
+     i jedna osoba chora, razem −13): silnik z samymi wagami z planu kończył w dniu 17,6 wobec 22,9 przy odpowiedzi domyślnej,
+     z wagą pożaru 24,0;
+   - łata na dziurę +6 za dziurę (`GovEffects.patch`: karta „Ślady przy siatce” pozwala załatać dziurę za 2 złomu). Bez tej wagi
+     silnik wieszał puszki, dziura zostawała otwarta, a automat pracy łatał ją deskami (3–4 sztuki), których w Zielonkach brakuje
+     na pracownię (14): pracownia i koza z beczki nie stawały w 6 z 10 przebiegów. Z wagą łaty 31,3 wobec 30,4 (przy kotle
+     jako jedynej uchwale), a w Zielonkach 11–15 pracownia i koza stoją w 5 z 5.
+   Pozostałe skutki, których ocena nie widzi (książki na półkę, nastroje chwilowe, potrzeby osób, kłamca wpuszczony na noc),
+   pomiar nie rozróżnił (w granicach szumu), więc zostają niewycenione do strojenia.
 
    Okno wieloetapowe. Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce” przy gościu w trybie zombie) nie zamyka okna: zarząd
    pyta dalej o to samo okno (ten sam rodzaj i identyfikator), z nowym tekstem i wyborami. `odpowiedzNaWydarzenie` czyta
@@ -28,9 +39,15 @@
 
    Uchwała (`wyborUchwaly`). W pierwszym oknie wspólny kocioł (droga wspólnoty): `u_warty` należy do drogi porządku i
    podpisana blokuje kocioł do końca gry (src/gov/uchwaly.ts), a pierwszego wieczoru głodu jeszcze nie ma, więc reguła
-   „głód → kocioł” nigdy by nie zadziałała. Potem według potrzeb: głód (poniżej 1 porcji na głowę) to kocioł i racje, straż
-   (dziury w siatce) to warta i brama na kłódkę; zimno uchwały nie wybiera, bo żadna uchwała M1 nie grzeje (kocioł dzieli
-   jedzenie, a ciepło dają kozy). Bez potrzeby pierwsza dozwolona, a bez dozwolonej `null` (zarząd nic nie uchwala).
+   „głód → kocioł” nigdy by nie zadziałała. Potem tylko według potrzeb: głód (poniżej 1 porcji na głowę) to kocioł, słaba
+   siatka (dziury) to warta i brama na kłódkę; zimno uchwały nie wybiera, bo żadna uchwała M1 nie grzeje (kocioł dzieli
+   jedzenie, a ciepło dają kozy). Bez potrzeby `null`: zarząd nic nie uchwala. Plan i orzeczenie kontrolera kończyły regułę słowami
+   „potem pierwsza dozwolona”, ale pomiar (30 przebiegów, ziarna 11–20, trzy dema, silnik z wagą pożaru) pokazał, że każda
+   dodatkowa uchwała kosztuje życie: wszystkie trzy, które zostają po kotle (zebrania, racje, meble na opał), dają średni dzień
+   końca 24,0, bez mebli 25,2, bez mebli i zebrań 26,6, a sam kocioł 30,4 (Przymorze 45,1: 2 z 10 dożyły dnia 45; kocioł plus
+   racje przy głodzie 29,9). Uchwały te dokładają wkurzenie (racje +0,4 dziennie, meble +2 od razu i +0,1 dziennie) albo
+   opóźniają pracę (zebrania: od 9:00), a silnik nie ma z nich pożytku (nie pali mebli, a racje nie uratowały nikogo przed głodem).
+   Powrót do „pierwszej dozwolonej” to jedna linia: `return mozna[0] ?? null`.
 
    Moduł niczego nie losuje, nie czyta zegara, nie importuje DOM ani modułów Node ani niczego z tests/ i tools/. Importuje
    src/gov (zarząd) i src/ai/jedzenie.ts (miary zapasu); gra.ts, silnik.ts i warstwy importują się nawzajem, ale tu nikt nie
@@ -43,7 +60,7 @@ import { GLOD_NA_GLOWE, jedzenieNaGlowe, stacNaPrzyjecie, uchwalaNaGlod } from '
 type Wydarzenie = Extract<Prompt, { k: 'wydarzenie' }>;
 type Uchwala = Extract<Prompt, { k: 'uchwala' }>;
 
-/** Wagi oceny skutków (liczby z planu): jeden miernik dla wszystkich wyborów w oknie. */
+/** Wagi oceny skutków: jeden miernik dla wszystkich wyborów w oknie. Liczby z planu, poza `koniec`, `pozar` i `lata` (dodane po pomiarze). */
 export const WAGI = {
   jedzenie: 3,
   drewno: 1,
@@ -54,6 +71,8 @@ export const WAGI = {
   zgon: -50,
   przyjecie: 4,
   koniec: -1000,
+  pozar: -15,
+  lata: 6,
 } as const;
 
 /** ile kroków jednego okna wieloetapowego silnik odpowiada sam (potem odpowiedź domyślna z `krokGry`) */
@@ -61,8 +80,6 @@ export const MAX_KROKOW_OKNA = 4;
 
 /** uchwała o wspólnym kotle (droga wspólnoty), pierwszy wybór pierwszego wieczoru */
 const KOCIOL = 'u_kociol';
-/** uchwała na głód, gdy kocioł jest niedostępny: racje zmniejszają zjadanie o ćwierć */
-const RACJE = 'u_racje';
 /** uchwały na słabą siatkę: warta przy bramie, potem brama na kłódkę (wymaga warty) */
 const NA_STRAZ = ['u_warty', 'u_brama'] as const;
 /** siatka jest słaba, gdy ma dziury albo wytrzymałość poniżej tej wartości (0–1) */
@@ -106,6 +123,8 @@ export function ocenSkutki(fx: GovEffects, po: GovState, i: GovInput): number {
   const nowi = przyjeci(fx, i);
   if (nowi > 0) ocena += (stacNaPrzyjecie(i, nowi) ? 1 : -1) * WAGI.przyjecie * nowi;
   if (po.over) ocena += WAGI.koniec;
+  if (fx.fire) ocena += WAGI.pozar;
+  ocena += WAGI.lata * fx.patch;
   return ocena;
 }
 
@@ -153,8 +172,8 @@ export function odpowiedzNaWydarzenie(
 const slabaSiatka = (i: GovInput): boolean =>
   !!i.fence && (i.fence.holes.length > 0 || i.fence.durability < SLABA_SIATKA);
 
-/** Uchwała według potrzeb: w pierwszym oknie wspólny kocioł, potem głód (kocioł, racje), słaba siatka (warta, brama na
-    kłódkę), a bez potrzeby pierwsza dozwolona; `null`, gdy żadna nie jest dozwolona (zarząd nic nie uchwala). */
+/** Uchwała według potrzeb: w pierwszym oknie wspólny kocioł, potem głód (kocioł) i słaba siatka (warta, brama na kłódkę); `null`,
+    gdy nic nie jest potrzebne albo potrzebna uchwała nie jest dozwolona (zarząd nic nie uchwala). */
 export function wyborUchwaly(i: GovInput, p: Uchwala): string | null {
   const mozna = p.options.filter((o) => o.s === 'ok').map((o) => o.id);
   const dozwolona = (ids: readonly string[]): string | undefined => ids.find((id) => mozna.includes(id));
@@ -163,12 +182,12 @@ export function wyborUchwaly(i: GovInput, p: Uchwala): string | null {
     if (kociol) return kociol;
   }
   if (jedzenieNaGlowe(i) < GLOD_NA_GLOWE) {
-    const naGlod = uchwalaNaGlod(i, p) ?? dozwolona([RACJE]);
+    const naGlod = uchwalaNaGlod(i, p);
     if (naGlod) return naGlod;
   }
   if (slabaSiatka(i)) {
     const naStraz = dozwolona(NA_STRAZ);
     if (naStraz) return naStraz;
   }
-  return mozna[0] ?? null;
+  return null;
 }

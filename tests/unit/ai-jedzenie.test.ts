@@ -10,8 +10,9 @@
      najzdrowszymi osobami, ale tak, żeby ktoś zdrowy został na dyżur przy kozie tej nocy;
    - ogródka: od 2. dnia jeden na podwórku, gdy go nie ma, ale dopiero gdy plan pracowni przestał czekać na deski (w Zielonkach
      ogródek stawiany razem z planem pracowni zjadał jej deski i koza z beczki nie stawała);
-   - uchwały o wspólnym kotle: przy mniej niż 1 porcji na głowę silnik woli ją od innych (gdy ścieżka „wspólnota” jest jeszcze
-     otwarta: po `u_warty` kocioł jest zablokowany);
+   - uchwały o wspólnym kotle: przy mniej niż 1 porcji na głowę `uchwalaNaGlod` wybiera ją (gdy ścieżka „wspólnota” jest jeszcze
+     otwarta: po `u_warty` kocioł jest zablokowany), a `silnik` (od zadania 5, `wyborUchwaly` w src/ai/okna.ts) podpisuje kocioł
+     już w pierwszym oknie, bo `u_warty` z drogi porządku blokuje go do końca gry, a pierwszego wieczoru głodu jeszcze nie ma;
    - przebiegu w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce: obcy, mieszkańcy z adresu, okolica): wyprawa
      w każdym dniu głodu, dolne granice zmierzone na tym przebiegu (zapas co najmniej 10 porcji o 6:00 w dniach 2–15, średnie
      zdrowie zarządu w 12. dniu co najmniej 70, średnie najedzenie o 6:00 w dniach 15–18 co najmniej 8), okno godzin i jedna
@@ -443,7 +444,7 @@ describe('uchwała o wspólnym kotle', () => {
     return { k: 'uchwala', day: 1, first: true, options };
   }
 
-  it('poniżej 1 porcji na głowę silnik podpisuje u_kociol, przy zapasie dalej u_warty', () => {
+  it('w pierwszym oknie silnik podpisuje u_kociol i z głodu, i przy zapasie; silnik podstawowy dalej u_warty', () => {
     const g = graPrzedUchwala();
     const ludzi = wejscie(g).people.length + (wejscie(g).residents ?? 0);
     const okno = oknoUchwaly(g, false);
@@ -456,10 +457,11 @@ describe('uchwała o wspólnym kotle', () => {
     expect(glodny.uchwaly).toEqual(['u_kociol']);
     expect(uchwalaNaGlod(wejscie(g), okno)).toBe('u_kociol');
 
+    // przy zapasie też kocioł: `u_warty` (droga porządku) blokuje go do końca gry, a pierwszego wieczoru głodu jeszcze nie ma
     ustawJedzenie(g, ludzi);
     const syty = szpieg();
     silnik.okno(g, okno, syty.r);
-    expect(syty.uchwaly).toEqual(['u_warty']);
+    expect(syty.uchwaly).toEqual(['u_kociol']);
     expect(uchwalaNaGlod(wejscie(g), okno)).toBeNull();
     // silnik podstawowy nie zna tej reguły
     ustawJedzenie(g, 0);
@@ -480,22 +482,25 @@ describe('uchwała o wspólnym kotle', () => {
     expect(s.uchwaly[0]).not.toBe('u_kociol');
   });
 
-  it('w prawdziwej grze silnik podpisuje u_warty pierwszego wieczoru, a kocioł zostaje zablokowany do końca', () => {
-    // pierwsze okno uchwały: zapas startowy to 40 porcji na 9 głów (4,4 na głowę), więc głodu nie ma; po u_warty kocioł jest zamknięty
+  it('w prawdziwej grze silnik podpisuje u_kociol pierwszego wieczoru, a u_warty (droga porządku) zostaje zablokowana do końca', () => {
+    // pierwsze okno uchwały: zapas startowy to 40 porcji na 9 głów (4,4 na głowę), więc głodu nie ma; kocioł wybiera drogę wspólnoty
     const g = graPrzedUchwala();
     grajDo(g, silnik, tickDnia(2, 9));
-    expect(g.gov.laws.signed.u_warty).toBe(true);
-    expect(g.gov.laws.signed.u_kociol).toBeUndefined();
-    ustawJedzenie(g, 0);
+    expect(g.gov.laws.signed.u_kociol).toBe(true);
+    expect(g.gov.laws.signed.u_warty).toBeUndefined();
+    expect(g.gov.laws.path).toBe('wspolnota');
     const i = wejscie(g);
+    expect(lawState(g.gov, i, 'u_warty').s).toBe('lock');
+    // kocioł jest już podpisany, więc w głodzie nie ma czego podpisywać
+    ustawJedzenie(g, 0);
     const okno = {
       k: 'uchwala' as const,
       day: 3,
       first: false,
       options: ['u_kociol'].map((id) => lawState(g.gov, i, id)),
     };
-    expect(okno.options[0].s).toBe('lock');
-    expect(uchwalaNaGlod(i, okno)).toBeNull();
+    expect(okno.options[0].s).toBe('done');
+    expect(uchwalaNaGlod(wejscie(g), okno)).toBeNull();
   });
 });
 
@@ -614,7 +619,10 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     expect(ogrodki).toHaveLength(1);
     const plany = g.dziennik!.filter((m) => m.t === 'polecenie' && m.c.t === 'build' && m.c.kind === 'ogrodek');
     expect(plany).toHaveLength(1);
-    expect(dayOf(plany[0].s * TICKS_PER_SECOND)).toBe(2);
+    // od 2. dnia, ale dopiero gdy plan pracowni przestał czekać na deski: w tym przebiegu pracownia staje w 3. dniu
+    const dzien = dayOf(plany[0].s * TICKS_PER_SECOND);
+    expect(dzien).toBeGreaterThanOrEqual(2);
+    expect(dzien).toBeLessThanOrEqual(3);
   });
 });
 

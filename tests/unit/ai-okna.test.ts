@@ -8,10 +8,14 @@
    - okna wieloetapowego (`odpowiedzNaWydarzenie`): wybór z `zostaje` (np. „Obejrzeć ręce” przy gościu w trybie zombie) nie
      zamyka okna, więc decydent czyta `pending` po każdym wyborze i odpowiada na kolejny krok;
    - uchwały (`wyborUchwaly`): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku blokuje go do końca
-     gry), potem według potrzeb (głód, straż), a bez potrzeby pierwsza dozwolona.
-   Zarząd i wejście z atrapy (tests/unit/gov-atrapa.ts), bez symulacji; wybór w prawdziwej grze sprawdza ai-rozwoj.test.ts. */
+     gry), potem tylko według potrzeb (głód: kocioł, słaba siatka: warta i brama na kłódkę), a bez potrzeby nic: ani racje
+     głodowe (posiłek dopiero poniżej 25 i nikt nie je w nocy: zarząd nocuje przy najedzeniu 0–10 mimo pełnej spiżarni), ani
+     zebrania i meble na opał, które kosztują wkurzenie albo pracę, a silnikowi nic nie dają; test w prawdziwej grze niżej.
+   Zarząd i wejście z atrapy (tests/unit/gov-atrapa.ts), bez symulacji; wybór wydarzeń w prawdziwej grze sprawdza
+   ai-rozwoj.test.ts. */
 
 import { describe, expect, it } from 'vitest';
+import { type Decydent, grajDo } from '../../src/ai/gra.ts';
 import {
   MAX_KROKOW_OKNA,
   najlepszyIndeks,
@@ -21,6 +25,7 @@ import {
   wyborUchwaly,
   wyborWydarzenia,
 } from '../../src/ai/okna.ts';
+import { silnik } from '../../src/ai/silnik.ts';
 import { tx } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { type Gosc, KTO, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts';
@@ -29,6 +34,8 @@ import type { GovEffects, GovGosc, GovInput, GovState, LawOption, Prompt } from 
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { eventView } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov, pending } from '../../src/gov/zarzad.ts';
+import { dayOf, TICKS_PER_DAY } from '../../src/sim/clock.ts';
+import { przygotujGre } from '../../tools/bot-osada.ts';
 import { Atrapa, at, TPH } from './gov-atrapa.ts';
 
 type Wydarzenie = Extract<Prompt, { k: 'wydarzenie' }>;
@@ -137,6 +144,18 @@ describe('ocenSkutki', () => {
     expect(roznica(efekty({ goscRozkaz: [{ id: 'g9', co: 'zostan' }] }), z)).toBe(0);
   });
 
+  it('łata na dziurę +6 za dziurę (zarząd łata złomem, a bez tego automat pracy zużyje na łatę kilka desek)', () => {
+    expect(roznica(efekty({ patch: 1 }), i)).toBe(WAGI.lata);
+    expect(roznica(efekty({ patch: 2 }), i)).toBe(2 * WAGI.lata);
+    expect(WAGI.lata).toBe(6);
+  });
+
+  it('pożar −15 (spalony mebel, strach i gorszy nastrój wszystkich)', () => {
+    // bez tej wagi ewakuacja klatki wygrywa z gaszeniem: karta „Pożar od kozy” wraca co dobę, a przebiegi kończą się o 5 dni wcześniej
+    expect(roznica(efekty({ fire: true }), i)).toBe(WAGI.pozar);
+    expect(WAGI.pozar).toBe(-15);
+  });
+
   it('koniec gry jest najgorszym skutkiem', () => {
     const po = newGov(3);
     po.over = 'odwolanie';
@@ -232,6 +251,49 @@ describe('wyborWydarzenia', () => {
       // okno dalej czeka na prawdziwy wybór
       expect(gov.ev.active).toMatchObject({ id: 'uchodzcy' });
     }
+  });
+
+  it('pożar od kozy: gasi (drewno i jedna osoba chora), a nie ewakuuje (spalony mebel, strach, gorszy nastrój wszystkich)', () => {
+    // bez wagi pożaru ewakuacja wygrywała (wkurzenie +2 kosztuje mniej niż drewno i choroba); dziennie przychodziła taka karta
+    const gov = newGov(3);
+    gov.ev.active = { id: 'pozar', d: { b: 0 } };
+    const i = atrapa(40).input();
+    const p = pending(gov, i);
+    if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+    expect(p.choices.map((c) => c.label.pl)).toEqual(['Gasić wszyscy razem', 'Ewakuować klatkę']);
+    const oceny = przeglad(gov, i, p);
+    expect(oceny[0]!).toBeGreaterThan(oceny[1]!);
+    expect(wyborWydarzenia(gov, i, p)).toBe(0);
+    // ewakuacja to rzeczywiście pożar w skutkach, gaszenie nie
+    expect(chooseEvent(structuredClone(gov), i, 1).fire).toBe(true);
+    expect(chooseEvent(structuredClone(gov), i, 0).fire).toBe(false);
+  });
+
+  it('ślady przy siatce: łata dziurę za złom, a nie wiesza puszek (łata oszczędza deski, których brakuje pracowni)', () => {
+    // bez wagi łaty silnik wieszał puszki: dziura zostawała otwarta, a automat pracy łatał ją deskami (3–4 sztuki), których
+    // w Zielonkach brakowało na pracownię (14), więc koza z beczki nie stawała
+    const gov = newGov(3);
+    gov.ev.active = { id: 'slady', d: { where: tx('przy garażach', 'by the garages') } };
+    const atr = atrapa(40);
+    atr.scrap = 10;
+    const i = atr.input();
+    const p = pending(gov, i);
+    if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+    expect(p.choices.map((c) => c.label.pl)).toEqual([
+      'Załatać przed nocą (Złom 2)',
+      'Powiesić puszki z kamykami',
+      'Udawać, że nic nie widać',
+    ]);
+    expect(chooseEvent(structuredClone(gov), i, 0).patch).toBe(1);
+    expect(wyborWydarzenia(gov, i, p)).toBe(0);
+    // bez złomu łata jest niedozwolona: puszki
+    const bezZlomu = atrapa(40);
+    bezZlomu.scrap = 1;
+    const j = bezZlomu.input();
+    const q = pending(gov, j);
+    if (q?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+    expect(q.choices[0].ok).toBe(false);
+    expect(wyborWydarzenia(gov, j, q)).toBe(1);
   });
 
   it('wybór jest dokładny: prawdziwy wybór daje te same skutki co ocena na kopii (to samo losowanie)', () => {
@@ -410,27 +472,28 @@ describe('wyborUchwaly', () => {
     expect(wyborUchwaly(wejscieUchwal(0), oknoUchwaly(pierwsze, true))).toBe('u_kociol');
   });
 
-  it('w pierwszym oknie bez możliwości kotła: dalej według potrzeb, a bez nich pierwsza dozwolona', () => {
+  it('w pierwszym oknie bez możliwości kotła i bez potrzeby: nic (nie pierwsza dozwolona)', () => {
     const bezKotla = [opcja('u_warty'), opcja('u_kociol', 'lock'), opcja('u_meble')];
-    expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(bezKotla, true))).toBe('u_warty');
+    expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(bezKotla, true))).toBeNull();
   });
 
-  it('głód (poniżej 1 porcji na głowę): kocioł, a gdy go nie ma, racje', () => {
+  it('głód (poniżej 1 porcji na głowę): kocioł, a gdy go nie ma (podpisany, zablokowany), nic: racje kosztują wkurzenie', () => {
     const glodny = wejscieUchwal(5);
     expect(wyborUchwaly(glodny, oknoUchwaly(pozniej('u_zebrania', 'u_kociol', 'u_racje', 'u_meble')))).toBe('u_kociol');
-    expect(wyborUchwaly(glodny, oknoUchwaly(pozniej('u_zebrania', 'u_racje', 'u_meble')))).toBe('u_racje');
-    // kocioł podpisany albo zablokowany (wybrana droga porządku) nie jest dozwolony
+    expect(wyborUchwaly(glodny, oknoUchwaly(pozniej('u_zebrania', 'u_racje', 'u_meble')))).toBeNull();
     const zablokowany = [opcja('u_kociol', 'lock'), opcja('u_racje'), opcja('u_meble')];
-    expect(wyborUchwaly(glodny, oknoUchwaly(zablokowany))).toBe('u_racje');
+    expect(wyborUchwaly(glodny, oknoUchwaly(zablokowany))).toBeNull();
   });
 
-  it('straż: dziury w siatce i wolna droga porządku dają wartę przed pierwszą dozwoloną', () => {
+  it('straż: dziury w siatce i wolna droga porządku dają wartę', () => {
     const zDziurami = wejscieUchwal(100, 2);
     expect(wyborUchwaly(zDziurami, oknoUchwaly(pozniej('u_zebrania', 'u_warty', 'u_meble')))).toBe('u_warty');
-    // bez dziur straży nikt nie potrzebuje
-    expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(pozniej('u_zebrania', 'u_warty', 'u_meble')))).toBe(
-      'u_zebrania',
+    // warta podpisana: brama na kłódkę (wymaga warty, więc dopiero wtedy jest dozwolona)
+    expect(wyborUchwaly(zDziurami, oknoUchwaly([opcja('u_warty', 'done'), opcja('u_brama'), opcja('u_meble')]))).toBe(
+      'u_brama',
     );
+    // bez dziur straży nikt nie potrzebuje
+    expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(pozniej('u_zebrania', 'u_warty', 'u_meble')))).toBeNull();
   });
 
   it('głód ważniejszy niż straż', () => {
@@ -438,10 +501,12 @@ describe('wyborUchwaly', () => {
     expect(wyborUchwaly(i, oknoUchwaly(pozniej('u_warty', 'u_kociol')))).toBe('u_kociol');
   });
 
-  it('zimno nie wybiera uchwały (żadna uchwała nie grzeje): bez głodu i straży pierwsza dozwolona', () => {
-    const i = wejscieUchwal(100);
-    const zimno: GovInput = { ...i, people: i.people.map((p) => ({ ...p, needs: { ...p.needs, warm: 5 } })) };
-    expect(wyborUchwaly(zimno, oknoUchwaly(pozniej('u_zebrania', 'u_racje')))).toBe('u_zebrania');
+  it('bez potrzeby nie podpisuje niczego, choćby coś było dozwolone (zebrania, racje i meble kosztują wkurzenie i pracę)', () => {
+    const syty = wejscieUchwal(100);
+    expect(wyborUchwaly(syty, oknoUchwaly(pozniej('u_zebrania', 'u_racje', 'u_meble')))).toBeNull();
+    // zimno też nie wybiera uchwały: żadna uchwała nie grzeje
+    const zimno: GovInput = { ...syty, people: syty.people.map((p) => ({ ...p, needs: { ...p.needs, warm: 5 } })) };
+    expect(wyborUchwaly(zimno, oknoUchwaly(pozniej('u_zebrania', 'u_racje')))).toBeNull();
   });
 
   it('bez dozwolonej uchwały null (zarząd nic nie uchwala)', () => {
@@ -449,4 +514,43 @@ describe('wyborUchwaly', () => {
     expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(wszystkoZamkniete))).toBeNull();
     expect(wyborUchwaly(wejscieUchwal(0), oknoUchwaly([], false))).toBeNull();
   });
+});
+
+describe('uchwały silnika w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce)', () => {
+  it('silnik nie podpisuje u_racje do dnia 8, choć okna uchwał ją oferują; podpisuje kocioł i nic więcej', async () => {
+    // Racje głodowe: posiłek dopiero poniżej 25 i najwyżej dwa na dobę, a w nocy nikt nie je, więc zarząd nocuje przy najedzeniu
+    // 0–10 mimo pełnej spiżarni (Przymorze 11–15, dni 14–17: 67 godzin głodu na przebieg wobec 10 bez racji). Jako „pierwsza
+    // dozwolona” w oknie z dnia 5 racje wpadały do każdego przebiegu.
+    const g = await przygotujGre('przymorze', 11, false);
+    const okna: { dzien: number; oferowane: string[]; podpisane: string | null }[] = [];
+    const rejestrujacy: Decydent = {
+      ...silnik,
+      okno(gr, p, r) {
+        if (p.k === 'uchwala') {
+          const przed = Object.keys(gr.gov.laws.signed).length;
+          silnik.okno(gr, p, r);
+          const nowa = Object.keys(gr.gov.laws.signed).slice(przed)[0] ?? null;
+          okna.push({
+            dzien: dayOf(gr.sim.st.tick),
+            oferowane: p.options.filter((o) => o.s === 'ok').map((o) => o.id),
+            podpisane: nowa,
+          });
+          return;
+        }
+        silnik.okno(gr, p, r);
+      },
+    };
+    grajDo(g, rejestrujacy, 8 * TICKS_PER_DAY);
+    expect(g.gov.laws.signed.u_racje).toBeFalsy();
+    expect(g.sim.st.laws.foodMult).toBeGreaterThanOrEqual(1);
+    // racje były do wzięcia w kolejnych oknach (po pierwszym wieczorze co dobę: odnowienie 36 godzin gry już minęło, a nic nowego
+    // nie podpisano), więc test nie przechodzi na pustym warunku
+    expect(okna.length).toBeGreaterThanOrEqual(5);
+    expect(okna[0].dzien).toBe(1);
+    for (const o of okna.slice(1)) expect(o.oferowane, `dzień ${o.dzien}`).toContain('u_racje');
+    // kocioł z pierwszego wieczoru (jedzenie schodzi o 10% szybciej, ale posiłki są o stałych porach) i żadnej innej uchwały
+    expect(okna[0].podpisane).toBe('u_kociol');
+    expect(okna.slice(1).map((o) => o.podpisane)).toEqual(okna.slice(1).map(() => null));
+    expect(Object.keys(g.gov.laws.signed)).toEqual(['u_kociol']);
+  }, 120_000);
 });

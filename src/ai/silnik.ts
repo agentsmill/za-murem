@@ -11,37 +11,47 @@
      drzewa najbliższego drzwiom siedziby (drzewa, do których nikt nie doszedł, idą do `pamiec.pominieteDrzewa`).
 
    `silnik` to decydent, którego używa uprząż (`npm run bot:osada`): silnik podstawowy plus warstwy, które kolejne zadania
-   dokładają edycją tego pliku. Dziś są to warstwy zimy (src/ai/zima.ts, zadanie 3) i jedzenia (src/ai/jedzenie.ts, zadanie 4):
+   dokładają edycją tego pliku. Dziś są to warstwy zimy (src/ai/zima.ts, zadanie 3) i jedzenia (src/ai/jedzenie.ts, zadanie 4)
+   oraz odpowiedzi na okna z src/ai/okna.ts (zadanie 5):
    - tura: ścinanie drzewa na opał jak w silniku podstawowym, ale już poniżej zapasu na dwie noce (`progDrewna`), nie
-     dopiero poniżej 6 sztuk; do tego `turaZimy` (pracownia, badanie kozy, koza z beczki w pokoju zarządu) i `turaJedzenia`
+     dopiero poniżej 6 sztuk, i nigdy osoby, której potwierdzona karta nocy dała wartę, dyżur przy kozie albo wyprawę
+     (`bezPoleceniaZKarty`: polecenie z karty rusza dopiero w następnym kroku, więc ścinanie z tej samej sekundy je
+     nadpisywało); do tego `turaZimy` (pracownia, badanie kozy, koza z beczki w pokoju zarządu) i `turaJedzenia`
      (wyprawa dzienna po jedzenie, ogródek) co 30 sekund przy ekranie (`CO_TIKOW_WARSTWY`), a liczniki ich wywołań siedzą
      w pamięci (`PamiecSilnika.wywolania`);
    - okno karty nocy: chorzy zdjęci z warty jak w silniku podstawowym, potem dyżur przy kozie (`dyzurNaKarcie`), dopiero
      potem wartownik przy siatce, wybierany spośród śpiących (kolejność odwrócona względem silnika podstawowego: przy mało
      zdrowych dyżur ma pierwszeństwo, a wyprawy nie tracą ludzi na wartę), na końcu zatwierdzenie;
-   - okno uchwały: przy mniej niż 1 porcji jedzenia na głowę wspólny kocioł (`uchwalaNaGlod`), o ile da się go podpisać;
-     reszta okien jak w silniku podstawowym.
-   Warstwy idą w kolejności dopisywania i najwyżej raz na 30 sekund przy ekranie, poza oknami zarządu, które dostają
-   odpowiedź od razu. Silnik podstawowy niczego z warstw nie używa i dalej odtwarza `playWithGov` co do skrótu.
+   - okno wydarzenia: wybór na kopii zarządu (`odpowiedzNaWydarzenie`, src/ai/okna.ts): każdy dozwolony wybór oceniony po
+     skutkach (zapasy, zaufanie, wkurzenie, rany, zgony, przyjęcia według zapasu jedzenia), najlepszy wygrywa; okno wieloetapowe
+     (wybór z „zostaje”) dostaje odpowiedź na każdy krok;
+   - okno uchwały: `wyborUchwaly` (src/ai/okna.ts): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku
+     blokuje go do końca gry), potem tylko według potrzeb (głód: kocioł, słaba siatka: warta i brama na kłódkę), a bez potrzeby
+     nic: ani racje głodowe, ani zebrania i meble na opał (każda uchwała kosztuje wkurzenie albo pracę);
+   - raport i epilog zwycięstwa: odpowiedź domyślna (`odpowiedzDomyslna`).
+   Warstwy idą w kolejności dopisywania (zima, jedzenie) i najwyżej raz na 30 sekund przy ekranie, poza oknami zarządu,
+   które dostają odpowiedź od razu. Silnik podstawowy niczego z warstw i okien nie używa i dalej odtwarza `playWithGov` co do
+   skrótu.
 
    Cała pamięć silnika siedzi w `GraAi.pamiec`, zwykłym JSON z zapisem gry: decydenci nie mają stanu w zamknięciach ani na
    poziomie modułu, więc wczytana gra decyduje tak samo jak bez przerwy, a dwie gry w jednym procesie się nie mieszają.
    Silnik czyta tylko stan swojej gry i działa tylko rękami; bez losowania, zegara, DOM i modułów Node.
 
    Moduły gra.ts i silnik.ts importują się nawzajem (gra.ts bierze stąd `nowaPamiec`, silnik.ts z gra.ts `odpowiedzDomyslna`
-   i `wejscie`), a warstwy (zima.ts, jedzenie.ts) importują gra.ts i są importowane przez silnik.ts. Cykl jest bezpieczny, bo wszystkie
+   i `wejscie`), a warstwy (zima.ts, jedzenie.ts) i okna (okna.ts) importują gra.ts i są importowane przez silnik.ts. Cykl jest bezpieczny, bo wszystkie
    strony używają importów tylko w ciele funkcji; warstwy dopisywane do `silnik` mają więc być deklaracjami funkcji, a nie
    stałymi liczonymi przy ładowaniu modułu z cudzych importów. */
 
-import { isFenceGuard, KOZA_KEY } from '../gov/noc.ts';
+import { CARD_HOUR, isFenceGuard, KOZA_KEY } from '../gov/noc.ts';
 import type { Prompt } from '../gov/typy.ts';
-import { hourOf, TICKS_PER_SECOND } from '../sim/clock.ts';
+import { dayOf, hourOf, TICKS_PER_SECOND } from '../sim/clock.ts';
 import { dryTreeOf } from '../sim/house.ts';
 import { commandFor } from '../sim/orders.ts';
 import { type Pawn, trunkOf } from '../sim/sim.ts';
 import { snapshot } from '../sim/snapshot.ts';
 import { type Decydent, type GraAi, odpowiedzDomyslna, type Rece, wejscie } from './gra.ts';
-import { turaJedzenia, uchwalaNaGlod } from './jedzenie.ts';
+import { turaJedzenia } from './jedzenie.ts';
+import { odpowiedzNaWydarzenie, wyborUchwaly } from './okna.ts';
 import { dyzurNaKarcie, type PamiecZimy, progDrewna, turaZimy } from './zima.ts';
 
 /** Pamięć silnika: zwykły JSON, wchodzi do zapisu i do skrótu gry. Warstwy dopisują swoje pola (opcjonalne, z wartością
@@ -111,8 +121,15 @@ function najblizszeDrzewo(g: GraAi, pominiete: readonly number[]): number {
 }
 
 /** drewno na opał: gdy zostaje mało (poniżej progu `prog`, domyślnie DREWNA_MIN), następne drzewo; próg liczy się dopiero
-    po przejściu bramek czasu, więc koszt jego wyliczenia płaci się tylko co CO_SEKUND_DREWNO sekund za dnia */
-function turaDrewna(g: GraAi, r: Rece, prog: (g: GraAi) => number = () => DREWNA_MIN): void {
+    po przejściu bramek czasu, więc koszt jego wyliczenia płaci się tylko co CO_SEKUND_DREWNO sekund za dnia. Bez `wolny` ścina
+    pierwsza osoba, która nie śpi i nie stoi na warcie (a gdy takiej nie ma, pierwsza z zarządu), jak w `playWithGov`; z `wolny`
+    tylko osoba, którą ta funkcja przepuszcza, a gdy nikt nie przechodzi, nikt. */
+function turaDrewna(
+  g: GraAi,
+  r: Rece,
+  prog: (g: GraAi) => number = () => DREWNA_MIN,
+  wolny?: (g: GraAi, p: Pawn) => boolean,
+): void {
   const st = g.sim.st;
   if (st.tick % (TICKS_PER_SECOND * CO_SEKUND_DREWNO)) return;
   const godzina = hourOf(st.tick);
@@ -127,7 +144,8 @@ function turaDrewna(g: GraAi, r: Rece, prog: (g: GraAi) => number = () => DREWNA
   if (ktosScina || drewno >= prog(g)) return;
   const k = najblizszeDrzewo(g, pam.pominieteDrzewa);
   const zarzad = rdzen(g);
-  const kto = zarzad.find((p) => p.job?.t !== 'sleep' && p.job?.t !== 'guard') ?? zarzad[0];
+  const nieSpiNieStoi = (p: Pawn): boolean => p.job?.t !== 'sleep' && p.job?.t !== 'guard';
+  const kto = wolny ? zarzad.find((p) => nieSpiNieStoi(p) && wolny(g, p)) : (zarzad.find(nieSpiNieStoi) ?? zarzad[0]);
   if (k < 0 || !kto) return;
   r.polecenie({ t: 'chop', ids: [kto.id], tree: k });
   pam.zlecone = k;
@@ -200,16 +218,24 @@ function progDrewnaZimy(g: GraAi): number {
   return progDrewna(wejscie(g));
 }
 
-/** okno zarządu silnika z warstwami: karta nocy z dyżurem przy kozie, uchwała o wspólnym kotle przy głodzie (jedzenie poniżej
-    1 porcji na głowę, o ile ścieżka „wspólnota” jest jeszcze otwarta), reszta jak w silniku podstawowym. Dyżur ma
-    pierwszeństwo przed wartą przy siatce: gdy zdrowych jest mało (głód rozkłada zdrowie od około 9. dnia), ogień w pokoju
-    zarządu trzyma ciepło do rana, a bez niego rano marznie cały zarząd i wkurzenie rośnie o 6 punktów na dobę, podczas gdy
-    brak warty kosztuje najwyżej napad na zapasy, których wtedy już nie ma. */
+/** okno zarządu silnika z warstwami: uchwała według potrzeb (`wyborUchwaly`), wydarzenie wybrane na kopii zarządu
+    (`odpowiedzNaWydarzenie`, z kolejnymi krokami okna wieloetapowego), karta nocy z dyżurem przy kozie, reszta jak w silniku
+    podstawowym (raport, epilog zwycięstwa, okna nowych rodzajów: odpowiedź domyślna). Dyżur ma pierwszeństwo przed wartą
+    przy siatce: gdy zdrowych jest mało (głód rozkłada zdrowie od około 9. dnia), ogień w pokoju zarządu trzyma ciepło do rana,
+    a bez niego rano marznie cały zarząd i wkurzenie rośnie o 6 punktów na dobę, podczas gdy brak warty kosztuje najwyżej
+    napad na zapasy, których wtedy już nie ma. */
 function oknoSilnika(g: GraAi, p: Prompt, r: Rece): void {
   if (p.k === 'uchwala') {
-    const kociol = uchwalaNaGlod(wejscie(g), p);
-    if (kociol) r.podpisz(kociol);
-    else oknoPodstawowe(g, p, r);
+    r.podpisz(wyborUchwaly(wejscie(g), p));
+    return;
+  }
+  if (p.k === 'wydarzenie') {
+    odpowiedzNaWydarzenie(
+      g.gov,
+      () => wejscie(g),
+      p,
+      (k) => r.wybierz(k),
+    );
     return;
   }
   if (p.k !== 'karta') {
@@ -222,15 +248,27 @@ function oknoSilnika(g: GraAi, p: Prompt, r: Rece): void {
   r.zatwierdzNoc();
 }
 
+/** Czy osoba nie ma od karty nocy tej doby wartej, dyżuru przy kozie ani wyprawy: polecenie z potwierdzonej karty rusza dopiero
+    w następnym kroku, więc ścinanie zlecone w tej samej sekundzie nadpisałoby je (pomiar: noc 8 w Przymorzu 11, dyżur przy kozie
+    zamieniony na ścinanie drzewa, bo drewna było 38 z progu 40). Od 20:00 do północy; rano karta jest już nieaktualna. */
+function bezPoleceniaZKarty(g: GraAi, p: Pawn): boolean {
+  const st = g.sim.st;
+  const noc = g.gov.night;
+  if (!noc?.confirmed || noc.day !== dayOf(st.tick) || hourOf(st.tick) < CARD_HOUR) return true;
+  const osoba = st.people[p.person]?.id;
+  return osoba === undefined || (noc.assign[osoba] ?? 'sen') === 'sen';
+}
+
 /** tura silnika: drewno co 10 sekund za dnia (z progiem na dwie noce), warstwy zimy i jedzenia co 30 sekund (zima pierwsza:
     plan kozy z beczki ma pierwszeństwo przed ogródkiem, gdy deski są na jedno z nich) */
 function turaSilnika(g: GraAi, r: Rece): void {
-  turaDrewna(g, r, progDrewnaZimy);
+  turaDrewna(g, r, progDrewnaZimy, bezPoleceniaZKarty);
   uruchomWarstwe(g, r, 'zima', turaZimy);
   uruchomWarstwe(g, r, 'jedzenie', turaJedzenia);
 }
 
-/** Decydent, którego używa uprząż: silnik podstawowy plus warstwy zimy i jedzenia (zadanie 5 dokłada rozwój i okna). */
+/** Decydent, którego używa uprząż: silnik podstawowy plus warstwy zimy i jedzenia oraz okna zarządu z src/ai/okna.ts (zadanie 5
+    dokłada jeszcze rozwój). */
 export const silnik: Decydent = {
   start: samouczek,
   okno: oknoSilnika,
