@@ -11,25 +11,33 @@
    teksty: tytuły i cele we wszystkich wariantach (mysz i dotyk, polski i angielski, blok i dom, zwykły i zombie). */
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { makePerson } from '../../src/content/people.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
+import { mulberry, nextRandom } from '../../src/core/rng.ts';
 import { nearWindow } from '../../src/sim/budowle.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { tickAt } from '../../src/sim/handlarz.ts';
-import { commandsAt } from '../../src/sim/orders.ts';
+import { commandsAt, type MenuItem } from '../../src/sim/orders.ts';
+import { ZARZAD_MAX } from '../../src/sim/praca.ts';
+import { UKRYTY_UGRYZIONY } from '../../src/sim/sasiedzi.ts';
 import {
   AMPUTATE_TICKS,
   AMPUTATE_WINDOW,
+  addCore,
   createSim,
   crewAt,
   infect,
+  okazjaWerbunku,
   type Pawn,
   RISE_TICKS,
   Sim,
   type SimState,
+  szansaZaproszenia,
 } from '../../src/sim/sim.ts';
 import { wreckStage, wrecksOf, wreckTile } from '../../src/sim/surowce.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
+import { NAPISY, szansaWerbunku } from '../../src/sim/wedrowcy.ts';
 import { FENCE_BEARS } from '../../src/sim/zombie.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
 import {
@@ -618,7 +626,7 @@ describe.each(KOMBINACJE)('O1 wędrowiec przy siatce: %s %s', (key, mode) => {
     throw new Error('żaden wędrowiec nie stanął przy siatce');
   }
 
-  it('wędrowiec w fazie 1 (przystanął przy siatce) otwiera okazję, zagadanie zalicza cel i zamyka okazję', () => {
+  it('wędrowiec w fazie 1 (przystanął przy siatce) otwiera okazję, zagadanie zalicza pierwszy cel, a okazja trwa dalej z werbunkiem', () => {
     const g = bezObcych(poRaporcieZObcymi(key, mode));
     const { st, w } = g.sim;
     expect(okazja(g)).toBeUndefined();
@@ -634,7 +642,8 @@ describe.each(KOMBINACJE)('O1 wędrowiec przy siatce: %s %s', (key, mode) => {
     expect(okazja(g)!.od).toBeLessThanOrEqual(st.tick);
     const v = widok(g).okazja!;
     expect(v.tytul).toBe(zombie ? 'Teraz: ocalały przy siatce' : 'Teraz: wędrowiec przy siatce');
-    expect(v.cele.map((c) => c.key)).toEqual(['zagadaj']);
+    // po rozmowie werbunek: w zombie najpierw pytanie o rękę (O1.2), potem zaproszenie (O1.3)
+    expect(v.cele.map((c) => c.key)).toEqual(zombie ? ['zagadaj', 'reka', 'zapros'] : ['zagadaj', 'zapros']);
     expect(v.biezacy?.key).toBe('zagadaj');
     expect(v.cele[0].done).toBe(false);
     expect(v.cele[0].text).toBe(zombie ? 'Zagadajcie ocalałego.' : 'Zagadajcie wędrowca.');
@@ -647,10 +656,24 @@ describe.each(KOMBINACJE)('O1 wędrowiec przy siatce: %s %s', (key, mode) => {
     g.sim.push(zagadaj!.cmd);
     dopoki(g, () => wd.job?.what === 'zagadany' || !wedrowiec(g), 1500);
     expect(wd.job?.what).toBe('zagadany');
-    // jedyny cel zrobiony: okazja się zamyka, zaliczenie zostaje
-    expect(okazja(g)).toBeUndefined();
+    // rozmowa zalicza pierwszy cel; okazja trwa, dopóki wędrowiec stoi przy siatce, bo zaproszenie (w zombie pytanie o rękę)
+    // jest do zrobienia dopiero po rozmowie
     expect(zaliczony(g.sciezka, 'o1.zagadaj')).toBe(true);
-    expect(widok(g).okazja).toBeNull();
+    expect(klucz(g)).toBe('o1');
+    const po = widok(g).okazja!;
+    expect(po.cele.map((c) => [c.key, c.done])).toEqual(
+      zombie
+        ? [
+            ['zagadaj', true],
+            ['reka', false],
+            ['zapros', false],
+          ]
+        : [
+            ['zagadaj', true],
+            ['zapros', false],
+          ],
+    );
+    expect(po.biezacy?.key).toBe(zombie ? 'reka' : 'zapros');
   });
 
   it('okazja zamyka się, gdy wędrowiec odchodzi; niezrobiony cel wraca z następnym wędrowcem, zrobiony nie', () => {
@@ -677,14 +700,208 @@ describe.each(KOMBINACJE)('O1 wędrowiec przy siatce: %s %s', (key, mode) => {
     const zagadaj = commandsAt(st, w, [kto2.id], kafelek(g, drugi)).find((m) => m.cmd.t === 'talk')!;
     g.sim.push(zagadaj.cmd);
     dopoki(g, () => zaliczony(g.sciezka, 'o1.zagadaj'), 1500);
-    expect(okazja(g)).toBeUndefined();
-    // trzeci wędrowiec: cel zrobiony nie wraca, więc okazji nie ma
+    // okazja trwa (werbunek jest do zrobienia), a z odejściem wędrowca się zamyka
+    expect(klucz(g)).toBe('o1');
     dopoki(g, () => !jestWedrowiec(g), 2400);
+    expect(okazja(g), 'wędrowiec odszedł').toBeUndefined();
+    // trzeci wędrowiec: cel zrobiony nie wraca (zagadaj zostaje zaliczony), wraca niezrobiony werbunek
     const trzeci = przyjscie(g);
     expect(trzeci.id).not.toBe(drugi.id);
-    krok(g);
-    expect(okazja(g)).toBeUndefined();
-    expect(widok(g).okazja).toBeNull();
+    expect(klucz(g)).toBe('o1');
+    const v3 = widok(g).okazja!;
+    expect(v3.cele[0]).toMatchObject({ key: 'zagadaj', done: true });
+    expect(v3.biezacy?.key).toBe(zombie ? 'reka' : 'zapros');
+  });
+
+  /* ------------------------------------------------ werbunek po rozmowie: pytanie o rękę (O1.2) i zaproszenie (O1.3) */
+
+  /** Rozmowa z wędrowcem jak w grze („Zagadać” z menu zaznaczonej osoby); zwraca osobę z zarządu, która rozmawiała. */
+  function porozmawiaj(g: Gra, wd: Pawn): Pawn {
+    const { st, w } = g.sim;
+    dbaj(g);
+    if (zombie) bezSzwendaczy(g);
+    const kto = najblizszy(g, wd);
+    przysun(g, kto, wd);
+    const zagadaj = commandsAt(st, w, [kto.id], kafelek(g, wd)).find((m) => m.cmd.t === 'talk')!;
+    g.sim.push(zagadaj.cmd);
+    dopoki(g, () => wd.job?.what === 'zagadany' || !wedrowiec(g), 1500);
+    expect(wd.job?.what).toBe('zagadany');
+    return kto;
+  }
+
+  /** pozycja menu osoby przy wędrowcu po rozmowie: „Zapytać o rękę” (`reka`, tylko w zombie) albo „Zaprosić do nas” (`zapros`) */
+  const pozycja = (g: Gra, kto: Pawn, wd: Pawn, t: 'reka' | 'zapros') =>
+    commandsAt(g.sim.st, g.sim.w, [kto.id], kafelek(g, wd)).find((m) => m.cmd.t === t);
+
+  /** st.rng ustawiony tak, żeby następne losowanie wypadło poniżej szansy (ok) albo nie (jak w werbunek.test.ts) */
+  function ustawLosowanie(st: SimState, ok: boolean, szansa: number): void {
+    for (let s = 1; s < 100000; s++) {
+      if (nextRandom({ s }) < szansa === ok) {
+        st.rng.s = s;
+        return;
+      }
+    }
+    throw new Error('brak ziarna losowania');
+  }
+
+  /** Polecenie werbunku do końca pracy osoby przy siatce, tick po ticku. `widzi`: krok ścieżki co sekundę, jak okienko celów,
+      które widzi pracę w toku; bez niego okienko nie widzi niczego, dopóki praca się nie skończy, więc zaliczenie musi
+      zostać w śladach w stanie gry. `ok`: przy zaproszeniu los wypada tak, jak chce test. */
+  function werbuj(g: Gra, kto: Pawn, m: MenuItem, o: { widzi: boolean; ok?: boolean }): void {
+    const { st, w } = g.sim;
+    g.sim.push(m.cmd);
+    for (let k = 1; k < 4000; k++) {
+      if (
+        m.cmd.t === 'zapros' &&
+        o.ok !== undefined &&
+        kto.job?.t === 'zapros' &&
+        kto.job.phase === 1 &&
+        st.tick >= kto.job.until - 1
+      )
+        ustawLosowanie(st, o.ok, szansaZaproszenia(st, w));
+      g.sim.step();
+      if (zombie) bezSzwendaczy(g);
+      if (o.widzi && k % 20 === 0) krokTani(g);
+      if (kto.job?.t !== 'zapros') return;
+    }
+    throw new Error('werbunek nie skończył się w 4000 tickach');
+  }
+
+  it('po rozmowie bieżący jest następny cel, a podpowiedź cytuje pozycje menu, które gracz zobaczy (po polsku i po angielsku)', () => {
+    const g = bezObcych(poRaporcieZObcymi(key, mode));
+    const wd = przyjscie(g);
+    const kto = porozmawiaj(g, wd);
+    const v = widok(g).okazja!;
+    expect(v.biezacy?.key).toBe(zombie ? 'reka' : 'zapros');
+    for (const en of [false, true]) {
+      if (en) ustawJezyk('en');
+      const t = (pl: string, eng: string) => (en ? eng : pl);
+      const cele = widok(g).okazja!.cele;
+      const reka = pozycja(g, kto, wd, 'reka');
+      const zapros = pozycja(g, kto, wd, 'zapros');
+      // „Zapytać o rękę” przed zaproszeniem tylko w zombie; w zwykłym trybie tego pytania w menu nie ma
+      if (zombie) {
+        expect(reka?.label).toBe(t('Zapytać o rękę', 'Ask to see their arm'));
+        expect(cele.find((c) => c.key === 'reka')!.how).toContain(t('„Zapytać o rękę”', '“Ask to see their arm”'));
+      } else expect(reka).toBeUndefined();
+      expect(zapros?.label).toMatch(en ? /^Invite to join us \(\d+% chance\)$/ : /^Zaprosić do nas \(\d+% szans\)$/);
+      expect(cele.find((c) => c.key === 'zapros')!.how).toContain(
+        t('„Zaprosić do nas (… szans)”', '“Invite to join us (… chance)”'),
+      );
+    }
+    ustawJezyk('pl');
+    expect(zaliczony(g.sciezka, 'o1.zapros')).toBe(false);
+  });
+
+  if (zombie)
+    for (const ugryziony of [false, true])
+      for (const widzi of [true, false])
+        it(`pytanie o rękę (${ugryziony ? 'ukryte ugryzienie' : 'czysta ręka'}, ${
+          widzi ? 'okienko widzi pracę' : 'praca mija między odświeżeniami okienka'
+        }): fałsz po rozmowie, prawda po poleceniu „Zapytać o rękę”`, () => {
+          const g = bezObcych(poRaporcieZObcymi(key, mode));
+          const { st } = g.sim;
+          const wd = przyjscie(g);
+          const kto = porozmawiaj(g, wd);
+          st.obcy!.rozmowa!.ugryziony = ugryziony;
+          expect(zaliczony(g.sciezka, 'o1.reka')).toBe(false);
+          expect(widok(g).okazja!.cele.find((c) => c.key === 'reka')!.done).toBe(false);
+          werbuj(g, kto, pozycja(g, kto, wd, 'reka')!, { widzi });
+          krokTani(g);
+          expect(zaliczony(g.sciezka, 'o1.reka'), 'pytanie zaliczone, choćby wędrowiec zaraz odszedł').toBe(true);
+          expect(zaliczony(g.sciezka, 'o1.zagadaj')).toBe(true);
+          expect(zaliczony(g.sciezka, 'o1.zapros'), 'pytanie o rękę nie jest zaproszeniem').toBe(false);
+          if (ugryziony) {
+            // ukryty ugryziony nie pokazuje ręki i odchodzi bez werbunku: okazja się zamyka, zaproszenie czeka na następną
+            expect(st.obcy!.wiesc!.text).toBe(NAPISY.rekaUgryziona(true).pl);
+            dopoki(g, () => okazja(g) === undefined, 600);
+            expect(zaliczony(g.sciezka, 'o1.zapros')).toBe(false);
+          } else {
+            // czysta ręka: wędrowiec zostaje, bieżącym celem jest zaproszenie, a pytania nie ma już w menu
+            expect(st.obcy!.wiesc!.text).toBe(NAPISY.rekaCzysta(true).pl);
+            expect(klucz(g)).toBe('o1');
+            expect(widok(g).okazja!.biezacy?.key).toBe('zapros');
+            expect(pozycja(g, kto, wd, 'reka')).toBeUndefined();
+            expect(pozycja(g, kto, wd, 'zapros')).toBeDefined();
+          }
+        });
+
+  for (const ok of [true, false])
+    for (const widzi of [true, false])
+      it(`zaproszenie (${ok ? 'wędrowiec zostaje' : 'odmawia i idzie dalej'}, ${
+        widzi ? 'okienko widzi pracę' : 'praca mija między odświeżeniami okienka'
+      }): fałsz po rozmowie, prawda po próbie, także nieudanej`, () => {
+        const g = bezObcych(poRaporcieZObcymi(key, mode));
+        const { st } = g.sim;
+        const wd = przyjscie(g);
+        const kto = porozmawiaj(g, wd);
+        expect(zaliczony(g.sciezka, 'o1.zapros')).toBe(false);
+        expect(widok(g).okazja!.cele.find((c) => c.key === 'zapros')!.done).toBe(false);
+        werbuj(g, kto, pozycja(g, kto, wd, 'zapros')!, { widzi, ok });
+        krokTani(g);
+        expect(zaliczony(g.sciezka, 'o1.zapros'), 'liczy się próba, nie szczęście').toBe(true);
+        if (ok) {
+          expect(['core', 'resident']).toContain(wd.kind);
+          expect(st.obcy!.werbunek).toBe(1);
+        } else {
+          expect(wd.kind).toBe('wedrowiec');
+          expect(st.obcy!.werbunek).toBeUndefined();
+          expect(st.obcy!.wiesc!.text).toBe(NAPISY.odmowa(zombie).pl);
+        }
+        // pytanie o rękę nie było potrzebne do zaproszenia: w zombie zostaje do zrobienia, w zwykłym trybie go nie ma
+        expect(zaliczony(g.sciezka, 'o1.reka')).toBe(false);
+        // po próbie okazja się zamyka (wędrowiec zwerbowany albo poszedł dalej), a zaliczenie zostaje
+        dopoki(g, () => okazja(g) === undefined, 600);
+        expect(zaliczony(g.sciezka, 'o1.zapros')).toBe(true);
+        expect(widok(g).okazja).toBeNull();
+      });
+
+  it('niezrobiony werbunek wraca z następnym wędrowcem, zrobiony nie: po zaproszeniu w zwykłym trybie okazji już nie ma, w zombie została tylko ręka', () => {
+    const g = bezObcych(poRaporcieZObcymi(key, mode));
+    const wd = przyjscie(g);
+    const kto = porozmawiaj(g, wd);
+    werbuj(g, kto, pozycja(g, kto, wd, 'zapros')!, { widzi: true, ok: false });
+    dopoki(g, () => !jestWedrowiec(g) && okazja(g) === undefined, 2400);
+    const drugi = przyjscie(g);
+    expect(drugi.id).not.toBe(wd.id);
+    if (zombie) {
+      expect(klucz(g)).toBe('o1');
+      const v = widok(g).okazja!;
+      expect(v.cele.map((c) => [c.key, c.done])).toEqual([
+        ['zagadaj', true],
+        ['reka', false],
+        ['zapros', true],
+      ]);
+      expect(v.biezacy?.key).toBe('reka');
+    } else {
+      krok(g);
+      expect(okazja(g)).toBeUndefined();
+      expect(widok(g).okazja).toBeNull();
+    }
+  });
+
+  it('zaproszenie czeka na miejsce, gdy zarząd jest pełny i nie ma gdzie przyjąć (w domu wcale), a z miejscem nie czeka', () => {
+    const g = bezObcych(poRaporcieZObcymi(key, mode));
+    const { st, w } = g.sim;
+    const wd = przyjscie(g);
+    porozmawiaj(g, wd);
+    const zapros = () => widok(g).okazja!.cele.find((c) => c.key === 'zapros')!;
+    expect(okazjaWerbunku(st, w).dokad).toBe('zarzad');
+    expect(zapros().czeka).toBeUndefined();
+    // zarząd pełny (ZARZAD_MAX): menu daje mieszkańca z wolnym łóżkiem, „Brak miejsca” albo w domu nic
+    for (let k = 0; rdzen(g.sim).length < ZARZAD_MAX; k++)
+      addCore(
+        st,
+        w,
+        makePerson(mulberry(900 + k), new Set(st.people.map((q) => q.first)), () => st.nextId++),
+      );
+    const dokad = okazjaWerbunku(st, w).dokad;
+    const brak = dokad === 'brak' || dokad === 'dom';
+    if (key === 'zielonki') expect(dokad, 'dom jednorodzinny: mieszkańcy bez mieszkań').toBe('dom');
+    expect(zapros().czeka).toBe(brak ? 'czeka na miejsce' : undefined);
+    expect(widok(g).okazja!.biezacy?.key === 'zapros').toBe(!brak && !zombie);
+    ustawJezyk('en');
+    expect(zapros().czeka).toBe(brak ? 'waiting for a place' : undefined);
   });
 });
 
@@ -1917,6 +2134,65 @@ describe('teksty okazji z projektu (Przymorze, zwykły tryb, mysz)', () => {
     expect(AMPUTATE_WINDOW).toBe(2 * TICKS_PER_HOUR);
     expect(RISE_TICKS).toBe(TICKS_PER_HOUR);
     expect(pl('o4', 0).how).toContain(` ${FENCE_BEARS}.`);
+  });
+});
+
+describe.each(['zwykly', 'zombie'] as const)('teksty werbunku w okazji wędrowca (Przymorze, %s)', (mode) => {
+  const zombie = mode === 'zombie';
+  const g = poRaporcieZObcymi('przymorze', mode);
+  const cele = (touch = false) =>
+    Object.fromEntries(widokOkazji(g, 'o1', { touch }).cele.map((c) => [c.key, { text: c.text, how: c.how }]));
+  const KTO = zombie
+    ? { pl: 'ocalałym', plB: 'ocalałego', en: 'survivor' }
+    : { pl: 'wędrowcu', plB: 'wędrowca', en: 'wanderer' };
+
+  it('po polsku: pytanie o rękę tylko w zombie, zaproszenie z szansą w procentach, mysz i dotyk', () => {
+    expect(Object.keys(cele())).toEqual(zombie ? ['zagadaj', 'reka', 'zapros'] : ['zagadaj', 'zapros']);
+    if (zombie) {
+      expect(cele().reka).toEqual({
+        text: 'Zapytajcie ocalałego o rękę.',
+        how: 'Po rozmowie prawy przycisk na ocalałym: „Zapytać o rękę”. Co piąty ukrywa ugryzienie.',
+      });
+      expect(cele(true).reka.how).toBe(
+        'Po rozmowie przytrzymajcie palec na ocalałym: „Zapytać o rękę”. Co piąty ukrywa ugryzienie.',
+      );
+    }
+    expect(cele().zapros).toEqual({
+      text: `Zaproście ${KTO.plB} do siebie.`,
+      how: `Po rozmowie prawy przycisk na ${KTO.pl}: „Zaprosić do nas (… szans)”. Szanse rosną z jedzeniem w zapasie i wolnym łóżkiem, spadają po napaści na obcych.`,
+    });
+    expect(cele(true).zapros.how).toBe(
+      `Po rozmowie przytrzymajcie palec na ${KTO.pl}: „Zaprosić do nas (… szans)”. Szanse rosną z jedzeniem w zapasie i wolnym łóżkiem, spadają po napaści na obcych.`,
+    );
+  });
+
+  it('po angielsku: ta sama para „Ask to see their arm” co w menu, zaproszenie z szansą, mysz i dotyk', () => {
+    ustawJezyk('en');
+    if (zombie) {
+      expect(cele().reka).toEqual({
+        text: 'Ask the survivor to show their arm.',
+        how: 'After the chat, right-click the survivor: “Ask to see their arm”. One in five is hiding a bite.',
+      });
+      expect(cele(true).reka.how).toBe(
+        'After the chat, press and hold on the survivor: “Ask to see their arm”. One in five is hiding a bite.',
+      );
+    }
+    expect(cele().zapros).toEqual({
+      text: `Invite the ${KTO.en} to stay.`,
+      how: `After the chat, right-click the ${KTO.en}: “Invite to join us (… chance)”. The odds go up with food in stock and a free bed, and down after you rob strangers.`,
+    });
+    expect(cele(true).zapros.how).toBe(
+      `After the chat, press and hold on the ${KTO.en}: “Invite to join us (… chance)”. The odds go up with food in stock and a free bed, and down after you rob strangers.`,
+    );
+  });
+
+  it('liczby w tekstach są z gry: „co piąty” ukrywa ugryzienie to UKRYTY_UGRYZIONY, a szanse rosną z jedzeniem, łóżkiem i spadają po napaści', () => {
+    expect(UKRYTY_UGRYZIONY).toBe(0.2);
+    // szansa zaproszenia: +jedzenie, +wolne łóżko, −napaść (src/sim/wedrowcy.ts)
+    const baza = { jedzenieNaGlowe: 0, wolneLozko: false, napadDwieDoby: false, maCel: false };
+    expect(szansaWerbunku({ ...baza, jedzenieNaGlowe: 2 })).toBeGreaterThan(szansaWerbunku(baza));
+    expect(szansaWerbunku({ ...baza, wolneLozko: true })).toBeGreaterThan(szansaWerbunku(baza));
+    expect(szansaWerbunku({ ...baza, napadDwieDoby: true })).toBeLessThan(szansaWerbunku(baza));
   });
 });
 

@@ -1,5 +1,6 @@
 /* Zrzuty i sprawdzenia okienka celów ze ścieżki (src/ui/sciezka.ts) do `npm run shots` (scenariusze cele-* i en-cele-r1):
-   drugi dzień (R1) w bloku, w domu i w trybie zombie, cel czekający, okazje (handlarz, ugryzienie), linia „Cel: …” w oknach
+   drugi dzień (R1) w bloku, w domu i w trybie zombie, rozdział „Praca” (R3) obok panelu Pracy i karty osoby (`cele-r3*`) oraz
+   przeklikany prawdziwymi zdarzeniami (`cele-r3-ustawienia*`), cel czekający, okazje (handlarz, ugryzienie), linia „Cel: …” w oknach
    karty nocy, uchwały, spotkania z sąsiadami i na tablicy badań, widok dróg do zwycięstwa po ostatnim rozdziale (świeża gra),
    telefon 390×844 i 360 px, angielski bez polskich liter, okienko ograniczone do miejsca nad kartą osoby i przewijane do
    bieżącego celu (`cele-przewijanie`) oraz zaliczenie drewna na wieczór, które przeżywa zapis, zjedzenie zapasu przez kozę
@@ -1924,6 +1925,234 @@ export function celeShots(out: string): ShotCele[] {
       },
     });
 
+  /** Rozdział „Praca” (R3) obok panelu Pracy i karty osoby: okienko ma tytuł „Praca”, licznik 0/3 i trzy cele (bez celu
+      „za siatkę”), bieżący pierwszy z podpowiedzią dla myszy albo dotyku, a zdanie o przełączniku „Może wychodzić za siatkę”
+      w podpowiedzi stałego zajęcia mówi, jak jest w tym trybie (włączony: za dnia wychodzą sami, zombie: wyłączony i ryzyko
+      ugryzienia); angielski bez polskich liter. Układ: okienko nie nachodzi na pasek, listę ludzi, kartę, panel budowy i panel
+      Pracy (na komputerze stoją obok siebie; do 640 px arkusz Pracy zasłania okienko, kartę i podpowiedź, co robi CSS, więc na
+      telefonie scenariusz sprawdza, że okienko jest wtedy schowane, a przed i po panelu ma swoje miejsce). Zrzut scenariusza
+      to ostatni stan: otwarty panel Pracy (na komputerze z kartą osoby, na której stoi lista „Stałe zajęcie”) i rozdział
+      z pierwszym celem. */
+  const praca = (name: string, demo: string, opcje: { zombie?: boolean; dom?: boolean }, w = 1440, h = 900): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        const zombie = !!opcje.zombie;
+        await start(page, base, `demo=${demo}${zombie ? '&tryb=zombie' : ''}&${GRA}&godzina=11`);
+        await rozdzial(page, 'r3');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        const n = await naglowek(page);
+        if (n.tytul !== 'Praca' || n.licznik !== '0/3')
+          throw new Error(`${name}: nagłówek „${n.tytul}” „${n.licznik}” zamiast „Praca” „0/3”`);
+        const wr = await wiersze(page, 'rozdzial');
+        tekstyCelow(
+          name,
+          wr,
+          ['priorytet', 'stale', 'zapas'],
+          [
+            'Ustawcie, kto czym zajmuje się sam.',
+            'Dajcie komuś stałe zajęcie.',
+            'Ustawcie, ile czego trzymać w zapasie.',
+          ],
+        );
+        console.log(`  ${wr.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
+        // bieżący jest pierwszy i tylko on ma podpowiedź; nic nie czeka i nic nie przepadło
+        if (!wr[0].klasy.includes('now') || !wr[0].jak)
+          throw new Error(`${name}: pierwszy cel nie jest bieżący z podpowiedzią`);
+        if (wr.slice(1).some((x) => x.jak !== null || x.klasy.length))
+          throw new Error(`${name}: cele 2–3 mają podpowiedź albo klasy ${wr.slice(1).map((x) => x.klasy.join('+'))}`);
+        zawiera(
+          name,
+          wr[0].jak,
+          dotyk
+            ? 'Przycisk Praca u góry: stuknięcie w komórkę zmienia priorytet'
+            : 'Praca (przycisk u góry albo P): klik w komórkę zmienia priorytet',
+        );
+        nieZawiera(name, wr[0].jak, dotyk ? 'klik' : 'stuknięcie');
+        // podpowiedzi celów dalej na liście są w widoku (w DOM jest tylko bieżąca)
+        const cele = (await widok(page)).rozdzial!.cele;
+        zawiera(
+          name,
+          cele[1].how,
+          'Na karcie osoby wybierzcie „Stałe zajęcie”',
+          'Drwal albo Szaber',
+          '„Może wychodzić za siatkę”: ',
+        );
+        if (zombie) {
+          zawiera(name, cele[1].how, 'wyłączone', 'Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.');
+          zawiera(name, cele[2].how, 'drewnie, deskach, częściach i dzidach');
+        } else {
+          zawiera(name, cele[1].how, 'włączone, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.');
+          nieZawiera(name, cele[1].how + cele[2].how, 'szwendacz', 'dzid');
+          zawiera(name, cele[2].how, 'drewnie, deskach i częściach');
+        }
+        zawiera(name, cele[2].how, dotyk ? 'stuknijcie plus albo minus' : 'plus i minus', '„Trzymać w zapasie”');
+        if (opcje.dom) {
+          const slowo = BLOKOWE_UI.exec(await tekstOkienka(page))?.[0];
+          if (slowo) throw new Error(`${name}: w celach domu słowo z bloku „${slowo}”`);
+        }
+        // angielski: tytuł „Work”, podpowiedź z „Work (button at the top, or P)”, bez polskich liter w tekście i w atrybutach
+        await ustawJezyk(page, 'en');
+        const ne = await naglowek(page);
+        if (ne.tytul !== 'Work' || ne.licznik !== '0/3')
+          throw new Error(`${name}: nagłówek po angielsku „${ne.tytul}” „${ne.licznik}”`);
+        const we = await wiersze(page, 'rozdzial');
+        zawiera(
+          name,
+          we[0].jak ?? '',
+          dotyk
+            ? 'The Work button at the top: tap a cell to change the priority'
+            : 'Work (button at the top, or P): click a cell to change the priority',
+        );
+        await okienkoBezPolskich(page, `${name} po zmianie na angielski`);
+        await ustawJezyk(page, 'pl');
+        // układ okienka z kartą osoby i panelem budowy (na telefonie w stanie zwiniętym)
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
+        // panel Pracy: przycisk w pasku (na telefonie stuknięcie)
+        await kliknij(page, '#btnPraca', dotyk);
+        await page.waitForSelector('#pracaPanel:not([hidden]) .pr-tab');
+        await poHudzie(page);
+        const tabela = await page.$$eval('#pracaPanel .pr-tab tbody tr', (r) => r.length);
+        if (tabela < 1) throw new Error(`${name}: panel Pracy bez wierszy osób`);
+        const dzidy = await page.$$eval('#pracaPanel [data-prog^="dzidy:"]', (e) => e.length);
+        if (dzidy > 0 !== zombie) throw new Error(`${name}: progi dzid w panelu: ${dzidy}, tryb zombie: ${zombie}`);
+        if (dotyk) {
+          // do 640 px arkusz od dołu zasłania okienko celów, kartę i podpowiedź (CSS `.praca-open`)
+          const widoczne = await page.evaluate(() => getComputedStyle(document.getElementById('goals')!).display);
+          if (widoczne !== 'none') throw new Error(`${name}: okienko celów nie schowało się pod arkuszem Pracy`);
+          console.log(`  ${name} ${w}×${h}: arkusz Pracy chowa okienko celów`);
+        } else {
+          await bezNachodzenia(page, `${name} ${w}×${h}, z panelem Pracy`);
+          // osoba z listy: karta ma „Stałe zajęcie” z rodzajami z podpowiedzi i przełącznik „za siatkę” w stanie trybu
+          await kliknij(page, '#lista .lp >> nth=0', false);
+          await page.waitForSelector('#card:not([hidden]) select[data-card="stale"]');
+          await poHudzie(page);
+          await bezNachodzenia(page, `${name} ${w}×${h}, z panelem Pracy i kartą osoby`);
+          const lista = await page.$$eval('#card select[data-card="stale"] option', (o) => o.map((x) => x.textContent));
+          zawiera(name, lista.join(), 'Drwal', 'Szaber');
+          const przelacznik = await page.$eval('#card [data-card="zasiatke"]', (e) => ({
+            wcisniety: e.getAttribute('aria-pressed'),
+            tekst: e.textContent ?? '',
+          }));
+          if (przelacznik.tekst !== 'Może wychodzić za siatkę')
+            throw new Error(`${name}: przełącznik na karcie „${przelacznik.tekst}”`);
+          if (przelacznik.wcisniety !== String(!zombie))
+            throw new Error(
+              `${name}: przełącznik „za siatkę” ${przelacznik.wcisniety}, a podpowiedź mówi o ${zombie ? 'wyłączonym' : 'włączonym'}`,
+            );
+        }
+      },
+    });
+
+  /** Rozdział „Praca” (R3) prawdziwymi kliknięciami: komórka priorytetu w panelu Pracy, stałe zajęcie z listy na karcie osoby i
+      plus przy progu zapasu zaliczają po jednym celu, a trzeci otwiera R4. Gra stoi na pauzie, więc polecenia wchodzą do
+      symulacji z krokiem (`zm.ff`); panel pokazuje zmianę od razu (nakłada czekające polecenia), a cel zalicza się dopiero z
+      krokiem. Na telefonie arkusz Pracy chowa okienko celów i kartę, więc panel zamyka się przed wyborem osoby i przed
+      sprawdzeniem celów. Z `zombie` najdłuższa podpowiedź stałego zajęcia (z ostrzeżeniem o szwendaczach) jest bieżącym celem
+      przy karcie osoby, także po angielsku. */
+  const pracaUstawienia = (name: string, opcje: { zombie?: boolean }, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        const zombie = !!opcje.zombie;
+        await start(page, base, `demo=przymorze${zombie ? '&tryb=zombie' : ''}&${GRA}&godzina=11`);
+        await rozdzial(page, 'r3');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        /** klasy wszystkich celów rozdziału; na telefonie okienko po sprawdzeniu układu jest zwinięte do jednego celu, więc najpierw
+            je rozwija */
+        const klasy = async (): Promise<string> => {
+          if (dotyk) await ustawOkienko(page, true, true);
+          return (await wiersze(page, 'rozdzial')).map((x) => `${x.key}:${x.klasy.join('+') || '-'}`).join(' ');
+        };
+        const oczekuj = async (opis: string, ma: string): Promise<void> => {
+          const jest = await klasy();
+          if (jest !== ma) throw new Error(`${name}: ${opis}: cele „${jest}” zamiast „${ma}”`);
+          console.log(`  ${opis}: ${jest}`);
+        };
+        /** polecenia z panelu i karty wchodzą do symulacji z następnym krokiem (pauza ich nie wykonuje) */
+        const krokGry = async (): Promise<void> => {
+          await page.evaluate(() => window.zm!.ff(1));
+          await poHudzie(page);
+        };
+        const otworzPanel = async (): Promise<void> => {
+          await kliknij(page, '#btnPraca', dotyk);
+          await page.waitForSelector('#pracaPanel:not([hidden]) .pr-tab');
+          await poHudzie(page);
+        };
+        const zamknijPanel = async (): Promise<void> => {
+          await kliknij(page, '#pracaPanel .bp-x', dotyk);
+          await page.waitForFunction(() => document.getElementById('pracaPanel')!.hidden, null, { timeout: 3000 });
+          await poHudzie(page);
+        };
+        await oczekuj('na początku', 'priorytet:now stale:- zapas:-');
+        // 1. komórka „Szaber” pierwszej osoby: priorytet 3 → 4 (panel pokazuje go od razu)
+        await otworzPanel();
+        const komorka = '#pracaPanel [data-prio$=":szaber"] >> nth=0';
+        const przed = await page.$eval(komorka, (e) => e.textContent);
+        await kliknij(page, komorka, dotyk);
+        await page.waitForFunction(
+          (s) => document.querySelector(s as string)?.textContent === '4',
+          '#pracaPanel [data-prio$=":szaber"]',
+          { timeout: 3000 },
+        );
+        if (przed !== '3') throw new Error(`${name}: komórka Szaber miała „${przed}” zamiast 3`);
+        await krokGry();
+        // na telefonie arkusz Pracy chowa okienko celów: zamykamy go (✕), żeby zobaczyć cele
+        if (dotyk) await zamknijPanel();
+        await oczekuj('po kliknięciu komórki', 'priorytet:done stale:now zapas:-');
+        const jak2 = (await wiersze(page, 'rozdzial'))[1].jak ?? '';
+        zawiera(name, jak2, '„Stałe zajęcie”');
+        if (zombie) zawiera(name, jak2, 'Za siatką są szwendacze');
+        await sprawdzUklad(page, `${name} ${w}×${h}, bieżące stałe zajęcie`, dotyk);
+        if (zombie && dotyk) {
+          // angielska podpowiedź jest najdłuższa: okienko dalej mieści się nad listą ludzi i kartą
+          await ustawJezyk(page, 'en');
+          await okienkoBezPolskich(page, `${name} po zmianie na angielski`);
+          await sprawdzUklad(page, `${name} ${w}×${h}, bieżące stałe zajęcie po angielsku`, dotyk);
+          await ustawJezyk(page, 'pl');
+        }
+        // 2. karta osoby: stałe zajęcie z listy (zdarzenie `change` jak wybór gracza)
+        await kliknij(page, '#lista .lp >> nth=0', dotyk);
+        await page.waitForSelector('#card:not([hidden]) select[data-card="stale"]');
+        await page.selectOption('#card select[data-card="stale"]', 'drwal');
+        await krokGry();
+        await oczekuj('po wyborze stałego zajęcia', 'priorytet:done stale:done zapas:now');
+        // 3. panel Pracy: plus przy drewnie (próg 30 → 35)
+        await otworzPanel();
+        const prog = '#pracaPanel [data-prog="drewno:+5"]';
+        const wartoscPrzed = await page.$eval('#pracaPanel [data-wart="drewno"]', (e) => e.textContent);
+        await kliknij(page, prog, dotyk);
+        await page.waitForFunction(
+          (v) => document.querySelector('#pracaPanel [data-wart="drewno"]')?.textContent === String(Number(v) + 5),
+          wartoscPrzed,
+          { timeout: 3000 },
+        );
+        await krokGry();
+        if (dotyk) await zamknijPanel();
+        // rozdział skończony: R4 „Zarząd” z czterema celami
+        const n = await naglowek(page);
+        if (n.tytul !== 'Zarząd' || n.licznik !== '0/4')
+          throw new Error(
+            `${name}: po trzech ustawieniach nagłówek „${n.tytul}” „${n.licznik}” zamiast „Zarząd” „0/4”`,
+          );
+        console.log(`  po zapasie: ${n.tytul} ${n.licznik}`);
+        const v = await widok(page);
+        if (v.rozdzial?.k !== 'r4') throw new Error(`${name}: po trzech ustawieniach rozdział ${v.rozdzial?.k}`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po rozdziale Praca`, dotyk);
+        if (!dotyk) await otworzPanel();
+      },
+    });
+
   return [
     drugiDzien('cele-r1', 'przymorze', {}),
     drugiDzien('cele-r1-dom', 'zielonki', { dom: true }),
@@ -1931,6 +2160,12 @@ export function celeShots(out: string): ShotCele[] {
     drugiDzien('cele-r1-telefon', 'przymorze', {}, 390, 844),
     drugiDzien('cele-r1-dom-telefon', 'zielonki', { dom: true }, 390, 844),
     drugiDzien('cele-r1-zombie-telefon', 'przymorze', { zombie: true }, 390, 844),
+    praca('cele-r3', 'przymorze', {}),
+    praca('cele-r3-dom', 'zielonki', { dom: true }),
+    praca('cele-r3-zombie', 'przymorze', { zombie: true }),
+    praca('cele-r3-telefon', 'przymorze', {}, 390, 844),
+    pracaUstawienia('cele-r3-ustawienia', {}, 1440, 900),
+    pracaUstawienia('cele-r3-ustawienia-zombie-telefon', { zombie: true }, 390, 844),
     kartaNocy('cele-karta-nocy', 1440, 900, { malo: true, trzy: false }),
     kartaNocy('cele-karta-nocy-telefon', 390, 844, { malo: true, trzy: false }),
     kartaNocy('cele-karta-nocy-drewno2', 1440, 900, { malo: true, trzy: true }),

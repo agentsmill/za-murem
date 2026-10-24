@@ -837,13 +837,15 @@ describe.each(KOMBINACJE)('R8 ludnosc: %s %s', (key, mode) => {
     const cal = celLudnosci(wejscie(g), mode);
     expect(d.postep).toEqual({ ile, cel: cal });
     expect(cel(g, 'ludnosc').text).toBe(d.dalej!.pl);
+    // po scaleniu pracy ludzi ludzie przychodzą też spośród wędrowców (w trybie zombie ocalałych, jak w okazji wędrowca)
+    const wedrowcy = mode === 'zombie' ? { pl: 'ocalałych', en: 'survivors' } : { pl: 'wędrowców', en: 'wanderers' };
     expect(cel(g, 'ludnosc').how).toBe(
-      `Nowe osiedle: ${ile} z ${cal}. Ludzie przychodzą z kart wydarzeń i od sąsiadów („Zaprosić do nas”).`,
+      `Nowe osiedle: ${ile} z ${cal}. Ludzie przychodzą z kart wydarzeń, od sąsiadów („Zaprosić do nas”) i spośród ${wedrowcy.pl}.`,
     );
     ustawJezyk('en');
     expect(cel(g, 'ludnosc').text).toBe(d.dalej!.en);
     expect(cel(g, 'ludnosc').how).toBe(
-      `A new estate: ${ile} of ${cal}. People come from event cards and from next door (“Invite them to join you”).`,
+      `A new estate: ${ile} of ${cal}. People come from event cards, from next door (“Invite them to join you”) and from ${wedrowcy.en}.`,
     );
     expect(polskieSlowa(cel(g, 'ludnosc').text + cel(g, 'ludnosc').how)).toEqual([]);
   });
@@ -1859,7 +1861,8 @@ describe.each(KOMBINACJE)('stary zapis: „koniec” z wersji bez R6: %s %s', (k
     const tick = g.sim.st.tick;
     const zrobioneStare: Record<string, number> = {};
     const przepadle: string[] = [];
-    for (const r of ROZDZIALY.slice(0, 5))
+    // wersja bez R3 i bez R6–R8: pierwszy dzień do jedzenia (R0, R1, R2, R4, R5)
+    for (const r of ROZDZIALY.filter((x) => ['r0', 'r1', 'r2', 'r4', 'r5'].includes(x.k)))
       for (const c of r.cele) {
         // drewno na wieczór, drewno na noc i dyżur przepadają, jeśli nie zrobiono ich w nocy; reszta jest zrobiona
         if (['r0.drewno', 'r1.drewno2', 'r1.dyzur'].includes(`${r.k}.${c.key}`)) przepadle.push(`${r.k}.${c.key}`);

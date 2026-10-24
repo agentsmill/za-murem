@@ -18,6 +18,13 @@
    otwiera się tylko wtedy, gdy jest komu amputować (ktoś inny z zarządu, na miejscu i w stanie, jak w karcie osoby: bez
    niego cel byłby nie do zrobienia), a trwa do końca okna amputacji.
 
+   Werbunek w O1 (praca ludzi): po rozmowie dochodzi pytanie o rękę (`reka`, tylko w zombie, bo co piąty ocalały ukrywa
+   ugryzienie) i zaproszenie (`zapros`). Oba zaliczają się za próbę, nie za wynik: praca zarządu z wędrowcem (`startZapros`) jest
+   krótka, więc oprócz niej cel czyta trwałe ślady wyniku w stanie gry (pytanie zapisane w rozmowie, wieść o odmowie albo o ręce,
+   wędrowiec, który został zarządem albo mieszkańcem), a okienko, które nie zdążyło zobaczyć pracy, i tak zalicza. Zaproszenie
+   czeka na miejsce, gdy nie ma gdzie przyjąć wędrowca (pełny zarząd bez wolnego łóżka mieszkańców). Okazja z samym zagadaniem
+   zamykała się po rozmowie; teraz trwa, dopóki wędrowiec stoi przy siatce, a niezrobiony werbunek wraca z każdym następnym.
+
    Tryb gry. O1 w zombie mówi „ocalały” (te same pionki, inni ludzie), O3 istnieje tylko w zwykłym (szabrowników w zombie nie
    ma), O4, O5 i O6 tylko w zombie (stado, ugryzienie, wstający zmarli); O2 przychodzi w zombie od czwartego dnia, rzadko
    (czas wizyt ustawia symulacja, nie ta lista). Słowa miejsca ze słownika (`Words`, `WordsEn`): brama albo furtka, a w
@@ -46,8 +53,9 @@ import { BUILDS, canPlace, nearWindow, ZASIEG_OKNA } from '../sim/budowle.ts';
 import { SEASON_DAYS } from '../sim/clock.ts';
 import { OFFER_TIMES } from '../sim/handlarz.ts';
 import { type HouseLike, houseOf, kozaFront } from '../sim/house.ts';
-import { alarmOn } from '../sim/sim.ts';
+import { alarmOn, okazjaWerbunku } from '../sim/sim.ts';
 import { modeOf } from '../sim/tryb.ts';
+import { NAPISY } from '../sim/wedrowcy.ts';
 import { DISPERSE, FENCE_BEARS, HORDE_FROM } from '../sim/zombie.ts';
 import type { World } from '../world/world.ts';
 import { costText } from './budowa.ts';
@@ -82,6 +90,33 @@ const alarmZrobiony = (o: OdczytCelow): boolean => alarmOn(o.st);
 
 /* ---------------------------------------------------------------- O1. Wędrowiec */
 
+/** pionek, o którego chodzi w okazji (id w stanie), jakiegokolwiek rodzaju: zwerbowany wędrowiec zostaje tym samym pionkiem i
+    zmienia tylko rodzaj (zarząd albo mieszkaniec) */
+const pionekWedrowca = (o: OdczytCelow, s: StanSciezki) =>
+  s.okazja?.cel === undefined ? undefined : o.st.pawns.find((p) => p.id === s.okazja!.cel);
+
+/** Praca zarządu z tym wędrowcem: zaproszenie (`zapros`) albo pytanie o rękę (`reka`), obie to praca `zapros` z `what` równym
+    poleceniu (`startZapros` w src/sim/sim.ts). Trwa dojście do siatki i dwie minuty gry rozmowy przez siatkę. */
+const pracaWerbunku = (o: OdczytCelow, s: StanSciezki, what: 'zapros' | 'reka'): boolean =>
+  o.st.pawns.some(
+    (p) => p.kind === 'core' && p.job?.t === 'zapros' && p.job.what === what && p.job.target === s.okazja?.cel,
+  );
+
+/** Wieść z wyniku werbunku (pytanie o rękę albo odmowa), która powstała po otwarciu okazji: zostaje w stanie do następnej wieści,
+    więc trwały ślad pracy, której okienko mogło nie zobaczyć (praca trwa około dwóch minut gry, okienko liczy się co 200 ms,
+    a przy szybkim tempie to jeden–dwa odświeżenia). */
+const wiescPoOtwarciu = (o: OdczytCelow, s: StanSciezki, ...teksty: string[]): boolean => {
+  const w = o.st.obcy?.wiesc;
+  return !!w && w.tick >= (s.okazja?.od ?? 0) && teksty.includes(w.text);
+};
+
+/** Zaproszenie ma dokąd trafić: zarząd ma miejsce albo mieszkańcy wolne łóżko. Bez tego menu pokazuje „Brak miejsca”, a w domu
+    jednorodzinnym przy pełnym zarządzie nic (`okazjaWerbunku`). */
+const jestMiejsceNaZaproszenie = (o: OdczytCelow): boolean => {
+  const dokad = okazjaWerbunku(o.st, o.w).dokad;
+  return dokad === 'zarzad' || dokad === 'mieszkaniec';
+};
+
 const O1: DefOkazji = {
   k: 'o1',
   // w zombie to ocalały: te same pionki, inna rozmowa
@@ -107,6 +142,54 @@ const O1: DefOkazji = {
       },
       // chwilowy stan: wędrowiec po rozmowie (praca `wander` z `what` równym „zagadany”), zaliczany, gdy okienko go zobaczy
       zrobiony: (o, s) => pionekOkazji(o, s, 'wedrowiec')?.job?.what === 'zagadany',
+    },
+    {
+      // O1.2 werbunek [praca-ludzi], tylko w zombie: co piąty ocalały ukrywa ugryzienie, więc przed zaproszeniem pytanie o rękę
+      // (w zwykłym trybie menu go nie ma, `startZapros` je odrzuca)
+      key: 'reka',
+      jest: (o) => zombieMode(o.st, o.gov),
+      tekst: () => L('Zapytajcie ocalałego o rękę.', 'Ask the survivor to show their arm.'),
+      jak: (o) =>
+        L(
+          `Po rozmowie ${klik(o)} na ocalałym: „${NAPISY.zapytacORege.pl}”. Co piąty ukrywa ugryzienie.`,
+          `After the chat, ${click(o)} the survivor: “${NAPISY.zapytacORege.en}”. One in five is hiding a bite.`,
+        ),
+      // Liczy się samo pytanie, nie to, co wędrowiec odpowie. Praca `zapros` z `what` równym „reka” trwa krótko, więc oprócz niej
+      // trwałe ślady: pytanie zapisane w rozmowie (czysta ręka; rozmowa trwa, dopóki wędrowiec stoi przy siatce) i wieść o
+      // wyniku (ukryte ugryzienie: wędrowiec odchodzi, rozmowa znika, a wieść zostaje)
+      zrobiony: (o, s) =>
+        pracaWerbunku(o, s, 'reka') ||
+        (o.st.obcy?.rozmowa?.id === s.okazja?.cel && o.st.obcy?.rozmowa?.pytali === true) ||
+        wiescPoOtwarciu(o, s, NAPISY.rekaCzysta(true).pl, NAPISY.rekaUgryziona(true).pl),
+    },
+    {
+      // O1.3 werbunek [praca-ludzi]: po rozmowie „Zaprosić do nas” z szansą w procentach (menu pokazuje liczbę, podpowiedź „…”)
+      key: 'zapros',
+      tekst: (o) =>
+        zombieMode(o.st, o.gov)
+          ? L('Zaproście ocalałego do siebie.', 'Invite the survivor to stay.')
+          : L('Zaproście wędrowca do siebie.', 'Invite the wanderer to stay.'),
+      jak: (o) => {
+        const kto = zombieMode(o.st, o.gov) ? { pl: 'ocalałym', en: 'survivor' } : { pl: 'wędrowcu', en: 'wanderer' };
+        return L(
+          `Po rozmowie ${klik(o)} na ${kto.pl}: „${NAPISY.zaprosicBez.pl} (… szans)”. Szanse rosną z jedzeniem w zapasie i wolnym łóżkiem, spadają po napaści na obcych.`,
+          `After the chat, ${click(o)} the ${kto.en}: “${NAPISY.zaprosicBez.en} (… chance)”. The odds go up with food in stock and a free bed, and down after you rob strangers.`,
+        );
+      },
+      // zaproszenia nie ma gdzie przyjąć (pełny zarząd bez wolnego łóżka mieszkańców, w domu wcale): cel czeka na miejsce
+      czeka: (o) => (jestMiejsceNaZaproszenie(o) ? null : L('czeka na miejsce', 'waiting for a place')),
+      // Liczy się próba, nie szczęście: praca `zapros` z `what` równym „zapros” (dojście i dwie minuty rozmowy przez siatkę),
+      // a po niej trwałe ślady wyniku: wędrowiec jest już zarządem albo mieszkańcem (udane zaproszenie zmienia rodzaj tego
+      // samego pionka) albo wieść o odmowie (nieudane zaproszenie, także „nie mamy już miejsca”)
+      zrobiony: (o, s) => {
+        const zombie = zombieMode(o.st, o.gov);
+        const p = pionekWedrowca(o, s);
+        return (
+          pracaWerbunku(o, s, 'zapros') ||
+          (!!p && (p.kind === 'core' || p.kind === 'resident')) ||
+          wiescPoOtwarciu(o, s, NAPISY.odmowa(zombie).pl, NAPISY.bezMiejsca(zombie).pl)
+        );
+      },
     },
   ],
 };

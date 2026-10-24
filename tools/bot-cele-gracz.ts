@@ -22,6 +22,7 @@ import { applyGov, govInput } from '../src/sim/gov.ts';
 import { houseOf } from '../src/sim/house.ts';
 import { DISMANTLE } from '../src/sim/mieszkania.ts';
 import { commandFor, commandsAt, type MenuItem } from '../src/sim/orders.ts';
+import { RODZAJE } from '../src/sim/praca.ts';
 import {
   drzwiBudynku,
   ludzieNaStart,
@@ -51,6 +52,7 @@ import { CARRY_MATS, wrecksOf } from '../src/sim/surowce.ts';
 import { modeOf } from '../src/sim/tryb.ts';
 import { TUT_STEPS } from '../src/sim/tutorial.ts';
 import { NIGHT_WOOD, najtanszeBudowle } from '../src/ui/cele.ts';
+import { KROK_PROGU, nastepnyPriorytet } from '../src/ui/praca.ts';
 import type { Cel, OdczytCelow, StanSciezki, WidokSciezki } from '../src/ui/sciezka.ts';
 import { zdarzenieUi } from '../src/ui/sciezka.ts';
 import { potrzebaDrewna } from '../src/ui/sciezka-rozdzialy.ts';
@@ -205,7 +207,15 @@ function celeGracza(g: Gra, v: WidokSciezki, przygotuj: ReadonlySet<string>, row
 /** prace w siedzibie, które w trybie zombie nie mogą wyprowadzać na ulicę */
 const W_SIEDZIBIE: ReadonlySet<string> = new Set(['burn', 'search', 'dismantle', 'repair', 'claim', 'build', 'craft']);
 
-export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = false): Gracz {
+export function nowyGracz(
+  g: Gra,
+  gadaj: (tekst: string) => void,
+  rownolegle = false,
+  /** gracz robi też cele werbunku w okazji wędrowca (O1.2 „Zapytać o rękę”, O1.3 „Zaprosić do nas”), czyli zaprasza pierwszego
+      wędrowca już drugiego dnia; domyślnie nie, bo to zmienia przebieg gry przed R4 (jedna osoba więcej, inne losowanie
+      dalszych wizyt i kart) i czasy celu „Przyjmijcie kogoś nowego” w trybie zwykłym */
+  werbunekOkazji = false,
+): Gracz {
   const { sim, w } = g;
   const st = sim.st;
   const size = w.size;
@@ -782,8 +792,10 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       („Zapytać o rękę”, bo co piąty ukrywa ugryzienie), potem „Zaprosić do nas” z szansą w procentach. Menu pokazuje te pozycje
       kolejno, jedna po drugiej, gdy rozmowa się odbyła. */
   const werbunek = { rozmowy: 0, rece: 0, zaproszenia: 0 };
-  const werbuj = (c: Ctx): void => {
-    if (!nieZrobiony(c.v, 'r4.nowi') && !nieZrobiony(c.v, 'r8.ludnosc')) return;
+  /** Werbunek wędrowca przy siatce. Gracz robi go, gdy cel każe zebrać ludzi (R4 `nowi`, R8 `ludnosc`) albo, z `werbunekOkazji`,
+      gdy tego chce cel okazji wędrowca (`zOkazji`: O1.2 „Zapytać o rękę”, O1.3 „Zaprosić do nas”). */
+  const werbuj = (c: Ctx, zOkazji = false): void => {
+    if (!zOkazji && !nieZrobiony(c.v, 'r4.nowi') && !nieZrobiony(c.v, 'r8.ludnosc')) return;
     const wedrowiec = st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1);
     const kto = wedrowiec && najblizszyWolny(c, wedrowiec);
     if (!wedrowiec || !kto || !mozna('werbuj', c.s, 10)) return;
@@ -793,11 +805,44 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       menu.find((x) => x.cmd.t === 'reka') ??
       menu.find((x) => x.cmd.t === 'zapros');
     if (!m) return;
+    // podpowiedzi okazji cytują te napisy z menu (O1.2, O1.3): gdy menu mówi co innego, gracz by ich nie znalazł
+    if (m.cmd.t === 'reka' && !m.label.startsWith('Zapytać o rękę')) niezgodnosc('Zapytać o rękę', m.label);
+    if (m.cmd.t === 'zapros' && !m.label.startsWith('Zaprosić do nas')) niezgodnosc('Zaprosić do nas', m.label);
     c.wolni.splice(c.wolni.indexOf(kto), 1);
     if (m.cmd.t === 'talk') werbunek.rozmowy++;
     else if (m.cmd.t === 'reka') werbunek.rece++;
     else werbunek.zaproszenia++;
     polecenie(m.cmd, m.label);
+  };
+
+  /* ------------------------------------------------------------ R3: panel Pracy */
+
+  /** Ustawienie pracy, które nie rusza przebiegu gry, bo bot ścieżki mierzy czasy rozdziałów, a nie gospodarkę: nic z poniższych
+      nie zmienia, kto co robi. Szaber 3 → 4 u pierwszej osoby (klik w komórkę; Szaber jest ostatni w grupie priorytetu 3, więc
+      kolejność pracy ta sama, a symulacja zapisuje zmianę), stałe zajęcie „Ogień” (każdy ma Ogień z priorytetem 1 i na pierwszym
+      miejscu, więc kolejność ta sama) i próg części +5 (warsztat robi części tylko z nadwyżki złomu). Każde ustawienie raz. */
+  const pracaOsoba = (c: Ctx) => c.o.snap.people[0];
+  const kliknijKomorkeSzaber = (c: Ctx): void => {
+    const kto = pracaOsoba(c);
+    if (!kto || !mozna('praca-prio', c.s, 30)) return;
+    const prio = nastepnyPriorytet(kto.praca.prio[RODZAJE.indexOf('szaber')]);
+    polecenie(
+      { t: 'prio', ids: [], osoba: kto.osoba, rodzaj: 'szaber', prio },
+      `panel Pracy: ${kto.first}, Szaber ${prio}`,
+    );
+  };
+  const wybierzStaleOgien = (c: Ctx): void => {
+    const kto = pracaOsoba(c);
+    if (!kto || !mozna('praca-stale', c.s, 30)) return;
+    polecenie(
+      { t: 'stale', ids: [], osoba: kto.osoba, rodzaj: 'ogien' },
+      `karta osoby: ${kto.first}, stałe zajęcie Ogień`,
+    );
+  };
+  const plusProgCzesci = (c: Ctx): void => {
+    if (!mozna('praca-prog', c.s, 30)) return;
+    const n = c.o.snap.praca.progi.czesci + KROK_PROGU;
+    polecenie({ t: 'prog', ids: [], co: 'czesci', n }, `panel Pracy: próg części ${n}`);
   };
 
   /** „Do broni!”: wszyscy zdolni na wartę (przycisk u góry), raz */
@@ -1016,6 +1061,9 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
         polecenie({ t: 'arm', ids: [kto.id], weapon: 'dzida' }, '„Zmień”: dzida z magazynu');
       } else zrobDzide(c);
     },
+    'r3.priorytet': kliknijKomorkeSzaber,
+    'r3.stale': wybierzStaleOgien,
+    'r3.zapas': plusProgCzesci,
     'r4.ludzie': (c) => {
       const mieszkancy = st.pawns.some((p) => p.kind === 'resident' && p.person >= 0);
       c.g.sciezka = zdarzenieUi(c.g.sciezka, mieszkancy ? 'mieszkaniec' : 'budynek', st.tick);
@@ -1062,6 +1110,14 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       if (!m) return;
       c.wolni.splice(c.wolni.indexOf(kto), 1);
       polecenie(m.cmd, m.label);
+    },
+    // werbunek po rozmowie: pytanie o rękę (zombie) i zaproszenie, przez ten sam wybór z menu co przy celach ludzi (tylko z
+    // `werbunekOkazji`: bez niego wędrowców zaprasza gracz wyłącznie wtedy, gdy tego chcą cele R4 i R8)
+    'o1.reka': (c) => {
+      if (werbunekOkazji) werbuj(c, true);
+    },
+    'o1.zapros': (c) => {
+      if (werbunekOkazji) werbuj(c, true);
     },
     'o2.wymiana': (c) => {
       const handlarz = pionekOkazji();

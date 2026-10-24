@@ -18,11 +18,12 @@
    się zamknąć w tym samym kroku. Rozdział z własnym warunkiem otwarcia (`otwiera`) otwiera się, gdy ten warunek jest
    prawdziwy, choćby poprzedni nie był skończony: R1 otwiera się po zamknięciu pierwszego raportu, także gdy samouczek
    z R0 nie jest skończony (został pominięty), i w grze wczytanej ze starego stanu „pierwszy dzień”, w której raport jest
-   już zamknięty. Rozdział z `jest` fałszywym jest pomijany (R3 istnieje tylko z modułem pracy ludzi), a po ostatnim
-   rozdziale stan to „koniec”. „Koniec” zapisany, zanim dopisano późniejsze rozdziały (serwer testowy kończył ścieżkę na
-   R1, zanim doszło R2), nie zostaje na zawsze: krok otwiera pierwszy rozdział po ostatnim rozstrzygniętym i ścieżka
-   rusza dalej; bez żadnego wpisu (stan ustawiony ręcznie do zrzutu) „koniec” zostaje. Cel, który wygrał z terminem
-   w tym samym kroku, jest zaliczony; cel przepadły nie wraca.
+   już zamknięty. Rozdział z `jest` fałszywym jest pomijany (R3 „Praca” istnieje tylko tam, gdzie gra ma rodzaje pracy
+   w panelu Pracy; zapis sprzed R3 nie otwiera go wstecz), a po ostatnim rozdziale stan to „koniec”. „Koniec” zapisany,
+   zanim dopisano późniejsze rozdziały (serwer testowy kończył ścieżkę na R1, zanim doszło R2), nie zostaje na zawsze:
+   krok otwiera pierwszy rozdział po ostatnim rozstrzygniętym i ścieżka rusza dalej; bez żadnego wpisu (stan ustawiony
+   ręcznie do zrzutu) „koniec” zostaje. Cel, który wygrał z terminem w tym samym kroku, jest zaliczony; cel przepadły
+   nie wraca.
    Zaliczenie jest trwałe, przepadnięcie też. `widokSciezki(stan, odczyt)` robi z zapisanego stanu to, co rysuje okienko
    (tytuł, cele z tekstem, podpowiedzią, dopiskiem „czeka” i znacznikiem przepadnięcia, bieżący cel); niczego nie
    zalicza, więc przed nim woła się krok. Tekst i podpowiedź celu dostają też stan ścieżki, żeby cel mógł nieść w tekście
@@ -31,11 +32,12 @@
    src/ui/sciezka-rozdzialy.ts), o ile gra ma włączone drogi. Odczyt jest migawką z jednej chwili: kto zmienia stan gry,
    buduje nowy.
 
-   Okazje. Okazja (`DefOkazji`) to krótki rozdział (1–3 cele) otwierany przez zdarzenie w grze: wędrowiec przy siatce,
-   handlarz pod bramą, napad, stado pod siatką, ugryzienie w kończynę, zwłoki, które wstaną, obca ekipa przy aucie i od
-   20.10.2026 „Zima idzie” (dni 8–13 każdego roku). Stoi nad rozdziałem w okienku, dopóki zdarzenie trwa, i zamyka się
-   sama, kiedy zdarzenie mija albo wszystkie jej cele są zrobione. Cele okazji nie mają terminu: niezrobiony czeka na
-   następne takie zdarzenie, zrobiony nie wraca, a okazja bez niezrobionych celów w ogóle się nie otwiera. Otwarta jest
+   Okazje. Okazja (`DefOkazji`) to krótki rozdział (1–3 cele) otwierany przez zdarzenie w grze: wędrowiec przy siatce
+   (rozmowa, w zombie pytanie o rękę i zaproszenie), handlarz pod bramą, napad, stado pod siatką, ugryzienie w kończynę,
+   zwłoki, które wstaną, obca ekipa przy aucie i od 20.10.2026 „Zima idzie” (dni 8–13 każdego roku). Stoi nad rozdziałem
+   w okienku, dopóki zdarzenie trwa, i zamyka się sama, kiedy zdarzenie mija albo wszystkie jej cele są zrobione. Cele
+   okazji nie mają terminu: niezrobiony czeka na następne takie zdarzenie, zrobiony nie wraca, a okazja bez
+   niezrobionych celów w ogóle się nie otwiera. Otwarta jest
    najwyżej jedna, w kolejności z `OKAZJE` (życie przed gośćmi: O5, O6, O4, O3, O8, O2, O1, O7): ważniejsza wypiera
    otwartą, a wyparta wraca ze świeżym stanem, gdy ważniejsza się skończy. Okazje ruszają dopiero po krokach samouczka.
    `krokOkazji` robi to w każdym kroku ścieżki, po rozdziałach; zaliczenia liczy przed zamknięciem, na tym samym
@@ -82,7 +84,7 @@ import {
 } from './sciezka-rozdzialy.ts';
 import { esc } from './tekst.ts';
 
-/** rozdziały głównej ścieżki po kolei (R3 istnieje dopiero po scaleniu pracy ludzi); „koniec”: po ostatnim rozdziale */
+/** rozdziały głównej ścieżki po kolei (R3 „Praca” tylko z panelem Pracy); „koniec”: po ostatnim rozdziale */
 export const KLUCZE_ROZDZIALOW = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'koniec'] as const;
 export type KluczRozdzialu = (typeof KLUCZE_ROZDZIALOW)[number];
 

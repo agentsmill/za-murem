@@ -27,7 +27,7 @@
    Rozdział, którego nie da się skończyć na jakiejś mapie, poprawia się w celu albo w jego zapasowym warunku (projekt i
    kod ścieżki), nie w bocie.
 
-   Uruchomienie: npm run bot:cele [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [cele] [gadaj] [rownolegle] [karty] [lancuchy=0]
+   Uruchomienie: npm run bot:cele [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [cele] [gadaj] [rownolegle] [werbunek] [karty] [lancuchy=0]
    - dni (domyślnie 10), `zwykly` albo `zombie` i `--demo=NAZWA` (przymorze, lanciego, zielonki) zawężają przebiegi;
    - `ziarno:N` przesuwa ziarno gry względem adresu dema: inna gra na tym samym osiedlu, do sprawdzenia, czy wynik nie
      jest przypadkiem;
@@ -37,6 +37,14 @@
      scalenia etapów 4–5 wydarzeń);
    - `rownolegle`: gracz robi od razu wszystkie niezrobione cele rozdziału, a nie tylko bieżący (domyślnie bieżący, bo
      tylko jego podpowiedź jest na ekranie);
+   - `werbunek`: gracz robi też cele werbunku w okazji wędrowca (O1.2 pytanie o rękę w zombie, O1.3 zaproszenie), czyli
+     zaprasza pierwszego wędrowca już drugiego dnia. Domyślnie nie: wędrowców zaprasza wtedy tylko przy celach „Przyjmijcie
+     kogoś nowego” (R4) i „kolejny kamień ludności” (R8), a przebiegi i czasy celu `nowi` zostają takie jak przed okazją
+     z werbunkiem (z `werbunek` gra idzie inaczej już od drugiego dnia, a `nowi` w trybie zwykłym zalicza się na tych trzech
+     osiedlach o 5 do 20 godzin później);
+   - R3 „Praca”: gracz robi trzy ustawienia z panelu Pracy i z karty osoby, które nie ruszają przebiegu gry (Szaber 3 → 4
+     u pierwszej osoby, jej stałe zajęcie „Ogień” i próg części o 5 wyżej), więc rozdział trwa 3 do 5 minut gry, R4 otwiera
+     się o tyle później, a godziny celów we wszystkich pozostałych rozdziałach zostają co do minuty takie jak bez R3;
    - `karty` dopisuje analizę R4 „Przyjmijcie kogoś nowego” (okno od otwarcia R4 do zaliczenia celu albo końca gry): karty
      zdarzeń, w tym karty gości i kroki łańcuchów, ile z nich oferowało przyjęcie i ile przyjęto (wraz ze zmianą ludności po
      dwóch godzinach gry), rozmowy, pytania o rękę i zaproszenia wędrowców przy siatce, zmiany ludności i godzinę celu `nowi`.
@@ -98,7 +106,7 @@ const obce = Object.entries(FLAGI_OBCE)
   .map(([k]) => k);
 if (obce.length) {
   console.error(
-    `bot:cele zawsze gra z mieszkańcami z adresu, sąsiadami, mapą miasta i drogami, więc nie zna flag: ${obce.join(', ')}. Zna tylko --demo=NAZWA, dni, zwykly|zombie, gadaj, cele, rownolegle, karty, lancuchy=0, bezsmierci, przybysz i ziarno:N.`,
+    `bot:cele zawsze gra z mieszkańcami z adresu, sąsiadami, mapą miasta i drogami, więc nie zna flag: ${obce.join(', ')}. Zna tylko --demo=NAZWA, dni, zwykly|zombie, gadaj, cele, rownolegle, werbunek, karty, lancuchy=0, bezsmierci, przybysz i ziarno:N.`,
   );
   process.exit(2);
 }
@@ -112,6 +120,7 @@ const TRYB = ARGUMENTY.find((a) => a === 'zwykly' || a === 'zombie') as GameMode
 const GADAJ = ARGUMENTY.includes('gadaj');
 const CELE = ARGUMENTY.includes('cele');
 const ROWNOLEGLE = ARGUMENTY.includes('rownolegle');
+const WERBUNEK = ARGUMENTY.includes('werbunek');
 const KARTY = ARGUMENTY.includes('karty');
 /** łańcuchy kart i wątki sezonu zarządu jak w grze w przeglądarce (`newGov(…, true)` w src/main.ts); `lancuchy=0` je wyłącza,
     jak adres `?lancuchy=0` */
@@ -123,7 +132,18 @@ const PRZESUNIECIE = Number(ARGUMENTY.find((a) => /^ziarno:\d+$/.test(a))?.slice
 const nieznaneArgumenty = ARGUMENTY.filter(
   (a) =>
     !/^\d+$/.test(a) &&
-    !['zwykly', 'zombie', 'gadaj', 'cele', 'rownolegle', 'karty', 'lancuchy=0', 'bezsmierci', 'przybysz'].includes(a) &&
+    ![
+      'zwykly',
+      'zombie',
+      'gadaj',
+      'cele',
+      'rownolegle',
+      'werbunek',
+      'karty',
+      'lancuchy=0',
+      'bezsmierci',
+      'przybysz',
+    ].includes(a) &&
     !/^ziarno:\d+$/.test(a),
 );
 if (nieznaneArgumenty.length || (DEMO !== null && !(DEMA as readonly string[]).includes(DEMO))) {
@@ -313,6 +333,7 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
       if (GADAJ) console.log(`  ${hhmm(st.tick)} ${tekst}`);
     },
     ROWNOLEGLE,
+    WERBUNEK,
   );
   gracz.start();
   const koniecTick = dni * TICKS_PER_DAY;

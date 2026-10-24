@@ -290,7 +290,7 @@ export const KARTA = {
   /** tryb zombie: ktoś z nich ukrywa ugryzienie */
   reka: {
     pl: 'Ktoś z nich ma obandażowaną rękę i trzyma się z tyłu.',
-    en: 'One of them has a bandaged hand and keeps to the back.',
+    en: 'One of them has a bandaged arm and keeps to the back.',
   },
   szabrownicy: {
     pl: 'To nie lokatorzy. Siedzą tu od nocy i pilnują tego, co zabrali.',
@@ -329,7 +329,8 @@ export const WYBOR = {
   uspokojenie: (s: string): Dwa => ({ pl: `Uspokoić ich (${s} szans)`, en: `Calm them down (${s} chance)` }),
   ucieczka: (): Dwa => ({ pl: 'Uciekać do siebie', en: 'Run back home' }),
   przegonic: (s: string): Dwa => ({ pl: `Przegonić ich (${s} szans)`, en: `Drive them off (${s} chance)` }),
-  reka: (): Dwa => ({ pl: 'Zapytać o rękę', en: 'Ask about the hand' }),
+  /** ta sama para co w menu wędrowca (NAPISY.zapytacORege w src/sim/wedrowcy.ts): ręka to po angielsku zawsze „arm” */
+  reka: (): Dwa => ({ pl: 'Zapytać o rękę', en: 'Ask to see their arm' }),
 } as const;
 
 export const ZA_MALO_JEDZENIA: Dwa = { pl: 'Za mało jedzenia w zapasach.', en: 'Not enough food in stock.' };

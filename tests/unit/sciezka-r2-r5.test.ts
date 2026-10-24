@@ -9,10 +9,10 @@
    po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (przyjęcie
    od otwarcia, w zombie zapas po trzech dobach; reguły A i B w sciezka-nowi.test.ts), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
-   (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów bez R3, przejścia R2 → R4 → R5
-   → R6 (dalej R6–R8 i „koniec” w sciezka-r6-r8.test.ts), stary zapis w „koniec” po R1, który otwiera R2 (silnik:
-   src/ui/sciezka.ts), zapis i wczytanie w środku rozdziałów oraz teksty z projektu w obu językach, na myszy i na dotyku,
-   w bloku i w domu. */
+   (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów (R3 „Praca” stoi między R2 a R4,
+   jego cele sprawdza sciezka-praca.test.ts), przejścia R2 → R3 → R4 → R5 → R6 (dalej R6–R8 i „koniec” w
+   sciezka-r6-r8.test.ts), stary zapis w „koniec” po R1, który otwiera R2 (silnik: src/ui/sciezka.ts), zapis i wczytanie
+   w środku rozdziałów oraz teksty z projektu w obu językach, na myszy i na dotyku, w bloku i w domu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -158,10 +158,10 @@ function skutki(f: (e: GovEffects) => void): GovEffects {
 
 /* ---------------------------------------------------------------- kolejność rozdziałów */
 
-describe('kolejność rozdziałów: R0, R1, R2, R4, R5, R6, R7, R8 (bez R3, którego jeszcze nie ma)', () => {
-  it('ROZDZIALY ma w tej kolejności pierwszy dzień, drugi dzień, ludzi i noc, zarząd, jedzenie, badania, sąsiadów i drogi', () => {
-    // R6–R8 (badania, sąsiedzi, drogi do zwycięstwa) dopisało zadanie 8 planu; ich cele sprawdza sciezka-r6-r8.test.ts
-    expect(ROZDZIALY.map((r) => r.k)).toEqual(['r0', 'r1', 'r2', 'r4', 'r5', 'r6', 'r7', 'r8']);
+describe('kolejność rozdziałów: R0, R1, R2, R3, R4, R5, R6, R7, R8', () => {
+  it('ROZDZIALY ma w tej kolejności pierwszy dzień, drugi dzień, ludzi i noc, pracę, zarząd, jedzenie, badania, sąsiadów i drogi', () => {
+    // R3 (praca) sprawdza sciezka-praca.test.ts; R6–R8 (badania, sąsiedzi, drogi do zwycięstwa) sciezka-r6-r8.test.ts
+    expect(ROZDZIALY.map((r) => r.k)).toEqual(['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8']);
   });
 
   it.each(KOMBINACJE)('%s %s: tytuły i cele rozdziałów R2, R4 i R5', (key, mode) => {
@@ -197,14 +197,14 @@ describe('kolejność rozdziałów: R0, R1, R2, R4, R5, R6, R7, R8 (bez R3, któ
     expect(klucze(g)).toEqual(['wyprawa', 'lup', 'ogrodek']);
   });
 
-  it('rozdziały R2, R4 i R5 nie mają celów z terminem: nic nie przepada, nawet po nocy bez niczego', () => {
+  it('rozdziały R2 do R5 nie mają celów z terminem: nic nie przepada, nawet po nocy bez niczego', () => {
     // definicje: tylko R0 `drewno` oraz R1 `drewno2` i `dyzur` mają warunek przepadnięcia
     const zTerminem = ROZDZIALY.flatMap((r) => r.cele.filter((c) => c.przepadl).map((c) => `${r.k}.${c.key}`));
     expect(zTerminem).toEqual(['r0.drewno', 'r1.drewno2', 'r1.dyzur']);
     const g = poPierwszymRaporcie('przymorze', 'zwykly');
     otworz(g, 'r2');
     graj(g, (x) => x.gov.reports.length >= 3 && !x.gov.report, {}, 3000);
-    expect(g.sciezka.przepadle.filter((k) => /^r[245]\./.test(k))).toEqual([]);
+    expect(g.sciezka.przepadle.filter((k) => /^r[2345]\./.test(k))).toEqual([]);
   });
 });
 
@@ -1191,8 +1191,8 @@ describe.each(KOMBINACJE)('R5 ogrodek: %s %s', (key, mode) => {
 
 /* ---------------------------------------------------------------- przejścia między rozdziałami */
 
-describe('przejścia: R2 → R4 → R5 → R6', () => {
-  it('zwykły tryb: trzy cele R2 otwierają R4 z licznikami z tej chwili, R4 otwiera R5, R5 otwiera R6', () => {
+describe('przejścia: R2 → R3 → R4 → R5 → R6', () => {
+  it('zwykły tryb: trzy cele R2 otwierają R3, trzy ustawienia pracy R4 z licznikami z tej chwili, R4 otwiera R5, R5 otwiera R6', () => {
     const g = poPierwszymRaporcie('przymorze', 'zwykly');
     wlaczMiasto(g.gov);
     otworz(g, 'r2');
@@ -1206,11 +1206,25 @@ describe('przejścia: R2 → R4 → R5 → R6', () => {
     expect(g.sciezka.rozdzial).toBe('r2');
     rozpalOgnisko(g);
     graj(g, (x) => x.sciezka.rozdzial !== 'r2', {}, 300);
-    expect(g.sciezka.rozdzial).toBe('r4');
+    expect(g.sciezka.rozdzial).toBe('r3');
     expect(zrobione(g, 'r2')).toEqual(['r2.sily', 'r2.ognisko', 'r2.uzbrojeni'].sort());
     expect(g.sciezka.od).toBe(g.sim.st.tick);
     expect(g.sciezka.start).toEqual(licznikiStartu(g.sim.st, g.gov));
     expect(godzina(g)).toBe(18);
+
+    // R3: priorytet z panelu Pracy, stałe zajęcie z karty osoby i próg zapasu; trzecie ustawienie otwiera R4
+    const [a, b] = rdzen(g.sim);
+    // Szaber ma domyślnie 3 u każdego, więc 4 to prawdziwa zmiana (ustawienie równe domyślnemu symulacja zdejmuje)
+    g.sim.push({ t: 'prio', ids: [], osoba: a.person, rodzaj: 'szaber', prio: 4 });
+    g.sim.push({ t: 'stale', ids: [], osoba: b.person, rodzaj: 'drwal' });
+    g.sim.step();
+    expect(krok(g).rozdzial).toBe('r3');
+    g.sim.push({ t: 'prog', ids: [], co: 'drewno', n: 35 });
+    g.sim.step();
+    expect(krok(g).rozdzial).toBe('r4');
+    expect(zrobione(g, 'r3')).toEqual(['r3.priorytet', 'r3.stale', 'r3.zapas']);
+    expect(g.sciezka.od).toBe(g.sim.st.tick);
+    expect(g.sciezka.start).toEqual(licznikiStartu(g.sim.st, g.gov));
 
     // R4: uchwała na zebraniu 19:30, karta budynku, nowy człowiek i wieczorem raport ze spadkiem wkurzenia
     const p = graj(g, () => false, { stoj: ['uchwala'] }, 600) as Extract<Prompt, { k: 'uchwala' }>;
