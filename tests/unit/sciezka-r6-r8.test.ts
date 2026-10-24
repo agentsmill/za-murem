@@ -18,7 +18,9 @@
    zapis i wczytanie w środku rozdziałów oraz teksty z projektu w obu językach, na myszy i na dotyku, w bloku i w domu. */
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { TECH_DOMS } from '../../src/content/data.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
+import { mulberry } from '../../src/core/rng.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import {
   celLudnosci,
@@ -28,7 +30,7 @@ import {
   terenMozliwy,
   wlaczZwyciestwo,
 } from '../../src/gov/zwyciestwo.ts';
-import { nazwaTech, TECH_BY } from '../../src/sim/badania.ts';
+import { kartka, nazwaTech, TECH_BY, TECHS } from '../../src/sim/badania.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
@@ -47,7 +49,7 @@ import {
 import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
 import { bud, FORBIDDEN_DOM, placeWorld } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
-import { core as rdzen } from './sasiedzi-pomoc.ts';
+import { doorWhere, pusto, core as rdzen } from './sasiedzi-pomoc.ts';
 import {
   badajDo,
   bezSzwendaczy,
@@ -509,7 +511,8 @@ describe.each(KOMBINACJE)('R7 pukanie: %s %s', (key, mode) => {
     const g = bezAutomatu(wRozdziale(key, mode, 'r7'));
     const { w } = g.sim;
     const kto = rdzen(g.sim).at(-1)!;
-    const { door } = budynkiSasiadow(w, true)[0];
+    // najbliższe zamknięte drzwi (od budynków najbliżej siedziby), jak w testach sąsiadów
+    const { door } = doorWhere(w, mode, (s) => s.s === 'zamkniete');
     expect(cel(g, 'pukanie').done).toBe(false);
     expect(widok(g).rozdzial!.biezacy?.key).toBe('pukanie');
     bezSzwendaczy(g);
@@ -537,6 +540,37 @@ describe.each(KOMBINACJE)('R7 pukanie: %s %s', (key, mode) => {
       expect(kto.job).toMatchObject({ t: 'door', what: t });
       expect(cel(h, 'pukanie').done, t).toBe(false);
     }
+  });
+
+  it('wynik pukania („Nikt nie otwiera”) po otwarciu rozdziału zalicza cel, gdy pracy przy drzwiach już nie widać; wynik sprzed otwarcia nie', () => {
+    const g = bezAutomatu(poPierwszymRaporcie(key, mode));
+    wlaczDrogi(g);
+    const { w, st } = g.sim;
+    // nikt nie mieszka w okolicy, więc żadne pukanie nie kończy się spotkaniem, tylko napisem
+    g.sim.lokatorzy = pusto(w);
+    const kto = rdzen(g.sim).at(-1)!;
+    const { door } = budynkiSasiadow(w, true)[0];
+    expect(zapukaj(g, kto, door)).toBe(false);
+    expect(st.sasiedzi!.napis!.co).toBe('nikt');
+    otworz(g, 'r7');
+    expect(st.sasiedzi!.napis!.tick).toBeLessThan(g.sciezka.od);
+    expect(cel(g, 'pukanie').done, 'wynik sprzed otwarcia').toBe(false);
+    // drugie pukanie po otwarciu rozdziału; krok ścieżki dopiero po jego końcu, więc pracy przy drzwiach już nie ma
+    expect(zapukaj(g, kto, door)).toBe(false);
+    expect(st.sasiedzi!.napis).toMatchObject({ co: 'nikt' });
+    expect(st.sasiedzi!.napis!.tick).toBeGreaterThanOrEqual(g.sciezka.od);
+    expect(kto.job?.what).not.toBe('knock');
+    expect(cel(g, 'pukanie').done).toBe(true);
+    expect(g.sciezka.zrobione).toHaveProperty(['r7.pukanie']);
+  });
+
+  it('inny napis sąsiadów (zamknięte na klucz) po otwarciu rozdziału nie jest pukaniem', () => {
+    const g = bezAutomatu(wRozdziale(key, mode, 'r7'));
+    const { st } = g.sim;
+    st.sasiedzi = { budynki: [], spotkanie: null, nr: 0, napis: { n: 1, co: 'na_klucz', tick: st.tick, b: 0 }, n: 1 };
+    expect(cel(g, 'pukanie').done).toBe(false);
+    st.sasiedzi.napis = { n: 2, co: 'ktos', tick: st.tick, b: 0 };
+    expect(cel(g, 'pukanie').done).toBe(true);
   });
 
   it('praca z pukaniem, którą kończy spotkanie sprzed kroku ścieżki, i tak zalicza cel: liczy się też licznik spotkań', () => {
@@ -1413,5 +1447,137 @@ describe.each(WSZYSTKIE)('przejście R6 → R7 → R8 → „koniec” samymi po
       ),
     );
     expect(celeHtml(v, { otwarte: true, touch: false })).toContain('Nowe osiedle: Zbierzcie ');
+  });
+});
+
+/* ---------------------------------------------------------------- warunki brzegowe celów badań i dróg */
+
+describe.each(KOMBINACJE)('R6: wpis postępu równy zero niczego nie zalicza: %s %s', (key, mode) => {
+  it('stol: badanie wybrane, ale nikt jeszcze nie siadł (postęp 0)', () => {
+    const g = wRozdziale(key, mode, 'r6');
+    postawPracownie(g);
+    g.sim.st.research = { cur: kartkiDoWziecia(g, 1)[0], prog: { t_okna: 0 }, at: {} };
+    expect(cel(g, 'badanie').done).toBe(true);
+    expect(cel(g, 'stol').done).toBe(false);
+  });
+
+  it('era2: wpis postępu technologii z ery 2 równy zero to jeszcze nie początek badania', () => {
+    const g = wRozdziale(key, mode, 'r6');
+    const { st } = g.sim;
+    postawPracownie(g);
+    st.techDone = ['t_okna'];
+    st.research = { cur: 't_spawanie', prog: { t_okna: 12, t_spawanie: 0 }, at: { t_okna: st.tick } };
+    expect(cel(g, 'odkrycie').done).toBe(true);
+    expect(cel(g, 'era2').done).toBe(false);
+    st.research.prog.t_spawanie = 0.5;
+    expect(krok(g).rozdzial).toBe('r7');
+    expect(zrobione(g, 'r6')).toContain('r6.era2');
+  });
+});
+
+describe('R6: istnienie celów badań', () => {
+  it('kartka bez działania w nowej grze (odwrócona, „do tego trzeba prądu”) nie daje wiedzy do celu', () => {
+    const g = poPierwszymRaporcie('przymorze', 'zwykly');
+    wlaczDrogi(g);
+    otworz(g, 'r6');
+    expect(klucze(g)).toEqual(['pracownia', 'badanie', 'stol', 'odkrycie', 'era2']);
+    // wszystkie kartki ery 1 odwrócone: nie ma czego wziąć, więc nie ma celów badań; ery 2 zostają
+    const era1 = TECHS.filter((t) => t.era === 1);
+    try {
+      for (const t of era1) (t as { dziala: boolean }).dziala = false;
+      expect(klucze(g)).toEqual(['pracownia', 'era2']);
+    } finally {
+      for (const t of era1) (t as { dziala: boolean }).dziala = true;
+    }
+    expect(klucze(g)).toEqual(['pracownia', 'badanie', 'stol', 'odkrycie', 'era2']);
+  });
+
+  it('zaliczony cel zostaje na liście, choć jego warunek w stanie gry już nie jest prawdziwy, a wiedzy nie ma', () => {
+    const g = poPierwszymRaporcie('przymorze', 'zwykly');
+    wlaczDrogi(g);
+    const { st } = g.sim;
+    for (const o of st.people) o.skills = {};
+    delete st.books;
+    otworz(g, 'r6');
+    // wybór badania zalicza `badanie` (stan sprzed zdjęcia wyboru), potem gracz zdejmuje wybór: nic nie jest zbadane
+    st.research = { cur: 't_okna', prog: {}, at: {} };
+    expect(klucze(g)).toEqual(['pracownia', 'badanie']);
+    krok(g);
+    expect(g.sciezka.zrobione).toHaveProperty(['r6.badanie']);
+    st.research.cur = null;
+    expect(zrobione(g, 'r6')).toEqual(['r6.badanie']);
+    expect(klucze(g)).toEqual(['pracownia', 'badanie']);
+    expect(cel(g, 'badanie').done).toBe(true);
+  });
+
+  it('losowe umiejętności i książki: `badanie`, `stol` i `odkrycie` są wtedy i tylko wtedy, gdy któraś kartka ery 1 ma dość wiedzy (wiedza z kart tablicy), `era2` gdy któraś z ery 2', () => {
+    const rnd = mulberry(77);
+    for (let k = 0; k < 40; k++) {
+      const g = poPierwszymRaporcie('przymorze', k % 2 ? 'zombie' : 'zwykly');
+      wlaczDrogi(g);
+      const { st } = g.sim;
+      for (const o of st.people)
+        o.skills = Object.fromEntries(TECH_DOMS.filter(() => rnd() < 0.35).map((d) => [d, Math.floor(rnd() * 4)]));
+      if (rnd() < 0.5) st.books = { [TECH_DOMS[Math.floor(rnd() * TECH_DOMS.length)]]: 1 + Math.floor(rnd() * 3) };
+      otworz(g, 'r6');
+      const tryb = modeOf(st);
+      const moze = (era: number) => TECHS.some((t) => t.era === era && t.dziala && kartka(st, t.id, tryb).ma >= t.lvl);
+      const lista = klucze(g);
+      expect(lista.includes('badanie'), `przebieg ${k}: badanie`).toBe(moze(1));
+      expect(lista.includes('stol'), `przebieg ${k}: stol`).toBe(moze(1));
+      expect(lista.includes('odkrycie'), `przebieg ${k}: odkrycie`).toBe(moze(1));
+      expect(lista.includes('era2'), `przebieg ${k}: era2`).toBe(moze(2));
+    }
+  });
+});
+
+describe('R8: zaliczony cel ludności nie znika, gdy zabraknie wejścia zarządu', () => {
+  it('widok bez wejścia zarządu dalej ma zaliczony cel (z tekstem zastępczym), a niezaliczonego nie ma', () => {
+    const g = wRozdziale('lanciego', 'zwykly', 'r8');
+    const bezWejscia = () => widokSciezki(g.sciezka, { ...odczyt(g), input: null }).rozdzial!.cele.map((c) => c.key);
+    expect(bezWejscia()).not.toContain('ludnosc');
+    const prog = [10, 25, 50][kamienie(g).ludnosc ?? 0];
+    przyjmijLudzi(g, prog - populacja(g.sim.st).razem);
+    sekunda(g);
+    expect(cel(g, 'ludnosc').done).toBe(true);
+    expect(bezWejscia()).toContain('ludnosc');
+    const c = widokSciezki(g.sciezka, { ...odczyt(g), input: null }).rozdzial!.cele.find((x) => x.key === 'ludnosc')!;
+    expect(c).toMatchObject({ done: true, text: 'Zbierzcie więcej osób pod zarządem.' });
+  });
+});
+
+describe.each(KOMBINACJE)('R7: słowa „blok” i „dom” idą za słownikiem sąsiadów: %s %s', (key, mode) => {
+  it('„sąsiedniego domu” dokładnie wtedy, gdy `Words.sasiad` mówi „zza płotu”', () => {
+    const g = wRozdziale(key, mode, 'r7');
+    const domy = odczyt(g).words.sasiad === 'zza płotu';
+    expect(cel(g, 'pukanie').how.includes('sąsiedniego domu')).toBe(domy);
+    expect(cel(g, 'pukanie').how.includes('sąsiedniego bloku')).toBe(!domy);
+    expect(cel(g, 'spotkanie').text).toBe(domy ? 'Porozmawiajcie z sąsiadami.' : 'Porozmawiajcie z lokatorami.');
+    expect(cel(g, 'szaber').how.includes('schodach')).toBe(!domy);
+  });
+});
+
+describe.each(KOMBINACJE)('stary zapis: „koniec” z wersji bez R6: %s %s', (key, mode) => {
+  it('po wczytaniu pierwszy krok otwiera R6 od chwili wczytania i ścieżka rusza dalej', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    wlaczDrogi(g);
+    const tick = g.sim.st.tick;
+    const zrobioneStare: Record<string, number> = {};
+    const przepadle: string[] = [];
+    for (const r of ROZDZIALY.slice(0, 5))
+      for (const c of r.cele) {
+        // drewno na wieczór, drewno na noc i dyżur przepadają, jeśli nie zrobiono ich w nocy; reszta jest zrobiona
+        if (['r0.drewno', 'r1.drewno2', 'r1.dyzur'].includes(`${r.k}.${c.key}`)) przepadle.push(`${r.k}.${c.key}`);
+        else zrobioneStare[`${r.k}.${c.key}`] = tick - 4000;
+      }
+    g.sciezka = { ...nowyStanSciezki(), rozdzial: 'koniec', od: tick - 3000, zrobione: zrobioneStare, przepadle };
+    const h = przezZapis(g);
+    expect(h.sciezka.rozdzial).toBe('koniec');
+    expect(krok(h).rozdzial).toBe('r6');
+    expect(h.sciezka.od).toBe(h.sim.st.tick);
+    expect(h.sciezka.start).toEqual(licznikiStartu(h.sim.st, h.gov));
+    expect(widok(h).rozdzial!.tytul).toBe('Badania');
+    expect(klucze(h)).toEqual(['pracownia', 'badanie', 'stol', 'odkrycie', 'era2']);
+    for (const k of Object.keys(zrobioneStare)) expect(h.sciezka.zrobione[k]).toBe(zrobioneStare[k]);
   });
 });

@@ -503,6 +503,18 @@ describe('silnik ścieżki: rozdziały na atrapie', () => {
     ]);
   });
 
+  it('bez wejścia zarządu albo bez zarządu widok po ostatnim rozdziale nie ma wierszy dróg', () => {
+    const g = nowaGra('przymorze');
+    wlaczZwyciestwo(g.gov);
+    const f = flagi();
+    f.a = f.b = f.c = f.d = f.e = true;
+    const { krokA } = silnik(g, atrapa(f));
+    expect(krokA().rozdzial).toBe('koniec');
+    expect(widokSciezki(g.sciezka, odczyt(g), atrapa(f)).drogi).not.toBeNull();
+    expect(widokSciezki(g.sciezka, { ...odczyt(g), input: null }, atrapa(f)).drogi).toBeNull();
+    expect(widokSciezki(g.sciezka, { ...odczyt(g), gov: null, input: null }, atrapa(f)).drogi).toBeNull();
+  });
+
   it('widok dróg tylko czyta: wejście, stan ścieżki i stan zarządu zostają nietknięte', () => {
     const g = nowaGra('przymorze');
     wlaczZwyciestwo(g.gov);

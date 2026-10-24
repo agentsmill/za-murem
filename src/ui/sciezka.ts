@@ -25,7 +25,11 @@
    w tym samym kroku, jest zaliczony; cel przepadły nie wraca.
    Zaliczenie jest trwałe, przepadnięcie też. `widokSciezki(stan, odczyt)` robi z zapisanego stanu to, co rysuje okienko
    (tytuł, cele z tekstem, podpowiedzią, dopiskiem „czeka” i znacznikiem przepadnięcia, bieżący cel); niczego nie
-   zalicza, więc przed nim woła się krok. Odczyt jest migawką z jednej chwili: kto zmienia stan gry, buduje nowy.
+   zalicza, więc przed nim woła się krok. Tekst i podpowiedź celu dostają też stan ścieżki, żeby cel mógł nieść w tekście
+   to, co było przy otwarciu rozdziału (zaliczony cel drogi ludnościowej mówi dalej o progu, który zaliczył). Po ostatnim
+   rozdziale („koniec”) widok nie ma rozdziału, tylko wiersze dróg do zwycięstwa (`wierszeDrog` z
+   src/ui/sciezka-rozdzialy.ts), o ile gra ma włączone drogi. Odczyt jest migawką z jednej chwili: kto zmienia stan gry,
+   buduje nowy.
 
    Kontrakt: wszystkie funkcje są czyste. Stan (i odczyt gry) na wejściu, nowy stan na wyjściu; wejście zostaje
    nietknięte, a wynik nie dzieli z nim żadnego obiektu (kopia, więc wynik wolno zmieniać bez skutku dla wejścia).
@@ -34,7 +38,8 @@
    i `stanZZapisu`, który wtedy zaczyna od stanu na start).
 
    Rozdziały. Co każdy cel mówi i kiedy się zalicza, opisuje src/ui/sciezka-rozdzialy.ts (R0 to `goalsOf` z
-   src/ui/cele.ts opakowany w rozdział, dalej R1 i kolejne). Silnik bierze stamtąd tylko `ROZDZIALY`.
+   src/ui/cele.ts opakowany w rozdział, dalej R1 do R8). Silnik bierze stamtąd `ROZDZIALY`, liczniki „od otwarcia”
+   i wiersze dróg po ostatnim rozdziale.
 
    Okienko i okna. `celeHtml(widok, { otwarte, touch })` składa wnętrze okienka `#goals` z widoku ścieżki, bez DOM: blok
    okazji („Teraz: …”, jej cele, podpowiedź bieżącego) nad rozdziałem (nagłówek z licznikiem, lista, podpowiedź pod
@@ -283,11 +288,11 @@ export interface Cel {
   okno?: OknoCelu;
 }
 
-/** Widok okienka celów (rysuje go `celeHtml`). `okazja` i `drogi` wypełniają kolejne zadania planu; `rozdzial` jest pusty
-    po ostatnim rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis z „Teraz: …” / “Now: …”
-    (nadaje go definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg do zwycięstwa po ostatnim
-    rozdziale: `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep` to „{ile} z {cel}” albo null; pusta lista
-    albo null znaczy: nic do pokazania, okienko się chowa. */
+/** Widok okienka celów (rysuje go `celeHtml`). `okazja` wypełni zadanie okazji; `rozdzial` jest pusty po ostatnim
+    rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis z „Teraz: …” / “Now: …” (nadaje go
+    definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg do zwycięstwa po ostatnim rozdziale
+    (`wierszeDrog`): `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep` to „{ile} z {cel}” albo null; pusta
+    lista albo null znaczy: nic do pokazania, okienko się chowa. */
 export interface WidokSciezki {
   okazja: { tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
   rozdzial: { k: KluczRozdzialu; tytul: string; cele: Cel[]; biezacy: Cel | null } | null;

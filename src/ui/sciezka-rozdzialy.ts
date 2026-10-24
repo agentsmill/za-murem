@@ -29,8 +29,18 @@
    R5 „Jedzenie” uczy mapy miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu) i ogródka. Cele
    z mapy istnieją tylko w grze z oknem mapy miasta, które gra zgłasza flagą `OdczytCelow.mapaMiasta`: z `?miasto=0` i na
    osiedlu zapasowym bez położenia przycisku mapy nie ma, choć `gov.miasto` istnieje; bez flagi, w testach, decyduje
-   `gov.miasto`. Rozdziały R2–R5 nie mają terminów: nic z nich nie przepada. R3 (praca ludzi) i R6–R8 dochodzą w kolejnych
-   zadaniach planu, więc po R2 otwiera się R4.
+   `gov.miasto`. Rozdziały R2–R8 nie mają terminów: nic z nich nie przepada. R3 (praca ludzi) dochodzi po scaleniu
+   `praca-ludzi`, więc po R2 otwiera się R4.
+
+   R6 „Badania” uczy pracowni, wyboru badania na tablicy (linia celu w oknie tablicy), stołu pracowni, pierwszej technologii
+   i kartki z ery 2. Cele badań istnieją tylko tam, gdzie osada ma dość wiedzy na kartkę ery 1 albo 2 (`mozeWziacKartke`:
+   wiedza jak w `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie), żeby zarząd bez fachu ery 1 nie utknął w rozdziale.
+   R7 „Sąsiedzi” uczy pukania (praca przy drzwiach z pukaniem, wynik pukania albo spotkanie), rozmowy w oknie spotkania
+   (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
+   pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
+   ekranu dróg, kolejnego kamienia ludności (tekst to „co dalej” z chwili otwarcia rozdziału, bo `tekst` dostaje stan
+   ścieżki) i, tam gdzie wspólny płot dosięga sąsiada, terenu (ten sam predykat `terenMozliwy` co ekran dróg). Po R8 okienko
+   pokazuje wiersze dróg z „co dalej” (`wierszeDrog`).
 
    Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
    te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
@@ -733,6 +743,10 @@ function sasiedziWDomach(o: OdczytCelow): boolean {
   return s === 'domy' || (s === null && p.kind === 'dom');
 }
 
+/** napisy, które zostawia sama próba zapukania, gdy nikt nie otwiera („Nikt nie otwiera”, „Ktoś jest, ale nie otwiera”,
+    szuranie za drzwiami; `Sim.pukanie`); inne napisy sąsiadów (zamek, ostrzeżenie, wynik spotkania) pukaniem nie są */
+const WYNIKI_PUKANIA: ReadonlySet<string> = new Set(['nikt', 'ktos', 'szuranie']);
+
 const R7: DefRozdzialu = {
   k: 'r7',
   tytul: () => L('Sąsiedzi', 'Neighbours'),
@@ -758,11 +772,17 @@ const R7: DefRozdzialu = {
           }`,
         );
       },
-      // praca przy drzwiach z pukaniem trwa od polecenia do skutku (dojście, pukanie), więc okienko ją zobaczy; do tego
-      // spotkanie po pukaniu (stan trwały)
-      zrobiony: (o, s) =>
-        o.st.pawns.some((p) => p.kind === 'core' && p.job?.t === 'door' && p.job.what === 'knock') ||
-        (o.st.sasiedzi?.nr ?? 0) > s.start.spotkania,
+      // Praca przy drzwiach z pukaniem trwa od polecenia do skutku (dojście, pukanie), więc okienko ją zobaczy. Krótką pracę
+      // (osoba stoi już pod drzwiami, szybkie tempo) mogłoby ominąć, więc liczy się też jej trwały ślad w stanie: spotkanie
+      // po pukaniu i napis z wynikiem pukania, który zostaje do następnego napisu.
+      zrobiony: (o, s) => {
+        const sas = o.st.sasiedzi;
+        return (
+          o.st.pawns.some((p) => p.kind === 'core' && p.job?.t === 'door' && p.job.what === 'knock') ||
+          (sas?.nr ?? 0) > s.start.spotkania ||
+          (!!sas?.napis && WYNIKI_PUKANIA.has(sas.napis.co) && sas.napis.tick >= s.od)
+        );
+      },
     },
     {
       key: 'spotkanie',
