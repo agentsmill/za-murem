@@ -85,9 +85,21 @@ async function sprawdzCzcionki(page: Page): Promise<void> {
   if (!ok) throw new Error('czcionki Barlow z Google Fonts się nie wczytały (sieć?): powtórz scenariusz');
 }
 
+/** Przejście na adres z jedną ponowną próbą po przekroczeniu czasu: strona czeka na arkusz stylów z Google Fonts, a gdy sieć
+    się zacina, `load` nie przychodzi przez pół minuty (zrzuty padają wtedy z `TimeoutError`, nie z błędu gry). */
+async function idz(page: Page, adres: string): Promise<void> {
+  try {
+    await page.goto(adres);
+  } catch (e) {
+    if ((e as Error).name !== 'TimeoutError') throw e;
+    console.log('  (sieć: przejście na stronę przekroczyło czas, druga próba)');
+    await page.goto(adres);
+  }
+}
+
 /** start gry i czekanie na pierwsze chipy listy ludzi (portrety rysuje `hud` co 200 ms) */
 async function start(page: Page, base: string, query: string): Promise<void> {
-  await page.goto(`${base}?${query}`);
+  await idz(page, `${base}?${query}`);
   await waitIdle(page);
   await page.waitForSelector('#lista:not([hidden]) .lp');
   await sprawdzCzcionki(page);
@@ -546,7 +558,8 @@ async function sprawdzR1(page: Page, opis: string, v: WariantR1): Promise<Wiersz
     throw new Error(`${opis}: cele 2–4 mają klasy ${w.slice(1, 4).map((x) => x.klasy.join('+'))}`);
   // podpowiedź przeszukania: najpierw osoba, potem prawy przycisk (na dotyku palec), w bloku mieszkanie, w domu pokój
   const jak = w[0].jak;
-  if (en) zawiera(opis, jak, 'Select someone', 'right-click', 'Search the');
+  if (en && v.dotyk) zawiera(opis, jak, 'Tap someone', 'press and hold', 'Search the');
+  else if (en) zawiera(opis, jak, 'Select someone', 'right-click', 'Search the');
   else if (v.dotyk) zawiera(opis, jak, 'przytrzymajcie palec', 'Przeszukać');
   else
     zawiera(
@@ -760,18 +773,27 @@ export function celeShots(out: string): ShotCele[] {
   const shot = (s: ShotCele) => s;
   const zrzut = (page: Page, nazwa: string) => page.screenshot({ path: path.join(out, `${nazwa}.png`) });
 
-  /** drugi dzień w trzech miejscach i dwóch trybach: tekst okienka i układ z kartą osoby i panelem budowy */
-  const drugiDzien = (name: string, demo: string, opcje: { zombie?: boolean; dom?: boolean }): ShotCele =>
+  /** drugi dzień w trzech miejscach i dwóch trybach: tekst okienka i układ z kartą osoby i panelem budowy; na telefonie okienko
+      najpierw rozwinięte do sprawdzenia tekstów, a układ w jego domyślnym, zwiniętym stanie */
+  const drugiDzien = (
+    name: string,
+    demo: string,
+    opcje: { zombie?: boolean; dom?: boolean },
+    w = 1440,
+    h = 900,
+  ): ShotCele =>
     shot({
       name,
       query: '',
-      w: 1440,
-      h: 900,
+      w,
+      h,
       run: async (page, base) => {
+        const dotyk = dotykowy(w);
         await start(page, base, `demo=${demo}${opcje.zombie ? '&tryb=zombie' : ''}&${GRA}`);
-        await doDrugiegoDnia(page, false);
-        const w = await sprawdzR1(page, name, opcje);
-        console.log(`  ${w.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
+        await doDrugiegoDnia(page, dotyk);
+        if (dotyk) await ustawOkienko(page, true, true);
+        const wr = await sprawdzR1(page, name, { ...opcje, dotyk });
+        console.log(`  ${wr.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
         const v = await widok(page);
         if (v.okazja) throw new Error(`${name}: okazja „${v.okazja.tytul}” przed południem dnia 2`);
         // zombie: podpowiedzi celów, które nie są bieżące, są w widoku, a nie w DOM
@@ -779,9 +801,10 @@ export function celeShots(out: string): ShotCele[] {
           const cele = v.rozdzial!.cele;
           zawiera(name, cele.find((c) => c.key === 'dzida')!.how, 'Zrobić dzidę', '2 deski i 1 złom');
           zawiera(name, cele.find((c) => c.key === 'drewno2')!.how, 'Za siatką są szwendacze', 'Spalić');
+          if (dotyk) zawiera(name, cele.find((c) => c.key === 'dzida')!.how, 'Przytrzymajcie palec na stercie');
         }
-        await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
-        if (!opcje.zombie && !opcje.dom) {
+        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
+        if (!opcje.zombie && !opcje.dom && !dotyk) {
           // zmiana języka przy otwartym okienku przerysowuje je od nowa (bez polskich liter po angielsku), a po powrocie
           // do polskiego wszystko jest jak było
           await ustawJezyk(page, 'en');
@@ -1209,18 +1232,19 @@ export function celeShots(out: string): ShotCele[] {
 
   /** Okazja ugryzienia w trybie zombie nad pierwszym dniem: po samouczku ktoś z zarządu ma ugryzienie w kończynę w stanie gry,
       okazja pokazuje jego imię i cel amputacji, a karta ugryzionego ma przycisk „Amputować”, o którym mówi podpowiedź. */
-  const ugryzienie = (name: string): ShotCele =>
+  const ugryzienie = (name: string, w = 1440, h = 900): ShotCele =>
     shot({
       name,
       query: '',
-      w: 1440,
-      h: 900,
+      w,
+      h,
       run: async (page, base) => {
+        const dotyk = dotykowy(w);
         await start(page, base, `demo=przymorze&tryb=zombie&${GRA}`);
         await chopDryTree(page);
         // okazje ruszają dopiero po krokach samouczka
         await przewin(page, async () => (await page.evaluate(() => window.zm!.sim!.st.tut.step)) >= 6, {
-          dotyk: false,
+          dotyk,
           krok: () => 10,
         });
         // w trybie zombie samouczek kończy się dopiero wieczorem (drewno z suchego drzewa dochodzi do składu po 21:00), więc pod
@@ -1250,14 +1274,16 @@ export function celeShots(out: string): ShotCele[] {
         if (ok[0].tekst !== `Ratujcie: ${kto.imie} potrzebuje amputacji.`)
           throw new Error(`${name}: cel „${ok[0].tekst}”`);
         zawiera(name, ok[0].jak ?? '', 'Amputować', 'pół godziny', 'Po dwóch godzinach jest za późno');
+        // na telefonie okienko jest zwinięte do samej okazji: rozdział pod nią widać po rozwinięciu
+        if (dotyk) await ustawOkienko(page, true, true);
         const n = await naglowek(page);
         if (n.tytul !== 'Pierwszy dzień') throw new Error(`${name}: pod okazją rozdział „${n.tytul}”`);
-        await ukladZPanelami(page, `${name} 1440×900`, false, {
+        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, {
           zrzut: `${name}-karta-budowa`,
-          znane: ZNANE_NA_KOMPUTERZE,
+          ...(dotyk ? {} : { znane: ZNANE_NA_KOMPUTERZE }),
         });
         // karta ugryzionego (chip tej osoby na liście) ma przycisk „Amputować”
-        await kliknij(page, `#lista .lp[data-pawn="${kto.pawn}"]`, false);
+        await kliknij(page, `#lista .lp[data-pawn="${kto.pawn}"]`, dotyk);
         await page.waitForSelector('#card:not([hidden])');
         await page.waitForTimeout(450);
         const karta = await page.evaluate(() => ({
@@ -1401,45 +1427,51 @@ export function celeShots(out: string): ShotCele[] {
     });
 
   /** Angielski: drugi dzień i karta nocy bez polskich liter (w tekście i w atrybutach okienka), z linią „Goal: …” w oknie. */
-  const angielski = (name: string): ShotCele =>
+  const angielski = (name: string, w = 1440, h = 900): ShotCele =>
     shot({
       name,
       query: '',
-      w: 1440,
-      h: 900,
+      w,
+      h,
       lang: 'en',
       run: async (page, base) => {
+        const dotyk = dotykowy(w);
         await start(page, base, `demo=przymorze&${GRA}`);
-        await doDrugiegoDnia(page, false);
-        const w = await sprawdzR1(page, name, { en: true });
-        console.log(`  ${w.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
+        await doDrugiegoDnia(page, dotyk);
+        if (dotyk) await ustawOkienko(page, true, true);
+        const wr = await sprawdzR1(page, name, { en: true, dotyk });
+        console.log(`  ${wr.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
         await okienkoBezPolskich(page, name);
         const tytul = await page.$eval('#goals .goals-head', (e) => e.getAttribute('title') ?? '');
-        if (tytul !== 'Click to collapse the list') throw new Error(`${name}: podpowiedź nagłówka „${tytul}”`);
-        await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
+        const oczekiwany = dotyk ? 'Tap to collapse the list' : 'Click to collapse the list';
+        if (tytul !== oczekiwany) throw new Error(`${name}: podpowiedź nagłówka „${tytul}” zamiast „${oczekiwany}”`);
+        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
         // karta nocy dnia 2: linia celu po angielsku
-        const o = await przewin(page, () => false, { dotyk: false, stop: ['karta'] });
+        const o = await przewin(page, () => false, { dotyk, stop: ['karta'] });
         if (o !== 'karta') throw new Error(`${name}: przed 20:00 nie otworzyła się karta nocy`);
         const linia = await liniaCeluOkna(page, `${name}, karta nocy`);
         if (linia !== 'Goal: Put someone on stove watch.') throw new Error(`${name}: linia celu „${linia}”`);
         const kartaPl = polskieLitery(linia);
         if (kartaPl.length) throw new Error(`${name}: polskie litery w linii celu: ${kartaPl.join(', ')}`);
         await zrzut(page, `${name}-karta`);
-        await kliknij(page, '#sheet [data-act="night-go"]', false);
-        await zamknijOkna(page, false);
+        await kliknij(page, '#sheet [data-act="night-go"]', dotyk);
+        await zamknijOkna(page, dotyk);
         await page.waitForTimeout(450);
+        await ustawOkienko(page, true, dotyk);
         const po = await wiersze(page, 'rozdzial');
-        const html2 = await page.$eval('#goals', (e) => e.textContent ?? '');
-        const pl2 = polskieLitery(html2);
+        const pl2 = polskieLitery(await tekstOkienka(page));
         if (pl2.length) throw new Error(`${name}: polskie litery po karcie: ${pl2.join(', ')}`);
         console.log(`  po karcie: ${po.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
       },
     });
 
   /** Zaliczenie drewna na wieczór przeżywa zapis, zjedzenie zapasu przez kozę i przeładowanie strony: po samouczku trzy sztuki
-      drewna na składzie zaliczają cel, koza zjada je przed zebraniem, stan idzie do zapisu (`Save.cele`) i po „Kontynuuj”
-      cel dalej jest zaliczony, choć zapasu w świecie już nie ma. To jedyne sprawdzenie okablowania zapisu stanu ścieżki
-      w `main.ts`. */
+      drewna na składzie zaliczają cel, stan idzie do zapisu (`Save.cele`), koza zjada zapas przed zebraniem, gra zapisuje się
+      jeszcze raz sama (autozapis co godzinę gry w klatce albo wyjście ze strony: `save()` z tego samego miejsca w `main.ts`),
+      już bez drewna w świecie, a po „Kontynuuj” cel dalej jest zaliczony, choć zapasu nie ma. To jedyne sprawdzenie okablowania
+      zapisu i wczytania stanu ścieżki w `main.ts` (`cele: sciezka` w `save()`, `stanZZapisu` w `enter()`): zapis zrobiony
+      wyłącznie w chwili zaliczenia nic by nie dowodził, bo ten stan świata ma jeszcze drewno i cel zaliczyłby się po
+      wczytaniu od nowa, a scenariusz sprawdza, że po wczytaniu drewna już nie ma. */
   const przeladowanie = (name: string): ShotCele =>
     shot({
       name,
@@ -1447,6 +1479,14 @@ export function celeShots(out: string): ShotCele[] {
       w: 1440,
       h: 900,
       run: async (page, base) => {
+        /** to, co leży w pamięci przeglądarki pod kluczem zapisu: tick gry i zaliczone cele ścieżki */
+        const zapis = (): Promise<{ tick: number; zrobione: Record<string, number>; rozdzial: string } | null> =>
+          page.evaluate((k) => {
+            const raw = localStorage.getItem(k);
+            if (!raw) return null;
+            const z = JSON.parse(raw);
+            return { tick: z.sim.tick as number, zrobione: z.cele?.zrobione ?? {}, rozdzial: z.cele?.rozdzial ?? '' };
+          }, SAVE);
         await start(page, base, `demo=przymorze&${GRA}`);
         await chopDryTree(page);
         await przewin(page, async () => (await page.evaluate(() => window.zm!.sim!.st.tut.step)) >= 6, {
@@ -1462,6 +1502,12 @@ export function celeShots(out: string): ShotCele[] {
         await page.waitForTimeout(450);
         if (!(await drewno()).done) throw new Error(`${name}: trzy sztuki na składzie nie zaliczyły drewna`);
         console.log(`  zaliczone przy zapasie ${await zapasDrewna(page)} szt.`);
+        // zapis w chwili zaliczenia: zaliczenie jest już w stanie ścieżki, który idzie do zapisu
+        if (!(await page.evaluate(() => window.zm!.save()))) throw new Error(`${name}: zapis się nie udał`);
+        const pierwszy = await zapis();
+        console.log(`  zapis w chwili zaliczenia: tick ${pierwszy?.tick}, rozdział ${pierwszy?.rozdzial}`);
+        if (!pierwszy || pierwszy.zrobione['r0.drewno'] === undefined)
+          throw new Error(`${name}: zapis bez zaliczonego drewna`);
         // koza zjada zapas (zarząd dokłada ze składu do kozy), zanim przyjdzie zebranie o 19:30
         await przewin(page, async () => (await zapasDrewna(page)) < 3, { dotyk: false, krok: () => 5, maks: 60 });
         const zapas = await zapasDrewna(page);
@@ -1469,23 +1515,24 @@ export function celeShots(out: string): ShotCele[] {
         console.log(`  koza zjadła zapas: ${zapas} szt. o ${hm}`);
         if (!(await drewno()).done) throw new Error(`${name}: po zjedzeniu zapasu drewno nie jest już zaliczone`);
         await zrzut(page, `${name}-przed`);
-        // zapis i przeładowanie strony: ekran startowy z „Kontynuuj”
-        if (!(await page.evaluate(() => window.zm!.save()))) throw new Error(`${name}: zapis się nie udał`);
-        const wZapisie = await page.evaluate((k) => {
-          const z = JSON.parse(localStorage.getItem(k)!);
-          return z.cele as { rozdzial: string; zrobione: Record<string, number> } | undefined;
-        }, SAVE);
+        // wyjście ze strony bez ręcznego zapisu: do pamięci przeglądarki trafia zapis, który zrobiła sama gra (autozapis
+        // co godzinę gry w klatce albo `pagehide` i `visibilitychange` przy zamknięciu karty), już po zjedzeniu zapasu
+        await idz(page, `${base}?speed=0`);
+        const drugi = await zapis();
         console.log(
-          `  w zapisie: rozdział ${wZapisie?.rozdzial}, zaliczone ${Object.keys(wZapisie?.zrobione ?? {}).join(', ')}`,
+          `  zapis zrobiony przez grę po zjedzeniu zapasu: tick ${drugi?.tick}, zaliczone ${Object.keys(drugi?.zrobione ?? {}).join(', ')}`,
         );
-        if (!wZapisie || wZapisie.zrobione['r0.drewno'] === undefined)
-          throw new Error(`${name}: zapis bez zaliczonego drewna`);
-        await page.goto(`${base}?speed=0`);
+        if (!drugi || drugi.tick <= (pierwszy?.tick ?? 0))
+          throw new Error(
+            `${name}: gra nie zapisała się po zjedzeniu zapasu (tick ${drugi?.tick}, wcześniej ${pierwszy?.tick})`,
+          );
+        if (drugi.zrobione['r0.drewno'] === undefined)
+          throw new Error(`${name}: zapis po zjedzeniu zapasu bez zaliczonego drewna`);
         await page.waitForSelector('#resume:not([hidden])');
         await page.click('#btnResume');
         await waitIdle(page);
         await page.waitForSelector('#goals:not([hidden]) .goal');
-        // po wczytaniu świat ma tyle drewna co przed zapisem (mniej niż trzy), a cel dalej jest zaliczony
+        // po wczytaniu świat ma tyle drewna co przy wyjściu (mniej niż trzy), a cel dalej jest zaliczony
         const po = await zapasDrewna(page);
         console.log(`  po „Kontynuuj”: zapas ${po} szt.`);
         if (po >= 3)
@@ -1506,6 +1553,9 @@ export function celeShots(out: string): ShotCele[] {
     drugiDzien('cele-r1', 'przymorze', {}),
     drugiDzien('cele-r1-dom', 'zielonki', { dom: true }),
     drugiDzien('cele-r1-zombie', 'przymorze', { zombie: true }),
+    drugiDzien('cele-r1-telefon', 'przymorze', {}, 390, 844),
+    drugiDzien('cele-r1-dom-telefon', 'zielonki', { dom: true }, 390, 844),
+    drugiDzien('cele-r1-zombie-telefon', 'przymorze', { zombie: true }, 390, 844),
     kartaNocy('cele-karta-nocy', 1440, 900, { malo: true, trzy: false }),
     kartaNocy('cele-karta-nocy-telefon', 390, 844, { malo: true, trzy: false }),
     kartaNocy('cele-karta-nocy-drewno2', 1440, 900, { malo: true, trzy: true }),
@@ -1519,11 +1569,13 @@ export function celeShots(out: string): ShotCele[] {
     czeka('cele-czeka'),
     handlarz('cele-okazja-handlarz'),
     ugryzienie('cele-okazja-ugryzienie'),
+    ugryzienie('cele-okazja-ugryzienie-telefon', 390, 844),
     drogi('cele-drogi', 1440, 900),
     drogi('cele-drogi-telefon', 390, 844),
     telefon('cele-telefon', 390, 844),
     telefon('cele-telefon-360', 360, 780),
     angielski('en-cele-r1'),
+    angielski('en-cele-r1-telefon', 390, 844),
     przeladowanie('cele-przeladowanie'),
   ];
 }
