@@ -166,7 +166,7 @@ U7 i U8 to sama ścieżka (rozdziały niżej), U15 robi gałąź `wydarzenia`.
 Dwa tory w jednym okienku celów:
 
 - Główna ścieżka: rozdziały R0–R8 po kolei. Rozdział ma 3–5 celów, odsłania się, kiedy poprzedni jest skończony (każdy cel zrobiony albo przepadł). Wyjątek to R1, który otwiera się po zamknięciu pierwszego raportu, jak dziś drugi dzień. R3 (Praca) istnieje dopiero po scaleniu `praca-ludzi`; bez niej ścieżka idzie z R2 do R4.
-- Okazje: krótkie rozdziały O1–O7 (1–3 cele), które otwierają się na zdarzenie w grze (przybysz, napad, stado, ugryzienie, zwłoki, obcy przy aucie) i stoją nad rozdziałem ścieżki, dopóki zdarzenie trwa. Nie przepadają: cel niezrobiony czeka na następną taką okazję, zrobiony nie wraca. Okazje ruszają dopiero po krokach samouczka (`st.tut.step` równe `TUT_STEPS.length` albo −1), żeby nie przeszkadzać w pierwszych minutach.
+- Okazje: krótkie rozdziały O1–O8 (1–3 cele), które otwierają się na zdarzenie w grze (przybysz, napad, stado, ugryzienie, zwłoki, obcy przy aucie, zima) i stoją nad rozdziałem ścieżki, dopóki zdarzenie trwa. Nie przepadają: cel niezrobiony czeka na następną taką okazję, zrobiony nie wraca. Okazje ruszają dopiero po krokach samouczka (`st.tut.step` równe `TUT_STEPS.length` albo −1), żeby nie przeszkadzać w pierwszych minutach.
 
 Cele w rozdziale:
 

@@ -33,15 +33,16 @@
 
    Okazje. Okazja (`DefOkazji`) to krótki rozdział (1–3 cele) otwierany przez zdarzenie w grze: wędrowiec przy siatce,
    handlarz pod bramą, napad, stado pod siatką, ugryzienie w kończynę, zwłoki, które wstaną, obca ekipa przy aucie i od
-   19.10.2026 „Zima idzie”. Stoi nad rozdziałem w okienku, dopóki zdarzenie trwa, i zamyka się sama, kiedy zdarzenie
-   mija albo wszystkie jej cele są zrobione. Cele okazji nie mają terminu: niezrobiony czeka na następne takie zdarzenie,
-   zrobiony nie wraca, a okazja bez niezrobionych celów w ogóle się nie otwiera. Otwarta jest najwyżej jedna, w kolejności
-   z `OKAZJE` (życie przed gośćmi: O5, O6, O4, O3, O8, O2, O1, O7): ważniejsza wypiera otwartą, a wyparta wraca ze
-   świeżym stanem, gdy ważniejsza się skończy. Okazje ruszają dopiero po krokach samouczka. `krokOkazji` robi to w każdym
-   kroku ścieżki, po rozdziałach; zaliczenia liczy przed zamknięciem, na tym samym odczycie, więc zdarzenie, które mija
-   razem ze skutkiem celu (udana amputacja, dobite zwłoki), cel zalicza. Stan okazji w `StanSciezki.okazja` niesie klucz,
-   tick otwarcia, licznik zabitych z chwili otwarcia (do celu stada) i id pionka albo rzeczy, której dotyczy (ugryziony,
-   zwłoki, wędrowiec, handlarz). Tytuł okazji niesie „Teraz: …” / “Now: …” sam.
+   20.10.2026 „Zima idzie” (dni 8–13 każdego roku). Stoi nad rozdziałem w okienku, dopóki zdarzenie trwa, i zamyka się
+   sama, kiedy zdarzenie mija albo wszystkie jej cele są zrobione. Cele okazji nie mają terminu: niezrobiony czeka na
+   następne takie zdarzenie, zrobiony nie wraca, a okazja bez niezrobionych celów w ogóle się nie otwiera. Otwarta jest
+   najwyżej jedna, w kolejności z `OKAZJE` (życie przed gośćmi: O5, O6, O4, O3, O8, O2, O1, O7): ważniejsza wypiera
+   otwartą, a wyparta wraca ze świeżym stanem, gdy ważniejsza się skończy. Okazje ruszają dopiero po krokach samouczka.
+   `krokOkazji` robi to w każdym kroku ścieżki, po rozdziałach; zaliczenia liczy przed zamknięciem, na tym samym
+   odczycie, więc zdarzenie, które mija razem ze skutkiem celu (udana amputacja, dobite zwłoki), cel zalicza. Stan
+   okazji w `StanSciezki.okazja` niesie klucz, tick otwarcia, licznik zabitych z chwili otwarcia (do celu stada) i id
+   pionka albo rzeczy, której dotyczy (ugryziony, zwłoki, wędrowiec, handlarz). Tytuł okazji sam niesie
+   „Teraz: …” / “Now: …”.
 
    Kontrakt: wszystkie funkcje są czyste. Stan (i odczyt gry) na wejściu, nowy stan na wyjściu; wejście zostaje
    nietknięte, a wynik nie dzieli z nim żadnego obiektu (kopia, więc wynik wolno zmieniać bez skutku dla wejścia).
@@ -79,7 +80,7 @@ export const KLUCZE_ROZDZIALOW = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'
 export type KluczRozdzialu = (typeof KLUCZE_ROZDZIALOW)[number];
 
 /** okazje: krótkie rozdziały otwierane przez zdarzenie w grze (wędrowiec, handlarz, napad, stado, ugryzienie, zwłoki,
-    obcy przy aucie) */
+    obcy przy aucie, zima) */
 export const KLUCZE_OKAZJI = ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7', 'o8'] as const;
 export type KluczOkazji = (typeof KLUCZE_OKAZJI)[number];
 

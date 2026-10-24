@@ -1,6 +1,6 @@
 /* Okazje ścieżki celów (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md, sekcja „Okazje”): krótkie rozdziały
    nad rozdziałem ścieżki, otwierane przez zdarzenie w grze (wędrowiec przy siatce, handlarz, napad, stado pod siatką,
-   ugryzienie, zwłoki, obca ekipa przy aucie, a od 19.10.2026 „Zima idzie”). Wszystko na prawdziwej symulacji z dem
+   ugryzienie, zwłoki, obca ekipa przy aucie, a od 20.10.2026 „Zima idzie”). Wszystko na prawdziwej symulacji z dem
    (Przymorze to blok, Zielonki to dom jednorodzinny), w obu trybach tam, gdzie okazja w nich istnieje.
 
    Zasady, które pilnuje pierwsza część: okazje ruszają dopiero po krokach samouczka, widać najwyżej jedną naraz w kolejności
@@ -476,22 +476,25 @@ describe('okazje: kolejność, wypieranie i powrót', () => {
     st.obcy!.wnext = st.tick;
     dopoki(g, () => !!st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1), 1500);
     expect(klucz(g)).toBe('o1');
-    const od = okazja(g)!.od;
-    // handlarz (O2) staje pod bramą: wyższa
+    const od1 = okazja(g)!.od;
+    const wed = st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1)!;
+    expect(okazja(g)!.cel, 'okazja pilnuje tego wędrowca').toBe(wed.id);
+    // wędrowiec przystaje przy siatce najwyżej 40 minut, a handlarz idzie dłużej: tu zostaje, dopóki test go nie puści,
+    // żeby scenariusz nie zależał od tego, kto zdąży pierwszy
+    wed.job!.until = st.tick + 6 * TICKS_PER_HOUR;
+    // handlarz (O2) staje pod bramą: wyższa okazja
     st.obcy!.next = st.tick;
     dopoki(g, () => !!st.pawns.find((p) => p.kind === 'handlarz' && p.job?.phase === 1), 1500);
-    // wędrowiec mógł już odejść; wtedy O2 sam, inaczej O2 wyparł O1
-    expect(klucz(g)).toBe('o2');
-    const wed = st.pawns.find((p) => p.kind === 'wedrowiec' && (p.job?.phase ?? 4) < 2);
-    if (wed) {
-      // O1 czeka za O2, jego trigger trwa
-      expect(okazja(g)!.od).toBeGreaterThan(od);
-      // handlarz odchodzi: wraca O1 (jeśli wędrowiec jeszcze stoi)
-      const h = st.pawns.find((p) => p.kind === 'handlarz')!;
-      h.job!.phase = 2;
-      krok(g);
-      expect(klucz(g)).toBe('o1');
-    }
+    expect(st.pawns.includes(wed) && wed.job?.phase === 1, 'wędrowiec dalej stoi przy siatce').toBe(true);
+    expect(klucz(g), 'handlarz wyparł wędrowca, choć ten dalej czeka').toBe('o2');
+    expect(okazja(g)!.od).toBeGreaterThan(od1);
+    // handlarz odchodzi: wraca O1 dla tego samego wędrowca, ze świeżym tickiem otwarcia
+    const h = st.pawns.find((p) => p.kind === 'handlarz')!;
+    h.job!.phase = 2;
+    krok(g);
+    expect(klucz(g), 'po handlarzu wraca wędrowiec').toBe('o1');
+    expect(okazja(g)!.cel).toBe(wed.id);
+    expect(okazja(g)!.od, 'świeży tick otwarcia').toBeGreaterThan(od1);
   });
 
   it('okazja zapisana w stanie i wczytana daje ten sam widok, a po wczytaniu mija razem ze zdarzeniem', () => {
