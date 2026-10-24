@@ -105,6 +105,9 @@ const world = osiedle ? osiedle.world : buildWorld(demo.geo, { seed: SEED, stree
 /** opcje createSim z mieszkańcami z adresu dla świata `w` (tylko dla świata z generatora; bez flagi puste) */
 const zAdresu = (w: World): Pick<SimOpts, 'mieszkancy'> =>
   osiedle && w === osiedle.world ? { mieszkancy: osiedle.mieszkancy } : {};
+/** opcje gry z zarządem (`playWithGov`): mieszkańcy z adresu jak wyżej i łańcuchy kart włączone, tak jak w grze, która wychodzi do
+    graczy (src/main.ts: `newGov(…, true)`, wyłącza je `?lancuchy=0`); sama pula kart bez łańcuchów to inny przebieg zarządu */
+const zGra = (w: World): ReturnType<typeof zAdresu> & { lancuchy: true } => ({ ...zAdresu(w), lancuchy: true });
 const sim = new Sim(world, createSim(world, SEED, { core: 4, crowd: CROWD, ...zAdresu(world) }));
 console.log(
   `Bot 0.4, ${demo.name}: ${world.buildings.length} budynków, ${world.trees.length} drzew, świat w ${Math.round(performance.now() - t0)} ms`,
@@ -316,7 +319,7 @@ const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.lengt
 const f1 = (v: number) => v.toFixed(1);
 for (const policy of ['zawsze-warta', 'nigdy-warty'] as Policy[]) {
   const t1 = performance.now();
-  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS, 4, zAdresu(govWorld)));
+  const runs = GOV_SEEDS.map((seed) => playWithGov(govWorld, seed, policy, GOV_DAYS, 4, zGra(govWorld)));
   const first = (r: { decisions: Decision[] }) => r.decisions.filter((d) => d.s < 600);
   const perMin = runs.map((r) => first(r).length / 10);
   const kinds = (k: (d: Decision) => boolean) => mean(runs.map((r) => first(r).filter(k).length));
@@ -412,7 +415,7 @@ console.log(
 const kozaRuns = (koza: boolean) =>
   GOV_SEEDS.flatMap(
     (seed) =>
-      playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16, ...zAdresu(govWorld) }).nights,
+      playWithGov(govWorld, seed, 'zawsze-warta', KOZA_DAYS, 4, { koza, evening: 16, ...zGra(govWorld) }).nights,
   );
 const withDuty = kozaRuns(true);
 const without = kozaRuns(false);
@@ -545,7 +548,7 @@ const m2Runs = (search: boolean, zaSiatke = false) =>
       m2.player(sim, w, screen, order);
     };
     const w = govWorld;
-    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player, ...zAdresu(w) });
+    const r = playWithGov(w, seed, 'zawsze-warta', M2_DAYS, 4, { player, ...zGra(w) });
     return {
       log,
       by: (d: number) => log.built.filter((b) => b.tick < endOf(d)).length,
@@ -621,7 +624,7 @@ if (SASIEDZI) {
         nb.player(sim, ww, s, order);
         m2.player(sim, ww, s, order);
       },
-      ...zAdresu(w),
+      ...zGra(w),
     });
     const sn = snapshot(r.st, w).stock;
     return { log: nb.log, mats: sn.mats, food: sn.supplies, hunger: r.hunger, built: m2.log.built.length };
@@ -665,7 +668,7 @@ if (MIASTO) {
       const r = playWithGov(w, seed, 'zawsze-warta', MIASTO_DAYS, 4, {
         player: m2.player,
         ...(zMiastem ? { miasto: { okolica, krok: mp.krok, po: mp.po } } : {}),
-        ...zAdresu(w),
+        ...zGra(w),
       });
       return {
         log: mp.log,
@@ -779,7 +782,7 @@ if (ZWYCIESTWO) {
           });
         },
       },
-      ...zAdresu(w),
+      ...zGra(w),
     });
     return { seed, dni, wpisy, gov: r.gov, hunger: r.hunger };
   });

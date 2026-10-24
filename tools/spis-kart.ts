@@ -2,7 +2,7 @@
    bramą: gra z zarządem na prawdziwej symulacji (Przymorze z mieszkańcami z generatora i obcymi), polityka zawsze-warta, gracz
    odpowiada od razu (`playWithGov`). Dla każdego ziarna: ile kart wydarzeń zarząd pokazał (decyzje rodzaju „wydarzenie”) i lejek
    gości od wylosowanej wizyty do karty: zaplanowane (wylosowane z puli: karta `gosc`, `powrot`, karty z 0.3 z gościem i, z
-   `--lancuchy`, kroki łańcuchów z gościem; każde wypadnięcie planuje wizytę od razu, nic nie czeka), doszły do bramy (grupa
+   kroki łańcuchów z gościem, domyślnie włączone; każde wypadnięcie planuje wizytę od razu, nic nie czeka), doszły do bramy (grupa
    widziana w fazie `brama`, `w_srodku`, `zlapany` albo `odchodzi` po bramie), karta pod bramą (okno wizyty naprawdę się otworzyło),
    zginęli w drodze, weszli albo zostali w osiedlu; z narratora (src/gov/narrator.ts) średnie napięcie i jaką część czasu
    przekraczało 60. Na końcu średnie na grę i udział wizyt z kartą.
@@ -15,9 +15,10 @@
    (`gid`), karta o nieznanym id. Przy łańcuchach do tego wątki sezonu wybrane w każdym ziarnie (`watki.wybrane`) i ile kroków
    każdy zrobił; na końcu ile różnych zestawów wątków dały ziarna.
 
-   Użycie: node tools/spis-kart.ts [lancuchy] [tryb: zwykly|zombie] [dni] [pierwsze ziarno] [ostatnie ziarno] [demo]
-   Domyślnie zwykly, 5 dób, ziarna 11–25, demo przymorze (public/demo/przymorze.json), bez łańcuchów (jak domyślna gra);
-   słowo `lancuchy` włącza łańcuchy kart i wątki sezonu jak adres `?lancuchy=1`. Jedna gra to 1–3 s. */
+   Użycie: node tools/spis-kart.ts [bez-lancuchow] [tryb: zwykly|zombie] [dni] [pierwsze ziarno] [ostatnie ziarno] [demo]
+   Domyślnie zwykly, 5 dób, ziarna 11–25, demo przymorze (public/demo/przymorze.json), z łańcuchami kart i wątkami sezonu (jak
+   gra, która wychodzi do graczy); słowo `bez-lancuchow` wyłącza je jak adres `?lancuchy=0` (słowo `lancuchy` jest dozwolone i nic
+   nie zmienia). Jedna gra to 1–3 s w zwykłym trybie, kilka sekund w zombie. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,11 +28,11 @@ import { fitsMode, M1_EVENTS } from '../src/gov/wydarzenia.ts';
 import { playWithGov } from '../tests/unit/gov-play.ts';
 import { swiatMieszkancow } from './bot-mieszkancy.ts';
 
-// słowo `lancuchy` zamiast flagi `--lancuchy`: bot-mieszkancy.ts kończy z błędem na każdej nieznanej fladze
-const lancuchy = process.argv.includes('lancuchy');
+// słowo `bez-lancuchow` zamiast flagi `--bez-lancuchow`: bot-mieszkancy.ts kończy z błędem na każdej nieznanej fladze
+const lancuchy = !process.argv.includes('bez-lancuchow');
 const [tryb = 'zwykly', dniArg = '5', odArg = '11', doArg = '25', demoArg = 'przymorze'] = process.argv
   .slice(2)
-  .filter((a) => a !== 'lancuchy');
+  .filter((a) => a !== 'lancuchy' && a !== 'bez-lancuchow');
 if (tryb !== 'zwykly' && tryb !== 'zombie') {
   console.error(`Nieznany tryb „${tryb}”: zwykly albo zombie.`);
   process.exit(2);
@@ -41,7 +42,7 @@ const od = Number(odArg);
 const doo = Number(doArg);
 if (![dni, od, doo].every(Number.isFinite) || doo < od) {
   console.error(
-    'Użycie: node tools/spis-kart.ts [lancuchy] [zwykly|zombie] [dni] [pierwsze ziarno] [ostatnie ziarno] [demo]',
+    'Użycie: node tools/spis-kart.ts [bez-lancuchow] [zwykly|zombie] [dni] [pierwsze ziarno] [ostatnie ziarno] [demo]',
   );
   process.exit(2);
 }
