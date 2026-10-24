@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { hashString } from '../../src/core/rng.ts';
 import { KOZA_KEY } from '../../src/gov/noc.ts';
 import type { GovInput, GovState, Prompt } from '../../src/gov/typy.ts';
-import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { emptyEffects, gameMin, QUIET } from '../../src/gov/wspolne.ts';
 import { eventTick, M1_EVENTS, RETRY } from '../../src/gov/wydarzenia.ts';
 import {
@@ -49,10 +48,6 @@ import { clearSave, readSave, SAVE_KEY, type Save, saveLabel, worldKey, writeSav
 import { crownOf, markSpot, under } from '../../src/ui/znacznik.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { pl } from './po-angielsku.ts';
-
-// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
-// sprawdza rytm okien w interfejsie na samej puli kart, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
-podmienLancuchy([]);
 
 const DEMOS = ['przymorze', 'lanciego', 'zielonki'];
 const cache = new Map<string, { w: World; seed: number; data: Save['data'] }>();

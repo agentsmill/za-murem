@@ -22,7 +22,9 @@ import { demoWorld } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
 // Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
-// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
+// sprawdza karty z 0.3 z gościem pod bramą (uchodźcy, influencerka, aktywiści, dzieciaki, krypto, fachowiec). Przy włączonych
+// łańcuchach pada 24 z jego 38 testów, bo każdy czeka na jedną z tych kart w wyznaczonej chwili, a krok łańcucha wypada
+// zamiast niej; dlatego cały plik gra na samej puli (testy łańcuchów: watki-tresc*.test.ts).
 podmienLancuchy([]);
 
 const SZESC = ['uchodzcy', 'influencer', 'aktywisci', 'dzieci', 'krypto', 'fachowiec'] as const;

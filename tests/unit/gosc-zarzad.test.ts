@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry, nextRandom } from '../../src/core/rng.ts';
 import {
@@ -51,9 +51,9 @@ import { playWithGov } from './gov-play.ts';
 import { mockBlock, mockBlockM2 } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
-// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
-podmienLancuchy([]);
+// Łańcuchy historii (src/gov/watki-tresc.ts) działają w tym pliku jak w grze. Tylko dwa testy (plan gościa na samej puli kart i zapis w środku wizyty pod stałymi ziarnami)
+// sprawdza samą pulę kart i wywołuje na swój koszt `podmienLancuchy([])`; `afterEach` przywraca prawdziwą listę.
+afterEach(() => podmienLancuchy(null));
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>
@@ -230,6 +230,8 @@ describe('wydarzenie gosc: waga i plan', () => {
   }
 
   it('gdy wypada gosc, zarząd wysyła plan i nie pokazuje karty, póki gość nie ma fazy brama', () => {
+    // pula bez łańcuchów: pierwszy krok łańcucha mógłby wypaść zamiast karty gościa, którą ten test śledzi
+    podmienLancuchy([]);
     const s = tylkoGosc();
     const fx = emptyEffects();
     eventTick(s.gov, s.i, fx, false);
@@ -1879,16 +1881,21 @@ describe('spis gier z obcymi', () => {
     expect(razem.gosc).toBeLessThan(razem.karty / 2);
   }, 600_000);
 
-  it('tempo na początku gry z obcymi: decyzja w prawie każdej z pierwszych dziesięciu minut (prawdziwa symulacja, wylosowany gość nie zjada odstępu)', async () => {
+  it('tempo na początku gry z obcymi: decyzja w prawie każdej z pierwszych dziesięciu minut (prawdziwa symulacja z łańcuchami, wylosowany gość nie zjada odstępu)', async () => {
     // Tak samo jak test gęstości decyzji z zarzad.test.ts (≥ 8 z 9 minut od drugiej do dziesiątej), ale na prawdziwej
-    // symulacji z obcymi, jak w przeglądarce. Przed zmianą (wylosowany gość zjadał odstęp, a plan nie był kartą) 23 z 30
-    // gier miało co najmniej 8 pokrytych minut; bez gości (BASE 3c23992) wszystkie 10 pierwszych ziaren i 26 z 30 miało
-    // wszystkie 9. Próg to wynik BASE na tych 10 ziarnach (10 z 10 co najmniej 8 minut).
+    // symulacji z obcymi, jak w przeglądarce, i z łańcuchami historii (wątki sezonu z ziarna zarządu, jak w grze). Przed
+    // zmianą (wylosowany gość zjadał odstęp, a plan nie był kartą) 23 z 30 gier miało co najmniej 8 pokrytych minut; bez
+    // gości (BASE 3c23992) wszystkie 10 pierwszych ziaren i 26 z 30 miało wszystkie 9. Z łańcuchami (Task 15) na dwudziestu
+    // ziarnach każda gra ma co najmniej 8 minut, a wszystkie 9 mają 17 z 20 (bez łańcuchów 20 z 20): pula nocy pierwszej doby
+    // jest w ostatniej godzinie na styk (ulewa i przymrozek zależą od pogody), a wybór wątków przesuwa losowanie zarządu.
+    // Dziesięć ziaren przy progu 9 z 10 było za małą próbką na takie przesunięcie. Pierwsza noc nie dostaje satyry ani listu
+    // z 2026 tylko po to, żeby ta ostatnia minuta była pełna (decyzja Mateusza, 17.10.2026).
     let osiem = 0;
     let dziewiec = 0;
     let wizyt = 0;
     const wypisz: string[] = [];
-    for (let seed = 1; seed <= 10; seed++) {
+    const ziarna = 20;
+    for (let seed = 1; seed <= ziarna; seed++) {
       const { world: w, mieszkancy } = await swiatMieszkancow(DEMO, seed, 4);
       const r = playWithGov(w, seed, 'zawsze-warta', 1, 4, { obcy: true, mieszkancy });
       const d = r.gov.decisions.map((x) => x.s).filter((x) => x <= 600);
@@ -1901,15 +1908,17 @@ describe('spis gier z obcymi', () => {
       wypisz.push(`${seed}:${pokryte}`);
     }
     console.info(
-      `tempo: minut z decyzją na ziarno ${wypisz.join(' ')}; >=8: ${osiem}/10, 9: ${dziewiec}/10, wizyt ${wizyt}`,
+      `tempo: minut z decyzją na ziarno ${wypisz.join(' ')}; >=8: ${osiem}/${ziarna}, 9: ${dziewiec}/${ziarna}, wizyt ${wizyt}`,
     );
     // goście naprawdę wchodzą do puli w tych grach
-    expect(wizyt).toBeGreaterThanOrEqual(5);
-    expect(osiem).toBe(10);
-    expect(dziewiec).toBeGreaterThanOrEqual(9);
+    expect(wizyt).toBeGreaterThanOrEqual(10);
+    expect(osiem).toBe(ziarna);
+    expect(dziewiec).toBeGreaterThanOrEqual(16);
   }, 600_000);
 
   it('ten sam przebieg po drugim razie, a zapis i wczytanie w połowie wizyty nie zmieniają go: gość idzie, stoi pod bramą z otwartą kartą, śpi u nas', async () => {
+    // pula bez łańcuchów: ziarna 21 i 22 mają tu wizytę z nocą u nas, a łańcuchy przesuwają losowanie gości
+    podmienLancuchy([]);
     const przeladuj = (g: Gra): Gra => {
       const st = JSON.parse(JSON.stringify(g.st)) as SimState;
       return { w: g.w, st, sim: new Sim(g.w, st), gov: loadGov(saveGov(g.gov)) };

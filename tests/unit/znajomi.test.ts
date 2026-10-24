@@ -8,7 +8,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { type Gosc, KTO, type KtoId, osobyGrupy, skladPowrotu } from '../../src/gov/goscie.ts';
@@ -50,9 +50,9 @@ import { Atrapa, at, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
-// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
-podmienLancuchy([]);
+// Łańcuchy historii (src/gov/watki-tresc.ts) działają w tym pliku jak w grze. Tylko jeden test (karta „Uchodźcy” z puli zostawia znajomego)
+// sprawdza samą pulę kart i wywołuje na swój koszt `podmienLancuchy([])`; `afterEach` przywraca prawdziwą listę.
+afterEach(() => podmienLancuchy(null));
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>
@@ -367,6 +367,8 @@ describe('decyzja o gościu zostawia znajomego', () => {
   });
 
   it('karta z 0.3 z gościem (uchodźcy) też zostawia znajomego: przyjęci to przyjęty +2, odprawieni odprawiony 0', () => {
+    // pula bez łańcuchów: test czeka na kartę „uchodzcy” z puli, a krok łańcucha mógłby wypaść przed nią
+    podmienLancuchy([]);
     for (const [wybor, jak, n] of [
       ['Przyjąć wszystkich', 'przyjety', 2],
       ['Odprawić', 'odprawiony', 0],

@@ -3,7 +3,7 @@
    tylko za dnia i tylko z kimś przy siatce, niesie jego miejsce (`gdzie` w oknie wydarzenia), a „Dobić dzidą” wysyła
    atak osoby z dzidą na tego szwendacza (GovEffects.atak, w symulacji polecenie 'attack'). */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { GovInput } from '../../src/gov/typy.ts';
 import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
@@ -15,9 +15,9 @@ import { Atrapa } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
-// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
-// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
-podmienLancuchy([]);
+// Łańcuchy historii (src/gov/watki-tresc.ts) działają w tym pliku jak w grze. Tylko jeden test (która karta wypada o której godzinie)
+// sprawdza samą pulę kart i wywołuje na swój koszt `podmienLancuchy([])`; `afterEach` przywraca prawdziwą listę.
+afterEach(() => podmienLancuchy(null));
 
 const w = mockBlock();
 const size = w.size;
@@ -143,6 +143,8 @@ describe('karta szwendacz', () => {
   });
 
   it('wypada tylko za dnia z kimś przy siatce i niesie jego miejsce w oknie (gdzie)', () => {
+    // pula bez łańcuchów: test sprawdza, że o danej godzinie wypada ta jedna karta, a nie krok łańcucha z puli
+    podmienLancuchy([]);
     const wylosowana = (hour: number, over: Partial<GovInput> = {}) => {
       const { gov, i } = setup({ hour, ...over });
       // wszystkie inne karty „przed chwilą”, żeby losowanie nie miało z czego wybierać
