@@ -47,7 +47,7 @@
    sprawdzenia, więc obie strony porównania nie rozjadą się. */
 
 import { L, tr } from '../core/jezyk.ts';
-import { placeOfWorld, sasiedzi, type Words, type WordsEn } from '../gov/miejsce.ts';
+import { placeOfWorld, sasiedzi, type Words, type WordsEn, waszeLokum } from '../gov/miejsce.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING, WOOD_PER_HOUR } from '../gov/noc.ts';
 import type { GovInput, GovState, NightPlan, NightReport } from '../gov/typy.ts';
 import { lawOptions } from '../gov/uchwaly.ts';
@@ -646,10 +646,6 @@ const jestGdyMoznaBadac =
   (klucz: string, era: 1 | 2, warunek: (st: SimState) => boolean) =>
   (o: OdczytCelow, s: StanSciezki): boolean =>
     Object.hasOwn(s.zrobione, klucz) || warunek(o.st) || mozeWziacKartke(o.st, era);
-
-/** „naszego mieszkania” ze słownika (`Words.lokal.d`) jako „waszego mieszkania”: cele mówią do zarządu na „wy”, jak zdanie
-    „co dalej” drogi technologii (src/gov/zwyciestwo.ts); w domu „waszego domu” */
-const waszeLokum = (w: Words): string => w.lokal.d.replace(/^naszego /, 'waszego ');
 
 const R6: DefRozdzialu = {
   k: 'r6',

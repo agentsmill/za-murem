@@ -16,7 +16,7 @@
    zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy
    ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
    płotem pierwszy sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię w pokoju waszego mieszkania …” (słowo
-   lokum idzie ze słownika miejsca, `placeIn(i)`: w domu jednorodzinnym „waszego domu”), a przy jednym kamieniu „Posadźcie
+   lokum idzie ze słownika miejsca przez `waszeLokum` z src/gov/miejsce.ts: w domu jednorodzinnym „waszego domu”), a przy jednym kamieniu „Posadźcie
    kogoś przy stole pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają zdania (`null`), więc „Wkrótce”
    i „co dalej” nigdy nie występują razem. Licznik poranków jest też liczbami w `PostepDrogi.seria` (`{ dni, z }`, tylko
    ludność).
@@ -89,7 +89,7 @@
    napisy od razu po polsku i angielsku. */
 
 import { mnogaPl, type Tx, tx } from '../core/jezyk.ts';
-import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
+import { placeIn, waszeLokum, wordsEn, wordsOf } from './miejsce.ts';
 import type { GameMode, GovEffects, GovInput, GovPlace, GovState } from './typy.ts';
 import { logGov } from './wspolne.ts';
 
@@ -225,10 +225,6 @@ export const DALEJ_TEREN = tx(
   'Put a shared fence round the first building next door.',
 );
 
-/** Lokum zarządu w dopełniaczu, w drugiej osobie: „waszego mieszkania” w bloku, „waszego domu” w domu jednorodzinnym.
-    Słownik miejsca (`Words.lokal.d`) mówi „naszego …”, a zdania „co dalej” zwracają się do zarządu. */
-const waszeLokum = (place: GovPlace): string => wordsOf(place).lokal.d.replace(/^naszego /, 'waszego ');
-
 /** „Co dalej” technologii przy odczycie badań: numer to liczba zaliczonych kamieni (0: postawić pracownię w pokoju lokum
     zarządu, 1: posadzić kogoś przy stole i wybrać kartkę). Od drugiego zaliczonego kamienia jest już „Wkrótce”
     (`wkrotceDrogi`), więc zdań jest tyle, ile kamieni do zdobycia już teraz. Pierwsze zdanie mówi słowami miejsca
@@ -237,7 +233,7 @@ const waszeLokum = (place: GovPlace): string => wordsOf(place).lokal.d.replace(/
 const DALEJ_TECHNOLOGIA: readonly ((place: GovPlace) => Tx)[] = [
   (place) =>
     tx(
-      `Postawcie pracownię w pokoju ${waszeLokum(place)} (Budowa, zakładka Dom).`,
+      `Postawcie pracownię w pokoju ${waszeLokum(wordsOf(place))} (Budowa, zakładka Dom).`,
       `Build a research room in a room of ${wordsEn(place).lokal.w} (Build, Home tab).`,
     ),
   () =>

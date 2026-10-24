@@ -4,7 +4,7 @@
    (Przymorze) po staremu. */
 
 import { describe, expect, it } from 'vitest';
-import { BLOK, placeOf, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
+import { BLOK, placeOf, waszeLokum, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import type { Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
@@ -123,6 +123,14 @@ describe('słownik miejsca dla tekstów spoza zarządu', () => {
   });
   it('świat bez siedziby (atrapa) mówi jak blok', () => {
     expect(wordsOfWorld({ size: 0, buildings: [], hq: -1, pois: [], apts: [] })).toEqual(wordsOf(BLOK));
+  });
+});
+
+describe('waszeLokum: lokum zarządu w dopełniaczu i w drugiej osobie, jedna funkcja dla dróg i dla ścieżki celów', () => {
+  it('blok to „waszego mieszkania”, dom jednorodzinny „waszego domu”, świat bez siedziby jak blok', () => {
+    expect(waszeLokum(wordsOfWorld(demoWorld('przymorze').w))).toBe('waszego mieszkania');
+    expect(waszeLokum(wordsOfWorld(demoWorld('zielonki').w))).toBe('waszego domu');
+    expect(waszeLokum(wordsOf(BLOK))).toBe('waszego mieszkania');
   });
 });
 
