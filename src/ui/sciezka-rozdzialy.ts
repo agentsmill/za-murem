@@ -1228,8 +1228,8 @@ const R8: DefRozdzialu = {
         ),
       jak: (o) =>
         L(
-          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu: cel zalicza się, gdy ludzie doniosą na plan pierwszą sztukę materiału, a resztę dowożą w miarę zbierania.`,
-          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap: the goal counts once your people have brought the first piece of material to the plan, and they bring the rest as you gather it.`,
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot zabiera dużo desek i złomu, a zlecenia nie da się odwołać; drugi zlecicie, gdy ten stanie. Cel zalicza się, gdy ludzie doniosą na plan pierwszą sztukę materiału.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap and can’t be cancelled; a second one waits until it stands. The goal counts once your people bring the first piece of material to the plan.`,
         ),
       // płot zaczęty (na plan doniesiono sztukę materiału albo budynek jest otoczony) zalicza cel, bo sam płot bierze dużo
       // materiału: najkrótszy ma na Lanciego 65 m, czyli 65 desek i 65 złomu (albo 130 złomu), a bot ścieżki dowiózł tam po
