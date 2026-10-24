@@ -248,25 +248,25 @@ const DALEJ_TECHNOLOGIA: readonly ((place: GovPlace) => Tx)[] = [
 const KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
 
 /** progi osób dla pierwszych trzech kamieni ludności; czwarty to połowa celu (`progiLudnosci`), piąty licznik */
-const PROGI_LUDNOSCI: readonly number[] = [10, 25, 50];
+export const PROGI_LUDNOSCI: readonly number[] = [10, 25, 50];
 /** cel ludności: bez danych z 2021 roku, dolna i górna granica przy danych */
-const CEL_BEZ_DANYCH = 250;
-const CEL_MIN = 120;
-const CEL_MAX = 500;
+export const CEL_BEZ_DANYCH = 250;
+export const CEL_MIN = 120;
+export const CEL_MAX = 500;
 /** ile poranków z rzędu trzeba utrzymać cel */
-const DNI_CELU = 7;
+export const DNI_CELU = 7;
 /** od której godziny nowy dzień gry liczy się do licznika */
-const PORANEK = 6;
+export const PORANEK = 6;
 /** głodna jest osoba z jedzeniem poniżej tej wartości (0–100) */
-const GLOD_PONIZEJ = 25;
+export const GLOD_PONIZEJ = 25;
 /** zaufanie, przy którym cel się liczy */
-const ZAUFANIE_OD = 50;
+export const ZAUFANIE_OD = 50;
 /** identyfikator generatora fuzji w drzewie badań (`TECHS` w src/sim/badania.ts): src/gov nie importuje src/sim, więc
     napis stoi tu, a jego zgodność z drzewem pilnuje tests/unit/zwyciestwo-technologia.test.ts. W etapie 2 piąty kamień
     technologii liczy postawiony generator zamiast zbadanej technologii. */
-const ID_GENERATORA = 't_fuzja';
+export const ID_GENERATORA = 't_fuzja';
 /** era badań, od której liczy się trzeci kamień technologii („Era 3”) */
-const ERA_KAMIENIA = 3;
+export const ERA_KAMIENIA = 3;
 
 /** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”) */
 const dalejOsoby = (n: number): Tx =>
@@ -325,7 +325,7 @@ const wygrana = (z: { wygrane: { droga: Droga }[] }, droga: Droga): boolean => z
 
 /** Progi osób czterech pierwszych kamieni ludności przy celu `cel`: 10, 25, 50 i połowa celu w górę. Piąty kamień to
     licznik poranków, nie próg. Przy małym celu połowa bywa niższa od 50, ale kamienie idą po kolei (`spelnione`). */
-const progiLudnosci = (cel: number): number[] => [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
+export const progiLudnosci = (cel: number): number[] => [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
 
 /** Ile pierwszych kamieni drogi technologii spełnia odczyt badań (kamienie idą po kolei, więc liczy się początek listy):
     pracownia stoi albo coś już zbadano; zbadano pierwszą technologię; najwyższa era to co najmniej 3; sieć jest
