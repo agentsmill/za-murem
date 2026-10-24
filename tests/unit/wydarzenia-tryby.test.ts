@@ -127,7 +127,7 @@ describe('slady_z: ślady szwendaczy przy siatce', () => {
     expect(e.text(h, d).pl).toMatch(/szwendacze wydeptali ścieżkę w błocie/);
     expect(e.text(h, d).en).toMatch(/^Shamblers have worn a path/);
     expect(e.choices(h, d).map((c) => c.label.pl)).toEqual([
-      'Załatać przed nocą (Złom 2)',
+      'Załatać przed nocą (Złom 3)',
       'Postawić tam kogoś z dzidą na noc',
     ]);
   });
@@ -152,7 +152,7 @@ describe('slady_z: ślady szwendaczy przy siatce', () => {
       expect(gov.tonight.boost, `wybór ${k}`).toBe(boost);
       expect(gov.tonight.alert, `wybór ${k}`).toBe(alert);
       if (k === 0) {
-        expect(fx.stock.scrap).toBe(-2);
+        expect(fx.stock.scrap).toBe(-3);
         expect(fx.patch).toBe(1);
         expect(gov.tonight.bonus).toBe(bonus);
       } else {

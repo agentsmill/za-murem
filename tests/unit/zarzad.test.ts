@@ -15,7 +15,7 @@ import {
   WOOD_PER_HOUR,
   watchersOf,
 } from '../../src/gov/noc.ts';
-import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, poraOf } from '../../src/gov/tresc.ts';
+import { FIRST_LAWS, NEW_EVENTS, OLD_EVENTS, PATCH_SCRAP, poraOf } from '../../src/gov/tresc.ts';
 import type { GovEffects, GovInput, GovState, NightCard, RaidPlan, RaidResult } from '../../src/gov/typy.ts';
 import { dailyDrift, lawState } from '../../src/gov/uchwaly.ts';
 import { STREET_EVENTS } from '../../src/gov/ulica.ts';
@@ -25,7 +25,7 @@ import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { confirmNight, govUpdate, loadGov, newGov, pending, saveGov, setNight, signLaw } from '../../src/gov/zarzad.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
-import { BURN_TICKS } from '../../src/sim/sim.ts';
+import { BURN_TICKS, PATCH_COST } from '../../src/sim/sim.ts';
 import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { pl } from './po-angielsku.ts';
@@ -538,6 +538,14 @@ describe('napad dla symulacji: siła w planie, jawny wynik, warta z menu', () =>
     const card = pending(gov, a2.input());
     if (card?.k !== 'karta') throw new Error('brak karty');
     expect(card.assign[first]).toBe('warta:brama');
+  });
+});
+
+describe('łata z kart „Ślady przy siatce”', () => {
+  it('kosztuje tyle złomu, ile łata z menu w symulacji', () => {
+    // zarząd nie importuje symulacji, więc ta sama liczba żyje w dwóch miejscach (menu łata trzema sztukami desek albo
+    // złomu, karta trzema sztukami złomu); karta o jedną sztukę tańsza niż menu była usterką U13 ścieżki celów
+    expect(PATCH_SCRAP).toBe(PATCH_COST);
   });
 });
 

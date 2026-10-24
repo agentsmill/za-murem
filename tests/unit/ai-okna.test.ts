@@ -314,15 +314,15 @@ describe('wyborWydarzenia', () => {
     const p = pending(gov, i);
     if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
     expect(p.choices.map((c) => c.label.pl)).toEqual([
-      'Załatać przed nocą (Złom 2)',
+      'Załatać przed nocą (Złom 3)',
       'Powiesić puszki z kamykami',
       'Udawać, że nic nie widać',
     ]);
     expect(chooseEvent(structuredClone(gov), i, 0).patch).toBe(1);
     expect(wyborWydarzenia(gov, i, p)).toBe(0);
-    // bez złomu łata jest niedozwolona: puszki
+    // przy dwóch sztukach złomu (łata z karty bierze trzy, jak menu) łata jest niedozwolona: puszki
     const bezZlomu = atrapa(40);
-    bezZlomu.scrap = 1;
+    bezZlomu.scrap = 2;
     const j = bezZlomu.input();
     const q = pending(gov, j);
     if (q?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');

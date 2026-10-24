@@ -2,7 +2,9 @@
    podpis pory roku na pasku w zimie (zegar gry, obie wersje językowe, tryb zombie, gdzie to jedyny sygnał pory roku), ekran
    dróg, epilogi zwycięstwa, okno planu wyprawy, podpowiedź „Do broni!” i panel Pracy w domu jednorodzinnym (Zielonki: komitet
    ulicy, furtka, płoty zamiast zarządu, bramy i klatek), karta miejsca wybranego do cna, linia końca gry po ludzku i pasek
-   atrybucji w /v03/. Każdy scenariusz sam sprawdza tekst na ekranie; zrzut jest ostatnim stanem scenariusza. */
+   atrybucji w /v03/, a do tego karta „Ślady przy siatce” w obu trybach i językach: łata za 3 złomu jak menu (podpis
+   „(Złom 3)”, wybór wyłączony przy dwóch sztukach, po kliknięciu 3 sztuki mniej i jedna dziura załatana).
+   Każdy scenariusz sam sprawdza tekst na ekranie; zrzut jest ostatnim stanem scenariusza. */
 
 import type { Page } from '@playwright/test';
 import { waitIdle } from './browser.ts';
@@ -219,6 +221,108 @@ export function tekstyShots(): ShotTeksty[] {
     },
   });
 
+  // ------------------------------------------------------------ „Ślady przy siatce” łatają za 3 złomu jak menu (zadanie 14 ścieżki celów)
+  /** złom w zapasie tak, jak liczy go odczyt gry (stosy złomu poza budynkami sąsiadów) */
+  const zlomWGrze = (page: Page): Promise<number> =>
+    page.evaluate(async () => {
+      const load = (path: string) => import(/* @vite-ignore */ path);
+      const m = (await load('/src/sim/snapshot.ts')) as typeof import('../src/sim/snapshot.ts');
+      const sim = window.zm!.sim!;
+      return m.snapshot(sim.st, sim.w).stock.scrap;
+    });
+
+  /** zostawia w zapasie dokładnie `n` sztuk złomu (zmniejsza stosy w stanie symulacji; gra stoi, więc nic ich nie dotyka) */
+  const ustawZlom = async (page: Page, n: number): Promise<void> => {
+    await page.evaluate(async (n) => {
+      const load = (path: string) => import(/* @vite-ignore */ path);
+      const m = (await load('/src/sim/snapshot.ts')) as typeof import('../src/sim/snapshot.ts');
+      const sim = window.zm!.sim!;
+      const zlom = () => m.snapshot(sim.st, sim.w).stock.scrap;
+      for (const t of sim.st.things) {
+        if (t.kind !== 'zlom') continue;
+        const nadmiar = zlom() - n;
+        if (nadmiar <= 0) break;
+        t.n -= Math.min(t.n, nadmiar);
+      }
+      if (zlom() !== n) throw new Error(`w grze jest ${zlom()} złomu zamiast ${n}`);
+    }, n);
+    await czekajNaNapis(page, '#sScrap .stat-v', String(n));
+  };
+
+  /** otwarte dziury w siatce (bez łaty) */
+  const otwarteDziury = (page: Page): Promise<number> =>
+    page.evaluate(() => (window.zm!.sim!.st.fence?.holes ?? []).filter((h) => !h.patch).length);
+
+  /** Karta otwarta wprost (jak `doKarty` w tools/shots.ts, ale bez czekania na losowanie), z wyborami z DOM: podpis łaty ma
+      3 sztuki złomu, wyłączony przy dwóch; z `klik` pierwszy wybór idzie w ruch i zapas ma o 3 sztuki mniej, a w zwykłym
+      trybie (siatka z dziurami) o jedną dziurę mniej, z wpisem „złomem i drutem” w kronice. */
+  const slady = (
+    lang: 'pl' | 'en',
+    nazwa: string,
+    o: { zombie: boolean; zlom: number | null; klik?: boolean },
+  ): ShotTeksty => ({
+    name: nazwa,
+    query: '',
+    lang,
+    run: async (page, base) => {
+      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${o.zombie ? '&tryb=zombie' : ''}`);
+      await waitIdle(page);
+      if (o.zlom !== null) await ustawZlom(page, o.zlom);
+      const zlomPrzed = await zlomWGrze(page);
+      const dziurPrzed = await otwarteDziury(page);
+      await page.evaluate(
+        (id) => {
+          window.zm!.gov!.ev.active = { id, d: { where: { pl: 'przy garażach', en: 'by the garages' } } };
+          window.zm!.govTick();
+        },
+        o.zombie ? 'slady_z' : 'slady',
+      );
+      await page.waitForSelector('#sheet .choices [data-act="event"]');
+      await dwieKlatki(page);
+      const wybory = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLButtonElement>('#sheet .choices [data-act="event"]')].map((b) => ({
+          t: (b.textContent ?? '').trim(),
+          wylaczony: b.disabled,
+        })),
+      );
+      const oczekiwane =
+        lang === 'pl'
+          ? [
+              'Załatać przed nocą (Złom 3)',
+              o.zombie ? 'Postawić tam kogoś z dzidą na noc' : 'Powiesić puszki z kamykami',
+            ]
+          : [
+              'Patch it up before dark (Scrap 3)',
+              o.zombie ? 'Post someone there with a spear for the night' : 'Hang up tins full of pebbles',
+            ];
+      console.log(
+        `  ${o.zombie ? 'zombie' : 'zwykły'} ${lang}, złom ${zlomPrzed}, dziur ${dziurPrzed}: ${wybory.map((w) => `${w.t}${w.wylaczony ? ' [wyłączony]' : ''}`).join(' | ')}`,
+      );
+      for (const [k, t] of oczekiwane.entries())
+        if (wybory[k]?.t !== t) throw new Error(`wybór ${k}: „${wybory[k]?.t}” zamiast „${t}”`);
+      if (wybory.length !== (o.zombie ? 2 : 3)) throw new Error(`wyborów ${wybory.length}`);
+      if (wybory.some((w) => /Złom 2|Scrap 2/.test(w.t))) throw new Error('stary koszt łaty na karcie');
+      const ma = zlomPrzed >= 3;
+      if (wybory[0].wylaczony === ma) throw new Error(`łata ${ma ? 'wyłączona' : 'włączona'} przy złomie ${zlomPrzed}`);
+      if (wybory[1].wylaczony) throw new Error('drugi wybór wyłączony');
+      if (!o.klik) return;
+      if (!ma) throw new Error('klik bez złomu na łatę');
+      await page.click('#sheet .choices [data-act="event"][data-arg="0"]');
+      await page.waitForFunction(() => !document.querySelector('#sheet .choices'));
+      // łata idzie w poleceniu `mend` do kolejki symulacji: kilka kroków, żeby się wykonała
+      await page.evaluate(() => window.zm!.ff(0.25));
+      await czekajNaNapis(page, '#sScrap .stat-v', String(zlomPrzed - 3));
+      const po = { zlom: await zlomWGrze(page), dziur: await otwarteDziury(page) };
+      const wpisy = await page.evaluate(() => window.zm!.gov!.log.slice(-4).map((e) => e.txt));
+      console.log(`  po kliknięciu: złom ${zlomPrzed} → ${po.zlom}, otwartych dziur ${dziurPrzed} → ${po.dziur}`);
+      if (po.zlom !== zlomPrzed - 3) throw new Error(`złom ${zlomPrzed} → ${po.zlom}, a łata ma kosztować 3`);
+      if (dziurPrzed > 0 && po.dziur !== dziurPrzed - 1) throw new Error(`dziur ${dziurPrzed} → ${po.dziur}`);
+      const wpis = wpisy.find((t) => t.pl.startsWith('Dziura załatana'));
+      if (wpis?.pl !== 'Dziura załatana złomem i drutem.' || wpis.en !== 'The hole is patched up with scrap and wire.')
+        throw new Error(`wpis w kronice: ${JSON.stringify(wpis)}`);
+    },
+  });
+
   return [
     pora('pl', 'demo=zielonki&tryb=zombie&speed=0&cam=hq,1.3', 'teksty-pasek-zima-zombie', 'zombie'),
     pora('en', 'demo=przymorze&speed=0&cam=hq,1.3', 'en-teksty-pasek-zima', 'zwykły'),
@@ -357,5 +461,10 @@ export function tekstyShots(): ShotTeksty[] {
         },
       }),
     ),
+    slady('pl', 'teksty-slady-lata', { zombie: false, zlom: null }),
+    slady('pl', 'teksty-slady-lata-klik', { zombie: false, zlom: null, klik: true }),
+    slady('en', 'en-teksty-slady-lata-brak', { zombie: false, zlom: 2 }),
+    slady('pl', 'teksty-slady-lata-zombie-brak', { zombie: true, zlom: 2 }),
+    slady('en', 'en-teksty-slady-lata-zombie', { zombie: true, zlom: null, klik: true }),
   ];
 }
