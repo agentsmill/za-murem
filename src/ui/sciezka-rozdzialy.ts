@@ -2,7 +2,9 @@
    i ich kolejność (`ROZDZIALY`). Silnik, stan i HTML okienka leżą w src/ui/sciezka.ts; tu jest to, co spec mówi o każdym
    celu: tekst, podpowiedź, warunek zaliczenia, a przy niektórych dopisek „czeka”, termin i okno, w którym cel dostaje
    linię „Cel: …”. Moduł bierze z silnika same typy (`import type`: `DefCelu`, `DefRozdzialu`, `OdczytCelow`,
-   `StanSciezki`), więc nie ma cyklu importów w czasie wykonania; silnik bierze stąd `ROZDZIALY`.
+   `StanSciezki`), więc nie ma cyklu importów w czasie wykonania; silnik bierze stąd `ROZDZIALY`, a okazje
+   (src/ui/sciezka-okazje.ts) jeszcze dwa pomocniki: `budowaZakladka` (nazwa przycisku Budowa, inna na dotyku)
+   i `bezWypraw` (stan bez osób na wyprawie, do liczenia wiedzy tak jak w celach badań).
 
    R0 to `goalsOf` (src/ui/cele.ts) opakowany w rozdział: te same teksty, te same zaliczenia, a drewno na wieczór trzyma
    stan ścieżki. R1 to cele drugiego dnia: przeszukać, postawić pierwszą budowlę, wzmocnić obwód (w trybie zombie zrobić
@@ -614,9 +616,9 @@ const R5: DefRozdzialu = {
 
 /* ---------------------------------------------------------------- R6. Badania */
 
-/** Stan gry, w którym osoby na wyprawie są na miejscu: `wiedza` ich nie liczy, a wyprawa mija, więc cele badań (R6) i okazja
-    „Zima idzie” (kozę z beczki bada ktoś, kto zna się na cieple) liczą wiedzę tak, jakby wszyscy byli w domu. Bez nikogo
-    na wyprawie to ten sam stan. */
+/** Stan gry, w którym osoby na wyprawie są na miejscu: `wiedza` ich nie liczy, a wyprawa mija, więc cele badań (R6)
+    i okazja „Zima idzie” (kozę z beczki bada ktoś, kto zna się na cieple) liczą wiedzę tak, jakby wszyscy byli
+    w domu. Bez nikogo na wyprawie to ten sam stan. */
 export const bezWypraw = (st: SimState): SimState =>
   st.pawns.some((p) => p.away) ? { ...st, pawns: st.pawns.map((p) => (p.away ? { ...p, away: false } : p)) } : st;
 

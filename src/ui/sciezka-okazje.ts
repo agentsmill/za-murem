@@ -388,7 +388,8 @@ function mozeBadacKoze(o: OdczytCelow): boolean {
 }
 
 /** Zima idzie: dzień w oknie okazji, żaden pokój do spania nie jest ogrzewany, któryś ma miejsce przy oknie i kozę da się
-    zbadać. To samo trwa: gdy ogrzewanie stanie, zima się skończy albo zabraknie wiedzy, okazja mija. */
+    zbadać. Ten sam warunek jest też warunkiem trwania: gdy ogrzewanie stanie, zima się skończy albo zabraknie wiedzy,
+    okazja mija. */
 function zimaIdzie(o: OdczytCelow): boolean {
   if (!wOknieZimy(o.snap.day)) return false;
   const spalnie = sypialnie(o);
@@ -434,7 +435,7 @@ function beczkaJak(o: OdczytCelow): string {
   const b = budowaZakladka(o.touch);
   const zasieg = num(ZASIEG_OKNA, 0);
   const koza = costText(BUILDS.koza_beczka.cost);
-  // któryś pokój do spania bez okna w zasięgu: łóżka pietrowe w pokoju z oknem i koza tam
+  // któryś pokój do spania bez okna w zasięgu: łóżka piętrowe w pokoju z oknem i koza tam
   const bezOkna = sypialnie(o).some((s) => s.miejsca.length === 0);
   const pietrowe = costText(BUILDS.lozka_pietrowe.cost);
   const lozka = bezOkna

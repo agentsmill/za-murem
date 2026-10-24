@@ -324,11 +324,11 @@ export interface Cel {
   okno?: OknoCelu;
 }
 
-/** Widok okienka celów (rysuje go `celeHtml`). `okazja` wypełni zadanie okazji; `rozdzial` jest pusty po ostatnim
-    rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis z „Teraz: …” / “Now: …” (nadaje go
-    definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg do zwycięstwa po ostatnim rozdziale
-    (`wierszeDrog`): `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep` to „{ile} z {cel}” albo null; pusta
-    lista albo null znaczy: nic do pokazania, okienko się chowa. */
+/** Widok okienka celów (rysuje go `celeHtml`). `okazja` to blok otwartej okazji (null, gdy żadna nie jest otwarta);
+    `rozdzial` jest pusty po ostatnim rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis
+    z „Teraz: …” / “Now: …” (nadaje go definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg
+    do zwycięstwa po ostatnim rozdziale (`wierszeDrog`): `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep`
+    to „{ile} z {cel}” albo null; pusta lista albo null znaczy: nic do pokazania, okienko się chowa. */
 export interface WidokSciezki {
   okazja: { tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
   rozdzial: { k: KluczRozdzialu; tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
