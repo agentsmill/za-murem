@@ -10,10 +10,17 @@
    prostokątów, a także że okienko mieści się w oknie i nie przewija strony w bok). Okna z linią „Cel: …” sprawdza po
    tekście linii i po tym, że mieści się w oknie na komputerze i na telefonie.
 
+   Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu; rozwiniętą listę
+   (stuknięcie w nagłówek) tylko tak, że karta osoby, arkusz budowy od dołu i podpowiedź u dołu, które rysuje się nad nią, są
+   zamierzone (`dozwolone`), a pasek, lista ludzi i krawędzie okna dalej muszą się zgadzać. Znane nachodzenie na komputerze
+   (karta osoby przy wysokim okienku, `ZNANE_NA_KOMPUTERZE`) jest zapisane i pilnowane. Uwagi o liście ludzi na arkuszu
+   budowy (poza okienkiem celów) idą tylko do logu.
+
    Stan gry scenariusze prowadzą grą (samouczek, noc, raport, przewijanie przez `zm.ff` z odpowiedziami na okna zarządu),
    a tam, gdzie gra potrzebuje do tego godzin ludzkiej roboty, ustawiają stan wprost jak dzisiejsze scenariusze (pracownia,
-   ugryzienie, zapas drewna), a rozdział hakiem `zm.rozdzial`. Tekst jest sprawdzany w DOM, nie w widoku `zm.cele()`; widok
-   służy do sprawdzenia, co jest zaliczone, a co przepadło. */
+   ugryzienie, zapas drewna, trzy pierwsze cele), a rozdział hakiem `zm.rozdzial`. Tekst jest sprawdzany w DOM, nie w widoku
+   `zm.cele()`; widok służy do sprawdzenia, co jest zaliczone, a co przepadło. Żadnych zmian w `src/`: hak `window.zm` ma już
+   `cele()` i `rozdzial()`. */
 
 import path from 'node:path';
 import type { Page } from '@playwright/test';
@@ -253,10 +260,18 @@ interface Nachodzenie {
   tekst: string;
 }
 
-/** przeszkody, które okienko celów ma omijać: nazwa w bierniku (do komunikatów) i selektor */
+/** nazwy przeszkód w bierniku (do komunikatów i do list `dozwolone` i `znane` niżej) */
 const KARTA = 'kartę osoby';
 const PANEL_BUDOWY = 'panel budowy';
 const PODPOWIEDZ = 'podpowiedź u dołu';
+
+/** Znana usterka układu na komputerze 1440×900 (raport zadania 10): okienko celów nie ma ograniczenia wysokości, a karta
+    zaznaczonej osoby stoi 40 px od dołu i ma 470–540 px, więc dolna część okienka znika pod kartą, gdy okienko jest wysokie:
+    blok okazji nad rozdziałem (handlarz 410 px, ugryzienie przy pierwszym dniu 450 px) albo długa podpowiedź bieżącego celu
+    po nocy (R1 „budowla”: 262 px, 19 px za dużo). Scenariusze z takim stanem zapisują ją tu, zamiast ją ukrywać, i pilnują,
+    że nadal występuje: po poprawce układu (np. `max-height` okienka do górnej krawędzi karty, `--card-h` mierzy main.ts)
+    przerwą się z komunikatem „zniknęło” i wystarczy usunąć ten wpis. */
+const ZNANE_NA_KOMPUTERZE: readonly string[] = [KARTA];
 
 /** Okienko celów nie nachodzi na nic, co stoi obok (pasek u góry, chipy listy ludzi, karta osoby, panele budowy i Pracy,
     przyciski przybliżenia, minimapa, komunikat o przybyszach, znacznik suchego drzewa, pasek stawiania, podpowiedź u dołu),
@@ -317,6 +332,38 @@ async function naruszenia(page: Page): Promise<{ nachodzi: Nachodzenie[]; inne: 
     [KARTA, PANEL_BUDOWY, PODPOWIEDZ] as const,
   );
 }
+
+/** Uwagi poza okienkiem celów (tylko do logu, nic nie przerywa): lista ludzi stoi pod okienkiem, więc jego wysokość
+    przesuwa ją, a na telefonie arkusz budowy (od dołu) i karta osoby mogą ją przykryć. Zwraca opisy nachodzenia chipów listy
+    na panel budowy i kartę osoby. */
+const uwagiOLiscie = (page: Page): Promise<string[]> =>
+  page.evaluate(() => {
+    const widoczny = (e: Element): boolean => {
+      const h = e as HTMLElement;
+      if (h.hidden) return false;
+      const r = h.getBoundingClientRect();
+      return getComputedStyle(h).display !== 'none' && r.width > 0 && r.height > 0;
+    };
+    const wynik: string[] = [];
+    for (const [sel, nazwa] of [
+      ['#buildPanel', 'panel budowy'],
+      ['#card', 'kartę osoby'],
+    ] as const) {
+      const e = document.querySelector(sel);
+      if (!e || !widoczny(e)) continue;
+      const b = e.getBoundingClientRect();
+      let naj = 0;
+      for (const c of document.querySelectorAll('#lista .lp')) {
+        if (!widoczny(c)) continue;
+        const a = c.getBoundingClientRect();
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 1 && h > naj) naj = h;
+      }
+      if (naj > 1) wynik.push(`lista ludzi nachodzi na ${nazwa} o ${Math.round(naj)} px`);
+    }
+    return wynik;
+  });
 
 interface DozwolonePrzeszkody {
   /** przeszkody, na które okienko może nachodzić, bo je rysuje się nad nim (zamierzone) */
@@ -388,6 +435,8 @@ async function ukladZPanelami(page: Page, opis: string, dotyk: boolean, o: Opcje
   await page.waitForSelector('#buildPanel .tile');
   await page.waitForTimeout(500);
   await bezNachodzenia(page, `${opis}, z kartą osoby i panelem budowy`, opcje);
+  const uwagi = await uwagiOLiscie(page);
+  if (uwagi.length) console.log(`    uwaga (poza okienkiem celów): ${uwagi.join('; ')}`);
   if (o.zrzut) await page.screenshot({ path: path.join(WYJSCIE, `${o.zrzut}.png`) });
   // pierwszy Esc zamyka panel budowy, drugi zdejmuje zaznaczenie (karta znika)
   await page.keyboard.press('Escape');
@@ -682,6 +731,15 @@ async function zapukajAzOtworza(page: Page): Promise<void> {
   await waitIdle(page);
 }
 
+/** Okienko celów po angielsku nie ma polskich liter ani w tekście, ani w opisach atrybutów (podpowiedź nagłówka, etykiety). */
+async function okienkoBezPolskich(page: Page, opis: string): Promise<void> {
+  const html = await page.$eval('#goals', (e) => e.innerHTML);
+  const tekst = polskieLitery(html.replace(/<[^>]*>/g, ' '));
+  const atrybuty = polskieLitery([...html.matchAll(/(?:title|aria-label)="([^"]*)"/g)].map((m) => m[1]).join(' '));
+  if (tekst.length || atrybuty.length)
+    throw new Error(`${opis}: polskie litery w okienku po angielsku: ${[...tekst, ...atrybuty].join(', ')}`);
+}
+
 /* ---------------------------------------------------------------- scenariusze */
 
 export function celeShots(out: string): ShotCele[] {
@@ -710,6 +768,16 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(name, cele.find((c) => c.key === 'drewno2')!.how, 'Za siatką są szwendacze', 'Spalić');
         }
         await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
+        if (!opcje.zombie && !opcje.dom) {
+          // zmiana języka przy otwartym okienku przerysowuje je od nowa (bez polskich liter po angielsku), a po powrocie
+          // do polskiego wszystko jest jak było
+          await ustawJezyk(page, 'en');
+          await sprawdzR1(page, `${name} po zmianie na angielski`, { en: true });
+          await okienkoBezPolskich(page, `${name} po zmianie na angielski`);
+          await zrzut(page, `${name}-en`);
+          await ustawJezyk(page, 'pl');
+          await sprawdzR1(page, `${name} po powrocie do polskiego`, {});
+        }
       },
     });
 
@@ -794,7 +862,7 @@ export function celeShots(out: string): ShotCele[] {
             `  po karcie: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}, licznik ${n.licznik}`,
           );
         }
-        await ukladZPanelami(page, `${name} po karcie`, dotyk, dotyk || v.trzy ? {} : { znane: [KARTA] });
+        await ukladZPanelami(page, `${name} po karcie`, dotyk, dotyk || v.trzy ? {} : { znane: ZNANE_NA_KOMPUTERZE });
       },
     });
 
@@ -1076,7 +1144,10 @@ export function celeShots(out: string): ShotCele[] {
         console.log(
           `  okazja: ${ok[0].tekst} | rozdział: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`,
         );
-        await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa`, znane: [KARTA] });
+        await ukladZPanelami(page, `${name} 1440×900`, false, {
+          zrzut: `${name}-karta-budowa`,
+          znane: ZNANE_NA_KOMPUTERZE,
+        });
         // to, co mówi podpowiedź: osoba zaznaczona, prawy przycisk na handlarzu, w menu oferty „Dać … za …”
         await kliknij(page, '#lista .lp >> nth=0', false);
         await page.waitForSelector('#card:not([hidden])');
@@ -1171,7 +1242,10 @@ export function celeShots(out: string): ShotCele[] {
         zawiera(name, ok[0].jak ?? '', 'Amputować', 'pół godziny', 'Po dwóch godzinach jest za późno');
         const n = await naglowek(page);
         if (n.tytul !== 'Pierwszy dzień') throw new Error(`${name}: pod okazją rozdział „${n.tytul}”`);
-        await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa`, znane: [KARTA] });
+        await ukladZPanelami(page, `${name} 1440×900`, false, {
+          zrzut: `${name}-karta-budowa`,
+          znane: ZNANE_NA_KOMPUTERZE,
+        });
         // karta ugryzionego ma przycisk „Amputować” (chip pierwszej osoby to ta sama osoba)
         await kliknij(page, `#lista .lp[data-pawn="${kto.pawn}"]`, false);
         await page.waitForSelector('#card:not([hidden])');
@@ -1329,13 +1403,7 @@ export function celeShots(out: string): ShotCele[] {
         await doDrugiegoDnia(page, false);
         const w = await sprawdzR1(page, name, { en: true });
         console.log(`  ${w.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
-        const html = await page.$eval('#goals', (e) => e.innerHTML);
-        const pl = polskieLitery(html.replace(/<[^>]*>/g, ' '));
-        const atrybuty = polskieLitery(
-          [...html.matchAll(/(?:title|aria-label)="([^"]*)"/g)].map((m) => m[1]).join(' '),
-        );
-        if (pl.length || atrybuty.length)
-          throw new Error(`${name}: polskie litery w okienku po angielsku: ${[...pl, ...atrybuty].join(', ')}`);
+        await okienkoBezPolskich(page, name);
         const tytul = await page.$eval('#goals .goals-head', (e) => e.getAttribute('title') ?? '');
         if (tytul !== 'Click to collapse the list') throw new Error(`${name}: podpowiedź nagłówka „${tytul}”`);
         await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
