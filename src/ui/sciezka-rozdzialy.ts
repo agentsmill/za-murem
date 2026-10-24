@@ -45,9 +45,10 @@
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
    ekranu dróg, kolejnego kamienia ludności (tekst to „co dalej” z chwili otwarcia rozdziału, bo `tekst` dostaje stan
    ścieżki) i, tam gdzie wspólny płot dosięga sąsiada, terenu (ten sam predykat `terenMozliwy` co ekran dróg; cel zalicza
-   się, gdy płot jest zlecony, bo sam płot bierze dużo materiału: 65 desek i 65 złomu na najkrótszy na Lanciego, a bot
-   ścieżki dowiózł tam na plan po dziesięciu dobach 73, po czternastu 82 z tych 130 sztuk). Po R8 okienko pokazuje wiersze
-   dróg z „co dalej” (`wierszeDrog`).
+   się, gdy płot jest zaczęty, czyli ludzie doniosą na plan pierwszą sztukę materiału, bo sam płot bierze dużo materiału: 65
+   desek i 65 złomu na najkrótszy na Lanciego, a bot ścieżki dowiózł tam na plan po dziesięciu dobach 73, po czternastu 82 z
+   tych 130 sztuk; tekst celu mówi więc „zacznijcie”, a ekran dróg dalej „otoczcie”). Po R8 okienko pokazuje wiersze dróg z
+   „co dalej” (`wierszeDrog`).
 
    Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
    te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
@@ -60,7 +61,7 @@ import type { GovInput, GovState, NightPlan, NightReport } from '../gov/typy.ts'
 import { lawOptions } from '../gov/uchwaly.ts';
 import { atHour } from '../gov/wspolne.ts';
 import { LAW_HOUR, LAW_MINUTE } from '../gov/zarzad.ts';
-import { DALEJ_TEREN, ocenDrogi, type PostepDrogi, terenMozliwy } from '../gov/zwyciestwo.ts';
+import { ocenDrogi, type PostepDrogi, terenMozliwy } from '../gov/zwyciestwo.ts';
 import { nazwaTech, TECH_BY, TECHS, wiedza } from '../sim/badania.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
@@ -910,9 +911,12 @@ function drogaLudnosciPrzyOtwarciu(o: OdczytCelow, s: StanSciezki): PostepDrogi 
   return ocenDrogi(przy, o.input).find((p) => p.droga === 'ludnosc');
 }
 
-/** Wspólny płot zlecony: plan w toku albo jakiś budynek już otoczony. Plan czeka na materiał, który ludzie zniosą z
-    zapasu, więc zlecenie nie wymaga, żeby deski i złom już leżały na podwórku. */
-const plotZlecony = (st: SimState): boolean => !!st.plot?.plan || (st.plot?.bids.length ?? 0) > 0;
+/** Wspólny płot zaczęty: na plan doniesiono choć jedną sztukę materiału albo jakiś budynek już otoczono. Samo zlecenie nie
+    liczy się: menu proponuje „Otoczyć …” także bez grama materiału, plan startuje z `have: {}`, nie da się go odwołać i
+    zajmuje jedyne miejsce na plan (drugi płot dopiero po pierwszym), więc pusty plan zaliczałby cel za darmo i bez
+    odwrotu. Plan, któremu ludzie coś doniosą, jest już prawdziwą pracą; resztę materiału dowożą w miarę zbierania. */
+const plotZaczety = (st: SimState): boolean =>
+  Object.values(st.plot?.plan?.have ?? {}).some((n) => (n ?? 0) > 0) || (st.plot?.bids.length ?? 0) > 0;
 
 const R8: DefRozdzialu = {
   k: 'r8',
@@ -960,16 +964,23 @@ const R8: DefRozdzialu = {
         Object.hasOwn(s.zrobione, 'r8.teren') ||
         kamienie(o.gov, 'teren') >= 1 ||
         (!!o.gov?.zwyciestwo && !!o.input && terenMozliwy(o.input)),
-      tekst: () => tr(DALEJ_TEREN),
+      // cel zalicza się przy pierwszej doniesionej sztuce materiału, nie przy stojącym płocie, więc jego tekst mówi „zacznijcie”;
+      // ekran dróg zostaje przy `DALEJ_TEREN` („otoczcie”), bo kamień terenu daje dopiero płot, który stoi
+      tekst: () =>
+        L(
+          'Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.',
+          'Start putting a shared fence round the first building next door.',
+        ),
       jak: (o) =>
         L(
-          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu, ale wystarczy go zlecić: ludzie postawią go, gdy materiał będzie na podwórku.`,
-          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap, but you only need to order it: people will build it once the material is in the yard.`,
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu: cel zalicza się, gdy ludzie doniosą na plan pierwszą sztukę materiału, a resztę dowożą w miarę zbierania.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap: the goal counts once your people have brought the first piece of material to the plan, and they bring the rest as you gather it.`,
         ),
-      // zlecony płot (plan w toku albo otoczony budynek) zalicza cel, bo sam płot bierze dużo materiału: najkrótszy ma na
-      // Lanciego 65 m, czyli 65 desek i 65 złomu (albo 130 złomu), a bot ścieżki dowiózł tam po dziesięciu dobach 73, po
-      // czternastu 82 z 130 sztuk; pierwszy kamień drogi terenu zalicza krok zarządu, gdy płot stanie
-      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1 || plotZlecony(o.st),
+      // płot zaczęty (na plan doniesiono sztukę materiału albo budynek jest otoczony) zalicza cel, bo sam płot bierze dużo
+      // materiału: najkrótszy ma na Lanciego 65 m, czyli 65 desek i 65 złomu (albo 130 złomu), a bot ścieżki dowiózł tam po
+      // dziesięciu dobach 73, po czternastu 82 z 130 sztuk. Samo zlecenie nie wystarcza (puste, nieodwołalne). Pierwszy
+      // kamień drogi terenu zalicza krok zarządu, gdy płot stanie
+      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1 || plotZaczety(o.st),
     },
   ],
 };

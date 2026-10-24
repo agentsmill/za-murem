@@ -218,7 +218,8 @@ const WKROTCE_PRAD = tx('Wkrótce: ery 3–6 czekają na prąd.', 'Coming soon: 
 const WKROTCE_PLOT = tx('Wkrótce: wspólny płot przez jezdnię.', 'Coming soon: a shared fence across the road.');
 
 /** „Co dalej” przy pierwszym kamieniu terenu tam, gdzie da się otoczyć choć jednego sąsiada (inaczej `WKROTCE_PLOT`;
-    reszta terenu to „Wkrótce”, `wkrotceDrogi`). Eksport dla celu ścieżki celów, który mówi to samo zdanie (zob.
+    reszta terenu to „Wkrótce”, `wkrotceDrogi`). Kamień daje dopiero płot, który stoi, więc ekran dróg mówi „otoczcie”; cel
+    ścieżki celów zalicza się wcześniej (przy pierwszej doniesionej sztuce materiału) i ma własne zdanie „zacznijcie” (zob.
     `terenMozliwy`). */
 export const DALEJ_TEREN = tx(
   'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
