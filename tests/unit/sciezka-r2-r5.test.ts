@@ -6,8 +6,8 @@
    R2: `sily` (zdarzenie interfejsu `lista`), `ognisko` (zwykły: ognisko płonie po 18:00) albo `dzgnij` (zombie: polecenie
    ataku na szwendaczu przez siatkę), `uzbrojeni` (zwykły: broń u `min(2, osób)` osób) albo `dzidy` (zombie: karta nocy
    zatwierdzona po otwarciu rozdziału z `min(2, osób)` przydziałami `warta:siatka` u osób z dzidą). R4: `uchwala` (podpis
-   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (ludność
-   większa niż przy otwarciu), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
+   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (przyjęcie
+   od otwarcia, w zombie zapas po trzech dobach; reguły A i B w sciezka-nowi.test.ts), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów bez R3, przejścia R2 → R4 → R5
    → R6 (dalej R6–R8 i „koniec” w sciezka-r6-r8.test.ts), stary zapis w „koniec” po R1, który otwiera R2 (silnik:
@@ -800,7 +800,7 @@ describe('R4 wkurzenie: raport po otwarciu rozdziału jest rozpoznawany po dniu 
 describe.each(KOMBINACJE)('R4 nowi: %s %s', (key, mode) => {
   const nowaOsoba = (n: number) => makePerson(mulberry(n), new Set(), () => 100 + n);
 
-  it('ludność większa niż przy otwarciu rozdziału: przyjęta osoba do zarządu (fx.join), w bloku też mieszkaniec (fx.residents)', () => {
+  it('przyjęta osoba do zarządu (fx.join), w bloku też mieszkaniec (fx.residents), zalicza cel; liczba w liczniku to ludność z wejścia zarządu', () => {
     const g = poPierwszymRaporcie(key, mode);
     otworz(g, 'r4');
     const { st, w } = g.sim;
@@ -838,32 +838,6 @@ describe.each(KOMBINACJE)('R4 nowi: %s %s', (key, mode) => {
     );
     expect(populacja(h.sim.st).razem).toBe(g.sciezka.start.ludnosc + 1);
     expect(cel(h, 'nowi').done).toBe(true);
-  });
-
-  it('ktoś odchodzi, ktoś przychodzi: bilans bez zmiany jeszcze nie zalicza, dopiero kolejna osoba', () => {
-    const g = poPierwszymRaporcie(key, mode);
-    otworz(g, 'r4');
-    const { st, w } = g.sim;
-    applyGov(
-      st,
-      w,
-      skutki((e) => e.leave.push(idOsoby(g, rdzen(g.sim)[3]))),
-    );
-    expect(populacja(st).razem).toBe(g.sciezka.start.ludnosc - 1);
-    expect(cel(g, 'nowi').done).toBe(false);
-    applyGov(
-      st,
-      w,
-      skutki((e) => e.join.push(nowaOsoba(4))),
-    );
-    expect(populacja(st).razem).toBe(g.sciezka.start.ludnosc);
-    expect(cel(g, 'nowi').done, 'ludność taka sama jak przy otwarciu').toBe(false);
-    applyGov(
-      st,
-      w,
-      skutki((e) => e.join.push(nowaOsoba(5))),
-    );
-    expect(cel(g, 'nowi').done).toBe(true);
   });
 
   it('przybysz sprzed otwarcia rozdziału się nie liczy', () => {
@@ -1579,6 +1553,15 @@ describe('teksty R5', () => {
         mode === 'zombie' ? ' Za siatką są szwendacze: ryzyko jest większe, a kłopoty bywają ugryzieniem.' : '';
       const zombieEn =
         mode === 'zombie' ? ' There are shamblers out there: the risk is higher, and trouble can mean a bite.' : '';
+      // dopisek o „Budować …” (deski w innych klatkach albo za ulicą) jest tylko w zombie; Przymorze to blok
+      const ulica =
+        mode === 'zombie'
+          ? ' Po deski z innych klatek i zza ulicy: prawy przycisk na planie, „Budować …” (najlepiej bez szwendaczy blisko).'
+          : '';
+      const ulicaEn =
+        mode === 'zombie'
+          ? ' For planks from other stairwells or across the street: right-click the plan, “Build …” (best if no shamblers near).'
+          : '';
       expect(CARD_HOUR).toBe(20);
       expect(MORNING).toBe(6);
       expect(slowa(g, false, 'wyprawa')).toEqual({
@@ -1596,7 +1579,7 @@ describe('teksty R5', () => {
       });
       expect(slowa(g, false, 'ogrodek')).toEqual({
         text: 'Postawcie ogródek.',
-        how: 'Budowa, zakładka Podwórko: Ogródek (deski 14) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.',
+        how: `Budowa, zakładka Podwórko: Ogródek (deski 14) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.${ulica}`,
       });
       expect(
         slowa(g, true, 'ogrodek').how.startsWith(
@@ -1619,7 +1602,7 @@ describe('teksty R5', () => {
       });
       expect(slowa(g, false, 'ogrodek')).toEqual({
         text: 'Put in a vegetable patch.',
-        how: 'Build, Yard tab: Vegetable patch (planks 14) on a free bit of the yard. It grows food after a few days; not much in autumn.',
+        how: `Build, Yard tab: Vegetable patch (planks 14) on a free bit of the yard. It grows food after a few days; not much in autumn.${ulicaEn}`,
       });
       expect(
         slowa(g, true, 'ogrodek').how.startsWith(
@@ -1627,6 +1610,45 @@ describe('teksty R5', () => {
         ),
       ).toBe(true);
       ustawJezyk('pl');
+    }
+  });
+});
+
+/* Zdanie o „Budować …” w podpowiedzi ogródka: w zombie automat bierze deski tylko z miejsc dostępnych bez ulicy, więc plan,
+   któremu deski leżą w innych klatkach albo za ulicą, stoi bez wykonawcy, a wyjściem jest polecenie z menu planu. W zwykłym
+   trybie automat nosi deski z całego naszego terenu i zdania nie ma. */
+describe.each(KOMBINACJE)('R5 ogrodek: dopisek o „Budować …” tylko w zombie (%s %s)', (key, mode) => {
+  it('jest w zombie (blok: także o innych klatkach, dom: tylko o ulicy), w zwykłym trybie go nie ma; mysz, dotyk, po polsku i po angielsku', () => {
+    const g = poPierwszymRaporcie(key, mode);
+    wlaczMiasto(g.gov);
+    otworz(g, 'r5');
+    const zombie = mode === 'zombie';
+    const dom = wDomu(key);
+    for (const touch of [false, true]) {
+      const pl = cel(g, 'ogrodek', { touch }).how;
+      expect(pl.includes('„Budować …”'), `pl ${touch ? 'dotyk' : 'mysz'}`).toBe(zombie);
+      if (zombie) {
+        expect(pl).toContain(` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: `);
+        expect(pl.includes('z innych klatek i zza ulicy'), 'klatki tylko w bloku').toBe(!dom);
+        expect(pl).toContain(
+          touch ? 'przytrzymajcie palec na planie, „Budować …”' : 'prawy przycisk na planie, „Budować …”',
+        );
+        // zdanie jest na samym końcu podpowiedzi i mówi, kiedy polecenie jest najlepsze
+        expect(pl.endsWith('(najlepiej bez szwendaczy blisko).'), `pl ${touch ? 'dotyk' : 'mysz'}`).toBe(true);
+        if (dom) expect(pl).not.toMatch(FORBIDDEN_DOM);
+      }
+      ustawJezyk('en');
+      const en = cel(g, 'ogrodek', { touch }).how;
+      ustawJezyk('pl');
+      expect(en.includes('“Build …”'), `en ${touch ? 'touch' : 'mouse'}`).toBe(zombie);
+      if (zombie) {
+        expect(en).toContain(` For planks ${dom ? '' : 'from other stairwells or '}across the street: `);
+        expect(en.includes('from other stairwells or across the street'), 'stairwells only in a block').toBe(!dom);
+        expect(en).toContain(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”');
+        expect(en.endsWith('(best if no shamblers near).'), `en ${touch ? 'touch' : 'mouse'}`).toBe(true);
+        expect(polskieSlowa(en), en).toEqual([]);
+        if (dom) expect(en).not.toMatch(/\b(flat|stairwell|block)\b/i);
+      }
     }
   });
 });

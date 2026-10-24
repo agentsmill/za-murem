@@ -37,7 +37,7 @@ import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
 import { RUBBISH } from '../../src/sim/mieszkania.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
-import { drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
+import { drzwiBudynku, drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
 import { dismantlable } from '../../src/sim/sim.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
 import { modeOf } from '../../src/sim/tryb.ts';
@@ -59,7 +59,9 @@ import { doorWhere, pusto, core as rdzen } from './sasiedzi-pomoc.ts';
 import {
   badajDo,
   bezSzwendaczy,
+  budynkiDoOtoczenia,
   budynkiSasiadow,
+  dajMaterial,
   graBezPrezentow,
   kartkiDoWziecia,
   MAPY,
@@ -958,7 +960,7 @@ describe.each(KOMBINACJE.filter(([key]) => PLOT_NA_MAPIE[key]))('R8 teren tam, g
   it('fałsz bez płotu, prawda, gdy droga terenu ma pierwszy kamień; trwale', () => {
     const g = wRozdziale(key, mode, 'r8');
     expect(cel(g, 'teren')).toMatchObject({ done: false });
-    expect(cel(g, 'teren').text).toBe('Otoczcie wspólnym płotem pierwszy sąsiedni budynek.');
+    expect(cel(g, 'teren').text).toBe('Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.');
     g.gov.zwyciestwo!.kamienie.teren = 1;
     expect(cel(g, 'teren').done).toBe(true);
     expect(g.sciezka.zrobione).toHaveProperty(['r8.teren']);
@@ -978,6 +980,74 @@ describe.each(KOMBINACJE.filter(([key]) => PLOT_NA_MAPIE[key]))('R8 teren tam, g
     expect(bezWejscia()).toContain('teren');
   });
 });
+
+/* Wspólny płot bierze dużo materiału (najkrótszy na Lanciego to 65 m, czyli 65 desek i 65 złomu albo 130 złomu), więcej, niż
+   zarząd zbiera w dziesięć dób (bot ścieżki dowiózł na plan 73 z 130 sztuk po dziesięciu dobach i 82 po czternastu), więc
+   cel nie może czekać, aż płot stanie: zalicza go płot zaczęty, czyli pierwsza sztuka materiału doniesiona na plan. Samo
+   zlecenie nie wystarcza: menu proponuje „Otoczyć …” także bez grama materiału, plan startuje z `have: {}`, nie da się go
+   odwołać i zajmuje jedyne miejsce na plan, więc zaliczenie za zlecenie byłoby darmowe i bez odwrotu. Płot, który stoi,
+   daje kamień drogi terenu (krok zarządu). */
+describe.each(WSZYSTKIE.filter(([mapa]) => PLOT_NA_MAPIE[mapa]))(
+  'R8 teren: płot zaczęty zalicza cel, samo zlecenie nie (%s %s)',
+  (mapa, mode) => {
+    it('otwarte drzwi i pusty plan nie zaliczają; pierwsza doniesiona sztuka zalicza, zaliczenie zostaje', () => {
+      const g = bezAutomatu(swiezaGra(mapa, mode));
+      const { sim } = g;
+      const { st, w } = sim;
+      otworz(g, 'r8');
+      // na starcie leży parę desek i złomu: zabieramy je, żeby plan nie miał skąd brać
+      for (let k = st.things.length - 1; k >= 0; k--)
+        if (st.things[k].kind === 'deski' || st.things[k].kind === 'zlom') st.things.splice(k, 1);
+      const kto = rdzen(sim)[0];
+      const bid = budynkiDoOtoczenia(w)[0];
+      const door = drzwiBudynku(w, bid).zewn[0].tile;
+      otworzBudynek(g, kto, bid, door);
+      const dobre = () => Object.values(st.plot?.plan?.have ?? {}).some((n) => (n ?? 0) > 0);
+      /** kroki symulacji, dopóki `dalej()` jest prawdziwe (najwyżej `limit`); w zombie droga bez szwendaczy */
+      const czekaj = (dalej: () => boolean, limit: number, ponow?: () => void) => {
+        for (let n = 0; n < limit && dalej(); n++) {
+          sim.step();
+          if (n % 20 === 0) bezSzwendaczy(g);
+          if (n % 400 === 399) ponow?.();
+        }
+      };
+      // otwarte drzwi to jeszcze nie płot
+      expect(st.plot?.plan).toBeUndefined();
+      expect(cel(g, 'teren').done).toBe(false);
+      // to samo polecenie, które daje menu drzwi („Otoczyć wspólnym płotem (…)”), mimo że materiału na płot nie ma
+      const zlec = commandsAt(st, w, [kto.id], door).find((m) => m.cmd.t === 'enclose' && !m.off);
+      expect(zlec?.label.startsWith('Otoczyć wspólnym płotem')).toBe(true);
+      sim.push(zlec!.cmd);
+      sim.step();
+      expect(st.plot?.plan?.bid).toBe(bid);
+      // pusty plan nie zalicza celu, choćby czekał godzinami: nie ma czego donieść
+      czekaj(() => true, 1200);
+      expect(dobre()).toBe(false);
+      expect(cel(g, 'teren').done).toBe(false);
+      expect(g.sciezka.zrobione).not.toHaveProperty(['r8.teren']);
+      // gracz zebrał materiał i wraca do planu: to samo drzwi, teraz „Budować wspólny płot dalej”
+      dajMaterial(g, { deski: 2, zlom: 2 });
+      const dalej = commandsAt(st, w, [kto.id], door).find((m) => m.cmd.t === 'enclose' && !m.off);
+      expect(dalej?.label).toBe('Budować wspólny płot dalej');
+      sim.push(dalej!.cmd);
+      czekaj(
+        () => !dobre(),
+        8000,
+        () => sim.push(dalej!.cmd),
+      );
+      expect(dobre()).toBe(true);
+      expect(cel(g, 'teren').done).toBe(true);
+      expect(g.sciezka.zrobione).toHaveProperty(['r8.teren']);
+      // płot jeszcze nie stoi, więc kamienia drogi terenu nie ma
+      expect(st.plot?.bids).toEqual([]);
+      expect(g.gov.zwyciestwo!.kamienie.teren ?? 0).toBe(0);
+      // Gra nie ma polecenia odwołania planu płotu; plan znika tu ręcznie tylko po to, żeby sprawdzić, że silnik zapisuje
+      // zaliczenie na stałe
+      delete st.plot!.plan;
+      expect(cel(g, 'teren').done).toBe(true);
+    });
+  },
+);
 
 /* ---------------------------------------------------------------- po ostatnim rozdziale: drogi do zwycięstwa */
 
@@ -1170,24 +1240,37 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
         const g = wRozdziale(key, mode, 'r6');
         const lokumPl = dom ? 'waszego domu' : 'waszego mieszkania';
         const lokumEn = dom ? 'your house' : 'your flat';
+        // na samym końcu w zombie: deski z innych klatek i zza ulicy, polecenie „Budować …” z menu planu (w domu bez klatek)
+        const ulicaPl = (dotyk: boolean): string =>
+          zombie
+            ? ` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: ${
+                dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
+              } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`
+            : '';
+        const ulicaEn = (dotyk: boolean): string =>
+          zombie
+            ? ` For planks ${dom ? '' : 'from other stairwells or '}across the street: ${
+                dotyk ? 'press and hold on' : 'right-click'
+              } the plan, “Build …” (best if no shamblers near).`
+            : '';
         const koniecPl = (dotyk: boolean): string =>
-          dom
+          (dom
             ? ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
                 zombie ? ZA_SIATKA_PL : ''
               }`
             : ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${
                 dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
-              } na meblu, „Rozebrać …”.`;
+              } na meblu, „Rozebrać …”.`) + ulicaPl(dotyk);
         const koniecEn = (dotyk: boolean): string =>
-          dom
-            ? ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
+          (dom
+            ? ` Houses next door have planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
                 zombie ? ZA_SIATKA_EN : ''
               }`
-            : ` Furniture from searched empty flats gives planks and parts too: ${
+            : ` Searched empty flats’ furniture gives planks and parts: ${
                 dotyk ? 'press and hold on' : 'right-click'
-              } a piece, “Take apart the …”.`;
+              } a piece, “Take apart the …”.`) + ulicaEn(dotyk);
         const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`;
-        const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and from the workshop (“Make a part from scrap”).`;
+        const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and the workshop (“Make a part from scrap”).`;
         const opis = `${key} ${mode}`;
         expect(slowa(g, false, 'pracownia'), opis).toEqual({
           text: 'Postawcie pracownię.',
@@ -1212,9 +1295,10 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
 
   it('pracownia: dopisek o sąsiednich domach tylko tam, gdzie siedziba to dom, a obok stoją domy; meble tylko w bloku; szwendacze tylko przy wyjściu za siatkę w zombie', () => {
     const pracownia = ROZDZIALY.find((r) => r.k === 'r6')!.cele.find((c) => c.key === 'pracownia')!;
-    const SASIEDNIE = /sąsiednie domy|houses next door/;
+    const SASIEDNIE = /sąsiednie domy|[Hh]ouses next door/;
     const MEBLE = /„Rozebrać …”|“Take apart the …”/;
-    const SZWENDACZE = /szwendacze|shamblers/;
+    // dopisek o wyjściu za siatkę (`ZA_SIATKA`); zdanie o „Budować …” (inny test) też wspomina szwendaczy, ale nie o wyjściu
+    const SZWENDACZE = /Za siatką są szwendacze|There are shamblers out there/;
     for (const mode of TRYBY) {
       const g = wRozdziale('zielonki', mode, 'r6');
       const zombie = mode === 'zombie';
@@ -1252,6 +1336,53 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
       expect(oba(blokZDomami, SASIEDNIE), `${mode} blok: sąsiedzi`).toEqual([false, false]);
       expect(oba(blokZDomami, SZWENDACZE), `${mode} blok: szwendacze`).toEqual([false, false]);
     }
+  });
+
+  it('pracownia: dopisek o „Budować …” z menu planu tylko w zombie (blok: także o innych klatkach, dom: tylko o ulicy), mysz i dotyk, po polsku i po angielsku', () => {
+    for (const key of DEMA)
+      for (const mode of TRYBY) {
+        const zombie = mode === 'zombie';
+        const dom = wDomu(key);
+        const g = wRozdziale(key, mode, 'r6');
+        for (const touch of [false, true]) {
+          const pl = cel(g, 'pracownia', { touch }).how;
+          const opis = `${key} ${mode} ${touch ? 'dotyk' : 'mysz'}`;
+          expect(pl.includes('„Budować …”'), `pl ${opis}`).toBe(zombie);
+          if (zombie) {
+            expect(pl.includes('z innych klatek i zza ulicy'), `klatki tylko w bloku ${opis}`).toBe(!dom);
+            expect(pl.includes(` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: `), opis).toBe(true);
+            expect(
+              pl.includes(
+                touch ? 'przytrzymajcie palec na planie, „Budować …”' : 'prawy przycisk na planie, „Budować …”',
+              ),
+              opis,
+            ).toBe(true);
+            // zdanie jest na samym końcu podpowiedzi, po dopisku o skąd jeszcze deski
+            expect(pl.endsWith('(najlepiej bez szwendaczy blisko).'), opis).toBe(true);
+            if (dom) expect(pl, opis).not.toMatch(FORBIDDEN_DOM);
+          }
+          ustawJezyk('en');
+          const en = cel(g, 'pracownia', { touch }).how;
+          ustawJezyk('pl');
+          expect(en.includes('“Build …”'), `en ${opis}`).toBe(zombie);
+          if (zombie) {
+            expect(
+              en.includes('from other stairwells or across the street'),
+              `stairwells only in a block ${opis}`,
+            ).toBe(!dom);
+            expect(en.includes(` For planks ${dom ? '' : 'from other stairwells or '}across the street: `), opis).toBe(
+              true,
+            );
+            expect(
+              en.includes(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”'),
+              opis,
+            ).toBe(true);
+            expect(en.endsWith('(best if no shamblers near).'), opis).toBe(true);
+            expect(polskieSlowa(en), en).toEqual([]);
+            if (dom) expect(en, opis).not.toMatch(/\b(flat|stairwell|block)\b/i);
+          }
+        }
+      }
   });
 
   it('pracownia w bloku: „Rozebrać …” i “Take apart the …” z podpowiedzi to napis z prawdziwego menu meblu w przeszukanym pustym mieszkaniu', () => {
@@ -1445,11 +1576,11 @@ describe('teksty R8 (mysz i dotyk, po polsku i po angielsku)', () => {
       how: 'Menu, „Drogi do zwycięstwa”: pięć dróg z kamieniami milowymi; każda kończy się innym epilogiem.',
     });
     expect(slowa(g, false, 'teren')).toEqual({
-      text: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
-      how: 'Prawy przycisk na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.',
+      text: 'Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.',
+      how: 'Prawy przycisk na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu: cel zalicza się, gdy ludzie doniosą na plan pierwszą sztukę materiału, a resztę dowożą w miarę zbierania.',
     });
     expect(slowa(g, true, 'teren').how).toBe(
-      'Przytrzymajcie palec na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.',
+      'Przytrzymajcie palec na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu: cel zalicza się, gdy ludzie doniosą na plan pierwszą sztukę materiału, a resztę dowożą w miarę zbierania.',
     );
     ustawJezyk('en');
     expect(slowa(g, false, 'drogi')).toEqual({
@@ -1457,20 +1588,22 @@ describe('teksty R8 (mysz i dotyk, po polsku i po angielsku)', () => {
       how: 'Menu, “Roads to victory”: five roads with milestones; each ends in a different epilogue.',
     });
     expect(slowa(g, false, 'teren')).toEqual({
-      text: 'Put a shared fence round the first building next door.',
-      how: 'Right-click the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you.',
+      text: 'Start putting a shared fence round the first building next door.',
+      how: 'Right-click the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap: the goal counts once your people have brought the first piece of material to the plan, and they bring the rest as you gather it.',
     });
     expect(slowa(g, true, 'teren').how.startsWith('Press and hold on the door of an open building next door:')).toBe(
       true,
     );
   });
 
-  it('teren mówi to samo zdanie, co „co dalej” drogi terenu na ekranie dróg', () => {
+  it('teren mówi „zacznijcie”, a „co dalej” drogi terenu na ekranie dróg dalej „otoczcie” (kamień daje dopiero stojący płot)', () => {
     const g = wRozdziale('lanciego', 'zwykly', 'r8');
     const dalej = ocenDrogi(g.gov, wejscie(g)).find((d) => d.droga === 'teren')!.dalej!;
-    expect(cel(g, 'teren').text).toBe(dalej.pl);
+    expect(dalej.pl).toBe('Otoczcie wspólnym płotem pierwszy sąsiedni budynek.');
+    expect(cel(g, 'teren').text).toBe('Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.');
     ustawJezyk('en');
-    expect(cel(g, 'teren').text).toBe(dalej.en);
+    expect(dalej.en).toBe('Put a shared fence round the first building next door.');
+    expect(cel(g, 'teren').text).toBe('Start putting a shared fence round the first building next door.');
   });
 });
 

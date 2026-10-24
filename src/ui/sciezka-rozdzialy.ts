@@ -39,13 +39,18 @@
    wiedza jak w `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie), żeby zarząd bez fachu ery 1 nie utknął w rozdziale.
    Podpowiedź pracowni mówi na końcu, skąd jeszcze deski i części (`deskiSkadJeszcze`), bo pracownia bierze 14 desek, a
    własne pomieszczenia i automat dają ich za mało: w bloku z mebli przeszukanych pustych mieszkań („Rozebrać …”), w domu
-   jednorodzinnym z domami obok (Zielonki) z sąsiednich domów, a w zombie z dopiskiem o szwendaczach jak w pukaniu.
+   jednorodzinnym z domami obok (Zielonki) z sąsiednich domów, a w zombie z dopiskiem o szwendaczach jak w pukaniu. W zombie
+   podpowiedzi ogródka i pracowni dopisują też, że gdy deski leżą w innych klatkach albo za ulicą i budowa nie rusza, pomaga
+   „Budować …” z menu planu (`budowaPoDeskiUlica`): automat bierze tam deski tylko z miejsc dostępnych bez ulicy.
    R7 „Sąsiedzi” uczy pukania (praca przy drzwiach z pukaniem, wynik pukania albo spotkanie), rozmowy w oknie spotkania
    (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
    ekranu dróg, kolejnego kamienia ludności (tekst to „co dalej” z chwili otwarcia rozdziału, bo `tekst` dostaje stan
-   ścieżki) i, tam gdzie wspólny płot dosięga sąsiada, terenu (ten sam predykat `terenMozliwy` co ekran dróg). Po R8 okienko
-   pokazuje wiersze dróg z „co dalej” (`wierszeDrog`).
+   ścieżki) i, tam gdzie wspólny płot dosięga sąsiada, terenu (ten sam predykat `terenMozliwy` co ekran dróg; cel zalicza
+   się, gdy płot jest zaczęty, czyli ludzie doniosą na plan pierwszą sztukę materiału, bo sam płot bierze dużo materiału: 65
+   desek i 65 złomu na najkrótszy na Lanciego, a bot ścieżki dowiózł tam na plan po dziesięciu dobach 73, po czternastu 82 z
+   tych 130 sztuk; tekst celu mówi więc „zacznijcie”, a ekran dróg dalej „otoczcie”). Po R8 okienko pokazuje wiersze dróg z
+   „co dalej” (`wierszeDrog`).
 
    Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
    te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
@@ -58,12 +63,12 @@ import type { GovInput, GovState, NightPlan, NightReport } from '../gov/typy.ts'
 import { lawOptions } from '../gov/uchwaly.ts';
 import { atHour } from '../gov/wspolne.ts';
 import { LAW_HOUR, LAW_MINUTE } from '../gov/zarzad.ts';
-import { DALEJ_TEREN, ocenDrogi, type PostepDrogi, terenMozliwy } from '../gov/zwyciestwo.ts';
+import { ocenDrogi, type PostepDrogi, terenMozliwy } from '../gov/zwyciestwo.ts';
 import { nazwaTech, TECH_BY, TECHS, wiedza } from '../sim/badania.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS } from '../sim/budowle.ts';
-import { minutesAt } from '../sim/clock.ts';
+import { minutesAt, TICKS_PER_DAY } from '../sim/clock.ts';
 import { CAMPFIRE_WOOD, PATCH_COST, type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
 import { populacja } from '../sim/snapshot.ts';
 import { modeOf } from '../sim/tryb.ts';
@@ -323,6 +328,52 @@ export const uchwalyPodpisane = (gov: GovState | null): number =>
     z dróg do zwycięstwa). Zmiany po otwarciu rozdziału widać tylko jako różnicę z liczbą z chwili otwarcia. */
 export const ludnoscPodZarzadem = (st: SimState): number => populacja(st).razem;
 
+/** Numery pionków zarządu i mieszkańców siedziby w tej chwili: `osoby` to jedni i drudzy, `zarzad` sami z zarządu. Pionek
+    ma numer na stałe (gość z karty, wędrowiec i awansowany mieszkaniec zostają tymi samymi pionkami, zmieniają tylko rodzaj),
+    więc różnica z listą z chwili otwarcia rozdziału (`StanSciezki.start`) mówi, kto doszedł albo awansował, choćby ktoś
+    w międzyczasie zginął. Zapis w `licznikiStartu` (src/ui/sciezka.ts). */
+export function pionkiLudzi(st: SimState): { osoby: number[]; zarzad: number[] } {
+  const osoby: number[] = [];
+  const zarzad: number[] = [];
+  for (const p of st.pawns) {
+    if (p.kind === 'core') {
+      osoby.push(p.id);
+      zarzad.push(p.id);
+    } else if (p.kind === 'resident') osoby.push(p.id);
+  }
+  return { osoby, zarzad };
+}
+
+/** Czy od otwarcia rozdziału ktoś został przyjęty: do zarządu doszedł pionek, którego tam nie było (nowa osoba, gość z karty,
+    zaproszony wędrowiec albo mieszkaniec awansowany kartą „Wciągnąć do roboty”) albo między mieszkańców pionek spoza listy
+    z chwili otwarcia (przyjęta grupa, zaproszeni sąsiedzi). Liczą się przyjęcia, nie ludność netto: zgon po drodze ich
+    nie cofa, a przyjęcie po zgonie liczy się tak samo. Zapis sprzed list z chwili otwarcia (bez `osoby` i `zarzad`) liczy
+    jak dawniej ludność netto. */
+export function przyjetoKogos(st: SimState, s: StanSciezki): boolean {
+  const { osoby, zarzad } = s.start;
+  if (!osoby || !zarzad) return ludnoscPodZarzadem(st) > s.start.ludnosc;
+  const byli = new Set(osoby);
+  const bylWZarzadzie = new Set(zarzad);
+  return st.pawns.some(
+    (p) => (p.kind === 'core' && !bylWZarzadzie.has(p.id)) || (p.kind === 'resident' && !byli.has(p.id)),
+  );
+}
+
+/** Ile dób przy otwartym R4 czeka cel „Przyjmijcie kogoś nowego” w trybie zombie, zanim zaliczy się sam. */
+export const DOBY_NOWI_ZAPAS = 3;
+
+/** Zapas celu `nowi` (tylko zombie): od otwarcia R4 minęły trzy doby gry, a nikt nie został przyjęty. W trybie zombie karta,
+    która prosi o miejsce, bywa rzadka (średnio jedna na 8 do 12 dób), więc cel nie może czekać na nią w nieskończoność. */
+export const nowiZapas = (o: OdczytCelow, s: StanSciezki): boolean =>
+  zombieMode(o.st, o.gov) && o.st.tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
+
+/** Czy zaliczony cel `nowi` zaliczył zapas, a nie przyjęcie: zaliczony nie wcześniej niż po trzech dobach od otwarcia R4 w
+    trybie zombie (przyjęcie zaliczyłoby go w tym samym kroku, w którym je zobaczyło, więc wcześniej). */
+export const nowiZaliczoneZapasem = (o: OdczytCelow, s: StanSciezki): boolean => {
+  const tick = s.zrobione['r4.nowi'];
+  return zombieMode(o.st, o.gov) && tick !== undefined && tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
+};
+
 /** Łup zabrany z miejsc z mapy miasta (suma `gov.miasto.zabrano`, dzienne i nocne wyprawy); zero bez mapy miasta. */
 export const lupZMiasta = (gov: GovState | null): number =>
   Object.values(gov?.miasto?.zabrano ?? {}).reduce((suma, n) => suma + n, 0);
@@ -524,13 +575,22 @@ const R4: DefRozdzialu = {
     {
       key: 'nowi',
       tekst: () => L('Przyjmijcie kogoś nowego.', 'Take someone new in.'),
+      // zaliczony zapasem (zombie, trzy doby bez przyjęcia) mówi pod celem, czemu: nikt nie poprosił, a karta zapyta, gdy ktoś poprosi
+      uwaga: (o, s) =>
+        nowiZaliczoneZapasem(o, s)
+          ? L(
+              'Nikt nie zapukał: gdy ktoś poprosi o miejsce, karta zapyta.',
+              'Nobody knocked: when someone asks for a place, a card will ask you.',
+            )
+          : null,
       jak: (o) =>
         L(
           `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od ${o.words.brama.d}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
           `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${o.wordsEn.brama}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
         ),
-      // zgon w międzyczasie tylko opóźnia cel: liczy się ludność większa niż przy otwarciu
-      zrobiony: (o, s) => ludnoscPodZarzadem(o.st) > s.start.ludnosc,
+      // liczą się przyjęcia od otwarcia rozdziału, nie ludność netto (zgon ich nie cofa, a awans mieszkańca kartą „Wciągnąć do
+      // roboty” w bloku też jest przyjęciem do zarządu); w zombie po trzech dobach bez przyjęcia cel zalicza się sam
+      zrobiony: (o, s) => przyjetoKogos(o.st, s) || nowiZapas(o, s),
     },
     {
       key: 'ludzie',
@@ -604,9 +664,10 @@ const R5: DefRozdzialu = {
       jak: (o) => {
         const koszt = costText(BUILDS.ogrodek.cost);
         const b = budowaZakladka(o.touch);
+        const ulica = budowaPoDeskiUlica(o);
         return L(
-          `${b}, zakładka Podwórko: ${BUILDS.ogrodek.name} (${koszt}) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.`,
-          `${b}, Yard tab: ${BUILDS_EN.ogrodek.name} (${koszt}) on a free bit of the yard. It grows food after a few days; not much in autumn.`,
+          `${b}, zakładka Podwórko: ${BUILDS.ogrodek.name} (${koszt}) na wolnym kawałku podwórka. Po kilku dniach daje jedzenie, jesienią mało.${ulica.pl}`,
+          `${b}, Yard tab: ${BUILDS_EN.ogrodek.name} (${koszt}) on a free bit of the yard. It grows food after a few days; not much in autumn.${ulica.en}`,
         );
       },
       zrobiony: (o) => o.st.things.some((t) => t.kind === 'ogrodek'),
@@ -663,6 +724,25 @@ const ZA_SIATKA = {
   en: ' There are shamblers out there: go by day, with a spear.',
 } as const;
 
+/** Dopisek trybu zombie do podpowiedzi budowli z materiałem (ogródek R5.3, pracownia R6.1), z pierwszą spacją; w zwykłym
+    trybie pusty. Automat pracy ludzi zaczyna w zombie budowę tylko wtedy, gdy cały brakujący materiał leży tam, dokąd
+    dojdzie bez ulicy (`startBuild` w src/sim/sim.ts), więc plan, któremu deski leżą w pokojach innych klatek albo za
+    ulicą, stoi bez wykonawcy, a pasek zapasów mówi, że starczy. Jedyne wyjście to polecenie „Budować …” z menu planu
+    (src/ui/budowa.ts): zaznaczona osoba idzie po deski każdą drogą, także ulicą, więc najlepiej wtedy, gdy żaden szwendacz
+    nie jest blisko. W domu jednorodzinnym nie ma klatek, więc zdanie mówi tylko o ulicy. */
+function budowaPoDeskiUlica(o: OdczytCelow): { pl: string; en: string } {
+  if (!zombieMode(o.st, o.gov)) return { pl: '', en: '' };
+  const blok = o.words.szukanie.obok === null;
+  return {
+    pl: ` Po deski ${blok ? 'z innych klatek i ' : ''}zza ulicy: ${
+      o.touch ? 'przytrzymajcie palec' : 'prawy przycisk'
+    } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`,
+    en: ` For planks ${blok ? 'from other stairwells or ' : ''}across the street: ${
+      o.touch ? 'press and hold on' : 'right-click'
+    } the plan, “Build …” (best if no shamblers near).`,
+  };
+}
+
 /** Skąd jeszcze deski i części na pracownię: zdanie na końcu podpowiedzi celu `pracownia` (z pierwszą spacją; puste, gdy
     nie ma co dopisać). Pracownia bierze 14 desek, a własne pomieszczenia i sam automat pracy ludzi dają ich za mało
     (dom na Zielonkach 7 do 8 w sześć dób, mapy blokowe w zombie około 12 z 14 do ósmego dnia, osiedle zapasowe w zwykłym
@@ -680,7 +760,7 @@ function deskiSkadJeszcze(o: OdczytCelow): { pl: string; en: string } {
   if (o.words.szukanie.obok === null)
     return {
       pl: ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na meblu, „Rozebrać …”.`,
-      en: ` Furniture from searched empty flats gives planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} a piece, “Take apart the …”.`,
+      en: ` Searched empty flats’ furniture gives planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} a piece, “Take apart the …”.`,
     };
   if (sasiedzi(placeOfWorld(o.w)) !== 'domy') return { pl: '', en: '' };
   const zombie = zombieMode(o.st, o.gov);
@@ -688,7 +768,7 @@ function deskiSkadJeszcze(o: OdczytCelow): { pl: string; en: string } {
     pl: ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
       zombie ? ZA_SIATKA.pl : ''
     }`,
-    en: ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
+    en: ` Houses next door have planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
       zombie ? ZA_SIATKA.en : ''
     }`,
   };
@@ -705,9 +785,12 @@ const R6: DefRozdzialu = {
         const koszt = costText(BUILDS.pracownia.cost);
         const b = budowaZakladka(o.touch);
         const skad = deskiSkadJeszcze(o);
+        const ulica = budowaPoDeskiUlica(o);
+        // angielski tekst jest krótki celowo (bez „from” przed „the workshop”, bez „too”, „Houses next door”): dłuższy w zombie
+        // wypycha na telefonie zwinięte okienko ponad 8 linii, na panel budowy (scenariusz `cele-zombie-budowa-telefon`, EN)
         return L(
-          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}`,
-          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${skad.en}`,
+          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}${ulica.pl}`,
+          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and the workshop (“Make a part from scrap”).${skad.en}${ulica.en}`,
         );
       },
       // postawiona wcześniej zalicza od razu przy otwarciu rozdziału; sam plan budowy nie wystarcza
@@ -908,6 +991,13 @@ function drogaLudnosciPrzyOtwarciu(o: OdczytCelow, s: StanSciezki): PostepDrogi 
   return ocenDrogi(przy, o.input).find((p) => p.droga === 'ludnosc');
 }
 
+/** Wspólny płot zaczęty: na plan doniesiono choć jedną sztukę materiału albo jakiś budynek już otoczono. Samo zlecenie nie
+    liczy się: menu proponuje „Otoczyć …” także bez grama materiału, plan startuje z `have: {}`, nie da się go odwołać i
+    zajmuje jedyne miejsce na plan (drugi płot dopiero po pierwszym), więc pusty plan zaliczałby cel za darmo i bez
+    odwrotu. Plan, któremu ludzie coś doniosą, jest już prawdziwą pracą; resztę materiału dowożą w miarę zbierania. */
+const plotZaczety = (st: SimState): boolean =>
+  Object.values(st.plot?.plan?.have ?? {}).some((n) => (n ?? 0) > 0) || (st.plot?.bids.length ?? 0) > 0;
+
 const R8: DefRozdzialu = {
   k: 'r8',
   tytul: () => L('Drogi do zwycięstwa', 'Roads to victory'),
@@ -954,13 +1044,23 @@ const R8: DefRozdzialu = {
         Object.hasOwn(s.zrobione, 'r8.teren') ||
         kamienie(o.gov, 'teren') >= 1 ||
         (!!o.gov?.zwyciestwo && !!o.input && terenMozliwy(o.input)),
-      tekst: () => tr(DALEJ_TEREN),
+      // cel zalicza się przy pierwszej doniesionej sztuce materiału, nie przy stojącym płocie, więc jego tekst mówi „zacznijcie”;
+      // ekran dróg zostaje przy `DALEJ_TEREN` („otoczcie”), bo kamień terenu daje dopiero płot, który stoi
+      tekst: () =>
+        L(
+          'Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.',
+          'Start putting a shared fence round the first building next door.',
+        ),
       jak: (o) =>
         L(
-          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.`,
-          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you.`,
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu: cel zalicza się, gdy ludzie doniosą na plan pierwszą sztukę materiału, a resztę dowożą w miarę zbierania.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap: the goal counts once your people have brought the first piece of material to the plan, and they bring the rest as you gather it.`,
         ),
-      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1,
+      // płot zaczęty (na plan doniesiono sztukę materiału albo budynek jest otoczony) zalicza cel, bo sam płot bierze dużo
+      // materiału: najkrótszy ma na Lanciego 65 m, czyli 65 desek i 65 złomu (albo 130 złomu), a bot ścieżki dowiózł tam po
+      // dziesięciu dobach 73, po czternastu 82 z 130 sztuk. Samo zlecenie nie wystarcza (puste, nieodwołalne). Pierwszy
+      // kamień drogi terenu zalicza krok zarządu, gdy płot stanie
+      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1 || plotZaczety(o.st),
     },
   ],
 };

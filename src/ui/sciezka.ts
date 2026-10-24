@@ -72,7 +72,14 @@ import type { SimSnapshot } from '../sim/snapshot.ts';
 import { TUT_STEPS } from '../sim/tutorial.ts';
 import type { World } from '../world/world.ts';
 import { OKAZJE } from './sciezka-okazje.ts';
-import { ludnoscPodZarzadem, lupZMiasta, ROZDZIALY, uchwalyPodpisane, wierszeDrog } from './sciezka-rozdzialy.ts';
+import {
+  ludnoscPodZarzadem,
+  lupZMiasta,
+  pionkiLudzi,
+  ROZDZIALY,
+  uchwalyPodpisane,
+  wierszeDrog,
+} from './sciezka-rozdzialy.ts';
 import { esc } from './tekst.ts';
 
 /** rozdziały głównej ścieżki po kolei (R3 istnieje dopiero po scaleniu pracy ludzi); „koniec”: po ostatnim rozdziale */
@@ -88,13 +95,28 @@ export type KluczOkazji = (typeof KLUCZE_OKAZJI)[number];
     mieszkańca, karta cudzego budynku, ekran dróg do zwycięstwa */
 export type ZdarzenieUi = 'lista' | 'mieszkaniec' | 'budynek' | 'drogi';
 
+/** Liczniki z chwili otwarcia rozdziału (`StanSciezki.start`). Liczby to stan gry w tej chwili (cele „więcej niż przy
+    otwarciu”). `osoby` i `zarzad` to numery pionków: wszyscy z zarządu i mieszkańców, i sami z zarządu, w chwili otwarcia.
+    Z nich cel „Przyjmijcie kogoś nowego” (R4 `nowi`) widzi, kto doszedł albo awansował od otwarcia, choćby ktoś zginął
+    w międzyczasie (ludność netto tego nie odróżnia). Zapis sprzed tych pól nie ma ich, a cel liczy wtedy ludność netto. */
+export interface StartRozdzialu {
+  uchwaly: number;
+  raporty: number;
+  ludnosc: number;
+  lup: number;
+  spotkania: number;
+  kamienLudnosci: number;
+  osoby?: number[];
+  zarzad?: number[];
+}
+
 export interface StanSciezki {
   v: 1;
   /** bieżący rozdział głównej ścieżki i tick jego otwarcia */
   rozdzial: KluczRozdzialu;
   od: number;
   /** liczniki z chwili otwarcia rozdziału do warunków „od otwarcia” */
-  start: { uchwaly: number; raporty: number; ludnosc: number; lup: number; spotkania: number; kamienLudnosci: number };
+  start: StartRozdzialu;
   /** zaliczone cele głównej ścieżki i okazji: klucz ('r1.przeszukaj', 'o2.wymiana') → tick zaliczenia */
   zrobione: Record<string, number>;
   /** cele, które przepadły (termin minął) */
@@ -105,8 +127,9 @@ export interface StanSciezki {
   okazja?: { k: KluczOkazji; od: number; zabici?: number; cel?: number };
 }
 
-/** liczniki z `StanSciezki.start`; zapis typu `Record` pilnuje, żeby żaden nie wypadł z listy */
-const LICZNIKI: Record<keyof StanSciezki['start'], true> = {
+/** liczniki z `StanSciezki.start`, które są liczbami (numery pionków `osoby` i `zarzad` sprawdza osobno
+    `jestStanSciezki`); zapis typu `Record` pilnuje, żeby żaden nie wypadł z listy */
+const LICZNIKI: Record<Exclude<keyof StartRozdzialu, 'osoby' | 'zarzad'>, true> = {
   uchwaly: true,
   raporty: true,
   ludnosc: true,
@@ -140,6 +163,9 @@ export function jestStanSciezki(x: unknown): x is StanSciezki {
   if (!jestObiektem(x) || x.v !== 1 || !naLiscie(KLUCZE_ROZDZIALOW, x.rozdzial) || !jestLiczba(x.od)) return false;
   const start = x.start;
   if (!jestObiektem(start) || !Object.keys(LICZNIKI).every((k) => jestLiczba(start[k]))) return false;
+  // numery pionków z chwili otwarcia: pola z nowszej wersji stanu, więc zapis bez nich jest poprawny
+  for (const k of ['osoby', 'zarzad'])
+    if (start[k] !== undefined && !(Array.isArray(start[k]) && start[k].every(jestLiczba))) return false;
   if (!mapaLiczb(x.zrobione) || !mapaLiczb(x.ui)) return false;
   if (!Array.isArray(x.przepadle) || !x.przepadle.every((k) => typeof k === 'string')) return false;
   const o = x.okazja;
@@ -168,6 +194,8 @@ function kopia(s: StanSciezki): StanSciezki {
       lup: s.start.lup,
       spotkania: s.start.spotkania,
       kamienLudnosci: s.start.kamienLudnosci,
+      ...(s.start.osoby ? { osoby: [...s.start.osoby] } : {}),
+      ...(s.start.zarzad ? { zarzad: [...s.start.zarzad] } : {}),
     },
     zrobione: { ...s.zrobione },
     przepadle: [...s.przepadle],
@@ -201,6 +229,7 @@ export function licznikiStartu(st: SimState, gov: GovState | null): StanSciezki[
     lup: lupZMiasta(gov),
     spotkania: st.sasiedzi?.nr ?? 0,
     kamienLudnosci: gov?.zwyciestwo?.kamienie.ludnosc ?? 0,
+    ...pionkiLudzi(st),
   };
 }
 
@@ -277,6 +306,8 @@ export interface DefCelu {
   jak(o: OdczytCelow, s: StanSciezki): string;
   zrobiony(o: OdczytCelow, s: StanSciezki): boolean;
   czeka?(o: OdczytCelow, s: StanSciezki): string | null;
+  /** dopisek celu już zaliczonego, który mówi, czemu zaliczył się bez czynności gracza (zapas celu „nowi” w trybie zombie), inaczej null */
+  uwaga?(o: OdczytCelow, s: StanSciezki): string | null;
   przepadl?(o: OdczytCelow, s: StanSciezki): boolean;
   okno?: OknoCelu;
 }
@@ -322,6 +353,8 @@ export interface Cel {
   done: boolean;
   missed?: boolean;
   czeka?: string;
+  /** dopisek zaliczonego celu (czemu zaliczył się sam); okienko rysuje go pod celem, bez przekreślenia */
+  uwaga?: string;
   okno?: OknoCelu;
 }
 
@@ -492,6 +525,7 @@ function celeWidoku(
     const missed = !zrobiony && przepadly(s, klucz);
     const done = zrobiony || missed;
     const czeka = done ? null : (c.czeka?.(o, s) ?? null);
+    const uwaga = zrobiony ? (c.uwaga?.(o, s) ?? null) : null;
     return {
       key: c.key,
       text: c.tekst(o, s),
@@ -499,6 +533,7 @@ function celeWidoku(
       done,
       ...(missed ? { missed } : {}),
       ...(czeka ? { czeka } : {}),
+      ...(uwaga ? { uwaga } : {}),
       ...(c.okno ? { okno: c.okno } : {}),
     };
   });
@@ -547,14 +582,16 @@ const podpowiedzNaglowka = (o: OpcjeOkienka): string =>
 const naglowekHtml = (tytul: string, licznik: string, o: OpcjeOkienka): string =>
   `<button type="button" class="goals-head" aria-expanded="${o.otwarte}" title="${esc(podpowiedzNaglowka(o))}"><span>${esc(tytul)}</span>${licznik}</button>`;
 
-/** Jeden cel listy. Klasa mówi, czym jest: zrobiony (ptaszek, przekreślony), przepadły (krzyżyk, przekreślony), bieżący
-    (z podpowiedzią) albo czekający (przyciemniony, z dopiskiem „czeka do …”); zwykły niezrobiony nie ma klasy. */
+/** Jeden cel listy. Klasa mówi, czym jest: zrobiony (ptaszek, przekreślony, a gdy zaliczył się sam, z dopiskiem pod spodem),
+    przepadły (krzyżyk, przekreślony), bieżący (z podpowiedzią) albo czekający (przyciemniony, z dopiskiem „czeka do …”);
+    zwykły niezrobiony nie ma klasy. */
 function celHtml(c: Cel, n: number, biezacy: Cel | null): string {
   const bie = !!biezacy && c.key === biezacy.key;
   const klasa = c.missed ? ' missed' : c.done ? ' done' : bie ? ' now' : c.czeka ? ' czeka' : '';
   const jak = bie ? `<small class="goal-how">${esc(c.how)}</small>` : '';
   const dopisek = c.czeka && !c.done ? `<small class="goal-czeka">${esc(c.czeka)}</small>` : '';
-  return `<li class="goal${klasa}" data-key="${esc(c.key)}" data-n="${n}">${esc(c.text)}${jak}${dopisek}</li>`;
+  const uwaga = c.uwaga && c.done && !c.missed ? `<small class="goal-uwaga">${esc(c.uwaga)}</small>` : '';
+  return `<li class="goal${klasa}" data-key="${esc(c.key)}" data-n="${n}">${esc(c.text)}${jak}${dopisek}${uwaga}</li>`;
 }
 
 /** Lista celów rozdziału albo okazji. Zwinięta pokazuje tylko bieżący cel, a gdy go nie ma (reszta czeka), pierwszy

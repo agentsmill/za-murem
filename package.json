@@ -22,6 +22,7 @@
     "bot:v03": "node tools/bot-v03.ts",
     "bot:surowce": "node tools/bot-surowce.ts",
     "bot:praca": "node tools/bot-praca.ts",
+    "bot:cele": "node tools/bot-cele.ts",
     "demos": "node tools/make-demos.ts",
     "atlasy": "node tools/atlasy.ts",
     "animacje": "node tools/animacje.ts",

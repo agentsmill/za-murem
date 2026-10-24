@@ -299,8 +299,9 @@ declare global {
       cele: () => WidokSciezki | null;
       /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick i liczniki „od otwarcia”);
           zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten jest
-          skończony */
-      rozdzial: (k: KluczRozdzialu) => void;
+          skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, jakby rozdział otwarto wcześniej (zapas celu „nowi”
+          w trybie zombie po trzech dobach bez grania ich) */
+      rozdzial: (k: KluczRozdzialu, dobyTemu?: number) => void;
       /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
           nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
       wygraj: (droga: Droga) => string | null;
@@ -3778,10 +3779,15 @@ if (attrib) bars.observe(attrib);
       const snap = sim ? snapNow() : null;
       return snap ? widokCelow(snap) : null;
     },
-    rozdzial: (k) => {
+    rozdzial: (k, dobyTemu = 0) => {
       if (!sim) return;
-      // jak otwarcie rozdziału przez krok ścieżki: tick i liczniki „od otwarcia” z tej chwili
-      sciezka = { ...sciezka, rozdzial: k, od: sim.st.tick, start: licznikiStartu(sim.st, gov) };
+      // jak otwarcie rozdziału przez krok ścieżki: tick i liczniki „od otwarcia” z tej chwili (tick cofnięty o `dobyTemu` dób)
+      sciezka = {
+        ...sciezka,
+        rozdzial: k,
+        od: sim.st.tick - Math.round(dobyTemu * TICKS_PER_DAY),
+        start: licznikiStartu(sim.st, gov),
+      };
       const snap = snapNow();
       if (snap) renderGoals(snap);
     },
