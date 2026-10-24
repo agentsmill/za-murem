@@ -33,7 +33,7 @@ export const ARTYKUL_STARTOWY = 'start:zacznij';
 /** Czipy górnego paska, które otwierają wiki: id elementu (index.html, src/ui/pasek.ts) → artykuł. */
 export const CZIPY: Readonly<Record<string, string>> = {
   sFence: 'zombie:siatka',
-  sHorde: 'zombie:stado',
+  sHorde: 'zombie:szwendacze',
   sOut: 'start:temperatura',
   sKit: 'start:temperatura',
   sFire: 'zasob:koza',

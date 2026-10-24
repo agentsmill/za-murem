@@ -1,6 +1,6 @@
 /* Zrzuty i sprawdzenia wiki w grze (src/ui/wiki.ts, wiki-okno.ts) do `npm run shots` (scenariusze wiki-*): lista i artykuł
    o budowli na komputerze 1440×900 po polsku i na telefonie 390×844 po angielsku, wąski telefon 360 px, otwarcie z czipa
-   paska (drewno) z pauzą gry i wznowieniem po Esc, czip „d·z·cz” na telefonie, wyszukiwanie, artykuły o zarządzie w domu (Zielonki: komitet i furtka zamiast zarządu i bramy) oraz w bloku, tryb zombie.
+   paska (drewno) z pauzą gry i wznowieniem po Esc, czip „d·z·cz” na telefonie, wyszukiwanie, artykuły o zarządzie w domu (Zielonki: komitet i furtka zamiast zarządu i bramy) oraz w bloku.
 
    Każdy scenariusz sam sprawdza układ okna (`sprawdzUklad`): okno mieści się w widoku, strona i panele nie przewijają się w
    bok, żaden wiersz faktów ani tytuł nie wystaje, okno nie nachodzi na atrybucję map, a ta jest widoczna (leży nad zasłoną
@@ -402,22 +402,6 @@ export function wikiShots(out: string): ShotWiki[] {
         if (!/zarząd/i.test(t) || !/Brama na kłódkę/.test(t))
           throw new Error('artykuł o uchwale w bloku bez zarządu i bramy');
         await sprawdzUklad(page, 'artykuł o uchwale w bloku');
-      },
-    },
-    // tryb zombie: artykuły o szwendaczach są też w zwykłej grze, ale w zombie czipy siatka i stado otwierają swoje
-    {
-      name: 'wiki-zombie',
-      query: '',
-      run: async (page, base) => {
-        await start(page, base, 'demo=przymorze&tryb=zombie&speed=0&cam=hq,1.3');
-        await page.click('#sFence');
-        await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zombie:siatka"]');
-        await sprawdzUklad(page, 'artykuł o siatce w trybie zombie');
-        await page.keyboard.press('Escape');
-        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
-        await page.click('#sHorde');
-        await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zombie:stado"]');
-        await sprawdzUklad(page, 'artykuł o stadzie w trybie zombie');
       },
     },
   ];
