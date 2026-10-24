@@ -19,7 +19,7 @@
      i jedna wyprawa naraz. Granice mają łapać brak warstwy: `ZM_JAK_BAZA=1 npx vitest run tests/unit/ai-jedzenie.test.ts` gra
      ten sam przebieg silnikiem bez wypraw po jedzenie i bez ogródka (jak silnik z zadania 3) i testy przebiegu mają wtedy padać.
      Uprząż (`przygotujGre`) gra od części B zadania 7 z łańcuchami kart, jak gra w przeglądarce; liczby w komentarzach tych
-     testów to pomiar z łańcuchami, a w nawiasie „bez łańcuchów” ten sam przebieg ze starą uprzęgą (`lancuchy` wyłączone).
+     testów to pomiar z łańcuchami, a w nawiasie „bez łańcuchów” ten sam przebieg ze starą uprzężą (`lancuchy` wyłączone).
      Cel z planu „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25” jest tu sprawdzony na tym przebiegu
      (zmierzone 58,5); na wszystkich demach i ziarnach mierzy go bramka etapu (`npm run bot:osada`);
    - determinizmu (zapis i wczytanie w trakcie wyprawy) i kosztu (warstwa najwyżej raz na 30 sekund przy ekranie). */

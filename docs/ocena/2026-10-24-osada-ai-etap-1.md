@@ -4,28 +4,31 @@
 
 Status: stop z planu. Silnik decyzji jest zbudowany i gra pełną grę. Cel kontrolny etapu (przeżycie 45 dni w 4 z 5 ziaren na każdym z trzech dem, kamień ludności, budowle) nie jest osiągnięty, więc budowa staje, a decyzja należy do Mateusza. Cztery decyzje z rekomendacjami są w rozdziale 9.
 
-Gałąź `osada-ai`, kod silnika i bramka na d2f6d67 (ten raport to następny commit, sam dokument), na `pelna-gra` po scaleniu etapów 4–5 wydarzeń (da7dbfe). Nic nie wypchnięte. Zasad gry nie zmieniałem: etap zmienia tylko `src/ai/`, testy `tests/unit/ai-*` i ten raport.
+Gałąź `osada-ai`, kod i bramka na 0219928 (ten raport to następny commit, sam dokument), na `pelna-gra` po scaleniu etapów 4–5 wydarzeń (da7dbfe). Nic nie wypchnięte. Zasad gry nie zmieniałem: etap zmienia tylko `src/ai/`, uprząż `tools/bot-osada.ts` (jedna zmiana: łańcuchy kart w konfiguracji „jak w przeglądarce”), testy `tests/unit/ai-*` i ten raport.
+
+Tabele pochodzą z oficjalnej uprzęży (`npm run bot:osada`), która gra z łańcuchami kart tak, jak gra w przeglądarce. Liczby bez łańcuchów (uprząż z commitu 5e64828, taka była do decyzji koordynatora) stoją obok jako porównanie.
 
 ## 1. Najkrócej
 
 1. Silnik prowadzi grę od pierwszej minuty do końca tymi samymi rękami co gracz: polecenia w grze i odpowiedzi w oknach zarządu. Ma warstwy zimy, jedzenia, rozwoju i okien, pamięć w zwykłym JSON, nie losuje i nie zna zegara ani DOM. W `src/ai/` jest 1800 linii, w testach `tests/unit/ai-*` 5500 linii (354 testy, wszystkie zielone).
-2. Na 120 przebiegach (ziarna 11–50, gra z łańcuchami kart jak w przeglądarce) 45. dnia dożywają: Przymorze 33 z 40 (82%), Lanciego 18 z 40 (45%), Zielonki 0 z 40. Wymagane jest 80% na każdym demie.
-3. Kamień ludności jest w terminie na Przymorzu (40 z 40) i Lanciego (39 z 40), na Zielonkach w 9 z 40. Budowli na koniec jest średnio 4,2 na Przymorzu, 1,3 na Lanciego i 1,2 na Zielonkach, wymaganych jest 15.
+2. Na 120 przebiegach oficjalnej uprzęży (ziarna 11–50, gra z łańcuchami kart jak w przeglądarce) 45. dnia dożywają: Przymorze 33 z 40 (82%), Lanciego 18 z 40 (45%), Zielonki 0 z 40. Wymagane jest 80% na każdym demie. Bez łańcuchów (porównanie) było 27, 13 i 0 z 40.
+3. Kamień ludności jest w terminie na Przymorzu (40 z 40) i Lanciego (39 z 40), na Zielonkach w 9 z 40. Budowli na koniec jest średnio 4,2 na Przymorzu, 1,3 na Lanciego i 1,3 na Zielonkach, wymaganych jest 15.
 4. Wszystkie 149 przegranych gier ze 240 przebiegów (ziarna 11–50, z łańcuchami i bez) kończy odwołanie zarządu (wkurzenie 100), ani razu pustka czy exodus. Zielonki: głód w 40 z 40 grach. Lanciego: głód w 18 z 22 przegranych. Przymorze: w 5 z 7 przegranych głodu nie ma, wkurzenie robią napady szabrowników i dryf z potrzeb.
 5. Nowe wydarzenia z etapów 4–5 (narrator, odstęp kart 110–200 s, dwanaście łańcuchów) niczego w silniku nie zepsuły. Na 13 tysiącach okien z 60 gier żadne nie zostało otwarte po odpowiedzi silnika, wybór nie zależy od ukrytych rzutów, a na przeżycie nowe wydarzenia nie wpływają (+0,3 ± 0,7 dnia na 120 parach).
 6. Dwóch przyczyn silnik sam nie usunie. Zielonki mają w zasięgu 17 porcji jedzenia w jednym sklepie: z okolicą Przymorza żyją o 7,7 dnia dłużej, ale każda przegrana gra dalej kończy się głodem. Deski: ze 300 deskami na starcie budowli jest 10, 8 i 6 zamiast 4, 1 i 1, a przeżycie na blokach bez zmian; 15 budowli nie wychodzi nawet wtedy.
-7. Uprząż w repo (`npm run bot:osada`) gra bez łańcuchów kart, a gra w przeglądarce ma je domyślnie. Dodałem opcję `lancuchy` w grze decydenta. Włączenie jej w uprzęży to jedna linia w `tools/bot-osada.ts` (poza zakresem tej części).
+7. Uprząż grała najpierw bez łańcuchów kart, choć gra w przeglądarce ma je domyślnie. Po decyzji koordynatora `przygotujGre` włącza je w konfiguracji „jak w przeglądarce” (opcja `lancuchy` w grze decydenta; `--prosto` zostaje gołą grą), więc oficjalne liczby są z łańcuchami. Testy przebiegów zmierzyłem ponownie na nowej trajektorii: wszystkie zielone, jedna granica zmieniona (rozdział 4.4).
 8. Rekomendacja: ruszać z etapem 2 na tym silniku, zmienić miary bramki na takie, które pytają o to, czego potrzebuje gra, wybór kwadratu dla osady AI uzależnić od jedzenia w zasięgu i nie zmieniać zasad gry pod silnik.
 
 ## 2. Bramka
 
-### 2.1 Komendy (na d2f6d67)
+### 2.1 Komendy (na 0219928)
 
 | komenda | kod | wynik |
 | --- | --- | --- |
-| `npm run bot:osada` | 1 | werdykt NIE PRZECHODZI (niżej), 55 s |
-| `npm test` | 0 | 280 plików, 6603 zdane, 1 oczekiwana porażka, 8 pominiętych, 1 todo (183 s) |
+| `npm run bot:osada` | 1 | werdykt NIE PRZECHODZI (niżej), 62 s; z `--bez-progu` kod 0 i ta sama tabela |
+| `npm test` | 0 | 280 plików, 6603 zdane, 1 oczekiwana porażka, 8 pominiętych, 1 todo (149 s) |
 | `npx biome check src tests tools index.html` | 0 | 614 plików, czysto |
+| `npx tsc -p . --noEmit` | 0 | czysto |
 | `npm run build` | 0 | typy i build |
 | `npm run bot` | 0 | skrót stanu d3ad7f01, po 3 dobach 701b05aa |
 | `npm run bot:zombie` | 0 | warta-dzidy 0c2b02dd, bez-warty 7fd3bed5 |
@@ -37,28 +40,28 @@ Skróty botów zgadzają się z podanymi dla tej bazy. W `src/ai/` nie ma `Math.
 
 Cel: przeżycie 45 dni w 4 z 5 ziaren (80%), pierwszy kamień ludności (10 osób) najpóźniej w dniu 15 w 4 z 5, na koniec co najmniej `floor(45 / 3)` = 15 stojących budowli (bez zasieków i barykady) w 4 z 5.
 
-| demo, kryterium | uprząż z repo (bez łańcuchów), ziarna 11–15 | ta sama uprząż z łańcuchami, ziarna 11–15 | z łańcuchami, 40 gier (ziarna 11–50) |
-| --- | --- | --- | --- |
-| Przymorze, przeżycie | 3 z 5 | 5 z 5 | 33 z 40 (82%) |
-| Przymorze, kamień w terminie | 5 z 5 | 5 z 5 | 40 z 40 |
-| Przymorze, budowle | 4–5 (0 z 5 przebiegów spełnia) | 4–5 (0 z 5) | średnio 4,2 (ziarna 11–30) |
-| Lanciego, przeżycie | 2 z 5 | 4 z 5 | 18 z 40 (45%) |
-| Lanciego, kamień w terminie | 5 z 5 | 5 z 5 | 39 z 40 |
-| Lanciego, budowle | 1–2 (0 z 5) | 1–2 (0 z 5) | średnio 1,3 (ziarna 11–30) |
-| Zielonki, przeżycie | 0 z 5 | 0 z 5 | 0 z 40 |
-| Zielonki, kamień w terminie | 0 z 5 | 1 z 5 | 9 z 40 |
-| Zielonki, budowle | 2 (0 z 5) | 2 (0 z 5) | średnio 1,2 (ziarna 11–30) |
+| demo, kryterium | oficjalna uprząż (z łańcuchami), ziarna 11–15 | oficjalna uprząż, 40 gier (ziarna 11–50) | bez łańcuchów (porównanie), ziarna 11–15 | bez łańcuchów (porównanie), 40 gier |
+| --- | --- | --- | --- | --- |
+| Przymorze, przeżycie | 5 z 5 | 33 z 40 (82%) | 3 z 5 | 27 z 40 (68%) |
+| Przymorze, kamień w terminie | 5 z 5 | 40 z 40 | 5 z 5 | 40 z 40 |
+| Przymorze, budowle | 4–5 (0 z 5 przebiegów spełnia) | średnio 4,2 | 4–5 (0 z 5) | średnio 4,1 |
+| Lanciego, przeżycie | 4 z 5 | 18 z 40 (45%) | 2 z 5 | 13 z 40 (33%) |
+| Lanciego, kamień w terminie | 5 z 5 | 39 z 40 | 5 z 5 | 40 z 40 |
+| Lanciego, budowle | 1–2 (0 z 5) | średnio 1,3 | 1–2 (0 z 5) | średnio 1,4 |
+| Zielonki, przeżycie | 0 z 5 | 0 z 40 | 0 z 5 | 0 z 40 |
+| Zielonki, kamień w terminie | 1 z 5 | 9 z 40 | 0 z 5 | 8 z 40 |
+| Zielonki, budowle | 2 (0 z 5) | średnio 1,3 | 2 (0 z 5) | średnio 1,3 |
 
-Dwie uwagi o liczbach. Piętnaście przebiegów to szum rzędu ±2 dni: seria 11–15 z łańcuchami dała 5 z 5 na Przymorzu i 4 z 5 na Lanciego, a 40 gier daje 82% i 45%. Decyzje opieram na 120 przebiegach. Druga uwaga: przebieg, który kończy się odwołaniem w dniu 45 przed 15:00 (Przymorze 11 w uprzęży bez łańcuchów), liczy się jako nieprzeżyty, bo gra dożywa 45 dób dopiero o 15:00 dnia 46.
+Dwie uwagi o liczbach. Piętnaście przebiegów to szum rzędu ±2 dni: seria 11–15 dała 5 z 5 na Przymorzu i 4 z 5 na Lanciego, a 40 gier daje 82% i 45%. Decyzje opieram na 120 przebiegach. Druga uwaga: przebieg, który kończy się odwołaniem w dniu 45 przed 15:00 (Przymorze 11 bez łańcuchów), liczy się jako nieprzeżyty, bo gra dożywa 45 dób dopiero o 15:00 dnia 46.
 
 Dni końca gier w serii 11–15 (żyje = dożył 45 dób):
 
-| demo | część A (fabc8b7) | nowa baza, uprząż z repo | nowa baza, z łańcuchami |
+| demo | część A (fabc8b7) | nowa baza, oficjalna uprząż (z łańcuchami) | nowa baza bez łańcuchów (porównanie) |
 | --- | --- | --- | --- |
-| Przymorze | żyje, żyje, żyje, 24, żyje (śr. 40,8; 4 żyje) | 45, żyje, 37, żyje, żyje (43,4; 3) | żyje ×5 (45,0; 5) |
-| Lanciego | żyje, 27, 28, 35, 27 (32,4; 1) | 35, 25, żyje, żyje, 32 (36,4; 2) | żyje ×4, 29 (41,8; 4) |
-| Zielonki | 25, 21, 21, 23, 27 (23,4; 0) | 30, 23, 21, 26, 22 (24,4; 0) | 25, 26, 27, 30, 26 (26,8; 0) |
-| razem | 32,20; 5 z 15 | 34,73; 5 z 15 | 37,87; 9 z 15 |
+| Przymorze | żyje, żyje, żyje, 24, żyje (śr. 40,8; 4 żyje) | żyje ×5 (45,0; 5) | 45, żyje, 37, żyje, żyje (43,4; 3) |
+| Lanciego | żyje, 27, 28, 35, 27 (32,4; 1) | żyje ×4, 29 (41,8; 4) | 35, 25, żyje, żyje, 32 (36,4; 2) |
+| Zielonki | 25, 21, 21, 23, 27 (23,4; 0) | 25, 26, 27, 30, 26 (26,8; 0) | 30, 23, 21, 26, 22 (24,4; 0) |
+| razem | 32,20; 5 z 15 | 37,87; 9 z 15 | 34,73; 5 z 15 |
 
 ## 3. Droga strojenia: tabele z zadań 2–7
 
@@ -72,9 +75,9 @@ Dni końca gier w serii 11–15 (żyje = dożył 45 dób):
 | 5 | okna zarządu (ocena skutków na kopiach, kocioł w pierwszym oknie, bez racji), rozwój (badania, budowy, Praca, werbunek) | 28,3 (Przymorze 35,2, Lanciego 24,8, Zielonki 24,8) | 1 |
 | 6 | ocena wyboru bez znajomości losu; `t_ambu` na końcu kolejki badań | 25,5 → 27,4 po scaleniu znajomych, zwierząt i ścieżki (Przymorze 29,4 → 35,2, Lanciego 24,2, Zielonki 22,8) | 0 |
 | 7, część A | po scaleniu nocnego posiłku: baza → reguła uczciwości → werbunek według zasad gry | 29,4 → 31,7 → 32,2 (po werbunku Przymorze 40,8, Lanciego 32,4, Zielonki 23,4) | 1 → 3 → 5 |
-| 7, część B | po scaleniu wydarzeń etapów 4–5: uprząż bez łańcuchów / z łańcuchami | 34,7 / 37,9 | 5 / 9 |
+| 7, część B | po scaleniu wydarzeń etapów 4–5: oficjalna uprząż z łańcuchami / bez łańcuchów (porównanie) | 37,9 / 34,7 | 9 / 5 |
 
-Na 60 przebiegach (ziarna 11–30): zadanie 6 dało 27,03 → 28,65; zadanie 7, część A: 30,32 → 30,78 (uczciwość) → 33,72 (werbunek; 24 z 60 żyje); część B: 33,00 (20 z 60) bez łańcuchów i 34,55 (27 z 60) z łańcuchami.
+Na 60 przebiegach (ziarna 11–30): zadanie 6 dało 27,03 → 28,65; zadanie 7, część A: 30,32 → 30,78 (uczciwość) → 33,72 (werbunek; 24 z 60 żyje); część B: 34,55 (27 z 60) w oficjalnej uprzęży z łańcuchami i 33,00 (20 z 60) bez łańcuchów (porównanie).
 
 Co dawała każda zmiana, z błędem średniej:
 
@@ -121,15 +124,31 @@ Pary na tych samych demach i ziarnach (ziarna 11–50, 120 par; przebieg, który
 
 | porównanie | dzień przed | dzień po | różnica | żyje (z 120) |
 | --- | --- | --- | --- | --- |
-| część A → nowa baza, uprząż z repo (narrator i odstęp kart, bez łańcuchów) | 33,62 | 33,27 | −0,35 ± 0,73 | 45 → 40 |
+| część A → nowa baza bez łańcuchów (narrator i odstęp kart) | 33,62 | 33,27 | −0,35 ± 0,73 | 45 → 40 |
 | nowa baza bez łańcuchów → z łańcuchami | 33,27 | 33,89 | +0,62 ± 0,78 | 40 → 51 |
-| część A → nowa baza z łańcuchami (razem) | 33,62 | 33,89 | +0,27 ± 0,73 | 45 → 51 |
+| część A → nowa baza z łańcuchami (oficjalna uprząż, razem) | 33,62 | 33,89 | +0,27 ± 0,73 | 45 → 51 |
 
 Razem według dem: Przymorze −0,38 ± 0,92, Lanciego +0,70 ± 1,86, Zielonki +0,47 ± 0,72. Nowe wydarzenia nie zmieniły mierzalnie siły silnika. Ten wynik pozwala wyłączyć łańcuchy w grze osady AI (rozdział 8) bez straty siły.
 
-### 4.4 Uprząż nie włączała łańcuchów
+### 4.4 Uprząż gra teraz z łańcuchami, testy przebiegów zmierzone ponownie
 
-`tools/bot-osada.ts` składa grę bez opcji łańcuchów, więc `npm run bot:osada` gra bez nich, choć nagłówek uprzęży mówi „gra jak w przeglądarce”. Tabele z zadań 2–7A nie są przez to fałszywe: łańcuchów nie było wtedy w kodzie gry (weszły ze scaleniem etapów 4–5 wydarzeń). Dodałem do gry decydenta opcję `lancuchy` (`nowaGraAi(…, { lancuchy: true })` robi to samo co `newGov(seed, mode, true)` w `src/main.ts`) i testy: równoważność z `playWithGov` z `lancuchy: true`, brak wątków bez opcji, zapis i wczytanie w połowie gry z łańcuchami. Pomiary „z łańcuchami” robiłem na kopii uprzęży z jedną linią `lancuchy: true` w `przygotujGre`. Żeby oficjalne `npm run bot:osada` mierzyło grę taką, jaką widzi gracz, trzeba tę linię dopisać w repo (rekomendacja, poza zakresem części B).
+Do pierwszej wersji tego raportu `tools/bot-osada.ts` składał grę bez opcji łańcuchów, więc `npm run bot:osada` grał bez nich, choć nagłówek uprzęży mówił „gra jak w przeglądarce”. Tabele z zadań 2–7A nie są przez to fałszywe: łańcuchów nie było wtedy w kodzie gry (weszły ze scaleniem etapów 4–5 wydarzeń). Koordynator rozstrzygnął, że oficjalna uprząż ma mierzyć grę, jaką widzi gracz, a nowa gra w przeglądarce ma łańcuchy domyślnie. Dlatego `przygotujGre` ustawia `lancuchy: true` w konfiguracji „jak w przeglądarce”, a `--prosto` zostaje gołą grą. Opcja `lancuchy` w `nowaGraAi` robi to samo co `newGov(seed, mode, true)` w `src/main.ts`. Wynik oficjalnej uprzęży jest bit w bit taki jak wcześniejszy pomiar na kopii z jedną dopisaną linią (skróty 15, 60 i 60 przebiegów z ziaren 31–50 identyczne).
+
+Testy, które grają przez `przygotujGre(…, false)`, poszły na nowej trajektorii. Wszystkie 354 testy zostały zielone, ale liczby w ich komentarzach pochodziły z gry bez łańcuchów (i częściowo sprzed nocnego posiłku), więc zmierzyłem je ponownie. Przebieg Przymorza 11 i Zielonki 11, 12 i 14, z łańcuchami (w nawiasie bez łańcuchów):
+
+| co mierzy test | zmierzone | granica w teście |
+| --- | --- | --- |
+| zapas o 6:00 w dniach 2–15, najmniej | 11 porcji w dniu 11 (8 w dniu 8); bez warstwy jedzenia 0 | co najmniej 5, bez zmian |
+| zdrowie zarządu rano 12. dnia | 92,9 (84,8); bez warstwy 35,7 | co najmniej 70, bez zmian |
+| najedzenie rano w dniach 15–18, średnio | 59,3: 64,4, 62,5, 50,3, 60,0 (50,4); bez warstwy 0 | z 8 na 30 |
+| najedzenie rano w dniach 15–25, średnio | 58,5, najgorszy dzień 36,7 (57,7 i 42,6) | co najmniej 25 (cel planu), bez zmian |
+| dni z głodem zapasu, w których musi wyjść wyprawa | 11 dni (9–15, 17–20), w każdym wyprawa (9 dni) | co najmniej 5 dni, bez zmian |
+| zaproszenia wędrowców do 10. dnia i zarząd rano 10. dnia | 6 zaproszeń, 9 osób (3 i 8) | co najmniej 2 i 8, bez zmian |
+| pierwszy kamień ludności | dzień 4 (3) | najpóźniej dzień 5, bez zmian (margines z dwóch dni na jeden) |
+| `t_ambu` i reszta badań | wszystkie siedem rano 9. dnia (9) | do rana 13. dnia, bez zmian |
+| Zielonki 11, 12, 14: pracownia, `t_kozy`, koza z beczki | tak samo jak bez łańcuchów | bez zmian |
+
+Jedna granica się zmieniła: średnie najedzenie w dniach 15–18 z 8 na 30. Stara stała przy 14,1 sprzed nocnego posiłku przy wielkim głodzie (po nim zarząd nie nocuje już głodny), a przy 59 nie łapałaby połowicznego cofnięcia warstwy; 30 leży w środku między warstwą a bazą. Pozostałe granice zostają, bo nadal leżą między warstwą a bazą (żadna nie została poluzowana). Mutanty na nowej trajektorii: silnik jak baza (`ZM_JAK_BAZA=1`) łamie siedem testów przebiegu jedzenia (zapas 0 w dniu 10, zdrowie 35,7, najedzenie 0, koniec w 22. dniu); brak `t_ambu` w kolejce łamie test badań; brak werbunku łamie test zaproszeń. Test kamienia przeżywa brak werbunku, bo wzrost do 10 osób bierze się z wyboru wydarzeń, jak pisał test od zadania 5. Test konfiguracji `przygotujGre` (domyślnie `lancuchy`, `--prosto` bez) był czerwony bez linii w uprzęży, a test audytu ukrytych rzutów gra teraz grą z uprzęży.
 
 ## 5. Dlaczego kończą się gry
 
@@ -175,7 +194,7 @@ Odczyt: wtargnięcia są stałym podatkiem, 9–15 na grę, każda noc z wtargni
 
 ## 7. Co by pomogło po stronie zasad
 
-Niczego z tej listy nie zmieniałem. Zmiany liczb zrobiłem tylko w kopiach pomiarowych (60 przebiegów, ziarna 11–30, z łańcuchami; baza 34,55 dnia, 27 z 60 żyje), żeby wiedzieć, co jest warte rozmowy o balansie.
+Niczego z tej listy nie zmieniałem. Zmiany liczb zrobiłem tylko w kopiach pomiarowych (60 przebiegów, ziarna 11–30, oficjalna uprząż z łańcuchami; baza 34,55 dnia, 27 z 60 żyje), żeby wiedzieć, co jest warte rozmowy o balansie.
 
 | zmiana w kopii pomiarowej | średni dzień końca | różnica parami | żyje (z 60) |
 | --- | --- | --- | --- |
@@ -216,7 +235,7 @@ Opcje: wkurzenie z wtargnięcia, siła napadu w czasie, ochrona zapasów (magazy
 3. Zapis. Pamięć silnika jest zwykłym JSON (`GraAi.pamiec`), zapis i wczytanie w połowie dają te same skróty (testy), stan jednej gry 40–380 KB po 45 dniach. Do dopisania: geo kwadratu osady i odcisk świata (projekt).
 4. Reguła wyboru kwadratu: jedzenie w zasięgu i mieszkańcy (decyzja 3), bo na Zielonkach silnik w 65% gier nie dożywa nawet 25. dnia.
 5. Koszt na telefonie: warstwy 32 razy na dobę gry, okno wydarzenia 2,5 ms mediany i 15 ms p95 na obciążonej maszynie; pomiar `npm run perf` z osadą w tle jest w bramce etapu 2.
-6. Uprząż i miary: `lancuchy` w `przygotujGre` (jedna linia) i nowe miary bramki (decyzja 2).
+6. Uprząż i miary: oficjalna uprząż gra już z łańcuchami (rozdział 4.4), ale gra samej osady AI ma być bez nich (punkt 2), więc do bramki etapu 2 potrzebna jest flaga `--bez-lancuchow`; liczby bez łańcuchów są w tym raporcie jako porównanie (+0,3 ± 0,7 dnia różnicy). Do tego nowe miary bramki (decyzja 2).
 7. Kontakt (etap 3): nowe rodzaje okien i poleceń dla dyplomacji. Silnik odpowiada na nieznane okno odpowiedzią domyślną, a gdy to nie wystarczy, zgłasza `zawieszone`, więc brak odpowiedzi jest widoczny w uprzęży, ale odpowiedzi na dyplomację trzeba napisać.
 8. Tryb zombie osobno: polityka obrony przed stadem (dziś skrypt w `tools/bot-zombie.ts`), okna wieloetapowe z „Obejrzeć ręce”, wiedza o ukrytym ugryzieniu w krokach `dach` i `dobicie`.
 
@@ -232,9 +251,9 @@ Opcje: wkurzenie z wtargnięcia, siła napadu w czasie, ochrona zapasów (magazy
 Komendy w drzewie `osada-ai`:
 
 ```
-npm run bot:osada                                    # uprząż z repo, bez łańcuchów, kod 1 przy werdykcie NIE PRZECHODZI
+npm run bot:osada                                    # oficjalna uprząż z łańcuchami (jak gra w przeglądarce), kod 1 przy werdykcie NIE PRZECHODZI
 node tools/bot-osada.ts --bez-progu --ziarna=11-30   # sam pomiar, 60 przebiegów (ok. 5 minut na 9 procesach)
 npx vitest run tests/unit/ai-                        # 354 testy silnika
 ```
 
-Pomiary „z łańcuchami” wymagają w `przygotujGre` (`tools/bot-osada.ts`) opcji `{ core: CORE, tempoPrzegladarki: true, lancuchy: true }`. Pary i sumy liczył skrypt `porownaj.py` na liniach postępu uprzęży (dzień końca, skrót), sondy okien, uczciwości i wkurzenia to osobne skrypty z notatek sesji. Zmiany zasad w rozdziale 7 to jedna linia w kopii: desek `deski` 300 w składzie siedziby (`houseOf(world).sklad[0]`), `boost[a] * 0.75` w `heatBoost`, `mood(st, -2, 3)` przy wtargnięciu, okolica Przymorza w `opts.okolica` dla Zielonek.
+Liczby bez łańcuchów (porównanie) powstały ze starą uprzężą z commitu 5e64828 (`git archive 5e64828`); flagi do tego w uprzęży jeszcze nie ma. Pary i sumy liczył skrypt `porownaj.py` na liniach postępu uprzęży (dzień końca, skrót), sondy okien, uczciwości i wkurzenia to osobne skrypty z notatek sesji. Zmiany zasad w rozdziale 7 to jedna linia w kopii: desek `deski` 300 w składzie siedziby (`houseOf(world).sklad[0]`), `boost[a] * 0.75` w `heatBoost`, `mood(st, -2, 3)` przy wtargnięciu, okolica Przymorza w `opts.okolica` dla Zielonek.
