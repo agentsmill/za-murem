@@ -2232,22 +2232,6 @@ a.btn {
   text-transform: uppercase;
   color: var(--lamp);
 }
-/* linia „Cel: …” ścieżki celów obok „Gra stoi” (tablica zasłania okienko celów) */
-.tb-linia-celu {
-  padding-left: 8px;
-  border-left: 3px solid var(--lamp);
-  font: 500 14px / 1.2 var(--f-body);
-  color: var(--ink);
-}
-/* etykieta „Cel:” siedzi w `.tb-tytul`, więc `.tb-tytul b` (22 px, a w media query do 760 px 19 px) przebijałaby zwykłe
-   `.tb-linia-celu b` na telefonie; dwie klasy w selektorze dają swoistość wyższą od obu reguł tytułu */
-.tb-tytul .tb-linia-celu b {
-  margin-right: 4px;
-  font: 700 12px / 1.2 var(--f-sign);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--lamp);
-}
 .tb-bar .btn {
   padding: 9px 14px;
   font-size: 15px;
@@ -2643,6 +2627,23 @@ a.btn {
   color: var(--ink);
 }
 .tb-ksiazki b {
+  color: var(--lamp);
+}
+/* linia „Cel: …” ścieżki celów obok „Gra stoi” (tablica zasłania okienko celów); reguły stoją za wszystkimi regułami `b`
+   tablicy, bo reguła etykiety ma swoistość (0,2,1) i wcześniej Biome (noDescendingSpecificity) widziałby spadek swoistości */
+.tb-linia-celu {
+  padding-left: 8px;
+  border-left: 3px solid var(--lamp);
+  font: 500 14px / 1.2 var(--f-body);
+  color: var(--ink);
+}
+/* etykieta „Cel:” siedzi w `.tb-tytul`, więc `.tb-tytul b` (22 px, a w media query do 760 px 19 px) przebijałaby zwykłe
+   `.tb-linia-celu b` na telefonie; dwie klasy w selektorze dają swoistość wyższą od obu reguł tytułu */
+.tb-tytul .tb-linia-celu b {
+  margin-right: 4px;
+  font: 700 12px / 1.2 var(--f-sign);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--lamp);
 }
 /* telefon: tablica przewija się po erach we własnym oknie, szczegóły wysuwają się od dołu nad paskiem obsady */

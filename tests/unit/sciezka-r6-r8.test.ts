@@ -56,7 +56,6 @@ import {
   budynkiSasiadow,
   kartkiDoWziecia,
   MAPY,
-  type Mapa,
   mapaDomowa,
   otoczPlotem,
   otworzBudynek,
