@@ -90,7 +90,7 @@ function domyslny(r: RodzajPracy, poziom: number): number {
 }
 
 /** czy umiejętność przyspiesza pracę tego rodzaju (z `tempoPracy`: pierwsza noc to poziom 4, dzień 6) */
-function przyspiesza(r: RodzajPracy): boolean {
+export function przyspiesza(r: RodzajPracy): boolean {
   const u = UMIEJETNOSCI[r];
   const dom: TechDom = u === 'badanie' ? 'cieplo' : (u[0] ?? 'bud');
   const st = probeStan(u === 'badanie' ? dom : undefined);

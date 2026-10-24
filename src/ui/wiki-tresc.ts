@@ -3,12 +3,22 @@
    kolejność, w jakiej rejestr (src/ui/wiki.ts) je widzi. Nic nie buduje się przy ładowaniu: definicje niosą funkcje. */
 
 import { definicjeBadania } from './wiki-badania.ts';
+import { definicjeBron } from './wiki-bron.ts';
 import { definicjeBudowle } from './wiki-budowle.ts';
+import { definicjeLudzie } from './wiki-ludzie.ts';
 import { definicjePraca } from './wiki-praca.ts';
 import { definicjeStart } from './wiki-start.ts';
 import type { Def } from './wiki-typy.ts';
 import { definicjeZasoby } from './wiki-zasoby.ts';
 
 export function definicjeTresc(): Def[] {
-  return [...definicjeStart(), ...definicjeZasoby(), ...definicjeBudowle(), ...definicjeBadania(), ...definicjePraca()];
+  return [
+    ...definicjeStart(),
+    ...definicjeZasoby(),
+    ...definicjeBudowle(),
+    ...definicjeBadania(),
+    ...definicjeLudzie(),
+    ...definicjeBron(),
+    ...definicjePraca(),
+  ];
 }
