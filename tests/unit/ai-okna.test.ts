@@ -23,22 +23,37 @@ import {
   KOPII_OCENY,
   MAX_KROKOW_OKNA,
   najlepszyIndeks,
+  ocenaWyboru,
   ocenSkutki,
   odpowiedzNaWydarzenie,
+  przelosujUkryte,
+  UKRYTE_RZUTY,
   WAGI,
   wyborUchwaly,
   wyborWydarzenia,
+  ziarnoKopii,
 } from '../../src/ai/okna.ts';
 import { silnik } from '../../src/ai/silnik.ts';
+import type { Dom } from '../../src/content/data.ts';
 import { tx } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
-import { type Gosc, KTO, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts';
+import {
+  type Gosc,
+  type HaczykId,
+  type KontekstGoscia,
+  KTO,
+  type KtoId,
+  osobyGrupy,
+  skladGoscia,
+  zgodnyGosc,
+} from '../../src/gov/goscie.ts';
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import type { GovEffects, GovGosc, GovInput, GovState, LawOption, Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { eventView, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov, pending } from '../../src/gov/zarzad.ts';
 import { dayOf, TICKS_PER_DAY } from '../../src/sim/clock.ts';
+import type { GameMode } from '../../src/sim/tryb.ts';
 import { przygotujGre } from '../../tools/bot-osada.ts';
 import { Atrapa, at, TPH } from './gov-atrapa.ts';
 
@@ -425,9 +440,9 @@ function gosc(over: Partial<Gosc> & { ilu?: number } = {}): Gosc {
   };
 }
 
-/** zarząd w trybie zombie z kartą gościa pod bramą (wizyta aktywna, grupa stoi w fazie `brama`) */
-function oknoGoscia(g: Gosc): { gov: GovState; i: GovInput } {
-  const gov = newGov(3, 'zombie');
+/** zarząd (domyślnie w trybie zombie) z kartą gościa pod bramą (wizyta aktywna, grupa stoi w fazie `brama`) */
+function oknoGoscia(g: Gosc, tryb: GameMode = 'zombie'): { gov: GovState; i: GovInput } {
+  const gov = newGov(3, tryb);
   const atr = atrapa(30);
   atr.meds = 3;
   atr.woodSklad = 10;
@@ -446,11 +461,323 @@ function oknoGoscia(g: Gosc): { gov: GovState; i: GovInput } {
   return { gov, i };
 }
 
+// ---------------------------------------------------------------- ocena wyboru bez znajomości ukrytych rzutów kart
+
+/* Niektóre karty losują przy tworzeniu rzut, którego nie pokazują ani tekstem, ani wyborami, a od którego zależą skutki
+   wyboru: haczyk gościa (chory rozdaje chorobę rano, ugryziony dostaje rozkaz „ugryziony”), kot albo włamywacz za płotem
+   (`halas.cat`), pomoc albo pułapka w krzyku z sąsiedztwa (`krzyk.help`). Kopia zarządu ma ten rzut w stanie, więc ocena na
+   niej by go znała, choć gracz go nie zna. Silnik losuje go więc od nowa na każdej kopii oceny (z ziarna pochodnego, tak jak
+   los w `ocenaWyboru`); rzut, który karta pokazuje albo który odsłonił poprzedni krok okna, zostaje taki, jaki jest. */
+
+describe('wyborWydarzenia bez znajomości ukrytych rzutów', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const HACZYKI_ZWYKLE: readonly HaczykId[] = ['prawda', 'klamie', 'chory', 'poscig'];
+  const goscZHaczykiem = (haczyk: HaczykId) =>
+    oknoGoscia(gosc({ kto: 'wedrowiec', chce: 'nocleg', ma: 'nic', haczyk }), 'zwykly');
+  const oknoWydarzenia = (s: { gov: GovState; i: GovInput }): Wydarzenie => {
+    const p = pending(s.gov, s.i);
+    if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+    return p;
+  };
+
+  it('haczyk gościa: wybór silnika jest ten sam przy gościu uczciwym, chorym, kłamcy i ściganym, w każdej chwili', () => {
+    // warunek wstępny: gdyby ocena znała haczyk, wybory by się różniły (chory wpuszczony na noc to rana rano, −10)
+    const peeking = new Set(
+      HACZYKI_ZWYKLE.map((h) => {
+        const s = goscZHaczykiem(h);
+        const oceny = przeglad(s.gov, s.i, oknoWydarzenia(s));
+        return oceny.indexOf(Math.max(...(oceny as number[])));
+      }),
+    );
+    expect(peeking.size).toBeGreaterThanOrEqual(2);
+    // silnik: ten sam wybór w każdym z 60 okien (każde w innej chwili, więc z innymi losowaniami kopii)
+    for (let n = 0; n < 60; n++) {
+      const wybory = HACZYKI_ZWYKLE.map((h) => {
+        const s = goscZHaczykiem(h);
+        const i = { ...s.i, tick: s.i.tick + n * 20, screen: s.i.screen + n };
+        return wyborWydarzenia(s.gov, i, oknoWydarzenia(s));
+      });
+      expect(new Set(wybory), `okno ${n}: ${wybory}`).toHaveProperty('size', 1);
+    }
+  });
+
+  it('haczyk gościa w trybie zombie: ten sam wybór przy uczciwym, chorym i ugryzionym (przed obejrzeniem rąk)', () => {
+    const nieSpodziewany = (haczyk: HaczykId) =>
+      oknoGoscia(
+        gosc({
+          kto: 'ocaleni',
+          ilu: 3,
+          chce: 'nocleg',
+          haczyk,
+          ...(haczyk === 'ugryziony' ? { ugryziony: 1 } : {}),
+        }),
+      );
+    for (let n = 0; n < 60; n++) {
+      const wybory = (['prawda', 'chory', 'ugryziony'] as const).map((h) => {
+        const s = nieSpodziewany(h);
+        return wyborWydarzenia(s.gov, { ...s.i, tick: s.i.tick + n * 20, screen: s.i.screen + n }, oknoWydarzenia(s));
+      });
+      expect(new Set(wybory), `okno ${n}: ${wybory}`).toHaveProperty('size', 1);
+    }
+  });
+
+  it('haczyk gościa w oknie, które ma za sobą krok: odsłonięte ugryzienie zostaje, więc silnik nie wpuszcza ugryzionego', () => {
+    const ugryziony = gosc({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'ugryziony', ugryziony: 1 });
+    const s = oknoGoscia(ugryziony);
+    s.gov.goscie!.aktywny!.obejrzano = 'ugryziony';
+    const p = oknoWydarzenia(s);
+    expect(p.choices.map((c) => c.label.pl)).toEqual([
+      'Wpuścić na noc',
+      'Podać jedzenie przez siatkę (Jedzenie 1)',
+      'Odprawić',
+    ]);
+    // w każdej chwili ten sam wybór: nie wpuszcza (rana −10), tylko daje jedzenie przez siatkę
+    for (let n = 0; n < 30; n++)
+      expect(wyborWydarzenia(s.gov, { ...s.i, tick: s.i.tick + n * 20 }, p), `okno ${n}`).toBe(1);
+  });
+
+  it.each([
+    ['halas', 'cat'],
+    ['krzyk', 'help'],
+  ])('karta %s: wybór silnika nie zależy od ukrytego rzutu %s', (id, pole) => {
+    // wybory karty podmienione tak, żeby rzut miał znaczenie dla oceny (zakład: +3 jedzenia, gdy rzut jest prawdziwy, inaczej −3)
+    const def = M1_EVENTS.find((e) => e.id === id)!;
+    vi.spyOn(def, 'choices').mockImplementation((h, d) => [
+      {
+        label: tx('Zakład', 'Bet'),
+        ok: true,
+        run: () => h.addRes('jedzenie', (d as Record<string, boolean>)[pole] ? 3 : -3),
+      },
+      { label: tx('Spokój', 'Calm'), ok: true, run: () => {} },
+    ]);
+    const okno = (rzut: boolean) => {
+      const gov = newGov(3);
+      gov.ev.active = { id, d: { [pole]: rzut } };
+      const i = atrapa(40).input();
+      const p = pending(gov, i);
+      if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+      return { gov, i, p };
+    };
+    // z pełną wiedzą rzut rozstrzyga wybór (inaczej test przechodziłby na pustym warunku)
+    const znajacy = [true, false].map((rzut) => {
+      const { gov, i, p } = okno(rzut);
+      const oceny = przeglad(gov, i, p);
+      return oceny[0]! > oceny[1]! ? 0 : 1;
+    });
+    expect(znajacy).toEqual([0, 1]);
+    for (let n = 0; n < 60; n++) {
+      const wybory = [true, false].map((rzut) => {
+        const { gov, i, p } = okno(rzut);
+        return wyborWydarzenia(gov, { ...i, tick: i.tick + n * 20 }, p);
+      });
+      expect(wybory[0], `okno ${n}`).toBe(wybory[1]);
+    }
+  });
+
+  it('prawdziwy zarząd zostaje bez zmian także w oknie gościa (ukryty haczyk przelosowują tylko kopie)', () => {
+    const s = goscZHaczykiem('chory');
+    const przed = JSON.stringify(s.gov);
+    wyborWydarzenia(s.gov, s.i, oknoWydarzenia(s));
+    expect(JSON.stringify(s.gov)).toBe(przed);
+    expect(s.gov.goscie!.aktywny!.gosc.haczyk).toBe('chory');
+  });
+});
+
+describe('przelosujUkryte: co ocena losuje od nowa, a co zostawia', () => {
+  /** zarząd z kartą `id` i danymi `d` (bez wizyty) */
+  const zKarta = (id: string, d: Record<string, unknown>): GovState => {
+    const gov = newGov(3);
+    gov.ev.active = { id, d };
+    return gov;
+  };
+  const wejscie = atrapa(40).input();
+  const ziarna = Array.from({ length: 600 }, (_, n) => n + 1);
+
+  it('tabela ukrytych rzutów: halas.cat 0,45, krzyk.help 0,5, wedrowiec.thief 0,3', () => {
+    expect(UKRYTE_RZUTY).toEqual({
+      halas: [{ pole: 'cat', szansa: 0.45 }],
+      krzyk: [{ pole: 'help', szansa: 0.5 }],
+      wedrowiec: [{ pole: 'thief', szansa: 0.3 }],
+    });
+  });
+
+  it.each([
+    ['halas', 'cat', 0.45],
+    ['krzyk', 'help', 0.5],
+    ['wedrowiec', 'thief', 0.3],
+  ])('karta %s: pole %s losuje się od nowa z szansą %f, a reszta danych zostaje', (id, pole, szansa) => {
+    let prawda = 0;
+    for (const n of ziarna) {
+      const kopia = zKarta(id, { [pole]: false, inne: 7, dest: 'na południe' });
+      przelosujUkryte(kopia, wejscie, mulberry(n));
+      expect(typeof kopia.ev.active!.d[pole]).toBe('boolean');
+      expect(kopia.ev.active!.d).toMatchObject({ inne: 7, dest: 'na południe' });
+      if (kopia.ev.active!.d[pole]) prawda++;
+    }
+    expect(prawda / ziarna.length).toBeGreaterThan(szansa - 0.07);
+    expect(prawda / ziarna.length).toBeLessThan(szansa + 0.07);
+  });
+
+  it('wynik nie zależy od prawdziwej wartości pola: ten sam los daje tę samą kopię', () => {
+    for (const n of ziarna.slice(0, 40)) {
+      const a = zKarta('halas', { cat: true });
+      const b = zKarta('halas', { cat: false });
+      przelosujUkryte(a, wejscie, mulberry(n));
+      przelosujUkryte(b, wejscie, mulberry(n));
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    }
+  });
+
+  it('karta bez ukrytego rzutu i stan bez karty zostają bez zmian', () => {
+    const uchodzcy = zKarta('uchodzcy', { n: 6, from: 'z Wilanowa', spec: null });
+    const przed = JSON.stringify(uchodzcy);
+    przelosujUkryte(uchodzcy, wejscie, mulberry(5));
+    expect(JSON.stringify(uchodzcy)).toBe(przed);
+    const pusty = newGov(3);
+    const przedPusty = JSON.stringify(pusty);
+    przelosujUkryte(pusty, wejscie, mulberry(5));
+    expect(JSON.stringify(pusty)).toBe(przedPusty);
+  });
+
+  /** gość pod bramą na kopii: wywołuje `przelosujUkryte` i oddaje jego haczyk i indeks ugryzionego */
+  function przelosowany(g: Gosc, n: number, tryb: GameMode = 'zwykly', obejrzano?: 'ugryziony' | 'czysty') {
+    const s = oknoGoscia(g, tryb);
+    if (obejrzano) s.gov.goscie!.aktywny!.obejrzano = obejrzano;
+    przelosujUkryte(s.gov, s.i, mulberry(n));
+    return s.gov.goscie!.aktywny!.gosc;
+  }
+  /** ile razy wypadł każdy haczyk w 600 losowaniach */
+  function rozklad(g: Gosc, tryb: GameMode = 'zwykly', obejrzano?: 'ugryziony' | 'czysty'): Record<string, number> {
+    const licznik: Record<string, number> = {};
+    for (const n of ziarna) {
+      const po = przelosowany(g, n, tryb, obejrzano);
+      licznik[po.haczyk] = (licznik[po.haczyk] ?? 0) + 1;
+    }
+    return licznik;
+  }
+
+  it('haczyk gościa w zwykłym trybie: uczciwy najczęściej, potem kłamca, chory i ścigany; nigdy ugryziony', () => {
+    const r = rozklad(gosc({ kto: 'wedrowiec', chce: 'nocleg', ma: 'nic', haczyk: 'chory' }));
+    expect(Object.keys(r).sort()).toEqual(['chory', 'klamie', 'poscig', 'prawda']);
+    // wagi 4 : 1,4 : 1 : 1 (atrapa: jesień, zapas 30 porcji, więc kłamca ×1,5 = 2,1), czyli 4 / 8,1 = 49% uczciwych
+    expect(r.prawda).toBeGreaterThan(r.klamie);
+    expect(r.klamie).toBeGreaterThan(r.chory);
+    expect(r.prawda / ziarna.length).toBeGreaterThan(0.42);
+    expect(r.prawda / ziarna.length).toBeLessThan(0.56);
+    expect(r.chory / ziarna.length).toBeGreaterThan(0.07);
+    expect(r.chory / ziarna.length).toBeLessThan(0.18);
+  });
+
+  it('gość z natury chory (karta mówi, kim jest) jest zaraźliwy dwa razy częściej, a chory nie jest ścigany', () => {
+    const wedrowiec = rozklad(gosc({ kto: 'wedrowiec', chce: 'nocleg', ma: 'nic', haczyk: 'prawda' }));
+    const chory = rozklad(gosc({ kto: 'chory', chce: 'leki', ma: 'nic', haczyk: 'prawda' }));
+    expect(chory.chory).toBeGreaterThan(1.5 * wedrowiec.chory);
+    expect(chory.poscig).toBeUndefined();
+  });
+
+  it('czego karta nie dopuszcza, nie wypada: kto prosi o wiadomość, nie jest kłamcą ani ściganym', () => {
+    const r = rozklad(gosc({ kto: 'wedrowiec', chce: 'wiadomosc', ma: 'wiadomosc', haczyk: 'prawda' }));
+    expect(Object.keys(r).sort()).toEqual(['chory', 'prawda']);
+  });
+
+  it('tryb zombie: uczciwy, chory albo ugryziony; indeks ugryzionego mieści się w grupie, a inny haczyk go nie ma', () => {
+    const g = gosc({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'prawda' });
+    const r = rozklad(g, 'zombie');
+    expect(Object.keys(r).sort()).toEqual(['chory', 'prawda', 'ugryziony']);
+    for (const n of ziarna.slice(0, 200)) {
+      const po = przelosowany(g, n, 'zombie');
+      if (po.haczyk === 'ugryziony') {
+        expect(po.ugryziony).toBeGreaterThanOrEqual(0);
+        expect(po.ugryziony).toBeLessThan(po.osoby.length);
+      } else expect(po.ugryziony).toBeUndefined();
+    }
+  });
+
+  it('obejrzane ręce: ugryzienie zostaje takie, jakie jest; po „czysty” ugryzienie nie wypada wcale, reszta dalej się losuje', () => {
+    const ugryziony = gosc({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'ugryziony', ugryziony: 2 });
+    for (const n of ziarna.slice(0, 50)) {
+      const po = przelosowany(ugryziony, n, 'zombie', 'ugryziony');
+      expect([po.haczyk, po.ugryziony]).toEqual(['ugryziony', 2]);
+    }
+    const czysty = rozklad(gosc({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'prawda' }), 'zombie', 'czysty');
+    expect(Object.keys(czysty).sort()).toEqual(['chory', 'prawda']);
+  });
+
+  it('ktoś z ugryzionym bliskim ma zawsze ugryzienie: nie ma czego ukrywać, więc nic się nie zmienia', () => {
+    const g = gosc({ kto: 'z_ugryzionym', ilu: 2, chce: 'dobic', ma: 'nic', haczyk: 'ugryziony', ugryziony: 1 });
+    for (const n of ziarna.slice(0, 50)) {
+      const po = przelosowany(g, n, 'zombie');
+      expect([po.haczyk, po.ugryziony]).toEqual(['ugryziony', 1]);
+    }
+  });
+
+  it('przelosowany gość z prawdziwego generatora jest zawsze zgodny z tabelą wykluczeń generatora', () => {
+    for (const tryb of ['zwykly', 'zombie'] as const) {
+      const ctx: KontekstGoscia = {
+        mode: tryb,
+        pora: 'wieczor',
+        season: 3,
+        zapasy: 30,
+        okolica: [],
+        znane: new Set<Dom>(),
+        napady: 0,
+        dom: false,
+      };
+      for (const n of ziarna.slice(0, 250)) {
+        const s = oknoGoscia(skladGoscia(mulberry(n), 1, ctx, new Set<string>()), tryb);
+        przelosujUkryte(s.gov, s.i, mulberry(n * 7 + 1));
+        const po = s.gov.goscie!.aktywny!.gosc;
+        expect(zgodnyGosc(po, tryb), `${tryb} ${n}: ${JSON.stringify(po)}`).toBe(true);
+        expect(po.ugryziony !== undefined).toBe(po.haczyk === 'ugryziony');
+      }
+    }
+  });
+
+  it('karty z 0.3 z gościem i „Złapany” nie tracą haczyka: kopia zostaje taka, jaka jest', () => {
+    const g = gosc({ kto: 'wedrowiec', chce: 'nocleg', ma: 'nic', haczyk: 'klamie' });
+    for (const id of ['zlapany', 'uchodzcy']) {
+      const s = oknoGoscia(g, 'zwykly');
+      s.gov.ev.active = { id, d: id === 'zlapany' ? { id: g.id } : { gid: g.id } };
+      const przed = JSON.stringify(s.gov);
+      przelosujUkryte(s.gov, s.i, mulberry(3));
+      expect(JSON.stringify(s.gov), id).toBe(przed);
+    }
+  });
+});
+
+describe('ziarnoKopii i ocenaWyboru wprost', () => {
+  it('ziarno pochodne: stałe dla tych samych argumentów, różne dla innego okna, chwili i kopii; 32-bitowe', () => {
+    const z = ziarnoKopii('halas', 1000, 0);
+    expect(ziarnoKopii('halas', 1000, 0)).toBe(z);
+    const inne = [ziarnoKopii('krzyk', 1000, 0), ziarnoKopii('halas', 1020, 0), ziarnoKopii('halas', 1000, 1)];
+    for (const x of inne) expect(x).not.toBe(z);
+    expect(new Set(inne).size).toBe(3);
+    for (const x of [z, ...inne]) expect(x).toBe(x | 0);
+  });
+
+  it('ziarno pochodne ukrytych rzutów (z dopiskiem „ukryte”) nie powtarza ziarna generatora kopii', () => {
+    expect(ziarnoKopii('halas|ukryte', 1000, 0)).not.toBe(ziarnoKopii('halas', 1000, 0));
+  });
+
+  it('ocena wyboru: wybór niedozwolony to null, wybór bez losowania to jedna ocena (bez dzielenia), z losowaniem średnia z kopii', () => {
+    const { gov, i, p } = oknoUchodzcow(0);
+    expect(p.choices[1].ok).toBe(false);
+    expect(ocenaWyboru(gov, i, p, 1)).toBeNull();
+    expect(ocenaWyboru(gov, i, p, 99)).toBeNull();
+    // skutek bez losowania: dokładnie ocena skutków na jednej kopii
+    const kopia = structuredClone(gov);
+    expect(ocenaWyboru(gov, i, p, 3)).toBe(ocenSkutki(chooseEvent(kopia, i, 3), kopia, i));
+  });
+});
+
 describe('odpowiedzNaWydarzenie: okno wieloetapowe', () => {
   const ugryziony = () => gosc({ kto: 'ocaleni', ilu: 3, chce: 'nocleg', haczyk: 'ugryziony', ugryziony: 1 });
 
-  /** wykonuje odpowiedź na bieżące okno gościa, zapisując wybory (prawdziwe `chooseEvent` na stanie) */
-  function odpowiedz(s: { gov: GovState; i: GovInput }): number[] {
+  /** Wykonuje odpowiedź na bieżące okno gościa, zapisując wybory (prawdziwe `chooseEvent` na stanie). Silnik nie widzi
+      ugryzienia, zanim ktoś obejrzy ręce, więc sam nie sięga po „Obejrzeć ręce” (ocena jest jednokrokowa): `pierwszy`
+      wymusza pierwszy krok, a drugi krok silnik wybiera już sam, z odsłoniętym ugryzieniem. */
+  function odpowiedz(s: { gov: GovState; i: GovInput }, pierwszy?: number): number[] {
     const wybory: number[] = [];
     const p = pending(s.gov, s.i);
     if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
@@ -459,8 +786,9 @@ describe('odpowiedzNaWydarzenie: okno wieloetapowe', () => {
       () => s.i,
       p,
       (k) => {
-        wybory.push(k);
-        chooseEvent(s.gov, s.i, k);
+        const wybrany = wybory.length === 0 && pierwszy !== undefined ? pierwszy : k;
+        wybory.push(wybrany);
+        chooseEvent(s.gov, s.i, wybrany);
       },
     );
     return wybory;
@@ -475,8 +803,8 @@ describe('odpowiedzNaWydarzenie: okno wieloetapowe', () => {
       'Obejrzeć ręce',
       'Odprawić',
     ]);
-    const wybory = odpowiedz(s);
-    // krok 1: obejrzeć ręce (wpuszczenie ugryzionego kosztuje ranę, odprawa zaufanie), krok 2: bez ręki już nie ma wyboru
+    const wybory = odpowiedz(s, 2);
+    // krok 1: obejrzeć ręce (wymuszone), krok 2: bez tej opcji, z odsłoniętym ugryzieniem
     expect(wybory).toHaveLength(2);
     expect(wybory[0]).toBe(2);
     expect(s.gov.goscie!.aktywny!.obejrzano).toBe('ugryziony');
@@ -491,10 +819,11 @@ describe('odpowiedzNaWydarzenie: okno wieloetapowe', () => {
   it('drugi krok widzi nowe okno (bez „Obejrzeć ręce”), a nie stare', () => {
     const s = oknoGoscia(ugryziony());
     const pierwsze = eventView(s.gov, s.i)!;
-    const wybory = odpowiedz(s);
+    const wybory = odpowiedz(s, 2);
     // gdyby drugi krok wybierał z listy pierwszego okna, wybór o indeksie 3 („Odprawić”) trafiłby w nieistniejący
     expect(pierwsze.choices).toHaveLength(4);
     expect(wybory[1]).not.toBe(3);
+    // ugryzienie odsłonięte przez pierwszy krok zostaje w ocenie: silnik nie wpuszcza ugryzionego, tylko podaje jedzenie przez siatkę
     expect(wybory[1]).toBe(1);
   });
 

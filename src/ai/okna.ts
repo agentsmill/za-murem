@@ -17,6 +17,20 @@
    dojdą z innych gałęzi. Przy remisie wygrywa niższy indeks (kolejność z okna). Okno bez dozwolonego wyboru daje 0: wybór się
    nie uda, a okno dostanie odpowiedź domyślną albo zostanie zawieszone (src/ai/gra.ts).
 
+   Ukryte rzuty kart. Część kart losuje przy tworzeniu rzut, którego nie pokazuje ani tekstem, ani wyborami, a od którego
+   zależą skutki wyboru: haczyk gościa pod bramą (`Gosc.haczyk`: chory wpuszczony na noc rozdaje chorobę rano, ugryziony dostaje
+   rozkaz „ugryziony”; karta daje tylko trop), kot albo włamywacz za płotem (`halas.cat`) i pomoc albo pułapka w krzyku
+   z sąsiedztwa (`krzyk.help`). Kopia zarządu ma ten rzut w stanie, więc ocena na niej by go znała, choć gracz go nie zna
+   (a w etapie 2 silnik gra obok gracza). Na każdej kopii oceny silnik losuje te rzuty od nowa (`przelosujUkryte`) z ziarna
+   pochodnego (`ziarnoKopii` z dopiskiem „ukryte”, wspólnego dla wszystkich wyborów okna, jak los z poprzedniego akapitu):
+   pole karty z `UKRYTE_RZUTY` z szansą z jej `make`, a haczyk gościa z wag generatora gości (`WAGA_HACZYKA`), zawężonych do
+   tego, co widać na karcie: haczyki zgodne z tym, kim jest gość, czego chce i co ma (`zgodnyGosc`). Rzut, który karta
+   pokazuje albo który odsłonił poprzedni krok okna, zostaje taki, jaki jest: ugryzienie odsłonięte przez „Obejrzeć ręce”
+   (`AktywnyGosc.obejrzano`) zostaje, po „czysty” ugryzienia już nie losuje się wcale, a gość, który z natury jest ugryziony
+   (ktoś z ugryzionym bliskim), nie ma czego ukrywać. Skutek uboczny: silnik w trybie zombie nie ma powodu sięgać po „Obejrzeć
+   ręce” (ocena jest jednokrokowa i nie wycenia wiedzy), więc okno wieloetapowe zdarza się tam tylko, gdy wybór silnika trafi
+   w taki krok; tryb zombie jest poza etapem 1.
+
    Ocena (`ocenSkutki`) liczy stan zarządu po wyborze i skutki, które z niego wyszły; stała część (zaufanie i wkurzenie
    sprzed wyboru) skraca się przy porównaniu wyborów z jednego okna:
    - zapasy: jedzenie ×3, drewno ×1, złom, części i leki ×0,5 (skutki od razu i odłożone na rano w `GovState.later`);
@@ -70,8 +84,10 @@
    src/gov (zarząd) i src/ai/jedzenie.ts (miary zapasu); gra.ts, silnik.ts i warstwy importują się nawzajem, ale tu nikt nie
    używa cudzego importu przy ładowaniu modułu, tylko w ciele funkcji. */
 
-import { hashString } from '../core/rng.ts';
-import type { GovEffects, GovInput, GovState, Prompt, StockDelta } from '../gov/typy.ts';
+import { hashString, mulberry, type Rng, ri } from '../core/rng.ts';
+import { type Gosc, type HaczykId, haczykiMozliwe, ZIMA, zgodnyGosc } from '../gov/goscie.ts';
+import type { AktywnyGosc, GovEffects, GovInput, GovState, Prompt, StockDelta } from '../gov/typy.ts';
+import { wizytaKarty } from '../gov/wizyta.ts';
 import { chooseEvent, pending } from '../gov/zarzad.ts';
 import { stacNaPrzyjecie, uchwalaNaGlod } from './jedzenie.ts';
 
@@ -161,15 +177,103 @@ export function ziarnoKopii(id: string, tick: number, n: number): number {
   return Number.parseInt(hashString(`${id}|${tick}|${n}`), 16) | 0;
 }
 
+/** Ukryte rzuty kart wydarzeń: pola danych karty (`GovState.ev.active.d`), które karta losuje przy tworzeniu i nigdzie nie
+    pokazuje, i szansa na `true` z jej `make` (src/gov/tresc.ts): `halas.cat` 0,45 (kot, nie włamywacz), `krzyk.help` 0,5
+    (sąsiad naprawdę prosi o pomoc), `wedrowiec.thief` 0,3 (karta ma wagę 0 i nie wypada, ale gdyby wróciła, nie zdradza
+    złodzieja). To kopia stałych z kart: zmiana szansy w karcie wymaga zmiany także tutaj. Haczyk gościa ma osobną drogę
+    (`przelosujHaczyk`). */
+export const UKRYTE_RZUTY: Readonly<Record<string, readonly { pole: string; szansa: number }[]>> = {
+  halas: [{ pole: 'cat', szansa: 0.45 }],
+  krzyk: [{ pole: 'help', szansa: 0.5 }],
+  wedrowiec: [{ pole: 'thief', szansa: 0.3 }],
+};
+
+/** Wagi haczyka gościa, kopia prywatnego `BAZA_HACZYK` z src/gov/goscie.ts (mnożniki z `wagiHaczyka` są w `wagaHaczyka`):
+    uczciwy gość jest najczęstszy, kłamca i ugryziony rzadsi, chory i ścigany najrzadsi. Zmiana wag w generatorze gości
+    wymaga zmiany także tutaj. */
+export const WAGA_HACZYKA: Readonly<Record<HaczykId, number>> = {
+  prawda: 4,
+  klamie: 1.4,
+  chory: 1,
+  poscig: 1,
+  ugryziony: 1.4,
+};
+
+/** zapas jedzenia, powyżej którego kłamca trafia się częściej (×1,5): w generatorze `ctx.zapasy > 20` */
+const ZAPAS_KLAMCY = 20;
+
+/** Waga haczyka `h` gościa `g` przy tym wejściu: wagi bazowe, kłamca częściej przy zapasie, chory dwa razy częściej zimą
+    i dwa razy częściej, gdy gość jest z natury chory (karta mówi, kim jest). Bez tego, czego gracz wiedzieć nie może
+    (narrator po długim spokoju, `ostrzej`). */
+function wagaHaczyka(h: HaczykId, g: Gosc, i: GovInput): number {
+  let w = WAGA_HACZYKA[h];
+  if (h === 'klamie' && i.stock.supplies > ZAPAS_KLAMCY) w *= 1.5;
+  if (h === 'chory') {
+    if (i.season === ZIMA) w *= 2;
+    if (g.kto === 'chory') w *= 2;
+  }
+  return w;
+}
+
+/** Jedno losowanie z wag; opcje z wagą ≤ 0 odpadają. */
+function losujWazone<T>(opcje: readonly (readonly [T, number])[], los: Rng): T {
+  const suma = opcje.reduce((a, [, w]) => a + Math.max(0, w), 0);
+  let r = los() * suma;
+  let ostatnia = opcje[0][0];
+  for (const [v, w] of opcje) {
+    if (w <= 0) continue;
+    ostatnia = v;
+    r -= w;
+    if (r < 0) return v;
+  }
+  return ostatnia;
+}
+
+/** Haczyk gościa pod bramą losowany od nowa na kopii: z haczyków, które gość tego rodzaju może mieć w tym trybie i które
+    zgadzają się z tym, co widać na karcie (`zgodnyGosc`: czego chce i co ma; gdyby dane gościa były niespójne, ze wszystkich
+    możliwych), bez ugryzienia, jeśli „Obejrzeć ręce” pokazało czyste ręce. Zostaje bez zmian, gdy haczyk jest odsłonięty
+    (obejrzane ręce ugryzionego) albo nie ma z czego losować (ktoś z ugryzionym bliskim ma zawsze ugryzienie). Dotyczy tylko
+    karty `gosc` z wizytą, którą zarząd prowadzi (karty z 0.3 z gościem mają haczyk „prawda”, a „Złapany” ma kłamcę na wierzchu). */
+function przelosujHaczyk(kopia: GovState, i: GovInput, los: Rng): void {
+  const ev = kopia.ev.active;
+  const aktywny: AktywnyGosc | undefined = kopia.goscie?.aktywny;
+  if (ev?.id !== 'gosc' || !aktywny || wizytaKarty(ev) !== aktywny.gosc.id) return;
+  if (aktywny.obejrzano === 'ugryziony') return;
+  const g = aktywny.gosc;
+  const tryb = kopia.mode ?? 'zwykly';
+  const mozliwe = haczykiMozliwe(g.kto, tryb).filter((h) => !(aktywny.obejrzano === 'czysty' && h === 'ugryziony'));
+  const zgodne = mozliwe.filter((h) => zgodnyGosc({ ...g, haczyk: h }, tryb));
+  const kandydaci = zgodne.length ? zgodne : mozliwe;
+  if (kandydaci.length < 2) return;
+  g.haczyk = losujWazone(
+    kandydaci.map((h) => [h, wagaHaczyka(h, g, i)] as const),
+    los,
+  );
+  if (g.haczyk === 'ugryziony') g.ugryziony = ri(0, g.osoby.length - 1, los);
+  else delete g.ugryziony;
+}
+
+/** Przelosowuje na kopii zarządu ukryte rzuty bieżącej karty (`UKRYTE_RZUTY` i haczyk gościa), żeby ocena wyboru nie znała
+    tego, czego gracz wiedzieć nie może. Rzuty odsłonięte (przez kartę albo poprzedni krok okna) zostają. Kolejność losowań
+    jest stała (najpierw pola karty, potem haczyk), więc ten sam `los` daje tę samą kopię. */
+export function przelosujUkryte(kopia: GovState, i: GovInput, los: Rng): void {
+  const ev = kopia.ev.active;
+  if (!ev) return;
+  if (ev.d && typeof ev.d === 'object') for (const r of UKRYTE_RZUTY[ev.id] ?? []) ev.d[r.pole] = los() < r.szansa;
+  przelosujHaczyk(kopia, i, los);
+}
+
 /** Ocena wyboru `k` w oknie `p`: średnia ocen skutków z `KOPII_OCENY` kopii zarządu, każda z ziarnem pochodnym (`ziarnoKopii`)
-    zamiast stanu prawdziwego generatora, więc silnik nie zna wyniku losowań. Skutek bez losowania daje na każdej kopii tę samą
-    ocenę i wtedy to ona (bez dzielenia). `null`: wybór niedozwolony. */
+    zamiast stanu prawdziwego generatora i z ukrytymi rzutami karty rzuconymi od nowa (`przelosujUkryte`, z drugiego ziarna
+    pochodnego), więc silnik nie zna wyniku losowań ani tego, czego karta nie pokazuje. Skutek bez losowania daje na każdej
+    kopii tę samą ocenę i wtedy to ona (bez dzielenia). `null`: wybór niedozwolony. */
 export function ocenaWyboru(gov: GovState, i: GovInput, p: Wydarzenie, k: number): number | null {
   if (!p.choices[k]?.ok) return null;
   const oceny: number[] = [];
   for (let n = 0; n < KOPII_OCENY; n++) {
     const kopia = structuredClone(gov);
     kopia.rng.s = ziarnoKopii(p.id, i.tick, n);
+    przelosujUkryte(kopia, i, mulberry(ziarnoKopii(`${p.id}|ukryte`, i.tick, n)));
     oceny.push(ocenSkutki(chooseEvent(kopia, i, k), kopia, i));
   }
   return oceny.every((o) => o === oceny[0]) ? oceny[0] : oceny.reduce((suma, o) => suma + o, 0) / oceny.length;
