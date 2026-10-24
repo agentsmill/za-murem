@@ -16,10 +16,10 @@
    zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy
    ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
    płotem pierwszy sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię w pokoju waszego mieszkania …” (słowo
-   lokum idzie ze słownika miejsca przez `waszeLokum` z src/gov/miejsce.ts: w domu jednorodzinnym „waszego domu”), a przy jednym kamieniu „Posadźcie
-   kogoś przy stole pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają zdania (`null`), więc „Wkrótce”
-   i „co dalej” nigdy nie występują razem. Licznik poranków jest też liczbami w `PostepDrogi.seria` (`{ dni, z }`, tylko
-   ludność).
+   lokum idzie ze słownika miejsca przez `waszeLokum` z src/gov/miejsce.ts: w domu jednorodzinnym „waszego domu”), a
+   przy jednym kamieniu „Posadźcie kogoś przy stole pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają
+   zdania (`null`), więc „Wkrótce” i „co dalej” nigdy nie występują razem. Licznik poranków jest też liczbami w
+   `PostepDrogi.seria` (`{ dni, z }`, tylko ludność).
 
    Teren na mapie bez sąsiada do otoczenia. Gdy odczyt mówi wprost, że wspólny płot nie dosięga żadnego budynku w okolicy
    (`GovInput.teren.mozliwe` równe 0, np. na Przymorzu każdy stoi za jezdnią), teren przed pierwszym kamieniem ma zamiast

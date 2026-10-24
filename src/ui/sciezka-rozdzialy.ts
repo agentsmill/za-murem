@@ -35,6 +35,8 @@
    R6 „Badania” uczy pracowni, wyboru badania na tablicy (linia celu w oknie tablicy), stołu pracowni, pierwszej technologii
    i kartki z ery 2. Cele badań istnieją tylko tam, gdzie osada ma dość wiedzy na kartkę ery 1 albo 2 (`mozeWziacKartke`:
    wiedza jak w `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie), żeby zarząd bez fachu ery 1 nie utknął w rozdziale.
+   Podpowiedź pracowni w domu jednorodzinnym z domami obok (Zielonki) odsyła też po deski i części do sąsiednich domów
+   (`sasiednieDomy`): taki dom zbiera z własnych pomieszczeń za mało desek, a pracownia bierze 14.
    R7 „Sąsiedzi” uczy pukania (praca przy drzwiach z pukaniem, wynik pukania albo spotkanie), rozmowy w oknie spotkania
    (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
