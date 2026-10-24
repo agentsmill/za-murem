@@ -73,11 +73,24 @@ function nieZawiera(opis: string, tekst: string, ...fragmenty: string[]): void {
 
 /* ---------------------------------------------------------------- start i przewijanie */
 
+/** Czcionki Barlow i Barlow Condensed z Google Fonts są wczytane (bez sieci strona używa zapasowych, o innej szerokości, więc
+    układ w zrzutach byłby inny i nic by nie dowodził: lepiej od razu przerwać i powtórzyć scenariusz). */
+async function sprawdzCzcionki(page: Page): Promise<void> {
+  const ok = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const wczytane = (rodzina: string) =>
+      [...document.fonts].some((f) => f.family.replaceAll('"', '') === rodzina && f.status === 'loaded');
+    return wczytane('Barlow') && wczytane('Barlow Condensed');
+  });
+  if (!ok) throw new Error('czcionki Barlow z Google Fonts się nie wczytały (sieć?): powtórz scenariusz');
+}
+
 /** start gry i czekanie na pierwsze chipy listy ludzi (portrety rysuje `hud` co 200 ms) */
 async function start(page: Page, base: string, query: string): Promise<void> {
   await page.goto(`${base}?${query}`);
   await waitIdle(page);
   await page.waitForSelector('#lista:not([hidden]) .lp');
+  await sprawdzCzcionki(page);
 }
 
 /** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
@@ -1111,16 +1124,13 @@ export function celeShots(out: string): ShotCele[] {
         console.log(`  handlarz pod bramą: ${hm}`);
         const uklad = await page.evaluate(() => {
           const g = document.getElementById('goals')!;
+          const blok = g.querySelector('.goals-okazja');
+          const glowa = g.querySelector(':scope > .goals-head');
           return {
             pierwszy: g.firstElementChild?.className ?? '',
-            tytul: g.querySelector('.goals-okazja .goals-head span')?.textContent ?? '',
-            rozdzial: g.querySelector(':scope > .goals-head span')?.textContent ?? '',
-            blokPrzed:
-              !!g.querySelector('.goals-okazja')?.compareDocumentPosition(g.querySelector(':scope > .goals-head')!) &&
-              !!(
-                g.querySelector('.goals-okazja')!.compareDocumentPosition(g.querySelector(':scope > .goals-head')!) &
-                Node.DOCUMENT_POSITION_FOLLOWING
-              ),
+            tytul: blok?.querySelector('.goals-head span')?.textContent ?? '',
+            rozdzial: glowa?.querySelector('span')?.textContent ?? '',
+            blokPrzed: !!blok && !!glowa && !!(blok.compareDocumentPosition(glowa) & Node.DOCUMENT_POSITION_FOLLOWING),
           };
         });
         if (uklad.pierwszy !== 'goals-okazja' || !uklad.blokPrzed)
@@ -1246,7 +1256,7 @@ export function celeShots(out: string): ShotCele[] {
           zrzut: `${name}-karta-budowa`,
           znane: ZNANE_NA_KOMPUTERZE,
         });
-        // karta ugryzionego ma przycisk „Amputować” (chip pierwszej osoby to ta sama osoba)
+        // karta ugryzionego (chip tej osoby na liście) ma przycisk „Amputować”
         await kliknij(page, `#lista .lp[data-pawn="${kto.pawn}"]`, false);
         await page.waitForSelector('#card:not([hidden])');
         await page.waitForTimeout(450);
