@@ -64,7 +64,7 @@ describe('dryf zaufania i wkurzenia: wiersze z progami', () => {
       const przed = m[2] === 'poniżej' ? prog : m[2] === 'od' ? prog - 0.5 : prog;
       expect(zaokr(wartosc(po) - wartosc(przed)), f.k).not.toBe(0);
       const efekt = zaokr(wartosc(po) - neutralna);
-      expect(f.v, f.k).toBe(`${signed(efekt)} dziennie przy wszystkich`);
+      expect(f.v, f.k).toBe(`${signed(efekt)} dziennie, gdy dotyczy wszystkich`);
     }
     return wiersze;
   }

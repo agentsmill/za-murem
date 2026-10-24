@@ -384,7 +384,7 @@ export function definicjeNoc(): Def[] {
             ),
             L(
               `Gdy do ${wstawGodz(CARD_DEADLINE)} nikt nie zatwierdzi karty, zostaje propozycja ${w.zarzad.dk}.`,
-              `If nobody confirms the card by ${wstawGodz(CARD_DEADLINE)}, the suggestion of ${e.krotko} stands.`,
+              `If nobody confirms the card by ${wstawGodz(CARD_DEADLINE)}, ${e.krotko}’s suggestion stands.`,
             ),
             L(
               `Rano o ${wstawGodz(MORNING)} przychodzi raport z nocy.`,
@@ -738,7 +738,7 @@ export function definicjeNoc(): Def[] {
           zdania: [
             L(
               `Napad to próba wejścia szabrowników na podwórko: w losowej chwili między ${wstawGodz(NOC.napadOd)} a ${wstawGodz((NOC.napadOd + NOC.napadGodzin) % 24)} podchodzą pod jedno z miejsc w siatce.`,
-              `A raid is looters trying to get into the yard: at a random moment between ${wstawGodz(NOC.napadOd)} and ${wstawGodz((NOC.napadOd + NOC.napadGodzin) % 24)} they come up to one of the places in the fence.`,
+              `A raid is an attempt by looters to get into the yard: at a random moment between ${wstawGodz(NOC.napadOd)} and ${wstawGodz((NOC.napadOd + NOC.napadGodzin) % 24)} they come up to one of the places in the fence.`,
             ),
             L(
               `Szansa, że spróbują, zaczyna się od ${proc(n.pierwsza)}, rośnie z numerem nocy i z każdą dziurą, a maleje przy mocnej siatce, świetle, psie, uchwałach i warcie.`,

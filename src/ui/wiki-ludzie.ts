@@ -560,8 +560,8 @@ const OPISY_POTRZEB: Record<keyof Needs, (c: WikiCtx) => OpisPotrzeby> = {
         'Holes in the fence, strangers in sight and a raid that got into the yard frighten too, and after such a raid the fear stays till morning.',
       ),
       L(
-        `Wartość dąży do celu ze stałą czasową ${godz(bezpieczenstwo().stala)}, więc jedna spokojna chwila nie wystarczy.`,
-        `The value moves towards its target with a time constant of ${godz(bezpieczenstwo().stala)}, so a single calm moment is not enough.`,
+        `Dochodzi do celu stopniowo: w ${godz(bezpieczenstwo().stala)} pokonuje około dwóch trzecich drogi, więc jedna spokojna chwila nie wystarczy.`,
+        `It moves towards the target gradually: in ${godz(bezpieczenstwo().stala)} it covers about two thirds of the way, so a single calm moment is not enough.`,
       ),
     ],
     fakty: [
@@ -978,7 +978,7 @@ export function definicjeLudzie(): Def[] {
           ),
           L(
             `Śmierć kogoś z waszych psuje wszystkim nastrój o ${Math.abs(SMIERC_NASTROJ)} na dobę.`,
-            `Somebody of yours dying spoils everyone’s mood by ${Math.abs(SMIERC_NASTROJ)} for a day.`,
+            `The death of one of your people spoils everyone’s mood by ${Math.abs(SMIERC_NASTROJ)} for a day.`,
           ),
         ],
         fakty: [

@@ -3049,3 +3049,35 @@ a.btn {
     height: calc(100dvh - 22px - var(--attrib-h, 21px));
   }
 }
+
+/* Znaczek „i” przy szczegółach budowli i paski potrzeb na karcie osoby otwierają artykuł w wiki (`data-wiki`) */
+.need[data-wiki] {
+  cursor: help;
+}
+.build-i {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--ink-dim);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.build-i svg {
+  fill: currentColor;
+}
+.build-i:hover,
+.build-i:focus-visible {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+@media (pointer: coarse) {
+  .build-i {
+    width: 32px;
+    height: 32px;
+  }
+}

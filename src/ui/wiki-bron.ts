@@ -356,8 +356,8 @@ export function definicjeBron(): Def[] {
                   ),
                 ]),
             L(
-              `Wartownik bije sam każdego wroga w zasięgu swojej broni, a wycofuje się do środka, gdy wróg jest tuż obok, a zdrowie spadnie poniżej ${WALKA.wycofanieWarta} (w walce ${WALKA.wycofanieWalka}) albo naciera ${WALKA.tlum} naraz.`,
-              `A guard hits any enemy within reach of their weapon, and pulls back inside when an enemy is right beside them and health drops below ${WALKA.wycofanieWarta} (${WALKA.wycofanieWalka} in a fight) or ${WALKA.tlum} come at once.`,
+              `Wartownik bije sam każdego wroga w zasięgu swojej broni, a wycofuje się do środka, gdy wróg jest tuż obok, a zdrowie spadnie poniżej ${WALKA.wycofanieWarta} (w walce ${WALKA.wycofanieWalka}) albo naciera ${WALKA.tlum} wrogów naraz.`,
+              `A guard hits any enemy within reach of their weapon, and pulls back inside when an enemy is right beside them and health drops below ${WALKA.wycofanieWarta} (${WALKA.wycofanieWalka} in a fight) or ${WALKA.tlum} enemies come at once.`,
             ),
             L(
               'Walkę można zlecić: prawy przycisk na wrogu i „Atakuj szwendacza” albo „Atakuj szabrownika”.',

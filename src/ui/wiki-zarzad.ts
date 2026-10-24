@@ -144,7 +144,7 @@ function faktyDryfu(miara: 'T' | 'A'): Fakt[] {
       fakt(
         `${s.potrzeba}-${n}`,
         `${nazwaPotrzeby(s.potrzeba)} ${strona}`,
-        L(`${signed(efekt)} dziennie przy wszystkich`, `${signed(efekt)} a day if everyone`),
+        L(`${signed(efekt)} dziennie, gdy dotyczy wszystkich`, `${signed(efekt)} a day when it applies to everyone`),
       ),
     );
   });
@@ -378,8 +378,8 @@ const UCHWALY: Record<string, (c: WikiCtx) => OpisUchwaly> = {
           `Portions are ${proc(1 - s.porcja)} smaller but fill just as much, so the food runs down about ${proc(s.starcza)} more slowly.`,
         ),
         L(
-          `Głód wraca o ${proc(s.glod)} szybciej, ludzie jedzą dopiero poniżej ${RATION_HUNGRY} najedzenia i najwyżej ${RATION_MEALS} razy na dobę, więc na noc kładą się głodni.`,
-          `Hunger comes back ${proc(s.glod)} faster, people eat only below ${RATION_HUNGRY} fed and at most ${RATION_MEALS} times a day, so they go to bed hungry.`,
+          `Głód wraca o ${proc(s.glod)} szybciej, ludzie jedzą dopiero przy najedzeniu poniżej ${RATION_HUNGRY} i najwyżej ${RATION_MEALS} razy na dobę, więc na noc kładą się głodni.`,
+          `Hunger comes back ${proc(s.glod)} faster, people eat only when Fed drops below ${RATION_HUNGRY} and at most ${RATION_MEALS} times a day, so they go to bed hungry.`,
         ),
         L(
           `Poniżej ${STARVING} jedzą zawsze, a każdy taki posiłek daje nastrój „Głodowe racje”.`,
