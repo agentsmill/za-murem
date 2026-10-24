@@ -202,7 +202,7 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
     ]);
     expect(bittenCard('zielonki')).toContain('title="Ktoś z komitetu z medycyną utnie kończynę');
     expect(statsOf(snap, null, words).find((s) => s.id === 'sBoards')?.title).toBe(
-      'Deski: 4. Na łaty, naprawy i budowę. Dają je przeszukiwanie domu i rozbiórka gruzu.',
+      'Deski: 4. Na łaty, naprawy i budowę. Pochodzą z przeszukiwania domu i rozbiórki gruzu.',
     );
     // karta domu komitetu: bez numeru mieszkania, z pomieszczeniami do przeszukania
     const v = aptView(sim.st, w, 0, snap.apts)!;
@@ -222,8 +222,8 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
     );
     expect(sheet.body).toContain('Dwa miejsca do spania, w domu zmieści się więcej ludzi.');
     expect(sheet.body).toContain('Nie ma gdzie postawić: brak wolnego miejsca w pokoju naszego domu.');
-    expect(sheet.body).toContain('Brakuje: deski 20, złom 10. Deski daje przeszukiwanie domu i rozbiórka gruzu.');
-    expect(sheet.body).toContain('Brakuje: złom 14, części 10. Złom daje przeszukiwanie domu i rozbiórka gruzu.');
+    expect(sheet.body).toContain('Brakuje: deski 20, złom 10. Deski pochodzą z przeszukiwania domu i rozbiórki gruzu.');
+    expect(sheet.body).toContain('Brakuje: złom 14, części 10. Złom pochodzi z przeszukiwania domu i rozbiórki gruzu.');
     for (const t of sheetTexts(sheet)) expect(t).not.toMatch(BLOKOWE);
     expect(canPlace(sim.st, w, 'warsztat', 0, 0, 0).why).toBe('Tylko w pokoju w naszym domu.');
     expect(canPlace(sim.st, w, 'kuchnia_spoleczna', 0, 0, 0).why).toBe('Tylko w kuchni w naszym domu.');
@@ -466,7 +466,7 @@ describe('w bloku po staremu (Przymorze)', () => {
     );
     expect(comingText(3, words)).toBe('3 osoby idą od bramy');
     expect(stats.find((s) => s.id === 'sBoards')?.title).toMatch(
-      /Na łaty, naprawy i budowę\. Dają je przeszukiwanie pustych mieszkań i rozbiórka mebli\.$/,
+      /Na łaty, naprawy i budowę\. Pochodzą z przeszukiwania pustych mieszkań i rozbiórki mebli\.$/,
     );
     // mieszkanie zarządu bez przeszukiwania, puste z numerem, poleceniami i przeszukaniem
     const snap = snapshot(sim.st, w);
@@ -489,8 +489,12 @@ describe('w bloku po staremu (Przymorze)', () => {
     ).body;
     expect(body).toContain('Dwa miejsca do spania, w spółdzielni zmieści się więcej ludzi.');
     expect(body).toContain('Nie ma gdzie postawić: brak wolnego miejsca w pokoju naszego mieszkania.');
-    expect(body).toContain('Brakuje: deski 20, złom 10. Deski daje przeszukiwanie pustych mieszkań i rozbiórka mebli.');
-    expect(body).toContain('Brakuje: złom 14, części 10. Złom daje przeszukiwanie i rozbiórka śmieci i sprzętów.');
+    expect(body).toContain(
+      'Brakuje: deski 20, złom 10. Deski pochodzą z przeszukiwania pustych mieszkań i rozbiórki mebli.',
+    );
+    expect(body).toContain(
+      'Brakuje: złom 14, części 10. Złom pochodzi z przeszukiwania i rozbiórki śmieci i sprzętów.',
+    );
     expect(canPlace(sim.st, w, 'warsztat', 0, 0, 0).why).toBe('Tylko w pokoju w naszym mieszkaniu.');
   });
 
@@ -560,7 +564,7 @@ describe('w bloku po staremu (Przymorze)', () => {
     expect(help).toContain(
       'Klik w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Prawy przycisk w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',
     );
-    expect(help).toContain('Deski, złom i części dają przeszukiwanie pustych mieszkań i rozbiórka.');
+    expect(help).toContain('Deski, złom i części pochodzą z przeszukiwania pustych mieszkań i z rozbiórki.');
     expect(help).toContain(
       'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
     );

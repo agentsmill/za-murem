@@ -310,10 +310,10 @@ const CAT_TITLE: Record<BuildCat, Tx> = {
 
 /** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */
 const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
-  deski: tx(`Deski daje ${w.szukanie.zrodla.deski}.`, `Planks come from ${e.szukanie.zrodla.deski}.`),
-  zlom: tx(`Złom daje ${w.szukanie.zrodla.zlom}.`, `Scrap comes from ${e.szukanie.zrodla.zlom}.`),
-  czesci: tx(`Części daje ${w.szukanie.zrodla.czesci}.`, `Parts come from ${e.szukanie.zrodla.czesci}.`),
-  drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
+  deski: tx(`Deski pochodzą z ${w.szukanie.zrodla.deski}.`, `Planks come from ${e.szukanie.zrodla.deski}.`),
+  zlom: tx(`Złom pochodzi z ${w.szukanie.zrodla.zlom}.`, `Scrap comes from ${e.szukanie.zrodla.zlom}.`),
+  czesci: tx(`Części pochodzą z ${w.szukanie.zrodla.czesci}.`, `Parts come from ${e.szukanie.zrodla.czesci}.`),
+  drewno: tx('Drewno pochodzi ze ścinania drzew.', 'Wood comes from chopping down trees.'),
 });
 
 /** Menu budowy: zakładki z budowlami (zakładka bez pozycji znika); niedostępne z powodem (limit „już stoi”, nie ma gdzie

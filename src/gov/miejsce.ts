@@ -244,7 +244,8 @@ export interface Words {
       (najpierw zaznaczyć osobę, potem polecenie „Przeszukać …” w pomieszczeniu, karta jako sposób na znalezienie pustego),
       obok: dopisek do podpowiedzi pierwszej budowli o sąsiednich domach jako drugim źródle desek i złomu (w bloku null),
       karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
-      w wersji 0.4, zrodla: skąd deski, złom i części („Deski daje …”, „Dają je …”). */
+      w wersji 0.4, zrodla: skąd deski, złom i części, w dopełniaczu po „pochodzą z” („Deski pochodzą z przeszukiwania pustych
+      mieszkań i rozbiórki mebli.”; rzeczownik w mianowniku z czasownikiem „daje” czytał się jak „deski dają przeszukiwanie”). */
   szukanie: {
     b: string;
     d: string;
@@ -319,9 +320,9 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
     naglowek: 'Budowa i puste mieszkania',
     wersja: 'puste mieszkania do przeszukania i naprawy',
     zrodla: {
-      deski: 'przeszukiwanie pustych mieszkań i rozbiórka mebli',
-      zlom: 'przeszukiwanie i rozbiórka śmieci i sprzętów',
-      czesci: 'przeszukiwanie i rozbiórka sprzętów',
+      deski: 'przeszukiwania pustych mieszkań i rozbiórki mebli',
+      zlom: 'przeszukiwania i rozbiórki śmieci i sprzętów',
+      czesci: 'przeszukiwania i rozbiórki sprzętów',
     },
   },
   epilog: { grafiki: 'Na klatkach', kazda: 'Każda klatka', regulamin: 'regulamin trzepaka' },
@@ -381,9 +382,9 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
     naglowek: 'Budowa i przeszukiwanie domu',
     wersja: 'dom do przeszukania',
     zrodla: {
-      deski: 'przeszukiwanie domu i rozbiórka gruzu',
-      zlom: 'przeszukiwanie domu i rozbiórka gruzu',
-      czesci: 'przeszukiwanie domu',
+      deski: 'przeszukiwania domu i rozbiórki gruzu',
+      zlom: 'przeszukiwania domu i rozbiórki gruzu',
+      czesci: 'przeszukiwania domu',
     },
   },
   epilog: { grafiki: 'Na płotach', kazda: 'Każdy dom', regulamin: 'regulamin koszenia trawników' },

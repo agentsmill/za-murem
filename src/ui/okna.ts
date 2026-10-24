@@ -530,7 +530,7 @@ const ZOMBIE_HELP = tx(
 function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
   const s = words.szukanie;
   const fetch = tx(
-    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie ${s.d} i rozbiórka.`,
+    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części pochodzą z przeszukiwania ${s.d} i z rozbiórki.`,
     `${e.Zarzad} fetches the materials and does the building. Planks, scrap and parts come from searching ${e.szukanie.d} and taking things apart.`,
   );
   const items = touch

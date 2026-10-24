@@ -6,11 +6,15 @@
    mapie miasta ma jedną linię stanu (M13). Zdania zarządu są w stanie w obu językach, więc testy czytają `.pl` i `.en`. */
 
 import { describe, expect, it } from 'vitest';
-import { placeOf } from '../../src/gov/miejsce.ts';
+import { placeOf, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import { makeCard } from '../../src/gov/noc.ts';
 import type { GovInput } from '../../src/gov/typy.ts';
 import { govUpdate, newGov } from '../../src/gov/zarzad.ts';
-import { reportSheet } from '../../src/ui/okna.ts';
+import { createSim, Sim } from '../../src/sim/sim.ts';
+import { snapshot } from '../../src/sim/snapshot.ts';
+import { buildMenu } from '../../src/ui/budowa.ts';
+import { helpSheet, reportSheet } from '../../src/ui/okna.ts';
+import { statsOf } from '../../src/ui/pasek.ts';
 import { Atrapa, at, run } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 
@@ -95,4 +99,64 @@ describe('M2: temperatury poniżej zera z prawdziwym minusem', () => {
     expect(card.advice.pl).toContain('w kuchni 0°C.');
     expect(card.advice.pl).not.toContain('−0');
   });
+});
+
+describe('M3: skąd bierze się materiał, po polsku jak zdanie, a nie „deski dają przeszukiwanie”', () => {
+  /** rzeczownik materiału w mianowniku przed „daje”/„dają” czyta się, jakby materiał coś dawał */
+  const ZLY_SZYK = /\b(Deski|Złom|Części|Drewno|Materiał|materiały)\b[^.]*\b(daje|dają)\b/;
+  const visible = (html: string) => html.replace(/<[^>]*>/g, ' ');
+
+  for (const key of ['przymorze', 'zielonki'] as const) {
+    it(`${key}: pomoc, panel budowy i podpowiedzi paska mówią „pochodzi z …”`, () => {
+      const { w, seed } = demoWorld(key);
+      const words = wordsOfWorld(w);
+      const e = wordsEnOfWorld(w);
+      const sim = new Sim(w, createSim(w, seed, { core: 4 }));
+      const dom = key === 'zielonki';
+
+      // Jak grać: „Deski, złom i części pochodzą z przeszukiwania … i z rozbiórki.”
+      const pomoc = visible(helpSheet(false, false, words, e).body);
+      expect(pomoc).toContain(
+        `Deski, złom i części pochodzą z przeszukiwania ${dom ? 'domu' : 'pustych mieszkań'} i z rozbiórki.`,
+      );
+      expect(pomoc).not.toMatch(ZLY_SZYK);
+
+      // panel budowy: powód „Brakuje: …” każdej budowli kończy się zdaniem o źródle pierwszego brakującego materiału
+      const braki = buildMenu({}, () => true, words, e)
+        .flatMap((c) => c.items)
+        .map((x) => x.why ?? '')
+        .filter((x) => x.startsWith('Brakuje:'));
+      expect(braki.length).toBeGreaterThan(5);
+      for (const why of braki) {
+        expect(why).toMatch(/(pochodzi|pochodzą) z /);
+        expect(why).not.toMatch(ZLY_SZYK);
+      }
+      const deski = braki.find((x) => x.includes('Deski pochodzą z '))!;
+      expect(deski).toContain(
+        `Deski pochodzą z ${dom ? 'przeszukiwania domu i rozbiórki gruzu' : 'przeszukiwania pustych mieszkań i rozbiórki mebli'}.`,
+      );
+      expect(
+        braki.some((x) =>
+          x.includes(
+            dom
+              ? 'Złom pochodzi z przeszukiwania domu'
+              : 'Złom pochodzi z przeszukiwania i rozbiórki śmieci i sprzętów',
+          ),
+        ),
+      ).toBe(true);
+
+      // podpowiedzi paska: deski, złom, części i zbiorcze pole telefonu
+      const stats = statsOf(snapshot(sim.st, w), null, words, e);
+      for (const id of ['sBoards', 'sScrap', 'sParts', 'sMats']) {
+        const title = stats.find((x) => x.id === id)!.title;
+        expect(title, id).toMatch(/Pochodz(i|ą) z /);
+        expect(title, id).not.toMatch(ZLY_SZYK);
+      }
+      // złom w domu też bierze źródło ze słownika (wcześniej na pasku stało blokowe „śmieci” także w domu)
+      if (dom)
+        expect(stats.find((x) => x.id === 'sScrap')!.title).toContain(
+          'Pochodzi z przeszukiwania domu i rozbiórki gruzu.',
+        );
+    });
+  }
 });

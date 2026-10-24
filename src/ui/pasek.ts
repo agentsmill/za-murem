@@ -146,7 +146,7 @@ export function statsOf(
       value: String(k.boards),
       level: k.boards ? 'ok' : 'mid',
       title: L(
-        `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je ${words.szukanie.zrodla.deski}.`,
+        `Deski: ${k.boards}. Na łaty, naprawy i budowę. Pochodzą z ${words.szukanie.zrodla.deski}.`,
         `Planks: ${k.boards}. For patches, repairs and building. They come from ${e.szukanie.zrodla.deski}.`,
       ),
     },
@@ -155,7 +155,7 @@ export function statsOf(
       value: String(k.scrap),
       level: k.scrap ? 'ok' : 'mid',
       title: L(
-        `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Dają go przeszukiwanie i rozbiórka śmieci.`,
+        `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Pochodzi z ${words.szukanie.zrodla.zlom}.`,
         `Scrap: ${k.scrap}. For patches, barricades and fixing pipes and cookers. It comes from ${e.szukanie.zrodla.zlom}.`,
       ),
     },
@@ -164,7 +164,7 @@ export function statsOf(
       value: String(k.parts),
       level: k.parts ? 'ok' : 'mid',
       title: L(
-        `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Dają je przeszukiwanie i rozbiórka sprzętów.`,
+        `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Pochodzą z ${words.szukanie.zrodla.czesci}.`,
         `Parts: ${k.parts}. For pipes, cookers and the community kitchen. They come from ${e.szukanie.zrodla.czesci}.`,
       ),
     },
@@ -173,7 +173,7 @@ export function statsOf(
       value: `${k.boards}·${k.scrap}·${k.parts}`,
       level: k.boards || k.scrap || k.parts ? 'ok' : 'mid',
       title: L(
-        `Deski ${k.boards}, złom ${k.scrap}, części ${k.parts}. Dają je przeszukiwanie i rozbiórka.`,
+        `Deski ${k.boards}, złom ${k.scrap}, części ${k.parts}. Pochodzą z przeszukiwania i rozbiórki.`,
         `Planks ${k.boards}, scrap ${k.scrap}, parts ${k.parts}. Searching and taking things apart gets you more.`,
       ),
     },
