@@ -1272,7 +1272,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
             : ` Searched empty flats’ furniture gives planks and parts: ${
                 dotyk ? 'press and hold on' : 'right-click'
               } a piece, “Take apart the …”.`) + ulicaEn(dotyk);
-        const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`;
+        const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części pochodzą z przeszukiwania i z warsztatu („Zrobić część ze złomu”).`;
         const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and the workshop (“Make a part from scrap”).`;
         const opis = `${key} ${mode}`;
         expect(slowa(g, false, 'pracownia'), opis).toEqual({

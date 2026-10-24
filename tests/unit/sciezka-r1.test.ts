@@ -262,7 +262,7 @@ describe.each(KOMBINACJE)('R1: podpowiedzi z liczbami %s %s', (key, mode) => {
       'Budowa (przycisk u góry albo B): dowolna budowla. Najmniej materiału biorą zasieki (złom 10) i ogródek (deski 14). ',
     );
     expect(c('budowla').how).toContain(
-      `${dom ? 'Komitet ulicy' : 'Zarząd'} sam przyniesie materiały i zbuduje. Materiał daje przeszukiwanie i rozbiórka.`,
+      `${dom ? 'Komitet ulicy' : 'Zarząd'} sam przyniesie materiały i zbuduje. Materiał pochodzi z przeszukiwania i rozbiórki.`,
     );
     if (mode === 'zwykly') {
       expect(c('budowla').how).toContain('Zasieki liczą się też do obwodu.');
@@ -274,7 +274,7 @@ describe.each(KOMBINACJE)('R1: podpowiedzi z liczbami %s %s', (key, mode) => {
       expect(c('budowla').how).not.toContain('Zasieki liczą się też do obwodu.');
       expect(c('dzida').text).toBe('Zróbcie dzidę dla warty.');
       expect(c('dzida').how).toBe(
-        `Prawy przycisk na stercie desek albo złomu: „Zrobić dzidę” (2 deski i 1 złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${dom ? 'domu' : 'pustych mieszkań'} i rozbiórka.`,
+        `Prawy przycisk na stercie desek albo złomu: „Zrobić dzidę” (2 deski i 1 złom). Dzida sięga szwendaczy przez siatkę. Deski i złom pochodzą z przeszukiwania ${dom ? 'domu' : 'pustych mieszkań'} i z rozbiórki.`,
       );
     }
     if (dom)

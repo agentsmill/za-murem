@@ -201,7 +201,7 @@ function budowlaJak(o: OdczytCelow): string {
       .join('');
   const zasieki = !zombieMode(o.st, o.gov) && kinds.includes('zasieki');
   return L(
-    `${b}: dowolna budowla. Najmniej materiału biorą ${tanie.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje. Materiał daje przeszukiwanie i rozbiórka.${dopisek(
+    `${b}: dowolna budowla. Najmniej materiału biorą ${tanie.join(' i ')}. ${w.Zarzad} sam przyniesie materiały i zbuduje. Materiał pochodzi z przeszukiwania i rozbiórki.${dopisek(
       zasieki ? 'Zasieki liczą się też do obwodu.' : '',
       obok(w.szukanie.obok),
     )}`,
@@ -237,7 +237,7 @@ const dzidy = (o: OdczytCelow): { sa: number; start: number } => ({
 function dzidaJak(o: OdczytCelow): string {
   const { words: w, wordsEn: e, touch } = o;
   return L(
-    `${touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${w.szukanie.d} i rozbiórka.`,
+    `${touch ? 'Przytrzymajcie palec na stercie desek albo złomu' : 'Prawy przycisk na stercie desek albo złomu'}: „Zrobić dzidę” (${SPEAR_BOARDS} deski i ${SPEAR_SCRAP} złom). Dzida sięga szwendaczy przez siatkę. Deski i złom pochodzą z przeszukiwania ${w.szukanie.d} i z rozbiórki.`,
     `${touch ? 'Press and hold on a pile of planks or scrap' : 'Right-click a pile of planks or scrap'}: “Make a spear” (${manyEn(SPEAR_BOARDS, 'plank', 'planks')} and ${SPEAR_SCRAP} scrap). A spear reaches shamblers through the fence. Planks and scrap come from searching ${e.szukanie.d} and taking things apart.`,
   );
 }
@@ -951,7 +951,7 @@ const R6: DefRozdzialu = {
         // angielski tekst jest krótki celowo (bez „from” przed „the workshop”, bez „too”, „Houses next door”): dłuższy w zombie
         // wypycha na telefonie zwinięte okienko ponad 8 linii, na panel budowy (scenariusz `cele-zombie-budowa-telefon`, EN)
         return L(
-          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}${ulica.pl}`,
+          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części pochodzą z przeszukiwania i z warsztatu („Zrobić część ze złomu”).${skad.pl}${ulica.pl}`,
           `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and the workshop (“Make a part from scrap”).${skad.en}${ulica.en}`,
         );
       },
