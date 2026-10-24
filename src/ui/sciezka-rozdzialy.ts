@@ -903,11 +903,13 @@ const R8: DefRozdzialu = {
     },
     {
       key: 'teren',
-      // tylko tam, gdzie wspólny płot dosięga choć jednego sąsiada (ten sam predykat co ekran dróg) i gdzie są drogi
+      // tylko tam, gdzie wspólny płot dosięga choć jednego sąsiada (ten sam predykat co ekran dróg) i gdzie są drogi; bez
+      // wejścia zarządu nie ma jak tego ocenić, więc niezaliczony cel nie wchodzi do listy, tak samo jak `ludnosc`
+      // (zaliczony zostaje; w grze wejście jest zawsze, gdy jest zarząd, więc to tylko spójność odczytu bez wejścia)
       jest: (o, s) =>
         Object.hasOwn(s.zrobione, 'r8.teren') ||
         kamienie(o.gov, 'teren') >= 1 ||
-        (!!o.gov?.zwyciestwo && (!o.input || terenMozliwy(o.input))),
+        (!!o.gov?.zwyciestwo && !!o.input && terenMozliwy(o.input)),
       tekst: () => tr(DALEJ_TEREN),
       jak: (o) =>
         L(

@@ -907,6 +907,18 @@ describe.each(KOMBINACJE.filter(([key]) => PLOT_NA_MAPIE[key]))('R8 teren tam, g
     g.gov.zwyciestwo!.kamienie.teren = 0;
     expect(cel(g, 'teren').done).toBe(true);
   });
+
+  it('bez wejścia zarządu cel nie wchodzi do listy, tak samo jak `ludnosc` (nie ma jak ocenić, czy płot dosięga); zaliczony zostaje', () => {
+    const g = wRozdziale(key, mode, 'r8');
+    const bezWejscia = () => widokSciezki(g.sciezka, { ...odczyt(g), input: null }).rozdzial!.cele.map((c) => c.key);
+    expect(klucze(g)).toContain('teren');
+    expect(klucze(g)).toContain('ludnosc');
+    expect(bezWejscia()).not.toContain('teren');
+    expect(bezWejscia()).not.toContain('ludnosc');
+    g.gov.zwyciestwo!.kamienie.teren = 1;
+    expect(cel(g, 'teren').done).toBe(true);
+    expect(bezWejscia()).toContain('teren');
+  });
 });
 
 /* ---------------------------------------------------------------- po ostatnim rozdziale: drogi do zwycięstwa */
