@@ -2239,7 +2239,9 @@ a.btn {
   font: 500 14px / 1.2 var(--f-body);
   color: var(--ink);
 }
-.tb-linia-celu b {
+/* etykieta „Cel:” siedzi w `.tb-tytul`, więc `.tb-tytul b` (22 px, a w media query do 760 px 19 px) przebijałaby zwykłe
+   `.tb-linia-celu b` na telefonie; dwie klasy w selektorze dają swoistość wyższą od obu reguł tytułu */
+.tb-tytul .tb-linia-celu b {
   margin-right: 4px;
   font: 700 12px / 1.2 var(--f-sign);
   letter-spacing: 0.14em;
