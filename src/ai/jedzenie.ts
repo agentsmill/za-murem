@@ -29,10 +29,12 @@
      Zielonki 17,2 dnia zamiast 20,0).
    Kuchnia społeczna (15% mniej jedzenia na osobę) nie jest budowana: pomiar +0,2 dnia za 14 złomu i 10 części.
 
-   `uchwalaNaGlod` to jedyna uchwała, o którą warstwa się upomina: przy mniej niż 1 porcji na głowę silnik woli wspólny kocioł
-   (`u_kociol`: jedzenie rozdziela się po równo, posiłki o stałych porach, zaufanie +2). Uchwała jest na ścieżce „wspólnota”,
-   więc po podpisaniu `u_warty` (ścieżka „porządek”, którą silnik podpisuje pierwszego wieczoru) jest zablokowana do końca
-   gry: reguła działa tylko wtedy, gdy ścieżka nie jest jeszcze wybrana.
+   `uchwalaNaGlod` nie jest częścią tury warstwy, tylko pomocnikiem wyboru uchwały (`wyborUchwaly` w src/ai/okna.ts): przy
+   mniej niż 1 porcji na głowę mówi, że uchwałą jest wspólny kocioł (`u_kociol`: jedzenie rozdziela się po równo, posiłki
+   o stałych porach, zaufanie +2), o ile jest dozwolony. Kocioł jest na ścieżce „wspólnota”, a `u_warty` na ścieżce „porządek”:
+   kto podpisał jedną, ma drugą zablokowaną do końca gry. Silnik podpisuje kocioł już w pierwszym oknie uchwał (tam głodu jeszcze
+   nie ma, więc robi to `wyborUchwaly` bez względu na zapas), więc w jego grze reguła głodu nie ma już czego podpisywać; nadrabia
+   dopiero wtedy, gdy kocioł nie został podpisany w pierwszym oknie, a ścieżka nie jest jeszcze wybrana.
 
    Warstwa czyta stan gry jak gracz (`wejscie`, `SimState`, świat) i działa tylko rękami (`Rece`); nie ma własnego stanu
    poza stanem gry (ogródek i wyprawy wynikają z niego), niczego nie losuje i nie czyta zegara. Moduły gra.ts, silnik.ts

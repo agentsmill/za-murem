@@ -9,7 +9,7 @@
    - okna wieloetapowego (`odpowiedzNaWydarzenie`): wybór z `zostaje` (np. „Obejrzeć ręce” przy gościu w trybie zombie) nie
      zamyka okna, więc decydent czyta `pending` po każdym wyborze i odpowiada na kolejny krok;
    - uchwały (`wyborUchwaly`): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku blokuje go do końca
-     gry), potem tylko według potrzeb (głód: kocioł, słaba siatka: warta i brama na kłódkę), a bez potrzeby nic: ani racje
+     gry, a kocioł blokuje wartę i bramę), potem tylko według potrzeby (głód: kocioł), a bez potrzeby nic: ani racje
      głodowe (posiłek dopiero poniżej 25 i nikt nie je w nocy: zarząd nocuje przy najedzeniu 0–10 mimo pełnej spiżarni), ani
      zebrania i meble na opał, które kosztują wkurzenie albo pracę, a silnikowi nic nie dają; test w prawdziwej grze niżej.
    Zarząd i wejście z atrapy (tests/unit/gov-atrapa.ts), bez symulacji; wybór wydarzeń w prawdziwej grze sprawdza
@@ -486,18 +486,17 @@ describe('wyborUchwaly', () => {
     expect(wyborUchwaly(glodny, oknoUchwaly(zablokowany))).toBeNull();
   });
 
-  it('straż: dziury w siatce i wolna droga porządku dają wartę', () => {
+  it('dziury w siatce nie wybierają uchwały: warta i brama należą do drogi porządku, którą kocioł z pierwszego okna zamyka', () => {
     const zDziurami = wejscieUchwal(100, 2);
-    expect(wyborUchwaly(zDziurami, oknoUchwaly(pozniej('u_zebrania', 'u_warty', 'u_meble')))).toBe('u_warty');
-    // warta podpisana: brama na kłódkę (wymaga warty, więc dopiero wtedy jest dozwolona)
-    expect(wyborUchwaly(zDziurami, oknoUchwaly([opcja('u_warty', 'done'), opcja('u_brama'), opcja('u_meble')]))).toBe(
-      'u_brama',
-    );
-    // bez dziur straży nikt nie potrzebuje
-    expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(pozniej('u_zebrania', 'u_warty', 'u_meble')))).toBeNull();
+    expect(zDziurami.fence?.holes).toHaveLength(2);
+    expect(wyborUchwaly(zDziurami, oknoUchwaly(pozniej('u_zebrania', 'u_warty', 'u_meble')))).toBeNull();
+    // także brama na kłódkę, gdy ktoś inny podpisał wartę (wtedy brama jest dozwolona)
+    expect(
+      wyborUchwaly(zDziurami, oknoUchwaly([opcja('u_warty', 'done'), opcja('u_brama'), opcja('u_meble')])),
+    ).toBeNull();
   });
 
-  it('głód ważniejszy niż straż', () => {
+  it('głód przy dziurach w siatce: kocioł, nie warta', () => {
     const i = wejscieUchwal(5, 2);
     expect(wyborUchwaly(i, oknoUchwaly(pozniej('u_warty', 'u_kociol')))).toBe('u_kociol');
   });

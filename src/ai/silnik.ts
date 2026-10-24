@@ -26,8 +26,9 @@
      skutkach (zapasy, zaufanie, wkurzenie, rany, zgony, przyjęcia według zapasu jedzenia), najlepszy wygrywa; okno wieloetapowe
      (wybór z „zostaje”) dostaje odpowiedź na każdy krok;
    - okno uchwały: `wyborUchwaly` (src/ai/okna.ts): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku
-     blokuje go do końca gry), potem tylko według potrzeb (głód: kocioł, słaba siatka: warta i brama na kłódkę), a bez potrzeby
-     nic: ani racje głodowe, ani zebrania i meble na opał (każda uchwała kosztuje wkurzenie albo pracę);
+     blokuje go do końca gry, a kocioł blokuje wartę i bramę na kłódkę), potem tylko według potrzeby (głód: kocioł, o ile jest
+     jeszcze dozwolony), a bez potrzeby nic: ani racje głodowe, ani zebrania i meble na opał (każda uchwała kosztuje wkurzenie
+     albo pracę);
    - raport i epilog zwycięstwa: odpowiedź domyślna (`odpowiedzDomyslna`).
    Warstwy idą w kolejności dopisywania (zima, jedzenie, rozwój) i najwyżej raz na 30 sekund przy ekranie, poza oknami zarządu,
    które dostają odpowiedź od razu. Silnik podstawowy niczego z warstw i okien nie używa i dalej odtwarza `playWithGov` co do

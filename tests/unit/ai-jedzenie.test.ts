@@ -482,7 +482,7 @@ describe('uchwała o wspólnym kotle', () => {
     expect(s.uchwaly[0]).not.toBe('u_kociol');
   });
 
-  it('w prawdziwej grze silnik podpisuje u_kociol pierwszego wieczoru, a u_warty (droga porządku) zostaje zablokowana do końca', () => {
+  it('w prawdziwej grze silnik podpisuje u_kociol pierwszego wieczoru, a u_warty i u_brama (droga porządku) zostają zablokowane do końca', () => {
     // pierwsze okno uchwały: zapas startowy to 40 porcji na 9 głów (4,4 na głowę), więc głodu nie ma; kocioł wybiera drogę wspólnoty
     const g = graPrzedUchwala();
     grajDo(g, silnik, tickDnia(2, 9));
@@ -491,6 +491,8 @@ describe('uchwała o wspólnym kotle', () => {
     expect(g.gov.laws.path).toBe('wspolnota');
     const i = wejscie(g);
     expect(lawState(g.gov, i, 'u_warty').s).toBe('lock');
+    // brama na kłódkę też: należy do drogi porządku (i wymaga warty), więc silnik nie ma jak podpisać uchwały na słabą siatkę
+    expect(lawState(g.gov, i, 'u_brama').s).toBe('lock');
     // kocioł jest już podpisany, więc w głodzie nie ma czego podpisywać
     ustawJedzenie(g, 0);
     const okno = {
