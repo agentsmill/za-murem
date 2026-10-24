@@ -33,7 +33,9 @@ import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { FENCE_BEARS } from '../../src/sim/zombie.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
 import {
+  celeHtml,
   celWOknie,
+  type DefOkazji,
   jestStanSciezki,
   KLUCZE_OKAZJI,
   type KluczOkazji,
@@ -46,6 +48,7 @@ import {
   zaliczony,
 } from '../../src/ui/sciezka.ts';
 import { OKAZJE } from '../../src/ui/sciezka-okazje.ts';
+import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
 import type { World } from '../../src/world/world.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
@@ -249,6 +252,166 @@ describe('okazje: lista i zasady', () => {
   });
 });
 
+describe('okazje: silnik na własnych definicjach', () => {
+  /** flagi, które test przestawia; definicje atrapy czytają tylko je */
+  interface Flagi {
+    otwiera: boolean;
+    trwa: boolean;
+    cel: number;
+    zrobiony: boolean;
+  }
+  const flagi = (): Flagi => ({ otwiera: true, trwa: true, cel: 7, zrobiony: false });
+  const atrapa = (k: KluczOkazji, f: Flagi, opcje: Partial<DefOkazji> = {}): DefOkazji => ({
+    k,
+    tytul: () => `Teraz: ${k}`,
+    otwiera: () => f.otwiera,
+    trwa: () => f.trwa,
+    cel: () => f.cel,
+    cele: [{ key: 'a', tekst: () => 'cel a', jak: () => 'jak a', zrobiony: () => f.zrobiony }],
+    ...opcje,
+  });
+
+  /** gra z samouczkiem skończonym i krok ścieżki na atrapie okazji (rozdziały prawdziwe) */
+  function silnik(...okazje: DefOkazji[]) {
+    const w = demoWorld('przymorze');
+    const sim = new Sim(w, createSim(w, 5, { core: 4 }));
+    sim.st.tut.step = TUT_STEPS.length;
+    const g = graZSymulacji('przymorze', 'zwykly', 5, sim);
+    const krokA = () => {
+      g.sciezka = krokSciezki(g.sciezka, odczytZ(sim.st, w, null), ROZDZIALY, okazje);
+      return g.sciezka;
+    };
+    const widokA = () => widokSciezki(g.sciezka, odczytZ(sim.st, w, null), ROZDZIALY, okazje);
+    return { g, sim, krokA, widokA };
+  }
+
+  it('okazja bez czego ratować (cel −1) się nie otwiera, a z celem trzyma jego id', () => {
+    const f = flagi();
+    const { krokA } = silnik(atrapa('o1', f));
+    f.cel = -1;
+    expect(krokA().okazja).toBeUndefined();
+    f.cel = 7;
+    expect(krokA().okazja).toMatchObject({ k: 'o1', cel: 7 });
+    // okazja bez `cel` w definicji nie ma pola w stanie
+    const h = flagi();
+    const { krokA: krokB } = silnik(atrapa('o2', h, { cel: undefined }));
+    expect(krokB().okazja?.cel).toBeUndefined();
+    expect(Object.keys(krokB().okazja ?? {}).sort()).toEqual(['k', 'od', 'zabici']);
+  });
+
+  it('wyzwalacz otwarcia bywa ostrzejszy niż trwanie: otwarta trwa, dopóki trwa, choćby wyzwalacz już nie był prawdziwy', () => {
+    const f = flagi();
+    const { krokA } = silnik(atrapa('o4', f));
+    f.otwiera = false;
+    expect(krokA().okazja, 'wyzwalacz fałszywy: nie otwiera').toBeUndefined();
+    f.otwiera = true;
+    expect(krokA().okazja?.k).toBe('o4');
+    f.otwiera = false;
+    expect(krokA().okazja?.k, 'wyzwalacz zgasł, zdarzenie trwa').toBe('o4');
+    f.trwa = false;
+    expect(krokA().okazja, 'zdarzenie minęło').toBeUndefined();
+    // otwiera się tylko, gdy po otwarciu zdarzenie by trwało (inaczej otwierałaby się i zamykała na zmianę)
+    f.otwiera = true;
+    expect(krokA().okazja).toBeUndefined();
+  });
+
+  it('cel zaliczony razem z końcem zdarzenia liczy się przed zamknięciem; zrobiony nie wraca, a okazja bez niezrobionych celów się nie otwiera', () => {
+    const f = flagi();
+    const { krokA, widokA } = silnik(atrapa('o5', f));
+    expect(krokA().okazja?.k).toBe('o5');
+    expect(widokA().okazja?.biezacy?.key).toBe('a');
+    // cel staje się prawdziwy dokładnie wtedy, gdy zdarzenie mija
+    f.zrobiony = true;
+    f.trwa = false;
+    const s = krokA();
+    expect(s.okazja).toBeUndefined();
+    expect(s.zrobione).toHaveProperty(['o5.a']);
+    // zdarzenie wraca, ale cel jest zrobiony: okazji nie ma
+    f.trwa = true;
+    f.zrobiony = false;
+    expect(krokA().okazja).toBeUndefined();
+    expect(widokA().okazja).toBeNull();
+  });
+
+  it('cel prawdziwy już przy otwarciu zalicza się w tym samym kroku i zamyka okazję', () => {
+    const f = flagi();
+    f.zrobiony = true;
+    const { krokA } = silnik(atrapa('o6', f));
+    const s = krokA();
+    expect(s.okazja).toBeUndefined();
+    expect(s.zrobione).toHaveProperty(['o6.a']);
+  });
+
+  it('okazja zamyka się, gdy wszystkie cele są zrobione, choć zdarzenie trwa; niezrobiony cel zostaje i okazja trwa', () => {
+    const f = flagi();
+    const g2 = flagi();
+    const dwa = atrapa('o3', f, {
+      cele: [
+        { key: 'a', tekst: () => 'cel a', jak: () => 'jak a', zrobiony: () => f.zrobiony },
+        { key: 'b', tekst: () => 'cel b', jak: () => 'jak b', zrobiony: () => g2.zrobiony },
+      ],
+    });
+    const { krokA, widokA } = silnik(dwa);
+    expect(krokA().okazja?.k).toBe('o3');
+    f.zrobiony = true;
+    expect(krokA().okazja?.k, 'drugi cel niezrobiony').toBe('o3');
+    expect(widokA().okazja?.cele.map((c) => c.done)).toEqual([true, false]);
+    expect(widokA().okazja?.biezacy?.key).toBe('b');
+    g2.zrobiony = true;
+    expect(krokA().okazja, 'oba zrobione').toBeUndefined();
+  });
+
+  it('ważniejsza okazja wypiera niższą i nie pozwala jej wrócić, dopóki trwa; po jej końcu niższa wraca ze świeżym tickiem', () => {
+    const wysoka = flagi();
+    const niska = flagi();
+    niska.cel = 3;
+    const { g, sim, krokA } = silnik(atrapa('o8', wysoka), atrapa('o2', niska));
+    wysoka.trwa = false;
+    wysoka.otwiera = false;
+    expect(krokA().okazja?.k, 'tylko niska trwa').toBe('o2');
+    const od = g.sciezka.okazja!.od;
+    sim.st.tick += 50;
+    wysoka.trwa = true;
+    wysoka.otwiera = true;
+    expect(krokA().okazja?.k, 'wysoka wypiera niską').toBe('o8');
+    sim.st.tick += 50;
+    wysoka.trwa = false;
+    wysoka.otwiera = false;
+    const s = krokA();
+    expect(s.okazja?.k, 'po wysokiej wraca niska').toBe('o2');
+    expect(s.okazja?.cel).toBe(3);
+    expect(s.okazja?.od).toBeGreaterThan(od);
+    // niższa nie wypiera wyższej
+    wysoka.trwa = true;
+    wysoka.otwiera = true;
+    expect(krokA().okazja?.k).toBe('o8');
+    niska.otwiera = true;
+    expect(krokA().okazja?.k).toBe('o8');
+  });
+
+  it('krok niczego nie zmienia na wejściu (zamrożony stan nie rzuca), a wynik nie dzieli z nim obiektów', () => {
+    const f = flagi();
+    const { g, sim, krokA } = silnik(atrapa('o1', f));
+    krokA();
+    const przed = structuredClone(g.sciezka);
+    zamroz(g.sciezka);
+    const w = sim.w;
+    const nowy = krokSciezki(g.sciezka, odczytZ(sim.st, w, null), ROZDZIALY, [atrapa('o1', f)]);
+    expect(g.sciezka).toEqual(przed);
+    expect(nowy.okazja).not.toBe(g.sciezka.okazja);
+    expect(nowy.okazja).toEqual(g.sciezka.okazja);
+  });
+});
+
+/** zamraża obiekt i wszystko, co w nim siedzi: zmiana wejścia w czystej funkcji rzuci wyjątek (moduły ES są ścisłe) */
+function zamroz<T>(x: T): T {
+  if (x && typeof x === 'object') {
+    Object.freeze(x);
+    for (const v of Object.values(x)) zamroz(v);
+  }
+  return x;
+}
+
 describe('okazje: kolejność, wypieranie i powrót', () => {
   /** zombie na Przymorzu o 21:30 drugiego dnia z trzema wyzwalaczami naraz: ugryzienie w kończynę (O5), zwłoki, które wstaną
       (O6), i stado pod siatką (O4) */
@@ -349,6 +512,84 @@ describe('okazje: kolejność, wypieranie i powrót', () => {
   });
 });
 
+describe('okazje: zima i reszta (kolejność O5, O6, O4, O3, O8, O2, O1, O7)', () => {
+  it('zima wypiera gości (handlarza, wędrowca), ustępuje napadowi i wraca po nim ze świeżym tickiem', () => {
+    const g = zimaGra('przymorze', 'zwykly', 8, 9, true);
+    const { st } = g.sim;
+    st.obcy!.next = -1;
+    st.obcy!.wnext = -1;
+    st.obcy!.enext = -1;
+    krok(g);
+    expect(klucz(g)).toBe('o8');
+    const od1 = okazja(g)!.od;
+    // handlarz pod bramą (O2) jest ważny, ale zima jest ważniejsza
+    st.obcy!.next = st.tick;
+    dopoki(g, () => !!st.pawns.find((p) => p.kind === 'handlarz' && p.job?.phase === 1), 1500);
+    expect(klucz(g), 'handlarz czeka pod bramą, a zima dalej na wierzchu').toBe('o8');
+    expect(okazja(g)!.od, 'zima nie została otwarta od nowa').toBe(od1);
+    // napad (O3) jest ważniejszy od zimy: wypiera ją
+    g.sim.push({ t: 'raid', ids: [], at: st.tick + 100, post: 'brama' });
+    dopoki(g, () => klucz(g) === 'o3', 400);
+    // napad się kończy (szabrownicy odchodzą z niczym, bo napad zakończono ręcznie): zima wraca
+    st.raid!.phase = 3;
+    st.pawns = st.pawns.filter((p) => p.kind !== 'szabrownik');
+    krok(g);
+    expect(klucz(g), 'po napadzie wraca zima').toBe('o8');
+    expect(okazja(g)!.od).toBeGreaterThan(od1);
+  });
+
+  it('stado w trybie zombie wypiera zimę nocą, a rano zima wraca', () => {
+    const g = zimaGra('przymorze', 'zombie', 8, 20);
+    const { st, w } = g.sim;
+    st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+    krok(g);
+    expect(klucz(g)).toBe('o8');
+    st.tick = tickAt(8, 21.2);
+    g.sim.spawnAtFence(6, w.buildings[w.hq].entrances[0].out);
+    g.sim.step();
+    krok(g);
+    expect(klucz(g), 'noc, stado pod siatką').toBe('o4');
+    // rano stado się rozeszło
+    st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+    st.tick = tickAt(9, 7);
+    krok(g);
+    expect(klucz(g), 'rano zima znowu').toBe('o8');
+  });
+
+  it('okienko celów rysuje blok okazji nad rozdziałem; zwinięte (telefon) pokazuje bieżący cel okazji', () => {
+    const g = poRaporcieZObcymi('przymorze', 'zombie');
+    const { st } = g.sim;
+    doGodziny(g, 12);
+    czystaOkazja(g);
+    infect(st, rdzen(g.sim)[0], true);
+    krok(g);
+    const v = widok(g);
+    expect(v.okazja?.tytul).toBe('Teraz: ugryzienie');
+    const rozwiniete = celeHtml(v, { otwarte: true, touch: false });
+    expect(rozwiniete.indexOf('goals-okazja')).toBeGreaterThanOrEqual(0);
+    expect(rozwiniete.indexOf('Teraz: ugryzienie')).toBeLessThan(rozwiniete.indexOf(v.rozdzial!.tytul));
+    expect(rozwiniete).toContain('Na karcie ugryzionej osoby');
+    const zwiniete = celeHtml(v, { otwarte: false, touch: true });
+    expect(zwiniete).toContain(v.okazja!.cele[0].text);
+    expect(zwiniete).not.toContain(v.rozdzial!.tytul);
+  });
+
+  it('ścieżka tylko czyta: skrót stanu gry jest ten sam z krokiem ścieżki co bez niego, także z otwartą okazją', () => {
+    const a = poRaporcieZObcymi('przymorze', 'zombie');
+    const b = klon(a);
+    const kto = rdzen(a.sim)[0];
+    infect(a.sim.st, kto, true);
+    infect(b.sim.st, rdzen(b.sim)[0], true);
+    for (let k = 0; k < 600; k++) {
+      krokiSymulacji(a);
+      krokiSymulacji(b);
+      krok(a);
+    }
+    expect(klucz(a)).toBeDefined();
+    expect(a.sim.hash()).toBe(b.sim.hash());
+  });
+});
+
 /* ---------------------------------------------------------------- O1: wędrowiec */
 
 describe.each(KOMBINACJE)('O1 wędrowiec przy siatce: %s %s', (key, mode) => {
@@ -378,6 +619,13 @@ describe.each(KOMBINACJE)('O1 wędrowiec przy siatce: %s %s', (key, mode) => {
     const g = bezObcych(poRaporcieZObcymi(key, mode));
     const { st, w } = g.sim;
     expect(okazja(g)).toBeUndefined();
+    // wędrowiec w drodze (jeszcze nie przystanął przy siatce) okazji nie otwiera
+    if (godzinaG(g) < 9 || godzinaG(g) >= 14) doGodziny(g, 9);
+    if (zombie) bezSzwendaczy(g);
+    st.obcy!.wnext = st.tick;
+    dopoki(g, () => jestWedrowiec(g), 100);
+    expect(st.pawns.find((p) => p.kind === 'wedrowiec')!.job?.phase).toBe(0);
+    expect(okazja(g), 'w drodze').toBeUndefined();
     const wd = przyjscie(g);
     expect(klucz(g)).toBe('o1');
     expect(okazja(g)!.od).toBeLessThanOrEqual(st.tick);
@@ -485,6 +733,15 @@ describe.each(KOMBINACJE)('O2 handlarz pod bramą: %s %s', (key, mode) => {
     const g = bezObcych(poRaporcieZObcymi(key, mode));
     const { st, w } = g.sim;
     expect(okazja(g)).toBeUndefined();
+    // handlarz w drodze do bramy (jeszcze nie stoi z wózkiem) okazji nie otwiera
+    if (godzinaG(g) < 9 || godzinaG(g) >= 13) doGodziny(g, 9);
+    if (zombie) bezSzwendaczy(g);
+    st.obcy!.next = st.tick;
+    dopoki(g, () => st.obcy!.trader >= 0 || st.obcy!.next > st.tick, 100);
+    if (st.obcy!.trader >= 0) {
+      expect(st.pawns.find((p) => p.id === st.obcy!.trader)!.job?.phase).toBe(0);
+      expect(okazja(g), 'w drodze').toBeUndefined();
+    }
     const h = wizyta(g);
     expect(klucz(g)).toBe('o2');
     const v = widok(g).okazja!;
@@ -661,6 +918,22 @@ describe.each(KOMBINACJE_ZWYKLE)('O3 napad szabrowników: %s %s', (key, mode) =>
     napad(g, 3, false);
     dopoki(g, () => faza(g) === 1 && g.sim.st.tick >= tickAt(3, 22), 4 * 960);
     krok(g);
+    expect(okazja(g)).toBeUndefined();
+  });
+});
+
+describe.each(KOMBINACJE_ZOMBIE)('O3 napad w trybie zombie: %s %s', (key, mode) => {
+  it('szabrowników w trybie zombie nie ma, więc napad z polecenia nie otwiera okazji szabrowników (także bez stada)', () => {
+    const g = bezObcych(poRaporcieZObcymi(key, mode));
+    const { st } = g.sim;
+    dopoki(g, () => st.tick >= tickAt(2, 21), 4 * 960);
+    czystaOkazja(g);
+    g.sim.push({ t: 'raid', ids: [], at: tickAt(2, 23), post: 'brama' });
+    dopoki(g, () => odczyt(g).snap.raid?.phase === 1, 4 * 960);
+    // stado wypierałoby okazję szabrowników (O4 jest ważniejsze), więc go nie ma: wtedy napad sam niczego nie otwiera
+    st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+    krok(g);
+    expect(odczyt(g).snap.raid?.phase).toBe(1);
     expect(okazja(g)).toBeUndefined();
   });
 });
@@ -842,6 +1115,35 @@ describe.each(KOMBINACJE_ZOMBIE)('O5 ugryzienie: %s %s', (key, mode) => {
       expect(klucz(g), `ziarno ${ziarno}: ${[...wyniki].join(',')}`).not.toBe('o5');
     }
     expect([...wyniki].sort()).toEqual(['porażka', 'sukces']);
+  });
+
+  it('bez nikogo, kto może amputować (jedyna osoba w zarządzie, reszta na wyprawie), okazji ugryzienia nie ma', () => {
+    const w = demoWorld(key);
+    const sim = new Sim(w, createSim(w, 5, { core: 1, mode }));
+    sim.st.tut.step = TUT_STEPS.length;
+    sim.st.tick = tickAt(2, 10);
+    const g = graZSymulacji(key, mode, 5, sim);
+    infect(sim.st, rdzen(sim)[0], true);
+    krok(g);
+    expect(okazja(g), 'jedyna osoba w zarządzie').toBeUndefined();
+    // z drugą osobą okazja jest; gdy reszta jest na wyprawie albo ledwo żyje, nie otwiera się (otwarta trwa do końca okna)
+    const h = gra(5);
+    const [chory, lekarz, ...reszta] = rdzen(h.sim);
+    for (const p of [lekarz, ...reszta]) p.away = true;
+    infect(h.sim.st, chory, true);
+    krok(h);
+    expect(okazja(h), 'wszyscy poza chorym na wyprawie').toBeUndefined();
+    lekarz.away = false;
+    lekarz.needs!.health = 15;
+    krok(h);
+    expect(okazja(h), 'jedyny zdolny ma zdrowie 15 (poniżej progu 20)').toBeUndefined();
+    lekarz.needs!.health = 90;
+    krok(h);
+    expect(klucz(h)).toBe('o5');
+    // otwarta okazja trwa, choćby lekarz wyszedł: okno amputacji jest takie samo
+    lekarz.away = true;
+    krok(h);
+    expect(klucz(h)).toBe('o5');
   });
 
   it('kto już raz stracił kończynę, a został ugryziony znowu, nie ma celu zaliczonego od razu', () => {
@@ -1072,9 +1374,9 @@ const MAPY_ZIMA = MAPY.flatMap((m) => TRYBY.map((t) => [m, t] as const));
 /** Gra na świeżym świecie mapy: czterech z zarządu, samouczek skończony, godzina `godz` dnia `dzien`, a jedna osoba zna
     się na cieple (dziedzina kozy z beczki; domyślny zarząd ma ją albo nie, zależnie od ziarna). Świat jest własny dla gry,
     więc test może zmieniać jego okna i meble. */
-function zimaGra(mapa: Mapa, mode: GameMode, dzien = 8, godz = 8): Gra {
+function zimaGra(mapa: Mapa, mode: GameMode, dzien = 8, godz = 8, obcy = false): Gra {
   const w = swiezySwiat(mapa);
-  const sim = new Sim(w, createSim(w, 5, { core: 4, mode }));
+  const sim = new Sim(w, createSim(w, 5, { core: 4, mode, ...(obcy ? { obcy } : {}) }));
   sim.st.tut.step = TUT_STEPS.length;
   sim.st.tick = tickAt(dzien, godz);
   const g = graZSymulacji(mapa === 'zielonki' ? 'zielonki' : 'przymorze', mode, 5, sim);
@@ -1326,6 +1628,8 @@ describe('O8 Zima idzie: wyzwalacz, zamknięcie i podpowiedzi', () => {
     expect(beczka.how).toContain('koza w kuchni sypialni zimą nie dogrzeje');
     expect(beczka.how).toContain('Koza z beczki (złom 8, części 1)');
     expect(beczka.how).toContain('najwyżej 2 m od okna, bo rura idzie przez okno');
+    expect(beczka.how, 'miejsce przy oknie jest wolne: o paleniu mebli ani słowa').not.toContain('brak miejsca');
+    expect(beczka.how, 'każdy pokój do spania ma okno: o łóżkach piętrowych ani słowa').not.toContain('piętrowe');
     // pracownia stoi: podpowiedź mówi o tablicy badań
     g.sim.st.things.push({
       id: g.sim.st.nextThing++,
