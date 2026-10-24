@@ -5,7 +5,9 @@
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału i okazji co odświeżenie
-   okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, stan w zapisie `Save.cele`;
+   okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, a okienko wyższe od ekranu
+   przewija się w środku do bieżącego celu (`pokazBiezacyCel`) z nagłówkiem rozdziału przyklejonym u góry, stan
+   w zapisie `Save.cele`;
    zdarzenia samego interfejsu (lista ludzi, karty mieszkańca i budynku, ekran dróg) idą do stanu ścieżki przez
    `zdarzenieUi`; linia „Cel: …” w oknach karty nocy, uchwały, spotkania i na tablicy badań z `celWOknie`;
    `window.zm.cele()` i `window.zm.rozdzial(k)` do zrzutów), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa
@@ -2054,6 +2056,9 @@ function hud(now: number) {
 }
 
 let goalsHtml = '';
+/** Co okienko celów pilnowało przy ostatnim przewinięciu do bieżącego celu: klucz bieżącego celu, wysokość okienka i wysokość
+    jego treści (`pokazBiezacyCel`). */
+let goalsPilnowane = '';
 /** Odczyt gry dla ścieżki celów z tej chwili (src/ui/sciezka.ts). Wejście zarządu liczy się dopiero wtedy, gdy któryś cel je
     czyta (drewno na noc bierze z niego liczbę palenisk), i najwyżej raz na odczyt. */
 function odczytCelow(snap: SimSnapshot): OdczytCelow {
@@ -2124,9 +2129,55 @@ function renderGoals(snap: SimSnapshot) {
   } else widok = widokCelow(snap);
   const html = celeHtml(widok, { otwarte: celeRozwiniete(), touch: touchUI });
   el.hidden = !html;
-  if (!html || html === goalsHtml) return;
-  goalsHtml = html;
-  el.innerHTML = html;
+  if (!html) return;
+  if (html !== goalsHtml) {
+    goalsHtml = html;
+    el.innerHTML = html;
+  }
+  pokazBiezacyCel(el);
+}
+/** Okienko celów ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby), a wyższa lista przewija się
+    w środku, więc bieżący cel z podpowiedzią trzeba pokazać, kiedy się zmienił albo kiedy zmieniła się wysokość okienka albo
+    jego treści (karta osoby skraca okienko, nowy cel wydłuża listę zrobionych). Przewija najmniej, jak trzeba, czyli jak
+    `scrollIntoView({ block: 'nearest' })`, ale tylko tę listę (`scrollIntoView` przewija też przodków, w tym `.app`
+    z `overflow: hidden`, gdyby okienko wystawało poza ekran). Nagłówek rozdziału przykleja się do góry okienka
+    (`.goals > .goals-head` w style.css) i zakrywa górny pas listy, więc cel pod nim ma stanąć poniżej nagłówka, a nie przy
+    górnej krawędzi pola, a wiersz przecięty dolną krawędzią nagłówka chowa się pod nim w całości, o ile jest dokąd
+    przewinąć. Poza tymi zmianami nie rusza listy wcale: kto przewinął ją, żeby przeczytać zrobione cele, nie jest cofany
+    przy każdym odświeżeniu (co 200 ms). */
+function pokazBiezacyCel(el: HTMLElement) {
+  const cel = el.querySelector<HTMLElement>('li.now');
+  const znak = `${cel?.dataset.key ?? ''}|${el.clientHeight}|${el.scrollHeight}`;
+  if (znak === goalsPilnowane) return;
+  goalsPilnowane = znak;
+  if (!cel) return;
+  // widoczna część okienka: pole z dopełnieniem, bez ramki, a od góry bez nagłówka rozdziału, który się tam przykleja (liczy
+  // się tylko dla celu pod nim; cel w bloku okazji nad nim jedzie z listą). Gdy nagłówek jeszcze stoi na swoim miejscu, cel
+  // pod nim i tak leży niżej niż jego dół, więc odjęcie jego wysokości niczego nie zmienia.
+  const naglowek = el.querySelector<HTMLElement>(':scope > .goals-head');
+  const nadListaPx =
+    naglowek && (naglowek.compareDocumentPosition(cel) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+      ? naglowek.getBoundingClientRect().height
+      : 0;
+  const pole = el.getBoundingClientRect().top + el.clientTop;
+  const gora = pole + nadListaPx;
+  const dol = pole + el.clientHeight;
+  const r = cel.getBoundingClientRect();
+  if (r.top < gora || r.height > dol - gora) el.scrollTop += r.top - gora;
+  else if (r.bottom > dol) el.scrollTop += r.bottom - dol;
+  // Wiersz przecięty dolną krawędzią nagłówka (spod niego wystaje sam dół) chowa się pod nim w całości: kilka pikseli dołu
+  // wiersza pod nagłówkiem wygląda jak śmieć. Tylko wtedy, gdy jest dokąd przewinąć, a cel zostaje w całości pod nagłówkiem.
+  if (naglowek) {
+    const kraj = naglowek.getBoundingClientRect().bottom;
+    for (const wiersz of el.querySelectorAll<HTMLElement>(':scope > .goal-list > li')) {
+      const b = wiersz.getBoundingClientRect();
+      if (b.top >= kraj - 1 || b.bottom <= kraj + 1) continue;
+      const d = Math.ceil(b.bottom - kraj);
+      if (el.scrollTop + d <= el.scrollHeight - el.clientHeight && cel.getBoundingClientRect().top - d >= gora - 0.5)
+        el.scrollTop += d;
+      break;
+    }
+  }
 }
 // nagłówek zwija i rozwija okienko (domyślnie na telefonie zwinięte do bieżącego celu, na komputerze rozwinięte)
 $('goals').addEventListener('click', (e) => {
