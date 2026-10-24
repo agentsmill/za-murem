@@ -20,11 +20,12 @@
    Przewijanie do bieżącego celu robi `pokazBiezacyCel` w src/main.ts, a `cele-przewijanie` pilnuje go na długiej liście
    zrobionych i po zmianie rozdziału, a także tego, że spod nagłówka nie wystaje przecięty wiersz.
 
-   Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu; rozwiniętą listę
-   (stuknięcie w nagłówek) tylko tak, że karta osoby, arkusz budowy od dołu i podpowiedź u dołu, które rysuje się nad nią, są
-   zamierzone (`dozwolone`), ale zakrywają najwyżej to, co leży pod bieżącym celem z jego podpowiedzią, a pasek, lista ludzi
-   i krawędzie okna dalej muszą się zgadzać. Lista ludzi na telefonie schodzi pod okienko, więc jej nachodzenie na arkusz
-   budowy albo kartę osoby idzie do logu, ale nie może przekroczyć `LISTA_NA_PRZESZKODZIE_MAX` px.
+   Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu, i rozwiniętym (stuknięcie
+   w nagłówek). Rozwinięte okienko kurczy się i przewija w środku tak, żeby lista ludzi pod nim, podpowiedź u dołu i karta osoby
+   (`--zapas-dol` w src/style.css, liczy go main.ts) miały swoje miejsce, więc na nic z tego nie nachodzi, a lista ludzi nie leży
+   ani na karcie, ani na arkuszu budowy (`LISTA_NA_PRZESZKODZIE_MAX` to zero: arkusz budowy od dołu chowa listę, bo i tak
+   zasłaniałby ją razem z kafelkami budowli). Zamierzone jest tylko to, że arkusz budowy leży nad rozwiniętym okienkiem celów
+   (`dozwolone`), ale zakrywa najwyżej to, co leży pod bieżącym celem z jego podpowiedzią.
 
    Stan gry scenariusze prowadzą grą (samouczek, noc, raport, przewijanie przez `zm.ff` z odpowiedziami na okna zarządu),
    a tam, gdzie gra potrzebuje do tego godzin ludzkiej roboty, ustawiają stan wprost jak dzisiejsze scenariusze (pracownia,
@@ -54,14 +55,14 @@ export interface ShotCele {
 
 const SAVE = 'za-murem-0.4-zapis';
 const TILE = 32;
-const GRA = 'speed=0&cam=hq,1.3';
+export const GRA = 'speed=0&cam=hq,1.3';
 /** słowa z bloku, których w domu nie ma w celach i w ich podpowiedziach (jak BLOKOWE_UI w tools/shots.ts) */
 const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
 
 /** telefon: okno węższe niż 640 px (jak w tools/shots.ts: `isMobile` i dotyk) */
-const dotykowy = (w: number): boolean => w < 640;
+export const dotykowy = (w: number): boolean => w < 640;
 /** klik albo stuknięcie, zależnie od ekranu */
-const kliknij = (page: Page, sel: string, dotyk: boolean) => (dotyk ? page.tap(sel) : page.click(sel));
+export const kliknij = (page: Page, sel: string, dotyk: boolean) => (dotyk ? page.tap(sel) : page.click(sel));
 
 /** Co ile `hud` w main.ts odświeża okienko celów, listę ludzi i kartę osoby (ms). */
 const HUD_MS = 200;
@@ -70,7 +71,7 @@ const HUD_MS = 200;
     ResizeObserver ustawia `--goals-h` i `--card-h`; `okresy` to liczba okresów (dłuższe czekanie sprawdza, że odświeżenia
     czegoś nie cofają). Tylko tu jest `waitForTimeout`: gdzie jest stan, na który da się poczekać (selektor, treść okienka),
     scenariusze czekają na niego. */
-const poHudzie = (page: Page, okresy = 2): Promise<void> => page.waitForTimeout(okresy * HUD_MS + 50);
+export const poHudzie = (page: Page, okresy = 2): Promise<void> => page.waitForTimeout(okresy * HUD_MS + 50);
 
 /** minuta gry (od początku dnia 1, 0:00) dla dnia, godziny i minuty */
 const minutaGry = (dzien: number, godz: number, min = 0): number => (dzien - 1) * 1440 + godz * 60 + min;
@@ -117,7 +118,7 @@ async function idz(page: Page, adres: string): Promise<void> {
 }
 
 /** start gry i czekanie na pierwsze chipy listy ludzi (portrety rysuje `hud` co 200 ms) */
-async function start(page: Page, base: string, query: string): Promise<void> {
+export async function start(page: Page, base: string, query: string): Promise<void> {
   await idz(page, `${base}?${query}`);
   await waitIdle(page);
   await page.waitForSelector('#lista:not([hidden]) .lp');
@@ -170,7 +171,7 @@ interface Przewijanie {
 
 /** Przewija grę po kilka minut (`zm.ff`), odpowiadając na okna zarządu, aż `gotowe(minuta gry)` będzie prawdziwe (zwraca
     null) albo stanie okno z `stop` (zwraca je, nie odpowiadając). Rzuca, gdy przez `maks` kroków nic z tego. */
-async function przewin(
+export async function przewin(
   page: Page,
   gotowe: (teraz: number) => boolean | Promise<boolean>,
   o: Przewijanie,
@@ -249,6 +250,49 @@ async function poPodpowiedziStartowej(page: Page): Promise<void> {
     układ po niej, jak gracz, który zdążył ją przeczytać. */
 async function poWiesci(page: Page): Promise<void> {
   await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 });
+}
+
+/** Podpowiedź u dołu (`#hint`, widoczna, dopóki ma tekst) nie nachodzi na pasek u góry, okienko celów, chipy listy ludzi ani kartę
+    osoby; zwraca jej położenie do dziennika. Na telefonie leży ona w wolnym miejscu między listą ludzi a kartą, a okienko celów
+    kurczy się, gdy miejsca jest za mało. */
+async function podpowiedzBezNachodzenia(page: Page, opis: string): Promise<string> {
+  const r = await page.evaluate(() => {
+    const widoczny = (e: Element): boolean => {
+      const h = e as HTMLElement;
+      if (h.hidden || getComputedStyle(h).display === 'none') return false;
+      const b = h.getBoundingClientRect();
+      return b.width > 0 && b.height > 0;
+    };
+    const hint = document.getElementById('hint')!;
+    if (!widoczny(hint)) return null;
+    const a = hint.getBoundingClientRect();
+    const zle: string[] = [];
+    for (const [sel, nazwa] of [
+      ['#top', 'pasek u góry'],
+      ['#goals', 'okienko celów'],
+      ['#lista .lp', 'listę ludzi'],
+      ['#card', 'kartę osoby'],
+      ['#arrive', 'komunikat o przybyszach'],
+    ] as const)
+      for (const e of document.querySelectorAll(sel)) {
+        if (!widoczny(e)) continue;
+        const b = e.getBoundingClientRect();
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 1 && h > 1) zle.push(`podpowiedź nachodzi na ${nazwa} o ${Math.round(w)}×${Math.round(h)} px`);
+      }
+    return {
+      tekst: hint.textContent ?? '',
+      polozenie: `${Math.round(a.left)},${Math.round(a.top)}–${Math.round(a.right)},${Math.round(a.bottom)}`,
+      zle,
+    };
+  });
+  if (!r) throw new Error(`${opis}: nie ma podpowiedzi u dołu, a scenariusz ją sprawdza`);
+  console.log(
+    `  ${opis}: podpowiedź „${r.tekst.slice(0, 36)}…” ${r.polozenie}${r.zle.length ? `, NARUSZENIA: ${r.zle.length}` : ''}`,
+  );
+  if (r.zle.length) throw new Error(`${opis}: ${r.zle.join('; ')}`);
+  return r.polozenie;
 }
 
 async function widok(page: Page): Promise<WidokSciezki> {
@@ -433,9 +477,10 @@ async function naruszenia(page: Page): Promise<Naruszenia> {
   );
 }
 
-/** Ile pikseli listy ludzi na telefonie może leżeć na arkuszu budowy albo na karcie osoby (log, ale nie więcej niż tyle:
-    najwięcej mierzę 54 px przy rozwiniętym okienku z okazją; granica ma pilnować, żeby nie urosło po cichu). */
-const LISTA_NA_PRZESZKODZIE_MAX = 60;
+/** Ile pikseli listy ludzi na telefonie może leżeć na arkuszu budowy albo na karcie osoby: żadnego. Dawniej tolerowało się tu
+    60 px (przy rozwiniętym okienku z okazją chipy leżały na 54 px karty albo arkusza), ale chipy przykrywały wtedy imię
+    i rodzinę zaznaczonej osoby; okienko celów kurczy się teraz do miejsca, które zostaje nad kartą. */
+const LISTA_NA_PRZESZKODZIE_MAX = 0;
 
 /** Lista ludzi stoi pod okienkiem celów (na telefonie pod jego dolną krawędzią), więc wysokość okienka przesuwa ją, a arkusz
     budowy (od dołu) i karta osoby mogą ją przykryć. Zwraca, o ile pikseli chip listy leży na każdej z tych przeszkód
@@ -476,7 +521,7 @@ interface DozwolonePrzeszkody {
 }
 
 /** Sprawdza układ okienka celów w tej chwili: każde naruszenie przerywa scenariusz. Wyjątek to nachodzenie na przeszkodę
-    z `dozwolone` (telefon, rozwinięta lista: karta, arkusz budowy i podpowiedź u dołu leżą nad nią z zamysłu), ale i ono ma
+    z `dozwolone` (telefon, rozwinięta lista: arkusz budowy od dołu leży nad nią z zamysłu), ale i ono ma
     granicę: przeszkoda zaczyna się poniżej bieżącego celu z jego podpowiedzią (pierwszy `li.now`), więc nie zakrywa tego,
     co gracz ma przeczytać. */
 async function bezNachodzenia(page: Page, opis: string, o: DozwolonePrzeszkody = {}): Promise<void> {
@@ -519,7 +564,7 @@ async function ukladZPanelami(
   o: OpcjeUkladu = {},
 ): Promise<void> {
   if (dotyk) await ustawOkienko(page, !!o.rozwiniete, true);
-  const opcje = { dozwolone: dotyk && o.rozwiniete ? [KARTA, PANEL_BUDOWY, PODPOWIEDZ] : [] };
+  const opcje = { dozwolone: dotyk && o.rozwiniete ? [PANEL_BUDOWY] : [] };
   await bezNachodzenia(page, `${opis}, samo okienko`, opcje);
   const cam = await kamera(page);
   await kliknij(page, '#lista .lp >> nth=0', dotyk);
@@ -736,7 +781,7 @@ async function dolozDrewno(page: Page, n: number): Promise<void> {
 }
 
 /** język gry jak wybór gracza w trakcie gry (ten sam moduł, który zna gra: singleton po adresie z serwera Vite) */
-async function ustawJezyk(page: Page, jezyk: 'pl' | 'en'): Promise<void> {
+export async function ustawJezyk(page: Page, jezyk: 'pl' | 'en'): Promise<void> {
   await page.evaluate(async (l) => {
     const adres = '/src/core/jezyk.ts';
     const m = await import(/* @vite-ignore */ adres);
@@ -1665,6 +1710,19 @@ export function celeShots(out: string): ShotCele[] {
           krok: () => 2,
           maks: 60,
         });
+        // wieść z rozmowy wisi 7 s u dołu: przy otwartej karcie osoby leży w wolnym miejscu między listą ludzi a kartą, na nic nie
+        // nachodzi (dawniej zakrywała 20 px zwiniętego okienka celów), także przy rozwiniętym okienku
+        await page.waitForFunction(() => document.getElementById('hint')!.textContent !== '', null, { timeout: 3000 });
+        const kameraWiesci = await kamera(page);
+        await ustawOkienko(page, false, true);
+        await kliknij(page, '#lista .lp >> nth=0', true);
+        await page.waitForSelector('#card:not([hidden])');
+        await poHudzie(page, 1);
+        await podpowiedzBezNachodzenia(page, `${name} ${w}×${h}, wieść z rozmowy, zwinięte okienko z kartą`);
+        await ustawOkienko(page, true, true);
+        await podpowiedzBezNachodzenia(page, `${name} ${w}×${h}, wieść z rozmowy, rozwinięte okienko z kartą`);
+        await page.keyboard.press('Escape');
+        await przywrocKamere(page, kameraWiesci);
         await poWiesci(page);
         await poHudzie(page);
         // po rozmowie: bieżące jest zaproszenie, z podpowiedzią bez „(… szans)”
