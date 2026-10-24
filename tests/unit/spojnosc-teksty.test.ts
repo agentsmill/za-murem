@@ -6,16 +6,20 @@
    mapie miasta ma jedną linię stanu (M13). Zdania zarządu są w stanie w obu językach, więc testy czytają `.pl` i `.en`. */
 
 import { describe, expect, it } from 'vitest';
+import { mulberry } from '../../src/core/rng.ts';
+import { type Gosc, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts';
+import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import { placeOf, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import { makeCard } from '../../src/gov/noc.ts';
-import type { GovInput } from '../../src/gov/typy.ts';
-import { govUpdate, newGov } from '../../src/gov/zarzad.ts';
+import type { GovGosc, GovInput } from '../../src/gov/typy.ts';
+import { eventView } from '../../src/gov/wydarzenia.ts';
+import { chooseEvent, govUpdate, newGov } from '../../src/gov/zarzad.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu } from '../../src/ui/budowa.ts';
 import { helpSheet, reportSheet } from '../../src/ui/okna.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
-import { Atrapa, at, run } from './gov-atrapa.ts';
+import { Atrapa, at, run, TPH } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 
 describe('M1: koniec gry w kronice mówi tytułem zakończenia, nie identyfikatorem', () => {
@@ -159,4 +163,145 @@ describe('M3: skąd bierze się materiał, po polsku jak zdanie, a nie „deski 
         );
     });
   }
+});
+
+/** Karta gościa pod bramą z ręcznie ustawioną grupą: `ilu` osób, płeć pierwszej (f), czego chcą, tryb gry. Zarząd na atrapie,
+    wizyta aktywna, wpis w odczycie jak w grze (faza `brama`). */
+function kartaGoscia(
+  o: {
+    ilu: number;
+    f?: boolean;
+    chce?: Gosc['chce'];
+    mode?: 'zwykly' | 'zombie';
+    obejrzano?: 'ugryziony' | 'czysty';
+  } = {
+    ilu: 1,
+  },
+) {
+  let id = 1;
+  const kto: KtoId = 'wedrowiec';
+  const osoby = osobyGrupy(mulberry(5), () => id++, kto, o.ilu, new Set<string>());
+  osoby.forEach((p, k) => {
+    p.id = `g1p${k}`;
+    if (k === 0 && o.f !== undefined) p.f = o.f;
+  });
+  const g: Gosc = {
+    id: 'g1',
+    kto,
+    chce: o.chce ?? 'nocleg',
+    ma: 'nic',
+    haczyk: 'prawda',
+    skad: { strona: 'n', nazwa: frazaSkad('apteka', 'Pod Różą') },
+    osoby,
+  };
+  const gov = newGov(3, o.mode ?? 'zwykly');
+  const atr = new Atrapa(3);
+  atr.supplies = 30;
+  atr.meds = 3;
+  atr.woodSklad = 10;
+  atr.tick = Math.round(((at(3, 16) - 15 * 60) * TPH) / 60);
+  const wpis: GovGosc = {
+    id: g.id,
+    faza: 'brama',
+    tile: 1234,
+    gdzie: { x: 34, y: 12 },
+    pawns: osoby.map((_, k) => 100 + k),
+    zywi: osoby.map((_, k) => k),
+    ukradl: 0,
+  };
+  const i: GovInput = { ...atr.input(), screen: 1000, kozaLit: true, goscie: [wpis], napady: [] };
+  gov.goscie = {
+    n: 1,
+    czytane: 0,
+    aktywny: { gosc: g, od: 900, karta: true, ...(o.obejrzano ? { obejrzano: o.obejrzano } : {}) },
+  };
+  gov.ev.active = { id: 'gosc', d: { id: g.id } };
+  const v = eventView(gov, i)!;
+  return { gov, i, v, g, en: v.choices.map((c) => c.label.en), pl: v.choices.map((c) => c.label.pl) };
+}
+
+describe('M5: karty gości po angielsku mają zgodne zaimki w całej karcie', () => {
+  const WSZYSTKIE = (...a: string[]) => a.join(' | ');
+
+  it('jeden mężczyzna: him / his / he, bez „them” i „their”', () => {
+    const { en } = kartaGoscia({ ilu: 1, f: false, mode: 'zombie' });
+    expect(en).toContain('Let him in for the night');
+    expect(en).toContain('Check his hands');
+    expect(en).toContain('Send him away');
+    expect(WSZYSTKIE(...en)).not.toMatch(/\b(them|their|they)\b/i);
+    expect(kartaGoscia({ ilu: 1, f: false, chce: 'leki' }).en).toContain('Give him meds (Meds 1)');
+    expect(kartaGoscia({ ilu: 1, f: false, chce: 'wiadomosc' }).en).toContain('Hear what he has to say');
+  });
+
+  it('jedna kobieta: her / her / she', () => {
+    const { en } = kartaGoscia({ ilu: 1, f: true, mode: 'zombie' });
+    expect(en).toContain('Let her in for the night');
+    expect(en).toContain('Check her hands');
+    expect(en).toContain('Send her away');
+    expect(WSZYSTKIE(...en)).not.toMatch(/\b(them|their|they|him|his)\b/i);
+    expect(kartaGoscia({ ilu: 1, f: true, chce: 'leki' }).en).toContain('Give her meds (Meds 1)');
+    expect(kartaGoscia({ ilu: 1, f: true, chce: 'wiadomosc' }).en).toContain('Hear what she has to say');
+  });
+
+  it('grupa: them / their / they', () => {
+    const { en } = kartaGoscia({ ilu: 3, mode: 'zombie' });
+    expect(en).toContain('Let them in for the night');
+    expect(en).toContain('Check their hands');
+    expect(en).toContain('Send them away');
+    expect(kartaGoscia({ ilu: 3, chce: 'leki' }).en).toContain('Give them meds (Meds 1)');
+    expect(kartaGoscia({ ilu: 3, chce: 'wiadomosc' }).en).toContain('Hear what they have to say');
+    expect(WSZYSTKIE(...en)).not.toMatch(/\b(him|his|her)\b/i);
+  });
+
+  it('zdanie po obejrzeniu rąk: „his / her / their hands” zależnie od grupy', () => {
+    expect(kartaGoscia({ ilu: 1, f: false, mode: 'zombie', obejrzano: 'czysty' }).v.text.en).toContain(
+      'You checked his hands: clean',
+    );
+    expect(kartaGoscia({ ilu: 1, f: true, mode: 'zombie', obejrzano: 'czysty' }).v.text.en).toContain(
+      'You checked her hands: clean',
+    );
+    expect(kartaGoscia({ ilu: 2, mode: 'zombie', obejrzano: 'czysty' }).v.text.en).toContain(
+      'You checked their hands: clean',
+    );
+    const ugryziony = kartaGoscia({ ilu: 2, mode: 'zombie', obejrzano: 'ugryziony' });
+    expect(ugryziony.v.text.en).toContain('You checked their hands.');
+  });
+
+  it('polskie napisy bez zmian', () => {
+    const { pl } = kartaGoscia({ ilu: 1, f: true, mode: 'zombie' });
+    expect(pl).toContain('Wpuścić na noc');
+    expect(pl).toContain('Obejrzeć ręce');
+    expect(pl).toContain('Odprawić');
+  });
+});
+
+describe('M6: grupa w zdaniu liczy pozostałych, nie „resztę (2 osoby)”', () => {
+  function przyjecie(ilu: number) {
+    const s = kartaGoscia({ ilu, chce: 'dolaczyc' });
+    const k = s.pl.findIndex((l) => l.startsWith('Przyjąć do spółdzielni'));
+    expect(k).toBeGreaterThanOrEqual(0);
+    chooseEvent(s.gov, s.i, k);
+    const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Przyjęliście: '))!.txt;
+    return { linia, imie: s.g.osoby[0].name };
+  }
+
+  it('dwie osoby: „X i jeszcze 1 osoba” / „X and 1 other”', () => {
+    const { linia, imie } = przyjecie(2);
+    expect(linia.pl).toBe(`Przyjęliście: ${imie} i jeszcze 1 osoba.`);
+    expect(linia.en).toBe(`You took in ${imie} and 1 other.`);
+  });
+
+  it('trzy, pięć i sześć osób: odmiana polska i angielska liczba mnoga', () => {
+    expect(przyjecie(3).linia.pl).toContain('i jeszcze 2 osoby.');
+    expect(przyjecie(3).linia.en).toContain('and 2 others.');
+    expect(przyjecie(5).linia.pl).toContain('i jeszcze 4 osoby.');
+    expect(przyjecie(6).linia.pl).toContain('i jeszcze 5 osób.');
+    expect(przyjecie(6).linia.en).toContain('and 5 others.');
+  });
+
+  it('jedna osoba: samo imię i nazwisko, bez „i jeszcze”', () => {
+    const { linia, imie } = przyjecie(1);
+    expect(linia.pl).toBe(`Przyjęliście: ${imie}.`);
+    expect(linia.en).toBe(`You took in ${imie}.`);
+  });
 });

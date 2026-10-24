@@ -80,7 +80,7 @@
 import type { Dom } from '../content/data.ts';
 import type { ActiveEvent } from '../content/events.ts';
 import { type Person, g as plec } from '../content/people.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { mnogaPl, type Tx, tx } from '../core/jezyk.ts';
 import { hashString, pick, type Rng, rngOf } from '../core/rng.ts';
 import { type Miejsce, naMapieLokalnej } from '../world/miasto.ts';
 import {
@@ -114,7 +114,7 @@ import {
   targetNameTx,
 } from './tresc.ts';
 import type { AktywnyGosc, FazaGoscia, GameMode, GoscRozkaz, GovEffects, GovGosc, GovInput, GovState } from './typy.ts';
-import { osob, osobyNaPodlodze } from './warianty.ts';
+import { osobyNaPodlodze } from './warianty.ts';
 import { addStock, logGov, nightDay, porcje, portions, stockNow } from './wspolne.ts';
 import { celZMiejsca, MAX_OKOLICA_M, zostaloZMiejsca } from './wyprawy.ts';
 import {
@@ -805,6 +805,15 @@ const mowiacy = (g: Gosc): Person => g.osoby[0];
 const wielu = (g: Gosc): boolean => g.osoby.length > 1;
 /** zaimek w bierniku po angielsku: him, her, them */
 const goEn = (g: Gosc): string => (wielu(g) ? 'them' : mowiacy(g).f ? 'her' : 'him');
+/** zaimek dzierżawczy po angielsku: his, her, their (jeden gość mówi o sobie w liczbie pojedynczej, grupa w mnogiej) */
+const jegoEn = (g: Gosc): string => (wielu(g) ? 'their' : mowiacy(g).f ? 'her' : 'his');
+/** zaimek podmiotu po angielsku z czasownikiem „mieć”: „He has”, „She has”, „They have” (małą literą: `maEn(g, false)`) */
+const maEn = (g: Gosc, wielka = true): string => {
+  const z = wielu(g) ? 'they have' : mowiacy(g).f ? 'she has' : 'he has';
+  return wielka ? `${z[0].toUpperCase()}${z.slice(1)}` : z;
+};
+/** podmiot „He”/„She”/„They” do zdania o jednym gościu albo o grupie */
+const onEn = (g: Gosc): string => (wielu(g) ? 'They' : mowiacy(g).f ? 'She' : 'He');
 const ludzieEn = (n: number): string => `${n} ${n === 1 ? 'person' : 'people'}`;
 
 /** Gość tak, jak widzi go karta: tylko żywi członkowie grupy, w kolejności symulacji (`GovGosc.zywi`: indeksy w `osoby`),
@@ -830,13 +839,17 @@ export function widoczny(g: Gosc, w: GovGosc | null): Gosc {
   return out;
 }
 
-/** kto w zdaniu o grupie: samo imię i nazwisko albo mówiący z resztą i liczbą osób */
+/** Kto w zdaniu o grupie: samo imię i nazwisko albo mówiący i liczba POZOSTAŁYCH osób („Adam Kowalski i jeszcze 1 osoba”,
+    „Adam Kowalski and 2 others”). Wcześniej „i reszta (2 osoby)” przy grupie dwóch osób czytało się jak trzy. */
 function kto(g: Gosc): Tx {
   const p = mowiacy(g);
-  const n = g.osoby.length;
-  return n === 1
+  const reszta = g.osoby.length - 1;
+  return reszta === 0
     ? tx(p.name, p.name)
-    : tx(`${p.name} i reszta (${n} ${osob(n)})`, `${p.name} and the others (${ludzieEn(n)})`);
+    : tx(
+        `${p.name} i jeszcze ${mnogaPl(reszta, 'osoba', 'osoby', 'osób')}`,
+        `${p.name} and ${reszta} ${reszta === 1 ? 'other' : 'others'}`,
+      );
 }
 
 /** lista rzeczy gościa do zdania o nagrodzie */
@@ -933,11 +946,11 @@ function poObejrzeniu(g: Gosc, v: 'ugryziony' | 'czysty'): Tx {
   return v === 'ugryziony'
     ? tx(
         `Obejrzeliście ręce. U ${b.first} pod rękawem jest świeże ugryzienie.`,
-        `You checked their hands. ${b.first} has a fresh bite under the sleeve.`,
+        `You checked ${jegoEn(g)} hands. ${b.first} has a fresh bite under the sleeve.`,
       )
     : tx(
         'Obejrzeliście ręce: czyste, bez śladu zębów. Obrażona cisza trwa dłuższą chwilę.',
-        'You checked their hands: clean, no sign of teeth. An offended silence hangs in the air.',
+        `You checked ${jegoEn(g)} hands: clean, no sign of teeth. An offended silence hangs in the air.`,
       );
 }
 
@@ -1040,7 +1053,7 @@ export function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
     run: przyjecie(true),
   };
   const leki: GChoice = {
-    label: tx('Dać leki (Leki 1)', 'Give them meds (Meds 1)'),
+    label: tx('Dać leki (Leki 1)', `Give ${go} meds (Meds 1)`),
     ok: pod && h.res.leki >= 1,
     run: () => {
       h.addRes('leki', -1);
@@ -1068,13 +1081,16 @@ export function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
       h.log(
         tx(
           'Zawiniątko leży w składziku pod kluczem. Wrócą po nie przy pierwszej okazji.',
-          'The bundle sits in the storeroom under lock and key. They will be back for it at the first opportunity.',
+          `The bundle sits in the storeroom under lock and key. ${onEn(g0)} will be back for it at the first opportunity.`,
         ),
       );
     },
   };
   const wiadomosc: GChoice = {
-    label: tx('Wysłuchać, co mają do powiedzenia', 'Hear what they have to say'),
+    label: tx(
+      'Wysłuchać, co mają do powiedzenia',
+      wielu(g) ? 'Hear what they have to say' : `Hear what ${maEn(g, false)} to say`,
+    ),
     ok: pod,
     run: () => {
       h.goscRozkaz(id, 'odejdz', 'nakarmiony');
@@ -1100,7 +1116,7 @@ export function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
     },
   };
   const obejrzec: GChoice = {
-    label: tx('Obejrzeć ręce', 'Check their hands'),
+    label: tx('Obejrzeć ręce', `Check ${jegoEn(g)} hands`),
     ok: pod,
     zostaje: true,
     run: () => {
@@ -1177,7 +1193,7 @@ function wyboryZlapanego(h: GovHost, d: DaneGoscia): GChoice[] {
   const gate = h.wordsEn().brama;
   return [
     {
-      label: tx('Oddać jedzenie i wyrzucić', 'Take the food back and throw them out'),
+      label: tx('Oddać jedzenie i wyrzucić', `Take the food back and throw ${goEn(g)} out`),
       ok: zl,
       run: () => {
         h.goscRozkaz(id, 'puscic');
@@ -1191,7 +1207,7 @@ function wyboryZlapanego(h: GovHost, d: DaneGoscia): GChoice[] {
       },
     },
     {
-      label: tx('Wyrzucić z łupem', 'Throw them out with the loot'),
+      label: tx('Wyrzucić z łupem', `Throw ${goEn(g)} out with the loot`),
       ok: zl,
       run: () => {
         h.goscRozkaz(id, 'odejdz', 'zlapany');
@@ -1205,7 +1221,7 @@ function wyboryZlapanego(h: GovHost, d: DaneGoscia): GChoice[] {
       },
     },
     {
-      label: tx('Zatrzymać do rana', 'Hold them until morning'),
+      label: tx('Zatrzymać do rana', `Hold ${goEn(g)} until morning`),
       ok: zl && !!h.doSprawdzenia(),
       run: () => {
         const straznik = h.doSprawdzenia();
