@@ -25,7 +25,10 @@
    Kroki bez warunku wstępnego mają `w(h) = 0` (nie wypadają): bez mieszkańców z generatora nie ma `puszki`, `pluca` i drugiej
    połowy `aktywistka`, pies pojawia się tylko bez psa, handlarz tylko pod bramą. Haki mają przestrzeń `idLancucha.`, id kroków
    to `idLancucha_nr`. "Zimno" w `aktywistka` to co najwyżej 5°C na dworze albo szósta doba gry (gra zaczyna się jesienią, więc
-   kalendarzowej zimy nie ma). Nic tu nie losuje poza tym, co daje host (nowi ludzie z ziarna zarządu w `make`), a angielskie
+   kalendarzowej zimy nie ma). Pierwszej nocy (do 8:00 drugiego dnia) wolno tylko trzem krokom (flaga `first`): „Światło w oknie”,
+   „Ktoś woła z dachu” i „Pies ujada nocami”, które zajmują miejsce kart z puli pierwszej nocy (`sygnal`, `pies`); satyra i lore
+   (list z 2026 i reszta) dopiero od drugiego dnia (decyzja Mateusza, 17.10.2026; pilnuje tego tests/unit/pierwszy-dzien.test.ts).
+   Nic tu nie losuje poza tym, co daje host (nowi ludzie z ziarna zarządu w `make`), a angielskie
    teksty nie losują wcale. */
 
 import { zawodEn } from '../content/data.en.ts';
@@ -66,9 +69,9 @@ const on = (p: { f: boolean }, he: string, she: string): string => (p.f ? she : 
 const pan = (p: { f: boolean; name: string }): string => `${plec(p, 'Pan', 'Pani')} ${p.name}`;
 
 /** brama albo furtka we wszystkich formach, których potrzebują teksty (słownik miejsca z hosta; narzędnik dopisany tu) */
-function brama(h: GovHost): { m: string; d: string; b: string; n: string; przy: string; pod: string; spod: string } {
+function brama(h: GovHost): { d: string; n: string } {
   const b = h.words().brama;
-  return { ...b, n: b.m === 'furtka' ? 'furtką' : 'bramą', spod: `spod ${b.d}` };
+  return { d: b.d, n: b.m === 'furtka' ? 'furtką' : 'bramą' };
 }
 /** piwnica w bloku, szopa w domu (jak w kartach z puli): „w piwnicy”, „piwnicę”, „z piwnicy”, angielski rzeczownik */
 const piwnica = (h: GovHost): { w: string; b: string; z: string; en: string } =>
@@ -585,8 +588,8 @@ const SZCZEKANIE: Lancuch = {
         const w = wstep[d.jak] ?? wstep.nic;
         const zombie = h.tryb() === 'zombie';
         return tx(
-          `${w.pl} Ślady urywają się ${gdzie.pl}.${zombie ? ' Szwendacze nie stawiają łap tak równo, więc to coś żywego.' : ''}`,
-          `${w.en} The trail stops ${gdzie.en}.${zombie ? ' Shamblers do not put their feet down so neatly, so this is something alive.' : ''}`,
+          `${w.pl} Ślady urywają się ${gdzie.pl}.${zombie ? ' Szwendacze nie mają łap, więc to coś żywego.' : ''}`,
+          `${w.en} The trail stops ${gdzie.en}.${zombie ? ' Shamblers do not have paws, so this is something alive.' : ''}`,
         );
       },
       choices: (h) => [
@@ -1110,7 +1113,7 @@ const WODA: Lancuch = {
               h.log(
                 tx(
                   `Przyjęliście rodzinę dzieciaków od wody: ${n} ${osob(n)}.${podloga > 0 ? ` ${osobyNaPodlodze(podloga)} spać na podłodze.` : ''}`,
-                  `You took in the family of the water kids: ${ludzieEn(n)}.${podloga > 0 ? ` ${ludzieEn(podloga)} will sleep on the floor.` : ''}`,
+                  `You took in the family of the water kids: ${ludzieEn(n)}.${podloga > 0 ? ` ${wielka(ludzieEn(podloga))} will sleep on the floor.` : ''}`,
                 ),
                 true,
               );
@@ -1153,7 +1156,7 @@ const LIST: Lancuch = {
       title: () => tx('List z 2026 roku', 'A letter from 2026'),
       text: (h) =>
         tx(
-          `Za zardzewiałą klapką skrzynki na listy ${dom(h) ? 'przy furtce' : 'na klatce'} przeleżała dwadzieścia pięć lat koperta. Stempel: październik 2026. Adresat: „Do wszystkich mieszkańców, bo nie wiem, kogo”. W środku jedna kartka, pisana ręcznie, bo drukarka, jak pisze nadawca, „zażądała aktualizacji”. Nadawca pracuje w firmie od recyklingu elektrośmieci i pisze, że w laboratorium dzieje się coś dziwnego: kable zrobiły się zielone w tydzień. Kierownik mówi, że to normalne, a asystent w systemie zgłoszeń odpowiada, że „rozumie obawy”. Nadawca prosi, żeby ktoś to jednak sprawdził, zanim się rozejdzie.`,
+          `Za zardzewiałą klapką skrzynki ${dom(h) ? 'na listy przy furtce' : 'pocztowej w klatce'} przeleżała dwadzieścia pięć lat koperta. Stempel: październik 2026. Adresat: „Do wszystkich mieszkańców, bo nie wiem, kogo”. W środku jedna kartka, pisana ręcznie, bo drukarka, jak pisze nadawca, „zażądała aktualizacji”. Nadawca pracuje w firmie od recyklingu elektrośmieci i pisze, że w laboratorium dzieje się coś dziwnego: kable zrobiły się zielone w tydzień. Kierownik mówi, że to normalne, a asystent w systemie zgłoszeń odpowiada, że „rozumie obawy”. Nadawca prosi, żeby ktoś to jednak sprawdził, zanim się rozejdzie.`,
           `Behind a rusty flap of the letterbox ${dom(h) ? 'by the garden gate' : 'in the stairwell'}, an envelope had lain for twenty-five years. Postmark: October 2026. Addressed to “All residents, because I don’t know whom”. Inside is a single handwritten page, because the printer, the writer says, “demanded an update”. The writer works for an e-waste recycling company and says something odd is going on in the lab: the cables turned green within a week. The manager says it is normal, and the assistant in the ticket system replies that it “understands the concern”. The writer asks that someone look into it before it spreads.`,
         ),
       choices: (h) => [
@@ -1650,8 +1653,8 @@ const OSTRZEGA: Lancuch = {
                     )
                 : tx('Noc minęła.', 'The night passed.');
         return tx(
-          `${noc.pl} Teraz ${s.brama.pod} znów stoi ${o.name}, ${plec(o, 'sam', 'sama')}, bez kurtki z napisem. Szef ochrony dowiedział się, kto ostrzegł, i ${plec(o, 'wyleciał', 'wyleciała')} z posady razem z mundurem. ${dom(h) ? 'Do zamkniętego kompleksu' : 'Do zamkniętego osiedla'} nie ma już po co wracać. Umie pilnować ${s.brama.d} i prosi o miejsce.`,
-          `${noc.en} Now ${o.name} is back at ${e.brama}, alone, without the jacket. The head of security found out who had given the warning, and ${on(o, 'he', 'she')} was thrown out of the job, uniform and all. There is no point going back to the ${dom(h) ? 'gated complex' : 'gated estate'}. ${on(o, 'He', 'She')} knows how to keep watch at ${e.brama} and asks for a place.`,
+          `${noc.pl} Teraz ${s.brama.pod} znów stoi ${o.name}, ${plec(o, 'sam', 'sama')}, bez kurtki z napisem. Szef ochrony dowiedział się, kto ostrzegł, i wyrzucił ${plec(o, 'go', 'ją')} z posady razem z mundurem. ${dom(h) ? 'Do zamkniętego kompleksu' : 'Do zamkniętego osiedla'} nie ma już po co wracać. Umie pilnować ${s.brama.d} i prosi o miejsce.`,
+          `${noc.en} Now ${o.name} is back at ${e.brama}, alone, without the jacket. The head of security found out who had given the warning and threw ${on(o, 'him', 'her')} out of the job, uniform and all. There is no point going back to the ${dom(h) ? 'gated complex' : 'gated estate'}. ${on(o, 'He', 'She')} knows how to keep watch at ${e.brama} and asks for a place.`,
         );
       },
       choices: (h, d) => {
@@ -1724,7 +1727,9 @@ const OSTRZEGA: Lancuch = {
 /** 8. Handlarz zostawia towar na kredyt → przy następnej wizycie prawdziwego handlarza (stoi pod bramą, `GovInput.handlarz`)
     upomina się o dług → lepsza oferta albo zła sława. Oba kroki są „pilne”: handlarz stoi pod bramą najwyżej trzy godziny gry,
     więc karta wypada, gdy tylko jest dojrzała. Towar z kredytu trafia do zapasów od razu, dług płaci się zapasami, a skutek
-    dla handlarza (`handlarzEfekt`) zmienia jego ofertę w symulacji. */
+    dla handlarza (`handlarzEfekt`) zmienia jego ofertę w symulacji: lepsza oferta to dziś ¼ taniej i jedna wymiana więcej, zła
+    sława to wyższe ceny i rzadsze wizyty. Karta czeka na odpowiedź dłużej, niż handlarz stoi, więc gdy odszedł, zamyka ją osobny
+    wybór „Handlarz już poszedł” (zawsze dostępny jest dokładnie jeden z wyborów: trzy za handlarza, ten bez niego). */
 const DLUG: Lancuch = {
   id: 'dlug',
   tryby: TYLKO_ZWYKLY,
@@ -2317,8 +2322,8 @@ const DOBICIE: Lancuch = {
             `${matka.name} is standing at ${e.brama}. She came with her son, but he is no longer at her side.`,
           );
         return tx(
-          `${wielka(s.brama.pod)} stoi kobieta i trzyma za rękę chłopca. ${b.first} ma rękaw podwinięty do łokcia i szmatę zawiązaną na przedramieniu. Matka, ${matka.name}, mówi spokojnie, bo nie ma już siły mówić inaczej: wie, czym się stanie. Prosi, żebyście zrobili to dzidą przez siatkę, zanim chłopiec zrozumie. Nie chce, żeby stał obok niej, kiedy się przemieni.`,
-          `A woman is standing at ${e.brama}, holding a boy by the hand. ${b.first} has one sleeve rolled up to the elbow and a rag tied round the forearm. The mother, ${matka.name}, speaks calmly, because she no longer has the strength to speak any other way: she knows what is going to happen to him. She asks you to do it with a spear through the fence, before the boy understands. She does not want him standing next to her when it happens.`,
+          `${wielka(s.brama.pod)} stoi kobieta i trzyma za rękę chłopca. To ${b.first}: rękaw ma podwinięty do łokcia, a na przedramieniu szmatę. Matka, ${matka.name}, mówi spokojnie, bo nie ma już siły mówić inaczej: wie, czym się stanie. Prosi, żebyście zrobili to dzidą przez siatkę, zanim chłopiec zrozumie. Nie chce, żeby stał obok niej, kiedy się przemieni.`,
+          `A woman is standing at ${e.brama}, holding a boy by the hand. His name is ${b.first}: one sleeve is rolled up to the elbow and a rag is tied round the forearm. The mother, ${matka.name}, speaks calmly, because she no longer has the strength to speak any other way: she knows what is going to happen to him. She asks you to do it with a spear through the fence, before the boy understands. She does not want him standing next to her when it happens.`,
         );
       },
       choices: (h, d) => {
