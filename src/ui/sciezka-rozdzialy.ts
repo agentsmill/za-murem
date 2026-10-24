@@ -31,8 +31,18 @@
    R5 „Jedzenie” uczy mapy miasta (wyprawa dzienna w drodze, łup z miejsc z mapy większy niż przy otwarciu) i ogródka. Cele
    z mapy istnieją tylko w grze z oknem mapy miasta, które gra zgłasza flagą `OdczytCelow.mapaMiasta`: z `?miasto=0` i na
    osiedlu zapasowym bez położenia przycisku mapy nie ma, choć `gov.miasto` istnieje; bez flagi, w testach, decyduje
-   `gov.miasto`. Rozdziały R2–R8 nie mają terminów: nic z nich nie przepada. R3 (praca ludzi) dochodzi po scaleniu
-   `praca-ludzi`, więc po R2 otwiera się R4.
+   `gov.miasto`. Rozdziały R2–R8 nie mają terminów: nic z nich nie przepada.
+
+   R3 „Praca” (stoi między R2 a R4) uczy panelu Pracy z gałęzi `praca-ludzi`: priorytetów rodzajów pracy (klik w komórkę),
+   stałego zajęcia z karty osoby i progów zapasów. Warunki czytają `st.praca`, czyli to, co zostawiają polecenia ustawień
+   (`prio`, `stale`, `prog`): jakakolwiek zmiana priorytetu, stałe zajęcie którejkolwiek osoby, jakikolwiek próg inny niż
+   domyślny. Symulacja zdejmuje ustawienie równe domyślnemu, więc samo kliknięcie, które wraca do domyślnej wartości, niczego
+   nie zalicza, a automat pracy niczego tu nie zapisuje (zaliczają się tylko ustawienia gracza). Rozdział jest tylko tam, gdzie
+   gra ma rodzaje pracy w panelu (`RODZAJE` widoczne w odczycie); bez nich ścieżka idzie z R2 prosto do R4, a zapisy ścieżki
+   sprzed R3 (otwarty R4 i późniejsze) dalej działają, bo rozdział, który już minęli, nie otwiera się wstecz. Celu „Pozwólcie
+   drwalowi wychodzić za siatkę” nie ma w żadnym trybie: przełącznik „może wychodzić za siatkę” jest domyślnie włączony w
+   zwykłym trybie (zaliczałby się sam) i wyłączony w zombie (tam projekt go nie chce), więc podpowiedź stałego zajęcia mówi o nim
+   jednym zdaniem, obok karty, na której ten przełącznik stoi.
 
    R6 „Badania” uczy pracowni, wyboru badania na tablicy (linia celu w oknie tablicy), stołu pracowni, pierwszej technologii
    i kartki z ery 2. Cele badań istnieją tylko tam, gdzie osada ma dość wiedzy na kartkę ery 1 albo 2 (`mozeWziacKartke`:
@@ -69,12 +79,14 @@ import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS } from '../sim/budowle.ts';
 import { minutesAt, TICKS_PER_DAY } from '../sim/clock.ts';
+import { RODZAJE } from '../sim/praca.ts';
 import { CAMPFIRE_WOOD, PATCH_COST, type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
 import { populacja } from '../sim/snapshot.ts';
 import { modeOf } from '../sim/tryb.ts';
 import { TUT_STEPS } from '../sim/tutorial.ts';
 import { costText } from './budowa.ts';
 import { type Goal, goalsOf, NIGHT_WOOD, najtanszeBudowle, zombieMode } from './cele.ts';
+import { nazwaRodzaju, ZA_SIATKE_ZOMBIE } from './praca.ts';
 import type { DefCelu, DefRozdzialu, OdczytCelow, StanSciezki } from './sciezka.ts';
 import { manyEn, num } from './tekst.ts';
 
@@ -484,6 +496,90 @@ const R2: DefRozdzialu = {
         const straz = o.snap.people.filter((p) => n.assign?.[p.id] === SIATKA_KEY && p.weapon === 'dzida');
         return straz.length >= dwieOsoby(o);
       },
+    },
+  ],
+};
+
+/* ---------------------------------------------------------------- R3. Praca */
+
+/** Czy gracz zmienił priorytet w którejkolwiek komórce panelu Pracy: choć jedna osoba ma w `st.praca.osoby[*].prio` jakiś
+    rodzaj. Pole powstaje przy pierwszej zmianie, a ustawienie równe domyślnemu symulacja zdejmuje. */
+const zmienionoPriorytet = (st: SimState): boolean =>
+  Object.values(st.praca?.osoby ?? {}).some((u) => Object.keys(u.prio ?? {}).length > 0);
+
+/** Czy któraś osoba ma stałe zajęcie wybrane na karcie (`st.praca.osoby[*].stale`). */
+const maStaleZajecie = (st: SimState): boolean => Object.values(st.praca?.osoby ?? {}).some((u) => !!u.stale);
+
+/** Czy któryś próg zapasu jest inny niż domyślny (`st.praca.progi`; próg równy domyślnemu symulacja zdejmuje). */
+const zmienionoProg = (st: SimState): boolean => Object.keys(st.praca?.progi ?? {}).length > 0;
+
+/** Podpowiedź pierwszego celu: panel Pracy (przycisk w pasku u góry i klawisz P, na dotyku sam przycisk) i klik albo stuknięcie
+    w komórkę tabeli. */
+function priorytetJak(o: OdczytCelow): string {
+  return L(
+    `${o.touch ? 'Przycisk Praca u góry: stuknięcie' : 'Praca (przycisk u góry albo P): klik'} w komórkę zmienia priorytet, 1 to najpierw, puste: nie robi. Bez rozkazów ludzie biorą prace z tej tabeli po kolei, a polecenie zawsze wygrywa.`,
+    `${o.touch ? 'The Work button at the top: tap' : 'Work (button at the top, or P): click'} a cell to change the priority; 1 goes first, blank means they won’t do it. With no orders, people take jobs from this table in turn, and an order always comes first.`,
+  );
+}
+
+/** Podpowiedź stałego zajęcia z jednym zdaniem o przełączniku „Może wychodzić za siatkę”, który stoi na tej samej karcie. Cel
+    „włączcie przełącznik” nie istnieje w żadnym trybie (domyślnie włączony w zwykłym, wyłączony w zombie), więc zdanie mówi, jak
+    jest: przełącznik ustawia się osobno dla każdej osoby (`aria-pressed` na karcie), w zwykłym trybie jest domyślnie włączony i
+    za dnia ludzie sami wychodzą za siatkę, w zombie domyślnie wyłączony i to ryzyko ugryzienia (to samo ostrzeżenie co w panelu
+    Pracy i na karcie, `ZA_SIATKE_ZOMBIE`). Przykłady rodzajów (Drwal, Szaber) mają nazwy z listy rozwijanej na karcie. */
+function staleJak(o: OdczytCelow): string {
+  const zombie = zombieMode(o.st, o.gov);
+  const rodzaje = `${nazwaRodzaju('drwal', false)} albo ${nazwaRodzaju('szaber', false)}`;
+  const rodzajeEn = `${nazwaRodzaju('drwal', true)} or ${nazwaRodzaju('szaber', true)}`;
+  return L(
+    `Na karcie osoby wybierzcie „Stałe zajęcie”, na przykład ${rodzaje}: te zlecenia weźmie przed wszystkimi innymi. Obok jest przełącznik „Może wychodzić za siatkę”, ustawiany osobno dla każdej osoby; domyślnie jest ${
+      zombie
+        ? `wyłączony. ${ZA_SIATKE_ZOMBIE.pl}`
+        : 'włączony, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.'
+    }`,
+    `On a person’s card pick a “Fixed job”, for example ${rodzajeEn}: they take those jobs before anything else. Beside it is a “Can go outside the fence” switch, set separately for each person; it is ${
+      zombie
+        ? `off by default. ${ZA_SIATKE_ZOMBIE.en}`
+        : 'on by default, so by day people go outside the fence on their own for wood and loot.'
+    }`,
+  );
+}
+
+/** Podpowiedź progów zapasów: plus i minus przy drewnie, deskach i częściach, a w trybie zombie także przy dzidach (panel
+    Pracy pokazuje dzidy tylko tam). */
+function zapasJak(o: OdczytCelow): string {
+  const zombie = zombieMode(o.st, o.gov);
+  const rzeczy = zombie ? 'drewnie, deskach, częściach i dzidach' : 'drewnie, deskach i częściach';
+  const rzeczyEn = zombie ? 'wood, planks, parts and spears' : 'wood, planks and parts';
+  return L(
+    `Praca, „Trzymać w zapasie”: ${o.touch ? 'stuknijcie plus albo minus' : 'plus i minus'} przy ${rzeczy}. Drwal i warsztat pracują do tego progu.`,
+    `Work, “Keep in stock”: ${o.touch ? 'tap plus or minus' : 'plus and minus'} beside ${rzeczyEn}. Woodcutters and the workshop work up to that level.`,
+  );
+}
+
+const R3: DefRozdzialu = {
+  k: 'r3',
+  tytul: () => L('Praca', 'Work'),
+  // tylko tam, gdzie gra ma rodzaje pracy w panelu Pracy (`RODZAJE` widoczne w odczycie); bez nich ścieżka idzie z R2 do R4
+  jest: (o) => RODZAJE.some((r) => o.snap.praca.widoczne.includes(r)),
+  cele: [
+    {
+      key: 'priorytet',
+      tekst: () => L('Ustawcie, kto czym zajmuje się sam.', 'Set who does what on their own.'),
+      jak: priorytetJak,
+      zrobiony: (o) => zmienionoPriorytet(o.st),
+    },
+    {
+      key: 'stale',
+      tekst: () => L('Dajcie komuś stałe zajęcie.', 'Give someone a fixed job.'),
+      jak: staleJak,
+      zrobiony: (o) => maStaleZajecie(o.st),
+    },
+    {
+      key: 'zapas',
+      tekst: () => L('Ustawcie, ile czego trzymać w zapasie.', 'Set how much to keep in stock.'),
+      jak: zapasJak,
+      zrobiony: (o) => zmienionoProg(o.st),
     },
   ],
 };
@@ -916,8 +1012,8 @@ const R7: DefRozdzialu = {
           : L('Porozmawiajcie z lokatorami.', 'Talk to the residents next door.'),
       jak: () =>
         L(
-          'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas (… szans)”. Kto was zna, chętniej pomoże.',
-          'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you (… chance)”. People who know you are more willing to help.',
+          'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”. Przy tej pozycji okno podaje szansę w procentach. Kto was zna, chętniej pomoże.',
+          'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you”. The window shows the chance in percent beside it. People who know you are more willing to help.',
         ),
       okno: 'spotkanie',
       // Licznik spotkań rośnie z początkiem spotkania, a liczą się tylko te po otwarciu rozdziału. Cel zalicza się dopiero,
@@ -1027,9 +1123,13 @@ const R8: DefRozdzialu = {
         const nazwa = d ? tr(d.nazwa) : L('Nowe osiedle', 'A new estate');
         const ile = osoby(d?.postep?.ile ?? 0);
         const cel = osoby(d?.postep?.cel ?? 0);
+        // wędrowcy (w trybie zombie ocaleni, jak w okazji wędrowca) przychodzą po zaproszeniu przez siatkę
+        const kto = zombieMode(o.st, o.gov)
+          ? { pl: 'ocalałych', en: 'survivors' }
+          : { pl: 'wędrowców', en: 'wanderers' };
         return L(
-          `${nazwa}: ${ile} z ${cel}. Ludzie przychodzą z kart wydarzeń i od sąsiadów („Zaprosić do nas”).`,
-          `${nazwa}: ${ile} of ${cel}. People come from event cards and from next door (“Invite them to join you”).`,
+          `${nazwa}: ${ile} z ${cel}. Ludzie przychodzą z kart wydarzeń, od sąsiadów („Zaprosić do nas”) i spośród ${kto.pl}.`,
+          `${nazwa}: ${ile} of ${cel}. People come from event cards, from next door (“Invite them to join you”) and from ${kto.en}.`,
         );
       },
       // kolejny kamień drogi ludnościowej niż przy otwarciu rozdziału; kamień liczy krok zarządu, nie to okienko
@@ -1088,7 +1188,7 @@ export function wierszeDrog(o: OdczytCelow): { nazwa: string; dalej: string; pos
   );
 }
 
-/** Rozdziały głównej ścieżki po kolei: pierwszy dzień, drugi dzień, ludzie i noc, zarząd, jedzenie, badania, sąsiedzi, drogi
-    do zwycięstwa. R3 (praca ludzi) dochodzi po scaleniu `praca-ludzi`; do tego czasu po R2 otwiera się R4. Po R8 jest
-    „koniec”, a okienko pokazuje drogi do zwycięstwa (`wierszeDrog`). */
-export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1, R2, R4, R5, R6, R7, R8];
+/** Rozdziały głównej ścieżki po kolei: pierwszy dzień, drugi dzień, ludzie i noc, praca (tylko z panelem Pracy), zarząd,
+    jedzenie, badania, sąsiedzi, drogi do zwycięstwa. Po R8 jest „koniec”, a okienko pokazuje drogi do zwycięstwa
+    (`wierszeDrog`). */
+export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1, R2, R3, R4, R5, R6, R7, R8];

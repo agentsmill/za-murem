@@ -24,10 +24,17 @@
    badania) także wtedy, gdy nikt nie umiera (`bezsmierci`), więc czerwony kod z zombie zasłaniałby w bocie każdą
    prawdziwą regresję w trybie zwykłym. To pytanie o projekt ścieżki w zombie (przegląd spójności), nie o bota; gdy
    zapadnie decyzja, zombie wraca do kodu wyjścia.
+   Do kodu wyjścia dochodzi krótki dodatkowy przebieg trybu zwykłego z `werbunek` na każdym demie (po przebiegach i tabeli;
+   gdy `werbunek` jest w argumentach, każdy przebieg zwykły taki jest, więc dodatkowego nie ma, a przy samym `zombie`,
+   `bezsmierci` i `przybysz` też go nie ma). Wczesne zaproszenie to dokładnie to, co mówi podpowiedź O1.3, a żadna inna
+   bramka nie widzi regresji, która by taką grę zatrzymała (testy jednostkowe nie przechodzą potem przez R4 do R8). Przebieg
+   wymaga, żeby pierwszy wędrowiec stanął przy siatce drugiego dnia, żeby w oknie jego okazji zaliczyły się `o1.zagadaj`
+   i `o1.zapros` i żeby wszystkie rozdziały skończyły się w limicie dni. Zombie zostaje informacją także tutaj: pytanie o
+   rękę (O1.2) bot robi tylko w przebiegach zombie z `werbunek`, a one kodu wyjścia nie zmieniają.
    Rozdział, którego nie da się skończyć na jakiejś mapie, poprawia się w celu albo w jego zapasowym warunku (projekt i
    kod ścieżki), nie w bocie.
 
-   Uruchomienie: npm run bot:cele [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [cele] [gadaj] [rownolegle] [karty] [lancuchy=0]
+   Uruchomienie: npm run bot:cele [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [cele] [gadaj] [rownolegle] [werbunek] [karty] [lancuchy=0]
    - dni (domyślnie 10), `zwykly` albo `zombie` i `--demo=NAZWA` (przymorze, lanciego, zielonki) zawężają przebiegi;
    - `ziarno:N` przesuwa ziarno gry względem adresu dema: inna gra na tym samym osiedlu, do sprawdzenia, czy wynik nie
      jest przypadkiem;
@@ -37,6 +44,15 @@
      scalenia etapów 4–5 wydarzeń);
    - `rownolegle`: gracz robi od razu wszystkie niezrobione cele rozdziału, a nie tylko bieżący (domyślnie bieżący, bo
      tylko jego podpowiedź jest na ekranie);
+   - `werbunek`: gracz robi też cele werbunku w okazji wędrowca (O1.2 pytanie o rękę w zombie, O1.3 zaproszenie), czyli
+     zaprasza pierwszego wędrowca już drugiego dnia. Domyślnie nie: wędrowców zaprasza wtedy tylko przy celach „Przyjmijcie
+     kogoś nowego” (R4) i „kolejny kamień ludności” (R8), a przebiegi i czasy celu `nowi` zostają takie jak przed okazją
+     z werbunkiem (z `werbunek` gra idzie inaczej już od drugiego dnia, a `nowi` w trybie zwykłym zalicza się na tych trzech
+     osiedlach o 5 do 20 godzin później). Dlatego tabela i godziny z domyślnego uruchomienia są bez werbunku, a przebieg
+     z werbunkiem trybu zwykłego robi się osobno, po tabeli, i wchodzi do kodu wyjścia (zob. wyżej);
+   - R3 „Praca”: gracz robi trzy ustawienia z panelu Pracy i z karty osoby, które nie ruszają przebiegu gry (Szaber 3 → 4
+     u pierwszej osoby, jej stałe zajęcie „Ogień” i próg części o 5 wyżej), więc rozdział trwa 3 do 5 minut gry, R4 otwiera
+     się o tyle później, a godziny celów we wszystkich pozostałych rozdziałach zostają co do minuty takie jak bez R3;
    - `karty` dopisuje analizę R4 „Przyjmijcie kogoś nowego” (okno od otwarcia R4 do zaliczenia celu albo końca gry): karty
      zdarzeń, w tym karty gości i kroki łańcuchów, ile z nich oferowało przyjęcie i ile przyjęto (wraz ze zmianą ludności po
      dwóch godzinach gry), rozmowy, pytania o rękę i zaproszenia wędrowców przy siatce, zmiany ludności i godzinę celu `nowi`.
@@ -98,7 +114,7 @@ const obce = Object.entries(FLAGI_OBCE)
   .map(([k]) => k);
 if (obce.length) {
   console.error(
-    `bot:cele zawsze gra z mieszkańcami z adresu, sąsiadami, mapą miasta i drogami, więc nie zna flag: ${obce.join(', ')}. Zna tylko --demo=NAZWA, dni, zwykly|zombie, gadaj, cele, rownolegle, karty, lancuchy=0, bezsmierci, przybysz i ziarno:N.`,
+    `bot:cele zawsze gra z mieszkańcami z adresu, sąsiadami, mapą miasta i drogami, więc nie zna flag: ${obce.join(', ')}. Zna tylko --demo=NAZWA, dni, zwykly|zombie, gadaj, cele, rownolegle, werbunek, karty, lancuchy=0, bezsmierci, przybysz i ziarno:N.`,
   );
   process.exit(2);
 }
@@ -112,6 +128,7 @@ const TRYB = ARGUMENTY.find((a) => a === 'zwykly' || a === 'zombie') as GameMode
 const GADAJ = ARGUMENTY.includes('gadaj');
 const CELE = ARGUMENTY.includes('cele');
 const ROWNOLEGLE = ARGUMENTY.includes('rownolegle');
+const WERBUNEK = ARGUMENTY.includes('werbunek');
 const KARTY = ARGUMENTY.includes('karty');
 /** łańcuchy kart i wątki sezonu zarządu jak w grze w przeglądarce (`newGov(…, true)` w src/main.ts); `lancuchy=0` je wyłącza,
     jak adres `?lancuchy=0` */
@@ -123,7 +140,18 @@ const PRZESUNIECIE = Number(ARGUMENTY.find((a) => /^ziarno:\d+$/.test(a))?.slice
 const nieznaneArgumenty = ARGUMENTY.filter(
   (a) =>
     !/^\d+$/.test(a) &&
-    !['zwykly', 'zombie', 'gadaj', 'cele', 'rownolegle', 'karty', 'lancuchy=0', 'bezsmierci', 'przybysz'].includes(a) &&
+    ![
+      'zwykly',
+      'zombie',
+      'gadaj',
+      'cele',
+      'rownolegle',
+      'werbunek',
+      'karty',
+      'lancuchy=0',
+      'bezsmierci',
+      'przybysz',
+    ].includes(a) &&
     !/^ziarno:\d+$/.test(a),
 );
 if (nieznaneArgumenty.length || (DEMO !== null && !(DEMA as readonly string[]).includes(DEMO))) {
@@ -223,6 +251,10 @@ interface Wynik {
   demo: string;
   nazwa: string;
   tryb: GameMode;
+  /** gracz robił też cele werbunku w okazji wędrowca (argument `werbunek` albo dodatkowy przebieg trybu zwykłego) */
+  werbunek: boolean;
+  /** dodatkowy przebieg trybu zwykłego z werbunkiem, poza tabelą; do kodu wyjścia wchodzi razem z przebiegami zwykłymi */
+  dodatkowy: boolean;
   seed: number;
   zdarzenia: Zdarzenie[];
   /** jak się skończył przebieg: koniec limitu dni albo przegrana gra (z przyczyną) */
@@ -261,9 +293,18 @@ function roznica(przed: StanSciezki, po: StanSciezki, tick: number): Zdarzenie[]
 }
 
 /** Jedna gra przez `dni` dni: sekunda po sekundzie jak w grze przy tempie 1× (20 kroków symulacji, krok zarządu z oknami),
-    krok ścieżki co 200 ms i po każdym oknie, a gracz decyduje raz na sekundę. */
-async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wynik> {
+    krok ścieżki co 200 ms i po każdym oknie, a gracz decyduje raz na sekundę. `werbunek`: gracz robi też cele werbunku w
+    okazji wędrowca. `dodatkowy`: przebieg poza tabelą (bez analizy R4 z argumentu `karty`, żeby jej linie `R4LINIA` nie
+    dublowały przebiegów z tabeli). */
+async function przebieg(
+  demo: string,
+  tryb: GameMode,
+  dni: number,
+  werbunek = WERBUNEK,
+  dodatkowy = false,
+): Promise<Wynik> {
   const t0 = performance.now();
+  const analiza = KARTY && !dodatkowy;
   const g = await nowaGra(demo, tryb);
   const { sim } = g;
   const { st } = sim;
@@ -290,8 +331,8 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
     const nowe = roznica(przed, g.sciezka, st.tick);
     zdarzenia.push(...nowe);
     for (const z of nowe) {
-      if (KARTY && z.co === 'otwarcie' && z.klucz === 'r4') werbunek0 = gracz.werbunek();
-      if (KARTY && z.co === 'cel' && z.klucz === 'r4.nowi') werbunek1 = gracz.werbunek();
+      if (analiza && z.co === 'otwarcie' && z.klucz === 'r4') werbunek0 = gracz.werbunek();
+      if (analiza && z.co === 'cel' && z.klucz === 'r4.nowi') werbunek1 = gracz.werbunek();
       if (z.co === 'otwarcie' && z.klucz === 'r8')
         r8 = {
           kamien0: g.sciezka.start.kamienLudnosci,
@@ -313,6 +354,7 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
       if (GADAJ) console.log(`  ${hhmm(st.tick)} ${tekst}`);
     },
     ROWNOLEGLE,
+    werbunek,
   );
   gracz.start();
   const koniecTick = dni * TICKS_PER_DAY;
@@ -320,7 +362,7 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
   let przybyl = false;
   let ludnoscPoprz = populacja(st).razem;
   const naKarte = (p: Extract<Prompt, { k: 'wydarzenie' }>, k: number): void => {
-    if (!KARTY) return;
+    if (!analiza) return;
     const k0 = p.choices[k]?.label.pl ?? '';
     karty.push({
       ludnosc: LUDZIE.test(k0) ? { przed: populacja(st).razem } : undefined,
@@ -340,7 +382,7 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
       sim.step();
       if (t % 4 === 3) krokS();
     }
-    if (KARTY) {
+    if (analiza) {
       const razem = populacja(st).razem;
       if (razem !== ludnoscPoprz) zmiany.push({ tick: st.tick, d: razem - ludnoscPoprz });
       ludnoscPoprz = razem;
@@ -369,6 +411,8 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
     demo,
     nazwa: g.nazwa,
     tryb,
+    werbunek,
+    dodatkowy,
     seed: g.seed,
     zdarzenia,
     koniec: { tick: st.tick, przegrana },
@@ -376,7 +420,7 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
     r8,
     rozdzialy,
     uwagi: gracz.niezgodnosci(),
-    r4: KARTY ? analizaR4(zdarzenia, karty, zmiany, werbunek0, werbunek1, gracz.werbunek(), st.tick) : undefined,
+    r4: analiza ? analizaR4(zdarzenia, karty, zmiany, werbunek0, werbunek1, gracz.werbunek(), st.tick) : undefined,
     stan: {
       rozdzial: widok.rozdzial?.k ?? null,
       cele: (widok.rozdzial?.cele ?? []).map((c) => ({
@@ -529,10 +573,31 @@ function okazje(r: Wynik): string[] {
 const przepadle = (r: Wynik): string[] =>
   r.zdarzenia.filter((z) => z.co === 'przepadl').map((z) => `${z.klucz} (${hhmm(z.tick)})`);
 
+/** Powody, dla których przebieg zwykły z werbunkiem nie zrobił tego, co mówi podpowiedź O1.3 (zob. nagłówek): pierwszy
+    wędrowiec (okazja O1) ma stanąć przy siatce drugiego dnia, a w oknie jego okazji mają się zaliczyć `o1.zagadaj`
+    i `o1.zapros`. Puste, gdy się udało. */
+function powodyWerbunku(r: Wynik): string[] {
+  const otwarcie = r.zdarzenia.find((z) => z.co === 'okazja' && z.klucz === 'o1');
+  if (!otwarcie) return ['werbunek: żaden wędrowiec nie stanął przy siatce'];
+  if (dayOf(otwarcie.tick) !== 2)
+    return [`werbunek: pierwszy wędrowiec dopiero ${hhmm(otwarcie.tick)}, a ma stanąć przy siatce drugiego dnia`];
+  const zamkniecie =
+    r.zdarzenia.find((z) => z.co === 'okazja-koniec' && z.klucz === 'o1' && z.tick >= otwarcie.tick)?.tick ??
+    Number.POSITIVE_INFINITY;
+  const p: string[] = [];
+  for (const k of ['o1.zagadaj', 'o1.zapros']) {
+    const z = r.zdarzenia.find((q) => q.co === 'cel' && q.klucz === k);
+    if (!z || z.tick < otwarcie.tick || z.tick > zamkniecie)
+      p.push(`werbunek: ${k} niezaliczone w oknie pierwszego wędrowca (${hhmm(otwarcie.tick)})`);
+  }
+  return p;
+}
+
 /** Powody niepowodzenia przebiegu: przegrana gra, rozdział nieskończony w limicie, cel, który przepadł (gracz z
     podpowiedziami zdąży ze wszystkimi nocnymi celami; w zombie przepadają wtedy, gdy drewna na wieczór nie ma skąd wziąć,
-    czyli z tej samej przyczyny co przegrana gra) i napis menu niezgodny z podpowiedzią. Kod wyjścia 1 biorą z nich tylko
-    przebiegi zwykłe; powody przebiegów zombie idą do wyjścia jako informacja (zob. nagłówek). */
+    czyli z tej samej przyczyny co przegrana gra), napis menu niezgodny z podpowiedzią i, w przebiegu zwykłym z werbunkiem,
+    werbunek pierwszego wędrowca (`powodyWerbunku`). Kod wyjścia 1 biorą z nich tylko przebiegi zwykłe; powody przebiegów
+    zombie idą do wyjścia jako informacja (zob. nagłówek). */
 function powody(r: Wynik): string[] {
   const p: string[] = [];
   if (r.koniec.przegrana) p.push(`przegrana (${r.koniec.przegrana})`);
@@ -540,12 +605,13 @@ function powody(r: Wynik): string[] {
   if (brak.length) p.push(`nieskończone ${brak.join(', ')}`);
   if (przepadle(r).length) p.push(`przepadłe cele ${przepadle(r).join(', ')}`);
   if (r.uwagi.length) p.push(`menu niezgodne z podpowiedzią: ${r.uwagi.join('; ')}`);
+  if (r.werbunek && r.tryb === 'zwykly') p.push(...powodyWerbunku(r));
   return p;
 }
 
 function wypisz(r: Wynik): void {
   console.log(
-    `\n${r.nazwa}, ${tryb(r.tryb)}${BEZ_SMIERCI ? ' (BEZ ŚMIERCI, tylko do analizy)' : ''}${LANCUCHY ? '' : ' (bez łańcuchów kart)'}, ziarno ${r.seed.toString(16)} (${(r.ms / 1000).toFixed(1)} s)`,
+    `\n${r.nazwa}, ${tryb(r.tryb)}${r.werbunek ? ', z werbunkiem' : ''}${BEZ_SMIERCI ? ' (BEZ ŚMIERCI, tylko do analizy)' : ''}${LANCUCHY ? '' : ' (bez łańcuchów kart)'}, ziarno ${r.seed.toString(16)} (${(r.ms / 1000).toFixed(1)} s)`,
   );
   const { otwarcia, konce } = terminy(r);
   for (const x of r.rozdzialy) {
@@ -585,6 +651,21 @@ function wypisz(r: Wynik): void {
     for (const c of r.stan.cele.filter((q) => !q.done && !q.missed))
       console.log(`      ${c.key}: ${c.tekst} | ${c.jak}`);
   }
+}
+
+/** Skrót dodatkowego przebiegu z werbunkiem (poza tabelą): okno okazji pierwszego wędrowca z godzinami zaliczonych celów,
+    godzina celu `nowi` w R4 i koniec ostatniego rozdziału; powody niepowodzenia, jeśli są. */
+function wypiszWerbunek(r: Wynik): void {
+  const { konce } = terminy(r);
+  const nowi = r.zdarzenia.find((z) => z.co === 'cel' && z.klucz === 'r4.nowi');
+  const ostatni = r.rozdzialy.at(-1)?.k;
+  const koniec = ostatni === undefined ? undefined : konce.get(ostatni);
+  console.log(
+    `  ${r.nazwa.split(' ')[0]}: ${okazje(r).find((o) => o.startsWith('O1')) ?? 'bez okazji O1'}; R4 nowi ${
+      nowi ? hhmm(nowi.tick) : 'NIE'
+    }; koniec ${ostatni?.toUpperCase() ?? '?'} ${koniec === undefined ? 'NIE' : hhmm(koniec)} (${(r.ms / 1000).toFixed(1)} s)`,
+  );
+  for (const p of powody(r)) console.log(`    PRZYCZYNA: ${p}`);
 }
 
 /** tabela rozdziałów dla wszystkich przebiegów: otwarcie → koniec */
@@ -722,11 +803,24 @@ for (const demo of DEMO ? [DEMO] : DEMA)
     wypisz(r);
   }
 tabela(wyniki);
-const nazwaPrzebiegu = (r: Wynik): string => `${r.nazwa.split(' ')[0]} ${tryb(r.tryb)}`;
+// dodatkowy przebieg trybu zwykłego z werbunkiem (zob. nagłówek): osobno od tabeli, żeby jej godziny zostały bez werbunku
+const dodatkowe: Wynik[] = [];
+if (!WERBUNEK && TRYB !== 'zombie' && !BEZ_SMIERCI && !PRZYBYSZ) {
+  console.log(
+    '\nPrzebiegi zwykłe z werbunkiem (gracz zagaduje i zaprasza pierwszego wędrowca drugiego dnia; wchodzą do kodu wyjścia)',
+  );
+  for (const demo of DEMO ? [DEMO] : DEMA) {
+    const r = await przebieg(demo, 'zwykly', DNI, true, true);
+    dodatkowe.push(r);
+    wypiszWerbunek(r);
+  }
+}
+const nazwaPrzebiegu = (r: Wynik): string =>
+  `${r.nazwa.split(' ')[0]} ${tryb(r.tryb)}${r.dodatkowy ? ' z werbunkiem' : ''}`;
 const opisPowodow = (lista: Wynik[]): string =>
   lista.map((r) => `${nazwaPrzebiegu(r)}: ${powody(r).join(' i ')}`).join('; ');
-// kod wyjścia decyduje tylko tryb zwykły; zombie jest informacją (powód w nagłówku)
-const zwykle = wyniki.filter((r) => r.tryb === 'zwykly');
+// kod wyjścia decyduje tylko tryb zwykły (także przebieg z werbunkiem); zombie jest informacją (powód w nagłówku)
+const zwykle = [...wyniki.filter((r) => r.tryb === 'zwykly'), ...dodatkowe];
 const zombie = wyniki.filter((r) => r.tryb === 'zombie');
 const nieudane = zwykle.filter((r) => powody(r).length);
 const zombieZPowodami = zombie.filter((r) => powody(r).length);
@@ -741,6 +835,8 @@ else
   console.log(
     nieudane.length
       ? `\nNIEUDANE przebiegi zwykłe: ${nieudane.length} z ${zwykle.length} (${opisPowodow(nieudane)})`
-      : `\nTryb zwykły: wszystkie rozdziały skończone w ${DNI} dniach we wszystkich ${zwykle.length} przebiegach`,
+      : `\nTryb zwykły: wszystkie rozdziały skończone w ${DNI} dniach we wszystkich ${zwykle.length} przebiegach${
+          dodatkowe.length ? `, w tym ${dodatkowe.length} z werbunkiem pierwszego wędrowca drugiego dnia` : ''
+        }`,
   );
 process.exit(nieudane.length ? 1 : 0);

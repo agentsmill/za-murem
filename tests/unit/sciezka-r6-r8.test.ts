@@ -19,6 +19,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { TECH_DOMS } from '../../src/content/data.ts';
+import { WYBOR } from '../../src/content/napisy-sasiedzi.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
@@ -837,13 +838,15 @@ describe.each(KOMBINACJE)('R8 ludnosc: %s %s', (key, mode) => {
     const cal = celLudnosci(wejscie(g), mode);
     expect(d.postep).toEqual({ ile, cel: cal });
     expect(cel(g, 'ludnosc').text).toBe(d.dalej!.pl);
+    // po scaleniu pracy ludzi ludzie przychodzą też spośród wędrowców (w trybie zombie ocalałych, jak w okazji wędrowca)
+    const wedrowcy = mode === 'zombie' ? { pl: 'ocalałych', en: 'survivors' } : { pl: 'wędrowców', en: 'wanderers' };
     expect(cel(g, 'ludnosc').how).toBe(
-      `Nowe osiedle: ${ile} z ${cal}. Ludzie przychodzą z kart wydarzeń i od sąsiadów („Zaprosić do nas”).`,
+      `Nowe osiedle: ${ile} z ${cal}. Ludzie przychodzą z kart wydarzeń, od sąsiadów („Zaprosić do nas”) i spośród ${wedrowcy.pl}.`,
     );
     ustawJezyk('en');
     expect(cel(g, 'ludnosc').text).toBe(d.dalej!.en);
     expect(cel(g, 'ludnosc').how).toBe(
-      `A new estate: ${ile} of ${cal}. People come from event cards and from next door (“Invite them to join you”).`,
+      `A new estate: ${ile} of ${cal}. People come from event cards, from next door (“Invite them to join you”) and from ${wedrowcy.en}.`,
     );
     expect(polskieSlowa(cel(g, 'ludnosc').text + cel(g, 'ludnosc').how)).toEqual([]);
   });
@@ -1514,17 +1517,37 @@ describe('teksty R7 (blok i dom, zwykły tryb i zombie, mysz i dotyk, po polsku 
       }
   });
 
-  it('spotkanie: okno spotkania z wyborami z gry („Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”)', () => {
+  it('spotkanie: okno spotkania z wyborami z gry („Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”), a szansę w procentach podaje okno', () => {
     const g = wRozdziale('przymorze', 'zwykly', 'r7');
     expect(slowa(g, false, 'spotkanie')).toEqual({
       text: 'Porozmawiajcie z lokatorami.',
-      how: 'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas (… szans)”. Kto was zna, chętniej pomoże.',
+      how: 'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”. Przy tej pozycji okno podaje szansę w procentach. Kto was zna, chętniej pomoże.',
     });
     ustawJezyk('en');
     expect(slowa(g, false, 'spotkanie')).toEqual({
       text: 'Talk to the residents next door.',
-      how: 'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you (… chance)”. People who know you are more willing to help.',
+      how: 'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you”. The window shows the chance in percent beside it. People who know you are more willing to help.',
     });
+    ustawJezyk('pl');
+  });
+
+  it('spotkanie: podpowiedź cytuje napisy przycisków okna (WYBOR w src/content/napisy-sasiedzi.ts), zaproszenie bez liczby w nawiasie, i nie ma w niej niedokończonego „(…)”', () => {
+    const g = wRozdziale('przymorze', 'zwykly', 'r7');
+    for (const en of [false, true]) {
+      if (en) ustawJezyk('en');
+      const jezyk = (d: { pl: string; en: string }): string => (en ? d.en : d.pl);
+      const cytat = (t: string): string => (en ? `“${t}”` : `„${t}”`);
+      const how = slowa(g, false, 'spotkanie').how;
+      // przycisk zaproszenia w oknie ma szansę w nawiasie („Zaprosić do nas (45% szans)”), podpowiedź cytuje sam początek
+      const zaproszenie = jezyk(WYBOR.zaproszenie('45%'));
+      expect(zaproszenie).toMatch(en ? /\(45% chance\)$/ : /\(45% szans\)$/);
+      expect(how).toContain(cytat(jezyk(WYBOR.rozmowa())));
+      expect(how).toContain(cytat(jezyk(WYBOR.jedzenie())));
+      expect(how).toContain(cytat(zaproszenie.replace(/ \(.*\)$/, '')));
+      expect(how).toContain(en ? 'chance in percent' : 'szansę w procentach');
+      expect(how).not.toContain('…');
+    }
+    ustawJezyk('pl');
   });
 
   it('wejscie i szaber: blok z mieszkaniami i piętrami, dom bez słów z bloku; „głośno” z dopiskiem o szwendaczach w zombie', () => {
@@ -1859,7 +1882,8 @@ describe.each(KOMBINACJE)('stary zapis: „koniec” z wersji bez R6: %s %s', (k
     const tick = g.sim.st.tick;
     const zrobioneStare: Record<string, number> = {};
     const przepadle: string[] = [];
-    for (const r of ROZDZIALY.slice(0, 5))
+    // wersja bez R3 i bez R6–R8: pierwszy dzień do jedzenia (R0, R1, R2, R4, R5)
+    for (const r of ROZDZIALY.filter((x) => ['r0', 'r1', 'r2', 'r4', 'r5'].includes(x.k)))
       for (const c of r.cele) {
         // drewno na wieczór, drewno na noc i dyżur przepadają, jeśli nie zrobiono ich w nocy; reszta jest zrobiona
         if (['r0.drewno', 'r1.drewno2', 'r1.dyzur'].includes(`${r.k}.${c.key}`)) przepadle.push(`${r.k}.${c.key}`);

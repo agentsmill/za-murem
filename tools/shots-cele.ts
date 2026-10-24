@@ -1,5 +1,6 @@
 /* Zrzuty i sprawdzenia okienka celów ze ścieżki (src/ui/sciezka.ts) do `npm run shots` (scenariusze cele-* i en-cele-r1):
-   drugi dzień (R1) w bloku, w domu i w trybie zombie, cel czekający, okazje (handlarz, ugryzienie), linia „Cel: …” w oknach
+   drugi dzień (R1) w bloku, w domu i w trybie zombie, rozdział „Praca” (R3) obok panelu Pracy i karty osoby (`cele-r3*`) oraz
+   przeklikany prawdziwymi zdarzeniami (`cele-r3-ustawienia*`), cel czekający, okazje (handlarz, wędrowiec z werbunkiem, ugryzienie), linia „Cel: …” w oknach
    karty nocy, uchwały, spotkania z sąsiadami i na tablicy badań, widok dróg do zwycięstwa po ostatnim rozdziale (świeża gra),
    telefon 390×844 i 360 px, angielski bez polskich liter, okienko ograniczone do miejsca nad kartą osoby i przewijane do
    bieżącego celu (`cele-przewijanie`) oraz zaliczenie drewna na wieczór, które przeżywa zapis, zjedzenie zapasu przez kozę
@@ -239,6 +240,14 @@ async function rozdzial(page: Page, k: KluczRozdzialu, dobyTemu = 0): Promise<vo
     drogi), czekają, aż zniknie, tak jak w grze: inaczej zrzut pokazywałby obok rozdziału R4, R6, R7 albo „Dróg do
     zwycięstwa” zdanie o celach pierwszego dnia, którego gracz w tym rozdziale nie zobaczy. */
 async function poPodpowiedziStartowej(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 });
+}
+
+/** Wieść z rozmowy z wędrowcem (`say(…, 7000)` w main.ts, gdy `obcy.wiesc` się zmienia) wisi 7 s w podpowiedzi u dołu, na telefonie
+    wąskiej i wysokiej (`left: 50%` zostawia jej połowę szerokości), nad kartą osoby. Przez te sekundy może zakrywać dolną
+    krawędź okienka celów (przed zmianą podpowiedzi zaproszenia o 3 px, po niej o 20 px); mija sama, więc scenariusz sprawdza
+    układ po niej, jak gracz, który zdążył ją przeczytać. */
+async function poWiesci(page: Page): Promise<void> {
   await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 });
 }
 
@@ -1475,6 +1484,214 @@ export function celeShots(out: string): ShotCele[] {
       },
     });
 
+  /** Przewija drugi dzień do chwili, w której przy siatce stoi wędrowiec (okazja O1, zwykły tryb), z odpowiedziami na okna po
+      drodze. Pierwszy przychodzi drugiego dnia między 8:00 a 12:00 i stoi do 40 minut, więc krok jest krótki. */
+  const doWedrowca = async (page: Page, dotyk: boolean): Promise<void> => {
+    const limit = minutaGry(2, 22);
+    await przewin(
+      page,
+      async (t) => {
+        if (t > limit) throw new Error('wędrowiec nie stanął przy siatce do 22:00 dnia 2');
+        return (await widok(page)).okazja?.tytul === 'Teraz: wędrowiec przy siatce';
+      },
+      { dotyk, krok: () => 10 },
+    );
+    await page.waitForSelector('#goals .goals-okazja');
+  };
+
+  /** Prawy przycisk na wędrowcu przy siatce z zaznaczoną osobą (jak w grze): kamera na wędrowcu, menu pod kursorem, teksty pozycji. */
+  const menuNaWedrowcu = async (page: Page): Promise<string[]> => {
+    await kliknij(page, '#lista .lp >> nth=0', false);
+    await page.waitForSelector('#card:not([hidden])');
+    const xy = await page.evaluate(() => {
+      const zm = window.zm!;
+      const w = zm.sim!.st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1)!;
+      zm.setCam(w.x, w.y, 1.6);
+      return [w.x, w.y];
+    });
+    await waitIdle(page);
+    const [sx, sy] = await page.evaluate(([x, y]) => window.zm!.screenOf(x, y - 0.4), xy);
+    await page.mouse.click(sx, sy, { button: 'right' });
+    await page.waitForSelector('#ctx:not([hidden])');
+    return page.locator('#ctx .ctx-item').allTextContents();
+  };
+
+  /** Okazja z wędrowcem przy siatce (O1, zwykły tryb) nad rozdziałem „Drugi dzień”, na komputerze: dwa cele werbunku. Gracz robi
+      to, co mówią podpowiedzi: zaznacza osobę, prawym przyciskiem na wędrowcu wybiera „Zagadać”, a po rozmowie szuka w menu
+      „Zaprosić do nas”, czyli nazwy z podpowiedzi bez liczby. Menu ma przy niej prawdziwą szansę w procentach („Zaprosić do nas
+      (N% szans)”), a podpowiedź nie ma niedokończonego „(… szans)” i mówi, że szansę podaje menu. Zaproszenie zalicza cel, także
+      gdy wędrowiec odmówi, i zamyka okazję. */
+  const wedrowiec = (name: string): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w: 1440,
+      h: 900,
+      run: async (page, base) => {
+        await start(page, base, `demo=przymorze&${GRA}`);
+        await doDrugiegoDnia(page, false);
+        await doWedrowca(page, false);
+        await poHudzie(page);
+        const hm = await page.evaluate(
+          () => `${document.getElementById('hDay')!.textContent} ${document.getElementById('hTime')!.textContent}`,
+        );
+        console.log(`  wędrowiec przy siatce: ${hm}`);
+        // pierwszy cel: rozmowa, z podpowiedzią dla myszy; zaproszenie czeka pod nim bez podpowiedzi
+        await okazjaPrzedRozdzialem(page, name, 'Teraz: wędrowiec przy siatce', 'Drugi dzień');
+        let ok = await wiersze(page, 'okazja');
+        if (ok.map((x) => x.key).join() !== 'zagadaj,zapros' || !ok[0].klasy.includes('now') || ok[1].jak !== null)
+          throw new Error(`${name}: cele okazji ${ok.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        zawiera(name, ok[0].tekst, 'Zagadajcie wędrowca.');
+        zawiera(name, ok[0].jak ?? '', 'Zaznaczcie kogoś i prawy przycisk na wędrowcu', '„Zagadać”');
+        nieZawiera(name, ok[0].jak ?? '', 'palec');
+        zawiera(name, ok[1].tekst, 'Zaproście wędrowca do siebie.');
+        const wr = await wiersze(page, 'rozdzial');
+        if (wr.length !== 5 || wr.filter((x) => x.jak !== null).length > 1)
+          throw new Error(`${name}: rozdział pod okazją ${wr.map((x) => x.key).join()}`);
+        await sprawdzUklad(page, `${name} 1440×900, zagadać`, false, { zrzut: `${name}-zagadac` });
+        // „Zagadać” z menu na wędrowcu
+        const cam = await kamera(page);
+        let pozycje = await menuNaWedrowcu(page);
+        console.log(`  menu na wędrowcu: ${pozycje.join(' | ')}`);
+        if (!pozycje.includes('Zagadać')) throw new Error(`${name}: w menu wędrowca nie ma „Zagadać”`);
+        await zrzut(page, `${name}-menu-zagadac`);
+        await page.locator('#ctx .ctx-item', { hasText: /^Zagadać$/ }).click();
+        // osoba idzie do siatki i rozmawia kilka minut gry; po rozmowie bieżący jest cel zaproszenia
+        await przewin(page, async () => (await widok(page)).okazja?.biezacy?.key === 'zapros', {
+          dotyk: false,
+          krok: () => 2,
+          maks: 60,
+        });
+        await page.keyboard.press('Escape');
+        await przywrocKamere(page, cam);
+        await poHudzie(page);
+        // zaproszenie: podpowiedź cytuje „Zaprosić do nas” bez liczby i mówi, że szansę w procentach podaje menu
+        ok = await wiersze(page, 'okazja');
+        if (
+          ok.map((x) => x.key).join() !== 'zagadaj,zapros' ||
+          !ok[0].klasy.includes('done') ||
+          !ok[1].klasy.includes('now')
+        )
+          throw new Error(
+            `${name}: po rozmowie cele okazji ${ok.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`,
+          );
+        const jak = ok[1].jak ?? '';
+        zawiera(
+          name,
+          jak,
+          'Po rozmowie prawy przycisk na wędrowcu: „Zaprosić do nas”.',
+          'Gdy jest miejsce, menu podaje przy tej pozycji szansę w procentach',
+          'rośnie z jedzeniem w zapasie i wolnym łóżkiem, spada po napaści na obcych.',
+        );
+        nieZawiera(name, jak, '…', 'szans)');
+        await sprawdzUklad(page, `${name} 1440×900, zaprosić`, false, { zrzut: `${name}-zaprosic` });
+        // menu na wędrowcu ma tę pozycję, którą cytuje podpowiedź, i z prawdziwą szansą
+        pozycje = await menuNaWedrowcu(page);
+        console.log(`  menu na wędrowcu po rozmowie: ${pozycje.join(' | ')}`);
+        const zaprosic = pozycje.find((p) => /^Zaprosić do nas \(\d+% szans\)$/.test(p));
+        if (!zaprosic)
+          throw new Error(`${name}: w menu wędrowca nie ma „Zaprosić do nas (N% szans)”: ${pozycje.join(' | ')}`);
+        await zrzut(page, `${name}-menu-zaprosic`);
+        await page.locator('#ctx .ctx-item', { hasText: /^Zaprosić do nas/ }).click();
+        // próba zalicza cel i zamyka okazję: wędrowiec zostaje albo odmawia, a okazja i tak mija
+        await przewin(page, async () => !(await widok(page)).okazja, { dotyk: false, krok: () => 2, maks: 90 });
+        await poHudzie(page);
+        const wynik = await page.evaluate(() => {
+          const st = window.zm!.sim!.st;
+          return {
+            zwerbowany: (st.obcy?.werbunek ?? 0) > 0,
+            wiesc: st.obcy?.wiesc?.text.split('\n')[0] ?? '',
+          };
+        });
+        console.log(
+          `  po zaproszeniu: ${wynik.zwerbowany ? 'wędrowiec został' : 'wędrowiec odmówił'} (${wynik.wiesc}), okazja zamknięta`,
+        );
+        await przywrocKamere(page, cam);
+        await page.keyboard.press('Escape');
+        await poHudzie(page);
+      },
+    });
+
+  /** Okazja z wędrowcem na telefonie (390×844): okienko zwinięte do samej okazji z bieżącym celem i podpowiedzią dla dotyku
+      („Stuknijcie kogoś i przytrzymajcie palec na wędrowcu”), po stuknięciu w nagłówek okazja nad rozdziałem. Rozmowę zleca
+      polecenie `talk` wprost do symulacji (długiego przytrzymania na mapie scenariusz nie sprawdza); po niej bieżący jest cel
+      zaproszenia z najdłuższą podpowiedzią okazji, w obu stanach okienka z kartą osoby i panelem budowy. */
+  const wedrowiecTelefon = (name: string, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      touch: true,
+      run: async (page, base) => {
+        await start(page, base, `demo=przymorze&${GRA}`);
+        await doDrugiegoDnia(page, true);
+        await doWedrowca(page, true);
+        await poHudzie(page);
+        /** zwinięte okienko ma tylko okazję (bez rozdziału) i jej bieżący cel z podpowiedzią */
+        const zwiniete = async (klucz: string, ...fragmenty: string[]): Promise<void> => {
+          await ustawOkienko(page, false, true);
+          const blok = await page.evaluate(() => ({
+            rozdzial: !!document.querySelector('#goals ol[data-blok="rozdzial"]'),
+            okazja: document.querySelector('#goals .goals-okazja .goals-head span')?.textContent ?? '',
+            rozwiniete: document.querySelector('#goals .goals-head')?.getAttribute('aria-expanded'),
+          }));
+          if (blok.rozdzial || blok.okazja !== 'Teraz: wędrowiec przy siatce' || blok.rozwiniete !== 'false')
+            throw new Error(`${name}: zwinięte okienko z okazją: ${JSON.stringify(blok)}`);
+          const ok = await wiersze(page, 'okazja');
+          if (ok.length !== 1 || ok[0].key !== klucz || !ok[0].klasy.includes('now') || !ok[0].jak)
+            throw new Error(`${name}: zwinięta okazja ${ok.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+          zawiera(name, ok[0].jak, ...fragmenty);
+          nieZawiera(name, ok[0].jak, 'prawy przycisk', 'Kliknijcie', 'Zaznaczcie');
+        };
+        // przed rozmową
+        await zwiniete('zagadaj', 'Stuknijcie kogoś i przytrzymajcie palec na wędrowcu', '„Zagadać”');
+        await sprawdzUklad(page, `${name} ${w}×${h}, zagadać, zwinięte`, true, { zrzut: `${name}-zagadac-zwiniete` });
+        await ustawOkienko(page, true, true);
+        await okazjaPrzedRozdzialem(page, name, 'Teraz: wędrowiec przy siatce', 'Drugi dzień');
+        await sprawdzUklad(page, `${name} ${w}×${h}, zagadać, rozwinięte`, true, {
+          zrzut: `${name}-zagadac-rozwiniete`,
+          rozwiniete: true,
+        });
+        // rozmowa jak po „Zagadać” z menu: polecenie `talk` osoby z zarządu do wędrowca przy siatce
+        await page.evaluate(() => {
+          const sim = window.zm!.sim!;
+          const wd = sim.st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1)!;
+          const kto = sim.st.pawns.find((p) => p.kind === 'core')!;
+          sim.push({ t: 'talk', ids: [kto.id], target: wd.id });
+        });
+        await przewin(page, async () => (await widok(page)).okazja?.biezacy?.key === 'zapros', {
+          dotyk: true,
+          krok: () => 2,
+          maks: 60,
+        });
+        await poWiesci(page);
+        await poHudzie(page);
+        // po rozmowie: bieżące jest zaproszenie, z podpowiedzią bez „(… szans)”
+        await zwiniete(
+          'zapros',
+          'Po rozmowie przytrzymajcie palec na wędrowcu: „Zaprosić do nas”.',
+          'Gdy jest miejsce, menu podaje przy tej pozycji szansę w procentach',
+        );
+        await sprawdzUklad(page, `${name} ${w}×${h}, zaprosić, zwinięte`, true, { zrzut: `${name}-zaprosic-zwiniete` });
+        await ustawOkienko(page, true, true);
+        await okazjaPrzedRozdzialem(page, name, 'Teraz: wędrowiec przy siatce', 'Drugi dzień');
+        const ok = await wiersze(page, 'okazja');
+        if (
+          ok.map((x) => x.key).join() !== 'zagadaj,zapros' ||
+          !ok[0].klasy.includes('done') ||
+          !ok[1].klasy.includes('now')
+        )
+          throw new Error(
+            `${name}: po rozmowie cele okazji ${ok.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`,
+          );
+        await sprawdzUklad(page, `${name} ${w}×${h}, zaprosić, rozwinięte`, true, {
+          zrzut: `${name}-zaprosic-rozwiniete`,
+          rozwiniete: true,
+        });
+      },
+    });
+
   /** Okazja ugryzienia w trybie zombie nad pierwszym dniem: po samouczku ktoś z zarządu ma ugryzienie w kończynę w stanie gry,
       okazja pokazuje jego imię i cel amputacji, a karta ugryzionego ma przycisk „Amputować”, o którym mówi podpowiedź. */
   const ugryzienie = (name: string, w = 1440, h = 900): ShotCele =>
@@ -1924,6 +2141,245 @@ export function celeShots(out: string): ShotCele[] {
       },
     });
 
+  /** Rozdział „Praca” (R3) obok panelu Pracy i karty osoby: okienko ma tytuł „Praca”, licznik 0/3 i trzy cele (bez celu
+      „za siatkę”), bieżący pierwszy z podpowiedzią dla myszy albo dotyku, a zdanie o przełączniku „Może wychodzić za siatkę”
+      w podpowiedzi stałego zajęcia mówi, jak jest w tym trybie (włączony: za dnia wychodzą sami, zombie: wyłączony i ryzyko
+      ugryzienia); angielski bez polskich liter. Układ: okienko nie nachodzi na pasek, listę ludzi, kartę, panel budowy i panel
+      Pracy (na komputerze stoją obok siebie; do 640 px arkusz Pracy zasłania okienko, kartę i podpowiedź, co robi CSS, więc na
+      telefonie scenariusz sprawdza, że okienko jest wtedy schowane, a przed i po panelu ma swoje miejsce). Zrzut scenariusza
+      to ostatni stan: otwarty panel Pracy (na komputerze z kartą osoby, na której stoi lista „Stałe zajęcie”) i rozdział
+      z pierwszym celem. */
+  const praca = (name: string, demo: string, opcje: { zombie?: boolean; dom?: boolean }, w = 1440, h = 900): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        const zombie = !!opcje.zombie;
+        await start(page, base, `demo=${demo}${zombie ? '&tryb=zombie' : ''}&${GRA}&godzina=11`);
+        await rozdzial(page, 'r3');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        const n = await naglowek(page);
+        if (n.tytul !== 'Praca' || n.licznik !== '0/3')
+          throw new Error(`${name}: nagłówek „${n.tytul}” „${n.licznik}” zamiast „Praca” „0/3”`);
+        const wr = await wiersze(page, 'rozdzial');
+        tekstyCelow(
+          name,
+          wr,
+          ['priorytet', 'stale', 'zapas'],
+          [
+            'Ustawcie, kto czym zajmuje się sam.',
+            'Dajcie komuś stałe zajęcie.',
+            'Ustawcie, ile czego trzymać w zapasie.',
+          ],
+        );
+        console.log(`  ${wr.map((x) => `${x.key}${x.klasy.length ? `(${x.klasy.join('+')})` : ''}`).join(' ')}`);
+        // bieżący jest pierwszy i tylko on ma podpowiedź; nic nie czeka i nic nie przepadło
+        if (!wr[0].klasy.includes('now') || !wr[0].jak)
+          throw new Error(`${name}: pierwszy cel nie jest bieżący z podpowiedzią`);
+        if (wr.slice(1).some((x) => x.jak !== null || x.klasy.length))
+          throw new Error(`${name}: cele 2–3 mają podpowiedź albo klasy ${wr.slice(1).map((x) => x.klasy.join('+'))}`);
+        zawiera(
+          name,
+          wr[0].jak,
+          dotyk
+            ? 'Przycisk Praca u góry: stuknięcie w komórkę zmienia priorytet'
+            : 'Praca (przycisk u góry albo P): klik w komórkę zmienia priorytet',
+        );
+        nieZawiera(name, wr[0].jak, dotyk ? 'klik' : 'stuknięcie');
+        // podpowiedzi celów dalej na liście są w widoku (w DOM jest tylko bieżąca)
+        const cele = (await widok(page)).rozdzial!.cele;
+        zawiera(
+          name,
+          cele[1].how,
+          'Na karcie osoby wybierzcie „Stałe zajęcie”',
+          'Drwal albo Szaber',
+          'przełącznik „Może wychodzić za siatkę”, ustawiany osobno dla każdej osoby; domyślnie jest ',
+        );
+        if (zombie) {
+          zawiera(
+            name,
+            cele[1].how,
+            'domyślnie jest wyłączony',
+            'Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.',
+          );
+          zawiera(name, cele[2].how, 'drewnie, deskach, częściach i dzidach');
+        } else {
+          zawiera(
+            name,
+            cele[1].how,
+            'domyślnie jest włączony, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.',
+          );
+          nieZawiera(name, cele[1].how + cele[2].how, 'szwendacz', 'dzid');
+          zawiera(name, cele[2].how, 'drewnie, deskach i częściach');
+        }
+        zawiera(name, cele[2].how, dotyk ? 'stuknijcie plus albo minus' : 'plus i minus', '„Trzymać w zapasie”');
+        if (opcje.dom) {
+          const slowo = BLOKOWE_UI.exec(await tekstOkienka(page))?.[0];
+          if (slowo) throw new Error(`${name}: w celach domu słowo z bloku „${slowo}”`);
+        }
+        // angielski: tytuł „Work”, podpowiedź z „Work (button at the top, or P)”, bez polskich liter w tekście i w atrybutach
+        await ustawJezyk(page, 'en');
+        const ne = await naglowek(page);
+        if (ne.tytul !== 'Work' || ne.licznik !== '0/3')
+          throw new Error(`${name}: nagłówek po angielsku „${ne.tytul}” „${ne.licznik}”`);
+        const we = await wiersze(page, 'rozdzial');
+        zawiera(
+          name,
+          we[0].jak ?? '',
+          dotyk
+            ? 'The Work button at the top: tap a cell to change the priority'
+            : 'Work (button at the top, or P): click a cell to change the priority',
+        );
+        await okienkoBezPolskich(page, `${name} po zmianie na angielski`);
+        await ustawJezyk(page, 'pl');
+        // układ okienka z kartą osoby i panelem budowy (na telefonie w stanie zwiniętym)
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
+        // panel Pracy: przycisk w pasku (na telefonie stuknięcie)
+        await kliknij(page, '#btnPraca', dotyk);
+        await page.waitForSelector('#pracaPanel:not([hidden]) .pr-tab');
+        await poHudzie(page);
+        const tabela = await page.$$eval('#pracaPanel .pr-tab tbody tr', (r) => r.length);
+        if (tabela < 1) throw new Error(`${name}: panel Pracy bez wierszy osób`);
+        const dzidy = await page.$$eval('#pracaPanel [data-prog^="dzidy:"]', (e) => e.length);
+        if (dzidy > 0 !== zombie) throw new Error(`${name}: progi dzid w panelu: ${dzidy}, tryb zombie: ${zombie}`);
+        if (dotyk) {
+          // do 640 px arkusz od dołu zasłania okienko celów, kartę i podpowiedź (CSS `.praca-open`)
+          const widoczne = await page.evaluate(() => getComputedStyle(document.getElementById('goals')!).display);
+          if (widoczne !== 'none') throw new Error(`${name}: okienko celów nie schowało się pod arkuszem Pracy`);
+          console.log(`  ${name} ${w}×${h}: arkusz Pracy chowa okienko celów`);
+        } else {
+          await bezNachodzenia(page, `${name} ${w}×${h}, z panelem Pracy`);
+          // osoba z listy: karta ma „Stałe zajęcie” z rodzajami z podpowiedzi i przełącznik „za siatkę” w stanie trybu
+          await kliknij(page, '#lista .lp >> nth=0', false);
+          await page.waitForSelector('#card:not([hidden]) select[data-card="stale"]');
+          await poHudzie(page);
+          await bezNachodzenia(page, `${name} ${w}×${h}, z panelem Pracy i kartą osoby`);
+          const lista = await page.$$eval('#card select[data-card="stale"] option', (o) => o.map((x) => x.textContent));
+          zawiera(name, lista.join(), 'Drwal', 'Szaber');
+          const przelacznik = await page.$eval('#card [data-card="zasiatke"]', (e) => ({
+            wcisniety: e.getAttribute('aria-pressed'),
+            tekst: e.textContent ?? '',
+          }));
+          if (przelacznik.tekst !== 'Może wychodzić za siatkę')
+            throw new Error(`${name}: przełącznik na karcie „${przelacznik.tekst}”`);
+          if (przelacznik.wcisniety !== String(!zombie))
+            throw new Error(
+              `${name}: przełącznik „za siatkę” ${przelacznik.wcisniety}, a podpowiedź mówi, że domyślnie jest ${zombie ? 'wyłączony' : 'włączony'}`,
+            );
+        }
+      },
+    });
+
+  /** Rozdział „Praca” (R3) prawdziwymi kliknięciami: komórka priorytetu w panelu Pracy, stałe zajęcie z listy na karcie osoby i
+      plus przy progu zapasu zaliczają po jednym celu, a trzeci otwiera R4. Gra stoi na pauzie, więc polecenia wchodzą do
+      symulacji z krokiem (`zm.ff`); panel pokazuje zmianę od razu (nakłada czekające polecenia), a cel zalicza się dopiero z
+      krokiem. Na telefonie arkusz Pracy chowa okienko celów i kartę, więc panel zamyka się przed wyborem osoby i przed
+      sprawdzeniem celów. Z `zombie` najdłuższa podpowiedź stałego zajęcia (z ostrzeżeniem o szwendaczach) jest bieżącym celem
+      przy karcie osoby, także po angielsku. */
+  const pracaUstawienia = (name: string, opcje: { zombie?: boolean }, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        const zombie = !!opcje.zombie;
+        await start(page, base, `demo=przymorze${zombie ? '&tryb=zombie' : ''}&${GRA}&godzina=11`);
+        await rozdzial(page, 'r3');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        /** klasy wszystkich celów rozdziału; na telefonie okienko po sprawdzeniu układu jest zwinięte do jednego celu, więc najpierw
+            je rozwija */
+        const klasy = async (): Promise<string> => {
+          if (dotyk) await ustawOkienko(page, true, true);
+          return (await wiersze(page, 'rozdzial')).map((x) => `${x.key}:${x.klasy.join('+') || '-'}`).join(' ');
+        };
+        const oczekuj = async (opis: string, ma: string): Promise<void> => {
+          const jest = await klasy();
+          if (jest !== ma) throw new Error(`${name}: ${opis}: cele „${jest}” zamiast „${ma}”`);
+          console.log(`  ${opis}: ${jest}`);
+        };
+        /** polecenia z panelu i karty wchodzą do symulacji z następnym krokiem (pauza ich nie wykonuje) */
+        const krokGry = async (): Promise<void> => {
+          await page.evaluate(() => window.zm!.ff(1));
+          await poHudzie(page);
+        };
+        const otworzPanel = async (): Promise<void> => {
+          await kliknij(page, '#btnPraca', dotyk);
+          await page.waitForSelector('#pracaPanel:not([hidden]) .pr-tab');
+          await poHudzie(page);
+        };
+        const zamknijPanel = async (): Promise<void> => {
+          await kliknij(page, '#pracaPanel .bp-x', dotyk);
+          await page.waitForFunction(() => document.getElementById('pracaPanel')!.hidden, null, { timeout: 3000 });
+          await poHudzie(page);
+        };
+        await oczekuj('na początku', 'priorytet:now stale:- zapas:-');
+        // 1. komórka „Szaber” pierwszej osoby: priorytet 3 → 4 (panel pokazuje go od razu)
+        await otworzPanel();
+        const komorka = '#pracaPanel [data-prio$=":szaber"] >> nth=0';
+        const przed = await page.$eval(komorka, (e) => e.textContent);
+        await kliknij(page, komorka, dotyk);
+        await page.waitForFunction(
+          (s) => document.querySelector(s as string)?.textContent === '4',
+          '#pracaPanel [data-prio$=":szaber"]',
+          { timeout: 3000 },
+        );
+        if (przed !== '3') throw new Error(`${name}: komórka Szaber miała „${przed}” zamiast 3`);
+        await krokGry();
+        // na telefonie arkusz Pracy chowa okienko celów: zamykamy go (✕), żeby zobaczyć cele
+        if (dotyk) await zamknijPanel();
+        await oczekuj('po kliknięciu komórki', 'priorytet:done stale:now zapas:-');
+        const jak2 = (await wiersze(page, 'rozdzial'))[1].jak ?? '';
+        zawiera(name, jak2, '„Stałe zajęcie”');
+        if (zombie) zawiera(name, jak2, 'Za siatką są szwendacze');
+        await sprawdzUklad(page, `${name} ${w}×${h}, bieżące stałe zajęcie`, dotyk, { zrzut: `${name}-stale` });
+        if (zombie && dotyk) {
+          // angielska podpowiedź jest najdłuższa: okienko dalej mieści się nad listą ludzi i kartą
+          await ustawJezyk(page, 'en');
+          await okienkoBezPolskich(page, `${name} po zmianie na angielski`);
+          await sprawdzUklad(page, `${name} ${w}×${h}, bieżące stałe zajęcie po angielsku`, dotyk, {
+            zrzut: `${name}-stale-en`,
+          });
+          await ustawJezyk(page, 'pl');
+        }
+        // 2. karta osoby: stałe zajęcie z listy (zdarzenie `change` jak wybór gracza)
+        await kliknij(page, '#lista .lp >> nth=0', dotyk);
+        await page.waitForSelector('#card:not([hidden]) select[data-card="stale"]');
+        await page.selectOption('#card select[data-card="stale"]', 'drwal');
+        await krokGry();
+        await oczekuj('po wyborze stałego zajęcia', 'priorytet:done stale:done zapas:now');
+        // 3. panel Pracy: plus przy drewnie (próg 30 → 35)
+        await otworzPanel();
+        const prog = '#pracaPanel [data-prog="drewno:+5"]';
+        const wartoscPrzed = await page.$eval('#pracaPanel [data-wart="drewno"]', (e) => e.textContent);
+        await kliknij(page, prog, dotyk);
+        await page.waitForFunction(
+          (v) => document.querySelector('#pracaPanel [data-wart="drewno"]')?.textContent === String(Number(v) + 5),
+          wartoscPrzed,
+          { timeout: 3000 },
+        );
+        await krokGry();
+        if (dotyk) await zamknijPanel();
+        // rozdział skończony: R4 „Zarząd” z czterema celami
+        const n = await naglowek(page);
+        if (n.tytul !== 'Zarząd' || n.licznik !== '0/4')
+          throw new Error(
+            `${name}: po trzech ustawieniach nagłówek „${n.tytul}” „${n.licznik}” zamiast „Zarząd” „0/4”`,
+          );
+        console.log(`  po zapasie: ${n.tytul} ${n.licznik}`);
+        const v = await widok(page);
+        if (v.rozdzial?.k !== 'r4') throw new Error(`${name}: po trzech ustawieniach rozdział ${v.rozdzial?.k}`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po rozdziale Praca`, dotyk);
+        if (!dotyk) await otworzPanel();
+      },
+    });
+
   return [
     drugiDzien('cele-r1', 'przymorze', {}),
     drugiDzien('cele-r1-dom', 'zielonki', { dom: true }),
@@ -1931,6 +2387,12 @@ export function celeShots(out: string): ShotCele[] {
     drugiDzien('cele-r1-telefon', 'przymorze', {}, 390, 844),
     drugiDzien('cele-r1-dom-telefon', 'zielonki', { dom: true }, 390, 844),
     drugiDzien('cele-r1-zombie-telefon', 'przymorze', { zombie: true }, 390, 844),
+    praca('cele-r3', 'przymorze', {}),
+    praca('cele-r3-dom', 'zielonki', { dom: true }),
+    praca('cele-r3-zombie', 'przymorze', { zombie: true }),
+    praca('cele-r3-telefon', 'przymorze', {}, 390, 844),
+    pracaUstawienia('cele-r3-ustawienia', {}, 1440, 900),
+    pracaUstawienia('cele-r3-ustawienia-zombie-telefon', { zombie: true }, 390, 844),
     kartaNocy('cele-karta-nocy', 1440, 900, { malo: true, trzy: false }),
     kartaNocy('cele-karta-nocy-telefon', 390, 844, { malo: true, trzy: false }),
     kartaNocy('cele-karta-nocy-drewno2', 1440, 900, { malo: true, trzy: true }),
@@ -1949,6 +2411,8 @@ export function celeShots(out: string): ShotCele[] {
     zombieNowiZapas('cele-zombie-nowi-zapas-telefon', 'przymorze', 390, 844),
     czeka('cele-czeka'),
     handlarz('cele-okazja-handlarz'),
+    wedrowiec('cele-okazja-wedrowiec'),
+    wedrowiecTelefon('cele-okazja-wedrowiec-telefon', 390, 844),
     ugryzienie('cele-okazja-ugryzienie'),
     ugryzienie('cele-okazja-ugryzienie-telefon', 390, 844),
     drogi('cele-drogi', 1440, 900),
