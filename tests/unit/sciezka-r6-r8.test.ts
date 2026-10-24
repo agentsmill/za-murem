@@ -37,7 +37,7 @@ import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
 import { RUBBISH } from '../../src/sim/mieszkania.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
-import { drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
+import { drzwiBudynku, drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
 import { dismantlable } from '../../src/sim/sim.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
 import { modeOf } from '../../src/sim/tryb.ts';
@@ -59,6 +59,7 @@ import { doorWhere, pusto, core as rdzen } from './sasiedzi-pomoc.ts';
 import {
   badajDo,
   bezSzwendaczy,
+  budynkiDoOtoczenia,
   budynkiSasiadow,
   graBezPrezentow,
   kartkiDoWziecia,
@@ -979,6 +980,45 @@ describe.each(KOMBINACJE.filter(([key]) => PLOT_NA_MAPIE[key]))('R8 teren tam, g
   });
 });
 
+/* Wspólny płot bierze dużo materiału (najkrótszy na Lanciego to 65 m, czyli 65 desek i 65 złomu albo 130 złomu), więcej, niż
+   zarząd zbiera w dziesięć dób (bot ścieżki dowiózł na plan 73 z 130 sztuk po dziesięciu dobach i 82 po czternastu), więc
+   cel nie może czekać, aż płot stanie: zalicza go samo zlecenie. Płot, który stoi, daje kamień drogi terenu (krok
+   zarządu), a cel zostaje zaliczony także wtedy, gdy plan porzucono. */
+describe.each(WSZYSTKIE.filter(([mapa]) => PLOT_NA_MAPIE[mapa]))(
+  'R8 teren: zlecony płot zalicza cel, zanim stanie (%s %s)',
+  (mapa, mode) => {
+    it('plan płotu bez materiału na podwórku wystarcza; otwarte drzwi nie; zaliczenie zostaje po zniknięciu planu', () => {
+      const g = bezAutomatu(swiezaGra(mapa, mode));
+      const { sim } = g;
+      const { st, w } = sim;
+      otworz(g, 'r8');
+      expect(cel(g, 'teren').done).toBe(false);
+      const kto = rdzen(sim)[0];
+      const bid = budynkiDoOtoczenia(w)[0];
+      const door = drzwiBudynku(w, bid).zewn[0].tile;
+      otworzBudynek(g, kto, bid, door);
+      // otwarte drzwi to jeszcze nie płot
+      expect(st.plot?.plan).toBeUndefined();
+      expect(cel(g, 'teren').done).toBe(false);
+      // to samo polecenie, które daje menu drzwi („Otoczyć wspólnym płotem (…)”), mimo że materiału na płot nie ma
+      const pozycja = commandsAt(st, w, [kto.id], door).find((m) => m.cmd.t === 'enclose' && !m.off);
+      expect(pozycja?.label.startsWith('Otoczyć wspólnym płotem')).toBe(true);
+      sim.push(pozycja!.cmd);
+      sim.step();
+      expect(st.plot?.plan?.bid).toBe(bid);
+      expect(st.plot?.plan?.have).toEqual({});
+      expect(st.plot?.bids).toEqual([]);
+      expect(cel(g, 'teren').done).toBe(true);
+      expect(g.sciezka.zrobione).toHaveProperty(['r8.teren']);
+      // pierwszy kamień drogi terenu daje dopiero postawiony płot
+      expect(g.gov.zwyciestwo!.kamienie.teren ?? 0).toBe(0);
+      // porzucony plan niczego nie cofa
+      delete st.plot!.plan;
+      expect(cel(g, 'teren').done).toBe(true);
+    });
+  },
+);
+
 /* ---------------------------------------------------------------- po ostatnim rozdziale: drogi do zwycięstwa */
 
 describe.each(KOMBINACJE)('widok po R8: drogi, na które gra ma następny krok (%s %s)', (key, mode) => {
@@ -1446,10 +1486,10 @@ describe('teksty R8 (mysz i dotyk, po polsku i po angielsku)', () => {
     });
     expect(slowa(g, false, 'teren')).toEqual({
       text: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
-      how: 'Prawy przycisk na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.',
+      how: 'Prawy przycisk na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu, ale wystarczy go zlecić: ludzie postawią go, gdy materiał będzie na podwórku.',
     });
     expect(slowa(g, true, 'teren').how).toBe(
-      'Przytrzymajcie palec na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.',
+      'Przytrzymajcie palec na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu, ale wystarczy go zlecić: ludzie postawią go, gdy materiał będzie na podwórku.',
     );
     ustawJezyk('en');
     expect(slowa(g, false, 'drogi')).toEqual({
@@ -1458,7 +1498,7 @@ describe('teksty R8 (mysz i dotyk, po polsku i po angielsku)', () => {
     });
     expect(slowa(g, false, 'teren')).toEqual({
       text: 'Put a shared fence round the first building next door.',
-      how: 'Right-click the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you.',
+      how: 'Right-click the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap, but you only need to order it: people will build it once the material is in the yard.',
     });
     expect(slowa(g, true, 'teren').how.startsWith('Press and hold on the door of an open building next door:')).toBe(
       true,

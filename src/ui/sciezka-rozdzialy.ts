@@ -44,8 +44,10 @@
    (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
    ekranu dróg, kolejnego kamienia ludności (tekst to „co dalej” z chwili otwarcia rozdziału, bo `tekst` dostaje stan
-   ścieżki) i, tam gdzie wspólny płot dosięga sąsiada, terenu (ten sam predykat `terenMozliwy` co ekran dróg). Po R8 okienko
-   pokazuje wiersze dróg z „co dalej” (`wierszeDrog`).
+   ścieżki) i, tam gdzie wspólny płot dosięga sąsiada, terenu (ten sam predykat `terenMozliwy` co ekran dróg; cel zalicza
+   się, gdy płot jest zlecony, bo sam płot bierze dużo materiału: 65 desek i 65 złomu na najkrótszy na Lanciego, a bot
+   ścieżki dowiózł tam na plan po dziesięciu dobach 73, po czternastu 82 z tych 130 sztuk). Po R8 okienko pokazuje wiersze
+   dróg z „co dalej” (`wierszeDrog`).
 
    Liczniki „od otwarcia” (`StanSciezki.start`) liczą stąd funkcje `uchwalyPodpisane`, `ludnoscPodZarzadem` i `lupZMiasta`:
    te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
@@ -908,6 +910,10 @@ function drogaLudnosciPrzyOtwarciu(o: OdczytCelow, s: StanSciezki): PostepDrogi 
   return ocenDrogi(przy, o.input).find((p) => p.droga === 'ludnosc');
 }
 
+/** Wspólny płot zlecony: plan w toku albo jakiś budynek już otoczony. Plan czeka na materiał, który ludzie zniosą z
+    zapasu, więc zlecenie nie wymaga, żeby deski i złom już leżały na podwórku. */
+const plotZlecony = (st: SimState): boolean => !!st.plot?.plan || (st.plot?.bids.length ?? 0) > 0;
+
 const R8: DefRozdzialu = {
   k: 'r8',
   tytul: () => L('Drogi do zwycięstwa', 'Roads to victory'),
@@ -957,10 +963,13 @@ const R8: DefRozdzialu = {
       tekst: () => tr(DALEJ_TEREN),
       jak: (o) =>
         L(
-          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.`,
-          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you.`,
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni. Płot bierze dużo desek i złomu, ale wystarczy go zlecić: ludzie postawią go, gdy materiał będzie na podwórku.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you. A fence takes a lot of planks and scrap, but you only need to order it: people will build it once the material is in the yard.`,
         ),
-      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1,
+      // zlecony płot (plan w toku albo otoczony budynek) zalicza cel, bo sam płot bierze dużo materiału: najkrótszy ma na
+      // Lanciego 65 m, czyli 65 desek i 65 złomu (albo 130 złomu), a bot ścieżki dowiózł tam po dziesięciu dobach 73, po
+      // czternastu 82 z 130 sztuk; pierwszy kamień drogi terenu zalicza krok zarządu, gdy płot stanie
+      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1 || plotZlecony(o.st),
     },
   ],
 };
