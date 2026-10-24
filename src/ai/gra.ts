@@ -13,7 +13,9 @@
    odłożona, karta zatwierdzona, epilog zwycięstwa „graj dalej”, wydarzenie (i każdy rodzaj okna, którego moduł nie zna)
    pierwszym dozwolonym wyborem. Dzięki temu okno, które da się zamknąć tymi rękami, nie czeka dłużej niż sekundę przy
    ekranie, choćby decydent go nie ruszył. Okno nowego rodzaju z własnym interfejsem (inaczej niż wybory jak w wydarzeniu)
-   zamknie dopiero decydent albo nowa gałąź `odpowiedzDomyslna`.
+   zamknie dopiero decydent albo nowa gałąź `odpowiedzDomyslna`. To samo dotyczy okna wieloetapowego (wybór wydarzenia z
+   `zostaje` zostawia okno z nowymi wyborami): drugi krok jest oknem „tym samym”, więc decydent, który chce na niego odpowiedzieć
+   sam, czyta `pending` po każdym wyborze (`odpowiedzNaWydarzenie` w src/ai/okna.ts), inaczej odpowie domyślna.
 
    Okno, które zarząd trzyma także po odpowiedzi domyślnej (to samo okno), jest zawieszone: `krokGry` zapisuje je w
    `GraAi.zawieszone` (rodzaj i sekunda przy ekranie), nie ponawia go do końca tej sekundy i idzie dalej do tury decydenta;
@@ -121,7 +123,11 @@ export interface Rece {
 export interface Decydent {
   /** raz, przed pierwszym krokiem gry (tick 0) */
   start?(g: GraAi, r: Rece): void;
-  /** odpowiedź na jedno okno zarządu; powinna je zamknąć rękami */
+  /** odpowiedź na jedno okno zarządu; powinna je zamknąć rękami. Okno wieloetapowe: wybór wydarzenia z `zostaje` (np.
+      „Obejrzeć ręce” przy gościu w trybie zombie) nie zamyka okna, tylko zostawia je z nowym tekstem i wyborami, ale tym samym
+      rodzajem i identyfikatorem, więc `krokGry` uzna je po `okno` za niezamknięte i odpowie za decydenta odpowiedzią domyślną
+      (pierwszy dozwolony wybór). Decydent, który chce sam odpowiedzieć na kolejny krok, czyta `pending(g.gov, wejscie(g))` po
+      każdym swoim wyborze, jak `odpowiedzNaWydarzenie` w src/ai/okna.ts. */
   okno(g: GraAi, p: Prompt, r: Rece): void;
   /** raz na sekundę przy ekranie, po oknach */
   tura(g: GraAi, r: Rece): void;
