@@ -4,9 +4,10 @@
    (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. */
 
 import { SEASONS_EN } from '../content/data.en.ts';
-import { L } from '../core/jezyk.ts';
+import { L, type Tx, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
+import { SEASONS, seasonOf, yearOf } from '../sim/clock.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { WARM_ENOUGH } from '../sim/tutorial.ts';
 import { FENCE_BEARS } from '../sim/zombie.ts';
@@ -21,6 +22,15 @@ export interface Stat {
 }
 
 const wielka = (t: string): string => t[0].toUpperCase() + t.slice(1);
+
+/** Podpis pory roku na zegarze nad paskiem: „jesień 2051”, „zima 2051”, „wiosna 2052”, „lato 2052” (po angielsku „autumn
+    2051”…). Pora roku i rok idą z zegara gry (`seasonOf`, `yearOf` z src/sim/clock.ts), tej samej pory, według której
+    liczy się pogoda; main.ts wpisuje podpis przy każdym odświeżeniu paska (`hud`), więc zmienia się razem z dniem. */
+export const sezonPodpis = (tick: number): Tx => {
+  const s = seasonOf(tick);
+  const rok = yearOf(tick);
+  return tx(`${SEASONS[s]} ${rok}`, `${SEASONS_EN[s]} ${rok}`);
+};
 
 /** words: słowa miejsca (w domu sąsiedzi, komitet ulicy i zebranie ulicy), bez nich jak w bloku */
 export function statsOf(

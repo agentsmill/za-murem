@@ -34,6 +34,13 @@ export function daylight(tick: number): number {
 /** 0 jesień, 1 zima, 2 wiosna, 3 lato */
 export const seasonOf = (tick: number): number => Math.floor((dayOf(tick) - 1) / SEASON_DAYS) % 4;
 
+/** Rok z podpisu pory roku na zegarze (src/ui/pasek.ts, `sezonPodpis`). Gra zaczyna się jesienią 2051 (październik),
+    a pora roku trwa 10 dni, więc rok kalendarzowy zmienia się z początkiem wiosny: jesień i zima dni 1–20 to 2051, od
+    dnia 21 (wiosna) 2052, i tak co 40 dni. Zima obejmuje przełom roku, więc nosi rok grudnia, w którym się zaczyna.
+    Tylko do napisu: symulacja roku nie używa. */
+export const yearOf = (tick: number): number =>
+  2051 + Math.floor((Math.floor((dayOf(tick) - 1) / SEASON_DAYS) + 2) / 4);
+
 /** odchyłka pogody danego dnia (±2,5°C), ta sama co w 0.3 */
 const dayNoise = (seed: number, d: number) => (mulberry(seed + d * 31)() - 0.5) * 5;
 

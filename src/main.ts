@@ -165,7 +165,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
-import { renderStats, statsOf } from './ui/pasek.ts';
+import { renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
   nastepnePietro,
@@ -1955,6 +1955,8 @@ function hud(now: number) {
   const st = sim.st;
   $('hDay').textContent = L(`Dzień ${dayOf(st.tick)}`, `Day ${dayOf(st.tick)}`);
   $('hTime').textContent = clockOf(st.tick);
+  // pora roku z zegara gry (dotąd stały napis „jesień 2051” z index.html, także w zimie)
+  $('hSeason').textContent = tr(sezonPodpis(st.tick));
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   lastStock = snap.stock;

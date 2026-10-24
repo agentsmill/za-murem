@@ -116,6 +116,7 @@ export const STATYCZNE: readonly Statyczny[] = [
   },
   // ekran gry
   { sel: '#treeMark .treemark-t', tekst: tx('Suche drzewo', 'Dead tree') },
+  // napis początkowy (dzień 1): w grze `hud()` w src/main.ts podmienia go na porę roku z zegara (`sezonPodpis`, src/ui/pasek.ts)
   { sel: '#hSeason', tekst: tx('jesień 2051', 'autumn 2051') },
   { sel: '#speed .sr', tekst: tx('Tempo gry', 'Game speed') },
   { sel: '#speed [data-s="0"]', tekst: tx('Pauza', 'Pause') },
