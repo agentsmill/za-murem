@@ -61,7 +61,7 @@ npm test -- tests/unit/sim.test.ts        # jeden plik
 npm test -- zarzad -t "ten sam przebieg"  # fragment ścieżki pliku i nazwy testu
 npm run test:watch   # Vitest w trybie śledzenia
 npx biome check src tests tools server index.html  # lint zamiast npm run lint (niżej); z --write poprawia i formatuje
-npm run format       # biome format --write . (sam format, bez lintu)
+npm run format       # biome format --write . (sam format, bez lintu; w głównym katalogu patrz uwaga o npm run lint niżej)
 npm run build        # typy (tsc z TypeScript 7) + build do dist/ (z dist/v03/)
 npm run preview      # podgląd zbudowanego dist/ w Vite (najpierw npm run build)
 npm run bot          # nowa symulacja 45 dni bez przeglądarki [-- ziarno [dni [tłum]]]
