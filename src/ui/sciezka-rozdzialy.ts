@@ -743,8 +743,9 @@ function sasiedziWDomach(o: OdczytCelow): boolean {
   return s === 'domy' || (s === null && p.kind === 'dom');
 }
 
-/** napisy, które zostawia sama próba zapukania, gdy nikt nie otwiera („Nikt nie otwiera”, „Ktoś jest, ale nie otwiera”,
-    szuranie za drzwiami; `Sim.pukanie`); inne napisy sąsiadów (zamek, ostrzeżenie, wynik spotkania) pukaniem nie są */
+/** napisy, które zostawia sama próba zapukania, gdy nikt nie otwiera („Nikt nie otwiera.”, „Nikt nie otwiera, ale za
+    drzwiami coś szura.”, „Ktoś jest w środku, ale nie otwiera.”; `Sim.pukanie`); inne napisy sąsiadów (zamek, ostrzeżenie,
+    wynik spotkania) pukaniem nie są */
 const WYNIKI_PUKANIA: ReadonlySet<string> = new Set(['nikt', 'ktos', 'szuranie']);
 
 const R7: DefRozdzialu = {

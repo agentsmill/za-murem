@@ -361,7 +361,7 @@ Tytuł „Sąsiedzi” / “Neighbours”. Otwiera się po R6. Zmiana integrator
 
 R7.1 `pukanie`: „Zapukajcie do sąsiadów.” / “Knock on the neighbours’ door.”
 - Jak: „Zaznaczcie kogoś i prawy przycisk na drzwiach sąsiedniego [bloku]: „Zapukać”. Za dnia ludzie bywają w domu, nocą otwierają niechętnie.” / “Select someone and right-click the door of the block next door: “Knock”. By day people tend to be in; at night they’re slow to open.” W trybie zombie dopisek: „Za siatką są szwendacze: idźcie za dnia, z dzidą.” / “There are shamblers out there: go by day, with a spear.”
-- Warunek: pionek zarządu z pracą `door` i `job.what === 'knock'` (`orderDoor`, `src/sim/sim.ts:8622`) zobaczony od otwarcia rozdziału albo spotkanie (`st.sasiedzi.nr` większe niż przy otwarciu).
+- Warunek: pionek zarządu z pracą `door` i `job.what === 'knock'` (`orderDoor`, `src/sim/sim.ts:8622`) zobaczony od otwarcia rozdziału albo spotkanie (`st.sasiedzi.nr` większe niż przy otwarciu). Zmiana integratora 24.10.2026: krótką pracę przy drzwiach (osoba stoi już pod drzwiami, szybkie tempo) okienko mogłoby ominąć między klatkami, więc liczy się też trwały ślad pukania w stanie: napis z wynikiem próby, który zostaje do następnego napisu (`st.sasiedzi.napis.co` równe „nikt”, „ktos” albo „szuranie”, czyli „Nikt nie otwiera.”, „Nikt nie otwiera, ale za drzwiami coś szura.” i „Ktoś jest w środku, ale nie otwiera.”), pokazany nie wcześniej niż otwarcie rozdziału (`napis.tick` nie mniejsze niż `StanSciezki.od`). Inne napisy sąsiadów (zamek, ostrzeżenie, wynik spotkania) pukaniem nie są.
 - Uczy M46.
 
 R7.2 `spotkanie`: „Porozmawiajcie z lokatorami.” / “Talk to the residents next door.” (dom: „Porozmawiajcie z sąsiadami.” / “Talk to the neighbours.”)
