@@ -10,22 +10,9 @@ import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { nazwaTech, TECHS } from '../../src/sim/badania.ts';
 import { ARTYKUL_STARTOWY, CZIPY, KATEGORIE, maArtykul, rejestr } from '../../src/ui/wiki.ts';
 import { POLSKIE, polskieSlowa } from './po-angielsku.ts';
-import { PRZYPADKI, tekstArtykulu, zbuduj } from './wiki-pomoc.ts';
+import { PRZYPADKI, tekstArtykulu, UZGODNIONE, zbuduj } from './wiki-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
-
-/** identyfikatory artykułów kategorii 9–13, do których wolno odsyłać z kategorii 1–8 (uzgodnione z drugą sesją) */
-export const UZGODNIONE: ReadonlySet<string> = new Set([
-  'drogi:ekran',
-  'drogi:technologia',
-  'miasto:wyprawa',
-  'miejsce:apteka',
-  'miejsce:przychodnia',
-  'wydarzenia:handlarz',
-  'zombie:halas',
-  'zombie:siatka',
-  'zombie:szwendacze',
-]);
 
 /** kategorie, które pisze druga sesja: ich artykuły są poza tą gałęzią */
 const KATEGORIE_DRUGIEJ_SESJI = ['wydarzenia', 'miasto', 'sasiedzi', 'drogi', 'zombie'];

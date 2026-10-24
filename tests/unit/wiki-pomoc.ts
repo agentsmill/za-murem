@@ -53,3 +53,16 @@ export const tekstArtykulu = (a: Artykul): string =>
     ...a.jak,
     ...a.przyciski.map((p) => p.napis),
   ].join('\n');
+
+/** identyfikatory artykułów kategorii 9–13, do których wolno odsyłać z kategorii 1–8 (uzgodnione z drugą sesją) */
+export const UZGODNIONE: ReadonlySet<string> = new Set([
+  'drogi:ekran',
+  'drogi:technologia',
+  'miasto:wyprawa',
+  'miejsce:apteka',
+  'miejsce:przychodnia',
+  'wydarzenia:handlarz',
+  'zombie:halas',
+  'zombie:siatka',
+  'zombie:szwendacze',
+]);
