@@ -304,7 +304,7 @@ describe('wydarzenia', () => {
     let full = 0;
     const ziarna = 100;
     for (let seed = 1; seed <= ziarna; seed++) {
-      const { gov } = run(seed, 'propozycja', at(2, 6, 1));
+      const { gov } = run(seed, 'propozycja', at(2, 6, 1), undefined, true);
       const d = gov.decisions.map((x) => x.s).filter((x) => x <= 600);
       const covered = Array.from({ length: 9 }, (_, m) => d.some((x) => x >= (m + 1) * 60 && x < (m + 2) * 60));
       expect(covered.filter(Boolean).length, `ziarno ${seed}`).toBeGreaterThanOrEqual(8);

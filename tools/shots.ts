@@ -2891,7 +2891,7 @@ const SHOTS: Shot[] = [
         name: 'wyd-watek',
         query: '',
         run: async (page, base) => {
-          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=1`);
           await waitIdle(page);
           await ustawWatekSwiatlo(page);
           const krok = await doKarty(page, 'swiatlo_2', 400);
@@ -2945,7 +2945,7 @@ const SHOTS: Shot[] = [
         query: '',
         lang: 'en',
         run: async (page, base) => {
-          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=1`);
           await waitIdle(page);
           await ustawWatekSwiatlo(page);
           const krok = await doKarty(page, 'swiatlo_2', 400);

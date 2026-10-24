@@ -1897,7 +1897,7 @@ describe('spis gier z obcymi', () => {
     const ziarna = 20;
     for (let seed = 1; seed <= ziarna; seed++) {
       const { world: w, mieszkancy } = await swiatMieszkancow(DEMO, seed, 4);
-      const r = playWithGov(w, seed, 'zawsze-warta', 1, 4, { obcy: true, mieszkancy });
+      const r = playWithGov(w, seed, 'zawsze-warta', 1, 4, { obcy: true, mieszkancy, lancuchy: true });
       const d = r.gov.decisions.map((x) => x.s).filter((x) => x <= 600);
       const pokryte = Array.from({ length: 9 }, (_, m) => d.some((x) => x >= (m + 1) * 60 && x < (m + 2) * 60)).filter(
         Boolean,

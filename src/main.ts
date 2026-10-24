@@ -17,7 +17,9 @@
    NOWE w menu budowy (pamięć przeglądarki, src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie.
    ?kwadraty=3x3 (albo lista „1,0;0,-1”, src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych
    dema (public/demo/<klucz>-kwadraty.json), z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania,
-   symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty). */
+   symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty).
+   ?lancuchy=1 włącza w nowej grze łańcuchy kart i wątki sezonu (src/gov/watki.ts; `newGov(…, true)`, pole `GovState.lancuchy`
+   zostaje w zapisie); bez parametru nowa gra gra bez nich, a zapis trzyma to, z czym ją zaczęto. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -843,7 +845,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   portrety.reset();
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
-  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st), params.get('lancuchy') === '1');
   // ścieżka celów: z zapisu (zapis bez pola albo z polem o złym kształcie zaczyna od pierwszego dnia, a po pierwszym
   // raporcie od drugiego), nowa gra od początku
   sciezka = saved ? stanZZapisu(saved.cele, st, gov) : nowyStanSciezki();

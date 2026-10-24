@@ -235,7 +235,7 @@ describe('cele pierwszego dnia', () => {
     st.tut.step = 5;
     expect(currentGoal(goalsOf(st, null, o))?.how).toContain('W kuchni teraz 9°C');
     st.tut.step = TUT_STEPS.length;
-    const gov = newGov(1);
+    const gov = newGov(1, 'zwykly', true);
     // drewno na wieczór: postęp w podpowiedzi (3 sztuki to ogień do snu, spalony mebel idzie najpierw do kozy),
     // zaliczone raz osiągnięte, przepada z kartą nocy
     const wood = currentGoal(goalsOf(st, gov, { ...o, wood: 2 }))!;
@@ -259,7 +259,7 @@ describe('cele pierwszego dnia', () => {
 function atCard() {
   const { sim, w, seed } = fresh();
   sim.st.tick = tickAt(20);
-  const gov = newGov(seed);
+  const gov = newGov(seed, 'zwykly', true);
   govUpdate(gov, input(sim, 100));
   signLaw(gov, input(sim, 100), null);
   const p = pending(gov, input(sim, 100));
@@ -315,7 +315,7 @@ describe('okna zarządu', () => {
   it('uchwała, wydarzenie, raport i palenie mebli', () => {
     const { sim, seed } = fresh();
     sim.st.tick = tickAt(19.5);
-    const gov = newGov(seed);
+    const gov = newGov(seed, 'zwykly', true);
     govUpdate(gov, input(sim, 50));
     const law = pending(gov, input(sim, 50)) as Extract<Prompt, { k: 'uchwala' }>;
     expect(law.k).toBe('uchwala');
@@ -362,7 +362,7 @@ describe('rytm zarządu po playteście', () => {
   it('po uchwale, karcie i raporcie najbliższe wydarzenie najwcześniej po QUIET s (bez okien jedno po drugim)', () => {
     const { sim, seed } = fresh();
     sim.st.tick = tickAt(19.5);
-    const gov = newGov(seed);
+    const gov = newGov(seed, 'zwykly', true);
     gov.ev.next = 0;
     govUpdate(gov, input(sim, 180));
     signLaw(gov, input(sim, 181), 'u_warty');
@@ -376,7 +376,7 @@ describe('rytm zarządu po playteście', () => {
   it('gdy żadne wydarzenie nie pasuje, następna próba po RETRY s, a nie po pełnym odstępie', () => {
     const { sim, seed } = fresh();
     sim.st.tick = tickAt(16);
-    const gov = newGov(seed);
+    const gov = newGov(seed, 'zwykly', true);
     const i = input(sim, 200);
     // wszystkie wydarzenia „przed chwilą”: żadne nie jest świeże
     for (const e of M1_EVENTS) gov.ev.last[e.id] = gameMin(i);
@@ -397,7 +397,7 @@ describe('dyżur przy kozie', () => {
     const wood = emptyEffects();
     wood.stock.wood = 40;
     applyGov(sim.st, w, wood);
-    const gov = newGov(seed);
+    const gov = newGov(seed, 'zwykly', true);
     govUpdate(gov, input(sim, 100));
     signLaw(gov, input(sim, 100), null);
     const p = pending(gov, input(sim, 100));
@@ -467,7 +467,7 @@ describe('dyżur przy kozie', () => {
 describe('pasek i karta osoby', () => {
   it('stan osiedla na starcie: zimna kuchnia, brak drewna', () => {
     const { sim, w, seed } = fresh();
-    const s = statsOf(snapshot(sim.st, w), newGov(seed));
+    const s = statsOf(snapshot(sim.st, w), newGov(seed, 'zwykly', true));
     expect(s.map((x) => x.id)).toEqual([
       'sOut',
       'sKit',
@@ -519,7 +519,7 @@ describe('zapis gry', () => {
   it('zapis i odczyt ze stanem symulacji i zarządu; zła wersja i brak miejsca', () => {
     const { sim, seed } = fresh();
     const { data } = demo('przymorze');
-    const gov = newGov(seed);
+    const gov = newGov(seed, 'zwykly', true);
     const save: Save = { v: 1, at: 1, data, seed, sim: sim.st, gov, screen: 12.5 };
     const store = memory();
     expect(writeSave(save, store)).toBe(true);
@@ -554,7 +554,7 @@ describe('zapis gry', () => {
   it('stan ścieżki celów jedzie w zapisie obok stanu gry i nie zmienia jego przebiegu', () => {
     const { sim, seed } = fresh();
     const { data } = demo('przymorze');
-    const gov = newGov(seed);
+    const gov = newGov(seed, 'zwykly', true);
     const cele = zalicz(zdarzenieUi(nowyStanSciezki(), 'lista', 40), 'r0.drewno', 41);
     const save: Save = { v: 1, at: 1, data, seed, sim: sim.st, gov, screen: 12.5, cele };
     const store = memory();
@@ -586,7 +586,7 @@ describe('zapis gry', () => {
 /** pętla jak w main.ts: symulacja, co sekundę przy ekranie zarząd i jego skutki, decyzje wg propozycji */
 function firstNight(key: string) {
   const { sim, w, seed } = fresh(key, 6);
-  const gov = newGov(seed);
+  const gov = newGov(seed, 'zwykly', true);
   let screen = 0;
   const decisions: string[] = [];
   for (let t = 1; t < 2 * 24 * TICKS_PER_HOUR && !gov.reports.length; t++) {

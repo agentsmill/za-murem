@@ -38,7 +38,7 @@ interface Stan {
 /** zarząd na atrapie, trzeci dzień o 10:00, gra z obcymi (lista gości pusta), zwykła pula zamrożona */
 function stan(o: { mode?: 'zwykly' | 'zombie'; input?: Partial<GovInput>; seed?: number } = {}): Stan {
   const seed = o.seed ?? 3;
-  const gov = newGov(seed, o.mode ?? 'zwykly');
+  const gov = newGov(seed, o.mode ?? 'zwykly', true);
   const atr = new Atrapa(seed);
   atr.supplies = 30;
   atr.meds = 3;
@@ -187,7 +187,7 @@ describe('wskazowkaMiejsca: wskazówka z karty łańcucha', () => {
     const osoby = [s.i.people[0]];
     let z = 0;
     for (let seed = 1; seed <= 40; seed++) {
-      const wBron = newGov(seed);
+      const wBron = newGov(seed, 'zwykly', true);
       wBron.wskazowki = { [apteka.klucz]: { dzien: 3, bron: true } };
       const fxB = emptyEffects();
       const r = rozliczWyprawe(wBron, s.i, fxB, cel, osoby);
@@ -206,7 +206,7 @@ describe('wskazowkaMiejsca: wskazówka z karty łańcucha', () => {
     expect(z).toBe(40);
     // zwykła wskazówka: żadnej pewnej broni (znaleziska losowe jak zawsze: rewolwera ani strzelby w puli zwykłego trybu nie ma)
     for (let seed = 1; seed <= 40; seed++) {
-      const g = newGov(seed);
+      const g = newGov(seed, 'zwykly', true);
       g.wskazowki = { [apteka.klucz]: { dzien: 3 } };
       const fx = emptyEffects();
       rozliczWyprawe(g, s.i, fx, cel, osoby);

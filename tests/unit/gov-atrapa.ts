@@ -348,8 +348,9 @@ export function run(
   policy: PolicyName,
   until: number,
   start?: { gov: GovState; atr: Atrapa },
+  lancuchy = false,
 ): { gov: GovState; atr: Atrapa; steps: Step[] } {
-  const gov = start?.gov ?? newGov(seed);
+  const gov = start?.gov ?? newGov(seed, 'zwykly', lancuchy);
   const atr = start?.atr ?? new Atrapa(seed);
   const r = mulberry(seed ^ 0x51ed);
   const steps: Step[] = [];

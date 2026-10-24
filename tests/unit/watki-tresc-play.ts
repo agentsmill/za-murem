@@ -167,7 +167,7 @@ export interface OpcjeSwiata {
 export function nowySwiat(id: string, o: OpcjeSwiata = {}): Swiat {
   const seed = o.seed ?? 3;
   const mode = o.mode ?? 'zwykly';
-  const gov = newGov(seed, mode);
+  const gov = newGov(seed, mode, true);
   const atr = new Atrapa(seed);
   atr.supplies = 30;
   atr.meds = 6;

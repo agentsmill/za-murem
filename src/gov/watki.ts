@@ -6,6 +6,11 @@
    dojrzałych kroków i pacing ma `eventTick` (wydarzenia.ts), a dwanaście prawdziwych łańcuchów leży w watki-tresc.ts i
    jest tu `LANCUCHY`.
 
+   Przełącznik. Łańcuchy są domyślnie wyłączone: grają tylko w zarządzie z `GovState.lancuchy` (adres gry `?lancuchy=1`, `newGov(seed,
+   mode, true)`; pole zostaje w zapisie). Bez niego `wybierzWatki`, `krokiGotowe` i `porzadkuj` nic nie robią, więc zarząd
+   zachowuje się dokładnie tak, jak z `podmienLancuchy([])`: żadnego wyboru wątków, żadnego losowania z ziarna, żadnego stanu
+   `watki`. Narrator, odstęp między kartami i czekanie gości w trybie zombie działają w obu ustawieniach.
+
    Kontrakt.
    - Pusta lista (albo żaden łańcuch nie pasuje do trybu) nie robi nic: żadnego losowania z ziarna zarządu, żadnego zapisu
      w `GovState.watki`, więc skróty gry bez łańcuchów zostają takie jak przed silnikiem. Stan `watki` powstaje dopiero przy
@@ -116,6 +121,7 @@ const wymagaObcych = (l: Lancuch): boolean => l.obcy ?? l.kroki.some((k) => k.go
     wołania oddają to samo bez losowania). W grze bez obcych (`bezObcych`) odpadają łańcuchy, które ich wymagają (`Lancuch.obcy`), a w grze bez mieszkańców z generatora (`bezLokatorow`) te z `Lancuch.lokatorzy`. Gdy żaden
     łańcuch nie pasuje, nic nie losuje i nic nie zapisuje. */
 export function wybierzWatki(st: GovState, mode: GameMode, bezObcych = false, bezLokatorow = false): string[] {
+  if (!st.lancuchy) return [];
   if (st.watki?.wybrane.length) return [...st.watki.wybrane];
   const ids = rejestr
     .filter((l) => l.tryby.includes(mode) && !(bezObcych && wymagaObcych(l)) && !(bezLokatorow && l.lokatorzy))
@@ -150,7 +156,7 @@ const rozstrzygniety = (w: NonNullable<GovState['watki']>, k: Krok): boolean => 
     czas haka plus `po` godzin, remis w kolejności `wybrane`), potem pierwsze kroki łańcuchów, które się jeszcze nie zaczęły. `t` to minuta gry. Czyta stan, niczego nie losuje. */
 export function krokiGotowe(st: GovState, t: number, mode: GameMode): Krok[] {
   const w = st.watki;
-  if (!w) return [];
+  if (!w || !st.lancuchy) return [];
   const dojrzale: { k: Krok; od: number }[] = [];
   const pierwsze: Krok[] = [];
   for (const id of w.wybrane) {
@@ -196,7 +202,7 @@ function zakoncz(st: GovState, l: Lancuch): void {
     Bez `watki` nic nie robi. */
 export function porzadkuj(st: GovState, i: Pick<GovInput, 'goscie'>): void {
   const w = st.watki;
-  if (!w) return;
+  if (!w || !st.lancuchy) return;
   const otwarta = st.ev.active?.id;
   const wizyta = st.goscie?.aktywny;
   const kartaWizyty = wizyta && !wizyta.koniec ? wizyta.kartaId : undefined;

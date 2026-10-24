@@ -186,7 +186,7 @@ describe('wizyta wylosowana przy stadzie przy siatce', () => {
   });
 
   it('krok łańcucha z gościem (dach, trzeci krok) czeka na spokój zamiast ginąć po cichu i dopiero wtedy planuje wizytę z kartą kroku', () => {
-    const gov = newGov(6, 'zombie');
+    const gov = newGov(6, 'zombie', true);
     const atr = new Atrapa(6);
     atr.tick = tickAt(3, 16);
     const i: GovInput = { ...atr.input(), screen: 5000, goscie: [], napady: [], horde: horda(9) };

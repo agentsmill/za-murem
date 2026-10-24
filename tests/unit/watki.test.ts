@@ -131,7 +131,7 @@ const tickAt = (day: number, hour: number, minute = 0): number =>
 /** zarząd z atrapą na dzień `dzien` o `godz`; domyślnie zwykła pula zamrożona, dym z komina „już był” */
 function stan(o: { seed?: number; mode?: GameMode; dzien?: number; godz?: number; pula?: boolean } = {}): Stan {
   const seed = o.seed ?? 3;
-  const gov = newGov(seed, o.mode ?? 'zwykly');
+  const gov = newGov(seed, o.mode ?? 'zwykly', true);
   const atr = new Atrapa(seed);
   atr.supplies = 30;
   atr.meds = 3;
@@ -201,14 +201,14 @@ describe('wybór wątków sezonu', () => {
       ['zombie', ['m1', 'm2', 'o1', 'o2']],
     ] as const) {
       for (let seed = 1; seed <= 30; seed++) {
-        const a = newGov(seed, mode);
+        const a = newGov(seed, mode, true);
         const wybrane = wybierzWatki(a, mode);
         expect(wybrane, `${mode} ${seed}`).toHaveLength(WATKOW);
         expect(new Set(wybrane).size).toBe(WATKOW);
         for (const id of wybrane) expect(dozwolone).toContain(id);
         expect(a.watki?.wybrane).toEqual(wybrane);
         // to samo ziarno i tryb: ten sam wybór, bez względu na to, kiedy zarząd pierwszy raz losuje
-        expect(wybierzWatki(newGov(seed, mode), mode)).toEqual(wybrane);
+        expect(wybierzWatki(newGov(seed, mode, true), mode)).toEqual(wybrane);
         widziane.add(wybrane.join(','));
       }
     }
@@ -218,7 +218,7 @@ describe('wybór wątków sezonu', () => {
 
   it('wybór jest raz na grę: drugie wołanie nie losuje i oddaje to samo', () => {
     podmienLancuchy(sześć);
-    const gov = newGov(9);
+    const gov = newGov(9, 'zwykly', true);
     const pierwszy = wybierzWatki(gov, 'zwykly');
     const rng = gov.rng.s;
     expect(wybierzWatki(gov, 'zwykly')).toEqual(pierwszy);
@@ -227,7 +227,7 @@ describe('wybór wątków sezonu', () => {
 
   it('pierwszy eventTick wybiera wątki o tej samej treści bez względu na dzień i godzinę gry', () => {
     podmienLancuchy(sześć);
-    const oczekiwane = wybierzWatki(newGov(7), 'zwykly');
+    const oczekiwane = wybierzWatki(newGov(7, 'zwykly', true), 'zwykly');
     for (const [dzien, godz] of [
       [1, 15],
       [3, 10],
@@ -241,11 +241,11 @@ describe('wybór wątków sezonu', () => {
 
   it('pasuje mniej niż trzy łańcuchy: wybiera tyle, ile pasuje, a niepasujący tryb nie zapisuje nic', () => {
     podmienLancuchy([lancuchZ('z1', ['zwykly']), lancuchZ('m1', ['zombie']), lancuchZ('m2', ['zombie'])]);
-    expect(wybierzWatki(newGov(4), 'zwykly')).toEqual(['z1']);
-    const zombie = newGov(4, 'zombie');
+    expect(wybierzWatki(newGov(4, 'zwykly', true), 'zwykly')).toEqual(['z1']);
+    const zombie = newGov(4, 'zombie', true);
     expect([...wybierzWatki(zombie, 'zombie')].sort()).toEqual(['m1', 'm2']);
     podmienLancuchy([lancuchZ('z1', ['zwykly'])]);
-    const gov = newGov(4, 'zombie');
+    const gov = newGov(4, 'zombie', true);
     const rng = gov.rng.s;
     expect(wybierzWatki(gov, 'zombie')).toEqual([]);
     expect(gov.watki).toBeUndefined();
@@ -255,8 +255,15 @@ describe('wybór wątków sezonu', () => {
   it('w grze bez obcych wątki wybiera się spośród łańcuchów bez kroku z gościem, więc żaden nie zajmie miejsca na zawsze', () => {
     podmienLancuchy([G, B, lancuchZ('z1', ['zwykly'])]);
     for (let seed = 1; seed <= 20; seed++) {
-      expect([...wybierzWatki(newGov(seed), 'zwykly', true)].sort(), `bez obcych, ziarno ${seed}`).toEqual(['b', 'z1']);
-      expect([...wybierzWatki(newGov(seed), 'zwykly')].sort(), `z obcymi, ziarno ${seed}`).toEqual(['b', 'g', 'z1']);
+      expect(
+        [...wybierzWatki(newGov(seed, 'zwykly', true), 'zwykly', true)].sort(),
+        `bez obcych, ziarno ${seed}`,
+      ).toEqual(['b', 'z1']);
+      expect([...wybierzWatki(newGov(seed, 'zwykly', true), 'zwykly')].sort(), `z obcymi, ziarno ${seed}`).toEqual([
+        'b',
+        'g',
+        'z1',
+      ]);
     }
     // pierwszy eventTick gry bez obcych (bez `goscie` w wejściu) wybiera tak samo i łańcuch z gościem się nie zaczyna
     const s = stan({ seed: 4 });
@@ -275,24 +282,25 @@ describe('wybór wątków sezonu', () => {
     const zwykly = lancuchZ('z', OBA);
     podmienLancuchy([handlarz, mieszkaniec, zwykly]);
     for (let seed = 1; seed <= 10; seed++) {
-      expect([...wybierzWatki(newGov(seed), 'zwykly', true, false)].sort(), `bez obcych, ziarno ${seed}`).toEqual([
-        'm',
+      expect(
+        [...wybierzWatki(newGov(seed, 'zwykly', true), 'zwykly', true, false)].sort(),
+        `bez obcych, ziarno ${seed}`,
+      ).toEqual(['m', 'z']);
+      expect(
+        [...wybierzWatki(newGov(seed, 'zwykly', true), 'zwykly', false, true)].sort(),
+        `bez mieszkańców, ziarno ${seed}`,
+      ).toEqual(['h', 'z']);
+      expect([...wybierzWatki(newGov(seed, 'zwykly', true), 'zwykly', true, true)], `bez obu, ziarno ${seed}`).toEqual([
         'z',
       ]);
-      expect([...wybierzWatki(newGov(seed), 'zwykly', false, true)].sort(), `bez mieszkańców, ziarno ${seed}`).toEqual([
-        'h',
-        'z',
-      ]);
-      expect([...wybierzWatki(newGov(seed), 'zwykly', true, true)], `bez obu, ziarno ${seed}`).toEqual(['z']);
-      expect([...wybierzWatki(newGov(seed), 'zwykly')].sort(), `z obcymi i mieszkańcami, ziarno ${seed}`).toEqual([
-        'h',
-        'm',
-        'z',
-      ]);
+      expect(
+        [...wybierzWatki(newGov(seed, 'zwykly', true), 'zwykly')].sort(),
+        `z obcymi i mieszkańcami, ziarno ${seed}`,
+      ).toEqual(['h', 'm', 'z']);
     }
     // `obcy: false` jawnie wyłącza wymóg, nawet gdy któryś krok ma gościa
     podmienLancuchy([{ ...G, obcy: false }]);
-    expect(wybierzWatki(newGov(1), 'zwykly', true)).toEqual(['g']);
+    expect(wybierzWatki(newGov(1, 'zwykly', true), 'zwykly', true)).toEqual(['g']);
     // pierwszy tick gry bez mieszkańców nie wybiera łańcucha z `lokatorzy: true`
     podmienLancuchy([mieszkaniec]);
     const bez = stan({ seed: 4 });
@@ -362,7 +370,7 @@ describe('przebieg łańcucha', () => {
 
   it('całość na prawdziwym przebiegu zarządu z atrapą: kroki po kolei, z odstępami z haków', () => {
     podmienLancuchy([A]);
-    const gov = newGov(11);
+    const gov = newGov(11, 'zwykly', true);
     const atr = new Atrapa(11);
     for (const e of M1_EVENTS) gov.ev.last[e.id] = ZAMKNIETE;
     gov.ev.done.dym = true;
@@ -394,7 +402,7 @@ describe('przebieg łańcucha', () => {
 
   it('gotowość kroku co do minuty: hak plus `po` godzin, w górę od dokładnie tego momentu', () => {
     podmienLancuchy([A]);
-    const gov = newGov(2);
+    const gov = newGov(2, 'zwykly', true);
     wybierzWatki(gov, 'zwykly');
     // pierwszy krok jest gotowy od razu, drugi jeszcze nie ma kroku 1 za sobą
     expect(krokiGotowe(gov, 0, 'zwykly').map((k) => k.id)).toEqual(['a_1']);
@@ -420,7 +428,7 @@ describe('przebieg łańcucha', () => {
     };
     podmienLancuchy([X, Y]);
     const stanZ = (wybrane: string[], tx0: number, ty0: number): GovState => {
-      const gov = newGov(1);
+      const gov = newGov(1, 'zwykly', true);
       gov.watki = {
         wybrane,
         krok: { x: 1, y: 1 },
@@ -633,7 +641,7 @@ describe('zapis i wczytanie', () => {
 describe('pusta lista łańcuchów', () => {
   it('bez łańcuchów silnik nie losuje i niczego nie zapisuje', () => {
     podmienLancuchy([]);
-    const gov = newGov(5);
+    const gov = newGov(5, 'zwykly', true);
     const rng = gov.rng.s;
     const przed = saveGov(gov);
     expect(wybierzWatki(gov, 'zwykly')).toEqual([]);
@@ -855,7 +863,7 @@ describe('krok z gościem', () => {
 
 describe('hak i sprawdzanie łańcuchów', () => {
   it('hak trzyma kopię danych w czystym JSON, a odczyt oddaje kopię', () => {
-    const gov = newGov(1);
+    const gov = newGov(1, 'zwykly', true);
     const dane = { kto: tx('Ala', 'Alice'), n: 2, zagniezdzone: { a: [1, 2, 3] }, brak: undefined };
     hak(gov, 'x.y', 55, dane);
     dane.zagniezdzone.a.push(4);
@@ -875,7 +883,7 @@ describe('hak i sprawdzanie łańcuchów', () => {
 
   it('hak założony przed wyborem wątków (puste `wybrane`) nie blokuje wyboru', () => {
     podmienLancuchy([A]);
-    const gov = newGov(1);
+    const gov = newGov(1, 'zwykly', true);
     hak(gov, 'a.cos', 10);
     expect(gov.watki?.wybrane).toEqual([]);
     expect(wybierzWatki(gov, 'zwykly')).toEqual(['a']);

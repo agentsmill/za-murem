@@ -748,6 +748,9 @@ export interface GovState {
       ostatniego rozpoczętego kroku łańcucha (równy liczbie kroków: łańcuch skończony albo cicho zakończony). Pole od
       pierwszego wyboru wątków albo haka; gra bez łańcuchów i stary zapis go nie mają. */
   watki?: { wybrane: string[]; haki: Record<string, { t: number; d?: unknown }>; krok: Record<string, number> };
+  /** łańcuchy kart i wątki sezonu są włączone (adres `?lancuchy=1`, ustawia je start gry w `newGov`); brak pola albo fałsz: wyłączone,
+      zarząd zachowuje się jak z pustą listą łańcuchów (żadnego wyboru wątków, losowania z ziarna ani stanu `watki`) */
+  lancuchy?: boolean;
   /** narrator (src/gov/narrator.ts): krzywa napięcia, która przestawia wagi kart; pole powstaje przy pierwszym kroku narratora,
       w starym zapisie go nie ma (wtedy mnożniki wag to 1) */
   napiecie?: Napiecie;

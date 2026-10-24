@@ -49,7 +49,7 @@ function nowaGra(
     ...(o.mode ? { mode: o.mode } : {}),
     ...(o.mieszkancy ? { mieszkancy: o.mieszkancy } : {}),
   });
-  const gov = newGov(seed, o.mode);
+  const gov = newGov(seed, o.mode, true);
   for (const e of M1_EVENTS) gov.ev.last[e.id] = 1e12;
   gov.ev.done.dym = true;
   gov.watki = { wybrane: [lancuch], haki: {}, krok: {} };
