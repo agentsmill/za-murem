@@ -3,7 +3,8 @@
    - budowy z kolejki: łóżka piętrowe w pokoju zarządu, gdy łóżek nie ma więcej niż osób, magazyn przy pełnym składzie drewna,
      warsztat, pieczarkarnia i szklarnia po badaniach, zasieki na otwartej dziurze; tylko z odblokowanych, tylko gdy materiał
      już jest, najwyżej jeden plan naraz (także gdy plan czeka w kolejce poleceń) i dopiero gdy warstwa zimy ma swoje za sobą;
-   - badań z `KOLEJKA_BADAN` po kolei, gdy nic się nie bada (albo wybrane stoi bez wiedzy);
+   - badań z `KOLEJKA_BADAN` po kolei, gdy nic się nie bada (albo wybrane stoi bez wiedzy), z `t_ambu` (zdrowie wraca 1,6× szybciej)
+     na końcu: pracownia nie stoi bez zajęcia od 7. dnia, a zdrowie zarządu to wąskie gardło przeżycia (zadanie 6);
    - tabeli Pracy: priorytet 1 Badań dla osoby z największą umiejętnością w dziedzinie badania i próg drewna 2 × drewno na noc;
    - werbunku: wędrowiec pod bramą dostaje rozmowę, a po niej zaproszenie, gdy starcza jedzenia na przyjęcie i jest wolne łóżko;
    - przebiegu prawdziwej gry (Przymorze, ziarno 11, jak w przeglądarce): wybór wydarzeń na kopii zarządu bez ruszania prawdziwego,
@@ -349,8 +350,16 @@ describe('turaRozwoju: przygotowanie warunków (Przymorze, ziarno 11, dzień 6, 
   });
 
   describe('badania z KOLEJKA_BADAN', () => {
-    it('kolejka: kozy, okna, konserwy, grzyby, zielarstwo, szklarnia', () => {
-      expect(KOLEJKA_BADAN).toEqual(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo', 't_szklarnia']);
+    it('kolejka: kozy, okna, konserwy, grzyby, zielarstwo, szklarnia, ambulatorium', () => {
+      expect(KOLEJKA_BADAN).toEqual([
+        't_kozy',
+        't_okna',
+        't_konserwy',
+        't_grzyby',
+        't_zielarstwo',
+        't_szklarnia',
+        't_ambu',
+      ]);
     });
 
     /** gra z wiedzą we wszystkich dziedzinach (książki), bez bieżącego badania i z podanymi badaniami za sobą */
@@ -379,8 +388,30 @@ describe('turaRozwoju: przygotowanie warunków (Przymorze, ziarno 11, dzień 6, 
       expect(wybor(['t_kozy', 't_okna', 't_konserwy'])).toEqual(['t_grzyby']);
       expect(wybor(['t_kozy', 't_okna', 't_konserwy', 't_grzyby'])).toEqual(['t_zielarstwo']);
       expect(wybor(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo'])).toEqual(['t_szklarnia']);
+      expect(wybor(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo', 't_szklarnia'])).toEqual(['t_ambu']);
       // kolejka wyczerpana
       expect(wybor([...KOLEJKA_BADAN])).toEqual([]);
+    });
+
+    it('po sześciu badaniach pracownia nie stoi bez zajęcia: t_ambu (zdrowie wraca 1,6× szybciej), a bez wiedzy z medycyny nic', () => {
+      // Pomiar (15 przebiegów, ziarna 11–15): w Przymorzu i Lanciego sześć badań jest gotowych w dniach 6–8 i stół pracowni stoi
+      // pusty, choć t_ambu jest do wzięcia, a zdrowie zarządu jest wąskim gardłem: pożar co dobę (−20 najzdrowszej osobie),
+      // rany z wypraw (−20…−35) i napady wyprzedzają regenerację (+0,5 na godzinę, tylko przy cieple i sytości).
+      const szesc = KOLEJKA_BADAN.filter((id) => id !== 't_ambu');
+      const z = graBadan(szesc);
+      expect(kartka(z.sim.st, 't_ambu', modeOf(z.sim.st)).stan).toBe('do_wziecia');
+      const a = szpieg();
+      turaRozwoju(z, a.r);
+      expect(badanie(a)).toEqual(['t_ambu']);
+
+      // Zielonki: nikt z zarządu nie zna się na medycynie (książek też brak), więc t_ambu czeka na wiedzę i kolejka jest pusta
+      const bez = graBadan(szesc);
+      bez.sim.st.books = { cieplo: 2, bud: 2, uprawa: 2 };
+      for (const p of bez.sim.st.people) p.skills.med = 0;
+      expect(kartka(bez.sim.st, 't_ambu', modeOf(bez.sim.st)).stan).toBe('brak_wiedzy');
+      const b = szpieg();
+      turaRozwoju(bez, b.r);
+      expect(badanie(b)).toEqual([]);
     });
 
     it('pomija badanie, na które osada nie ma wiedzy, i bierze następne', () => {
@@ -652,8 +683,8 @@ interface OknoPozaru {
 describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   const okna: OknoWydarzenia[] = [];
   const pozary: OknoPozaru[] = [];
-  /** poranki: dzień, ludność pod zarządem i stojące budowle */
-  const poranki: { dzien: number; ludnosc: number; budowle: number }[] = [];
+  /** poranki: dzień, ludność pod zarządem, stojące budowle i zbadane technologie */
+  const poranki: { dzien: number; ludnosc: number; budowle: number; badania: string[] }[] = [];
   let g: GraAi;
 
   /** ocena wyboru z pełnego przeglądu na kopiach, niezależnie od `wyborWydarzenia` */
@@ -700,7 +731,12 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     for (let d = 2; d <= 20 && !g.gov.over; d++) {
       grajDo(g, mierzacy, poranekTick(d));
       if (g.gov.over) break;
-      poranki.push({ dzien: d, ludnosc: populacja(g.sim.st).razem, budowle: budowleStojace(g.sim.st.things) });
+      poranki.push({
+        dzien: d,
+        ludnosc: populacja(g.sim.st).razem,
+        budowle: budowleStojace(g.sim.st.things),
+        badania: [...(g.sim.st.techDone ?? [])],
+      });
     }
   }, 300_000);
 
@@ -718,6 +754,16 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     // w grze karta wraca co dobę; bez wagi pożaru w ocenie skutków silnik ewakuował za każdym razem i kończył 5 dni wcześniej
     expect(pozary.length).toBeGreaterThanOrEqual(3);
     for (const o of pozary) expect(o.ewakuacja, `dzień ${o.dzien}`).toBe(false);
+  });
+
+  it('pracownia nie stoi bez zajęcia: sześć badań z kolejki i t_ambu są zbadane do rana 10. dnia', () => {
+    // Bez t_ambu w kolejce stół pracowni stał pusty od 7. dnia (t_ambu było do wzięcia: Hanna ma medycynę 3), a zdrowie zarządu
+    // spadało od 14. dnia poniżej 45, czyli poniżej progu wyprawy dalekiej. Ten przebieg: t_ambu gotowe w 9. dniu.
+    const rano10 = poranki.find((p) => p.dzien === 10);
+    expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
+    expect(rano10!.badania).toEqual(
+      expect.arrayContaining(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo', 't_szklarnia', 't_ambu']),
+    );
   });
 
   it('pierwszy kamień ludności (10 osób) do 5. dnia', () => {

@@ -1,4 +1,4 @@
-/* Warstwa rozwoju silnika osady AI, etap 1 (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 5).
+/* Warstwa rozwoju silnika osady AI, etap 1 (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 5 i 6).
    Powód: osada, która tylko przeżywa, nie rośnie: bez wolnych łóżek nie ma kogo przyjąć, bez warsztatu nie ma desek, a bez
    badań poza kozą nie ma ani pieczarek, ani szklarni (cel etapu: pierwszy kamień ludności i co najmniej jedna budowla na
    trzy dni gry, docs/superpowers/specs/2026-10-20-osada-ai-design.md, „Bramka”).
@@ -16,7 +16,15 @@
      (src/ai/zima.ts, `zimaWToku`) nie ma za sobą pracowni, badania i postawienia kozy z beczki w pokoju zarządu, budowy
      rozwoju czekają: koza grzeje sypialnię zarządu i ma pierwszeństwo do desek, złomu i części;
    - badania z `KOLEJKA_BADAN` po kolei: gdy nic się nie bada (albo wybrane stoi bez wiedzy), pierwsze z kolejki, na które osada ma
-     wiedzę (`kartka` w stanie „do wzięcia”); badanie, które trwa, zostaje;
+     wiedzę (`kartka` w stanie „do wzięcia”); badanie, które trwa, zostaje. Ostatnie w kolejce jest `t_ambu` (ambulatorium: zdrowie
+     wraca 1,6× szybciej; wymaga `t_zielarstwo` i wiedzy z medycyny na poziomie 2). Pomiar zadania 6: sześć pierwszych badań jest gotowych
+     w dniach 6–8, a stół pracowni stoi pusty, choć `t_ambu` jest do wzięcia (10 z 10 przebiegów w Przymorzu i Lanciego, ziarna 11–15;
+     w Zielonkach nikt z zarządu nie zna się na medycynie, więc badanie czeka na wiedzę). Zdrowie zarządu jest wąskim gardłem przeżycia:
+     wraca o 0,5 na godzinę, i to tylko przy cieple i sytości (około 12 na dobę), a ubywa go 20 na każdy pożar od kozy (najzdrowsza osoba
+     w domu, pożar co 1–2 doby), 20–35 na ranę z wyprawy i na napad; średnie zdrowie zarządu spada poniżej 45 (próg wyprawy dalekiej
+     po jedzenie) w dniach 9–20, potem pusta spiżarnia, głód wszystkich i odwołanie 4–16 dni później. Z `t_ambu` średni dzień końca
+     gry (przebieg, który dożył 45 dni, liczony jako 45) rośnie z 27,0 do 28,7 (60 przebiegów, ziarna 11–30) i z 28,5 do 31,9
+     (60 przebiegów, ziarna 31–50), w Przymorzu z 32,8 do 37,2 i z 35,3 do 39,1; w Zielonkach bez zmian (brak wiedzy);
    - tabela Pracy: priorytet 1 Badań dla osoby z największą umiejętnością w dziedzinie bieżącego badania (przy remisie niższy
      numer osoby; bez nikogo z umiejętnością co najmniej 1 nic, bo wtedy badanie niosą mieszkańcy albo książki) i próg drewna
      dwa razy większy niż drewno na noc (`drewnoNaNoc`): automat Drwala trzyma zapas na dwie noce, a warsztat piłuje deski
@@ -48,7 +56,8 @@ import { LOZKA, type Miejsce, miejscaNa, miejsceNa, pokojZarzadu } from './miejs
 import { najblizszaWolna, zarzad } from './osoby.ts';
 import { drewnoNaNoc, zimaWToku } from './zima.ts';
 
-/** badania po kolei: koza z beczki (zima), okna (+3°C w naszych mieszkaniach), konserwy, grzyby (pieczarkarnia), zielarstwo, szklarnia */
+/** badania po kolei: koza z beczki (zima), okna (+3°C w naszych mieszkaniach), konserwy, grzyby (pieczarkarnia), zielarstwo, szklarnia
+    i na końcu ambulatorium (`t_ambu`, zdrowie wraca 1,6× szybciej: stół pracowni nie stoi pusty od 7. dnia) */
 export const KOLEJKA_BADAN: readonly string[] = [
   't_kozy',
   't_okna',
@@ -56,6 +65,7 @@ export const KOLEJKA_BADAN: readonly string[] = [
   't_grzyby',
   't_zielarstwo',
   't_szklarnia',
+  't_ambu',
 ];
 
 /** miejsca do spania w mieszkaniu zarządu (łóżka całe po jednym, piętrowe po dwa), jak `bedsIn` w symulacji */
