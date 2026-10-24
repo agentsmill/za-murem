@@ -557,6 +557,8 @@ interface Stos {
   tekstPodpowiedzi: string;
   szuflada: Prosty | null;
   przybysze: Prosty | null;
+  /** przyciski przybliżenia przy prawej krawędzi */
+  przyciski: Prosty | null;
   /** czy środek nazwy i linii rodziny na karcie osoby jest naprawdę widać (nic nad nimi nie leży) */
   nazwaKarty: boolean | null;
   rodzinaKarty: boolean | null;
@@ -609,6 +611,7 @@ const stos = (page: Page): Promise<Stos> =>
       tekstPodpowiedzi: document.getElementById('hint')?.textContent ?? '',
       szuflada: jeden('#buildPanel'),
       przybysze: jeden('#arrive'),
+      przyciski: jeden('.mapctl'),
       nazwaKarty: naWierzchu('#card h2'),
       rodzinaKarty: naWierzchu('#card .rodzina, #card .sub.gen'),
       bieznyCel: bieR ? { l: bieR.left, t: bieR.top, r: bieR.right, b: Math.max(bieR.bottom, jak?.bottom ?? 0) } : null,
@@ -629,6 +632,7 @@ function nachodzenia(s: Stos, o: { szufladaNaCelach: boolean }): string[] {
     ['okienko celów', s.cele, 'lista ludzi', s.lista],
     ['okienko celów', s.cele, 'karta osoby', s.karta],
     ['lista ludzi', s.lista, 'karta osoby', s.karta],
+    ['przyciski przybliżenia', s.przyciski, 'karta osoby', s.karta],
     ['podpowiedź', s.podpowiedz, 'okienko celów', s.cele],
     ['podpowiedź', s.podpowiedz, 'lista ludzi', s.lista],
     ['podpowiedź', s.podpowiedz, 'karta osoby', s.karta],
@@ -694,7 +698,8 @@ const stosTelefon = (
     // druga podpowiedź, już po zniknięciu startowej: alarm („Do broni!”) mówi o tym u dołu przez kilka sekund
     await kliknij(page, '#btnAlarm', true);
     await page.waitForFunction(() => document.getElementById('hint')!.textContent !== '', null, { timeout: 3000 });
-    await klatki(page, 4);
+    // układ dochodzi w kilku klatkach (podpowiedź, okienko celów, lista ludzi), toast trwa dłużej niż ta chwila
+    await poHudzie(page, 1);
     s = await stos(page);
     zle = nachodzenia(s, { szufladaNaCelach: true });
     if (s.nazwaKarty === false) zle.push('imię na karcie osoby jest przykryte');

@@ -3,8 +3,10 @@
    Przy otwartym panelu budowy (#app.build-open) albo pracy (#app.praca-open) kończy się przed nim, a przy panelu Pracy na
    oknach do 940 px i na telefonie chowa się (nie ma wtedy miejsca obok panelu). Komunikat o przybyszach
    stoi w tym samym miejscu pod paskiem, więc lista schodzi pod niego (--lista-dy mierzy lista.ts). Do 640 px (telefon)
-   chipy leżą w rzędzie pod celami dnia na całą szerokość, mniejsze, a rząd zawija się dopiero od ośmiu osób.
-   Pojemnik nie łapie wskaźnika: między chipami klik i przeciąganie trafiają w mapę. */
+   chipy leżą w rzędzie pod celami dnia na całą szerokość, mniejsze, a rząd zawija się dopiero od ośmiu osób; okienko celów
+   nad nimi kurczy się tak, żeby lista została nad kartą osoby i podpowiedzią (--zapas-dol, liczy go main.ts), a przy
+   szufladzie budowy od dołu lista się chowa. Pojemnik nie łapie wskaźnika: między chipami klik i przeciąganie trafiają
+   w mapę. */
 
 .lista {
   position: absolute;
@@ -193,9 +195,11 @@
     right: 8px;
     gap: 4px;
   }
-  /* szuflada budowy jest na telefonie od dołu, więc prawa strona zostaje wolna (przy panelu Pracy lista się chowa) */
+  /* Szuflada budowy jest na telefonie od dołu (pół wysokości ekranu) i sięga pod listę ludzi, jeśli okienko celów jest
+     wysokie, więc chipy leżałyby na kafelkach budowli; lista chowa się razem z kartą osoby, podpowiedzią i przyciskami
+     przybliżenia, dopóki szuflada jest otwarta (przy panelu Pracy też się chowa). */
   .app.build-open .lista {
-    right: 8px;
+    display: none;
   }
   .lp {
     padding: 2px 3px 1px;

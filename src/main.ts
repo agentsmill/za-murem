@@ -2135,13 +2135,22 @@ function renderGoals(snap: SimSnapshot) {
     widok = { okazja: null, rozdzial, drogi: null };
   } else widok = widokCelow(snap);
   const html = celeHtml(widok, { otwarte: celeRozwiniete(), touch: touchUI });
+  const bylo = !el.hidden;
   el.hidden = !html;
-  if (!html) return;
+  // Schowanie i pokazanie okienka oraz zmiana jego treści zmieniają jego wysokość, a od niej zależy położenie listy ludzi pod
+  // nim (`--goals-h`): wymiary liczą się od razu, w tej samej klatce. Okienka nie obserwuje obserwator rozmiaru (`bars` niżej).
+  if (!html) {
+    if (bylo) zmierzNakladki();
+    return;
+  }
+  const zmieniona = html !== goalsHtml || !bylo;
   if (html !== goalsHtml) {
     goalsHtml = html;
     el.innerHTML = html;
   }
   pokazBiezacyCel(el);
+  if (zmieniona) zmierzNakladki();
+  else znacznikPrzewijania(el);
 }
 /** Okienko celów ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby), a wyższa lista przewija się
     w środku, więc bieżący cel z podpowiedzią trzeba pokazać, kiedy się zmienił albo kiedy zmieniła się wysokość okienka albo
@@ -3691,22 +3700,69 @@ window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 // wysokość górnego paska, listy celów, karty i atrybucji dla przycisków mapy i podpowiedzi (zawijają się na telefonie)
 const attrib = document.querySelector<HTMLElement>('#app .attrib');
-const bars = new ResizeObserver(() => {
-  const root = document.documentElement.style;
-  root.setProperty('--top-h', `${Math.round($('top').getBoundingClientRect().height)}px`);
-  root.setProperty('--goals-h', `${$('goals').hidden ? 0 : Math.round($('goals').getBoundingClientRect().height)}px`);
-  root.setProperty('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+/** Co `zmierzNakladki` wpisało ostatnio do zmiennych CSS: zmienna dostaje wartość tylko wtedy, gdy się zmieniła, żeby nie
+    przeliczać stylów bez potrzeby. */
+const zmienneNakladek = new Map<string, string>();
+function ustawZmienna(nazwa: string, wartosc: string) {
+  if (zmienneNakladek.get(nazwa) === wartosc) return;
+  zmienneNakladek.set(nazwa, wartosc);
+  document.documentElement.style.setProperty(nazwa, wartosc);
+}
+/** element jest na ekranie (nie `hidden` i nie `display: none` od przodka) */
+const naEkranie = (e: HTMLElement) => !e.hidden && e.getClientRects().length > 0;
+/** Ile pikseli od dołu ekranu okienko celów na telefonie zostawia pod sobą (`--zapas-dol` w `.goals` w src/style.css):
+    komunikat o przybyszach i listę ludzi, które stoją pod nim, oraz to, co stoi na dole nad atrybucją map, czyli kartę osoby,
+    pasek stawiania i podpowiedź (leży tuż nad nimi). Dzięki temu okienko kurczy się i przewija w środku, zamiast zachodzić
+    na listę ludzi, imię na karcie albo podpowiedź. Na komputerze 0 (tam `.goals` ma własne ograniczenie od karty osoby). */
+function zapasDol(): number {
+  if (!matchMedia('(max-width: 640px)').matches) return 0;
+  const dol = $('app').getBoundingClientRect().bottom;
+  const nad = [attrib, $('card'), $('placeBar'), $('hint')].filter((e): e is HTMLElement => !!e && naEkranie(e));
+  const gora = Math.min(dol, ...nad.map((e) => e.getBoundingClientRect().top));
+  const lista = naEkranie($('lista')) ? $('lista').offsetHeight : 0;
+  const przybysze = naEkranie($('arrive')) ? $('arrive').offsetHeight : 0;
+  // odstęp 10 px od okienka do tego, co pod nim, i 8 px między komunikatem a listą (jak `--lista-dy` w src/ui/lista.ts)
+  const pod = lista || przybysze ? 10 + przybysze + (lista && przybysze ? 8 : 0) + lista : 0;
+  return Math.ceil(dol - gora + 8 + pod);
+}
+/** Okienko celów przewija się w środku, gdy jest wyższe od miejsca: `data-przewija` mówi, czy poniżej jest jeszcze treść
+    („dol”: zanik u dołu), czy część jest już przewinięta („gora”: cień pod przyklejonym nagłówkiem), czy jedno i drugie („oba”);
+    bez nadmiaru treści brak atrybutu (`.goals[data-przewija]` w src/style.css). */
+function znacznikPrzewijania(el: HTMLElement) {
+  const dol = el.scrollHeight - el.clientHeight - el.scrollTop > 1.5;
+  const gora = el.scrollTop > 1;
+  const znak = dol && gora ? 'oba' : dol ? 'dol' : gora ? 'gora' : '';
+  if ((el.dataset.przewija ?? '') === znak) return;
+  if (znak) el.dataset.przewija = znak;
+  else delete el.dataset.przewija;
+}
+$('goals').addEventListener('scroll', () => znacznikPrzewijania($('goals')), { passive: true });
+/** Mierzy nakładki i wpisuje wymiary do zmiennych CSS. Woła ją `bars` po zmianie rozmiaru obserwowanych elementów, okienko
+    celów po zmianie treści (`renderGoals`) i wczytanie czcionek. */
+function zmierzNakladki() {
+  ustawZmienna('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
   // atrybucja map i danych mieszkańców na dole: na telefonie dwa wiersze, a karta i podpowiedź stoją nad nią
-  if (attrib) root.setProperty('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
+  if (attrib) ustawZmienna('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
   // pasek trybu stawiania: na telefonie podpowiedź (np. czemu tu nie wolno) idzie nad niego, a nie pod spód
   const place = $('placeBar');
-  root.setProperty('--place-lift', `${place.hidden ? 0 : Math.round(place.getBoundingClientRect().height) + 20}px`);
-});
-bars.observe($('top'));
-bars.observe($('goals'));
-bars.observe($('card'));
-bars.observe($('placeBar'));
+  ustawZmienna('--place-lift', `${place.hidden ? 0 : Math.round(place.getBoundingClientRect().height) + 20}px`);
+  // zapas liczy się po zmiennych wyżej (od nich zależy położenie karty i podpowiedzi), a wysokość okienka i paska po zapasie
+  // (od niego zależy wysokość okienka, a od niej położenie listy ludzi i komunikatu o przybyszach), żeby wszystko zgadzało się
+  // już w tej klatce
+  ustawZmienna('--zapas-dol', `${zapasDol()}px`);
+  ustawZmienna('--top-h', `${Math.round($('top').getBoundingClientRect().height)}px`);
+  ustawZmienna('--goals-h', `${$('goals').hidden ? 0 : Math.round($('goals').getBoundingClientRect().height)}px`);
+  znacznikPrzewijania($('goals'));
+}
+/** Obserwator pilnuje elementów, których rozmiaru zmienne CSS NIE zmieniają: pasek, karta, pasek stawiania, lista ludzi,
+    komunikat o przybyszach, podpowiedź i atrybucja. Okienka celów nie obserwuje, bo jego wysokość ograniczają `--card-h`
+    i `--zapas-dol` (a zmiana rozmiaru obserwowanego elementu w wywołaniu obserwatora kończy się błędem okna „ResizeObserver
+    loop completed with undelivered notifications”): jego treść mierzy `renderGoals`, a zmianę jego szerokości z oknem (obrót
+    telefonu) pasek, który zmienia się razem z nią. */
+const bars = new ResizeObserver(() => zmierzNakladki());
+for (const e of [$('top'), $('card'), $('placeBar'), $('lista'), $('arrive'), $('hint')]) bars.observe(e);
 if (attrib) bars.observe(attrib);
+document.fonts?.addEventListener('loadingdone', zmierzNakladki);
 
 /** Nazwa osiedla na szyldzie paska: na telefonie szyld ma 150 px (src/style.css, `.top .sign`), więc dłuższa nazwa („Przymorze
     Wielkie”, „Ursynów Północny”) dostaje mniejszą czcionkę, co pół piksela do `NAZWA_MIN_PX`, zamiast urywać się wielokropkiem;

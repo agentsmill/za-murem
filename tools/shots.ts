@@ -6349,7 +6349,9 @@ const SHOTS: Shot[] = [
         for (const p of core) if (p.job?.t === 'research') p.job = null;
         const inny = core[core.length - 1];
         const ok = sim.startResearch(inny, true);
-        zm.setCam(lab.x + 1, lab.y + 0.5, 1.4);
+        // kamera półtora kafelka wyżej niż pracownia: żaden z zaznaczanych (jeden stoi siedem kafelków nad stołem) nie wypada
+        // pod górnym paskiem, który ma od 1100 px stałe 105 px (kliknięcie w pionka pod paskiem trafia w pasek)
+        zm.setCam(lab.x + 1, lab.y - 1, 1.4);
         return {
           lab: { x: lab.x, y: lab.y },
           inny: inny.id,
@@ -10126,6 +10128,16 @@ async function zrzut(shot: Shot): Promise<void> {
       // strona bez pamięci: gra wybierze język domyślny
     }
   }, shot.lang ?? 'pl');
+  // błędy okna „ResizeObserver loop completed with undelivered notifications” nie są wyjątkami, więc Playwright ich nie zgłasza
+  // (`pageerror`), a serwer Vite pisze je tylko jako „[Unhandled error]”: liczy je słuchacz zdarzenia `error` z początku strony,
+  // a scenariusz z choć jednym pada (pomiar nakładek w src/main.ts ustawia wymiary w następnej klatce, nie w obserwatorze)
+  await page.addInitScript(() => {
+    const okno = window as unknown as { __zmRo: string[] };
+    okno.__zmRo = [];
+    window.addEventListener('error', (e) => {
+      if (/ResizeObserver/.test(e.message)) okno.__zmRo.push(e.message);
+    });
+  });
   // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
   if (KOD)
     await page.addInitScript(() => {
@@ -10157,6 +10169,10 @@ async function zrzut(shot: Shot): Promise<void> {
     }
     const file = path.join(OUT, `${shot.name}.png`);
     await page.screenshot({ path: file });
+    const ro = await page
+      .evaluate(() => (window as unknown as { __zmRo?: string[] }).__zmRo?.length ?? 0)
+      .catch(() => 0);
+    if (ro) errors.push(`${ro}× „ResizeObserver loop completed with undelivered notifications”`);
     console.log(`${shot.name}: ${Date.now() - t0} ms${errors.length ? `, BŁĘDY: ${errors.join(' | ')}` : ''}`);
     // błąd na stronie to nieudany zrzut, także dla CI
     if (errors.length) process.exitCode = 1;
