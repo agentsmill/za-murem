@@ -815,7 +815,7 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   it('werbunek działa: do 10. dnia co najmniej dwa zaproszenia wędrowców, a zarząd rośnie z 4 do co najmniej 8 osób', () => {
     // Zmierzone w tym przebiegu: 4 zaproszenia i 9 osób w zarządzie rano 10. dnia (przed zmianą werbunku 0 zaproszeń w 20 dni
     // przy 16–23 rozmowach i 7 osobach w zarządzie): zwerbowani wędrowcy trafiają do zarządu, a w przebiegach 11–50 (trzy dema,
-    // 120 przebiegów) większy zarząd to dłuższe przeżycie (Przymorze 40,9 → 43,9 dnia, Lanciego 29,7 → 34,0).
+    // 120 przebiegów) większy zarząd to dłuższe przeżycie (średni dzień końca, żyje = 45: Przymorze 40,5 → 43,5, Lanciego 30,0 → 34,4).
     const rano10 = poranki.find((p) => p.dzien === 10);
     expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
     expect(zaproszenia.filter((d) => d <= 10).length).toBeGreaterThanOrEqual(2);
