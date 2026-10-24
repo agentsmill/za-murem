@@ -601,8 +601,11 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // kroku, więc jest w skrócie każdej gry), a wagi kart z tagiem `ton` mnożą się przez mnożnik napięcia, czyli inne losowanie
     // (były ef7e6dca, a38f0d27 i a76369a8; z samym narratorem 74657a83, 39b814b2 i 16fcaf6f). Do tego w tym samym zadaniu odstęp
     // między wydarzeniami po pierwszych 10 minutach przesunięty ze 100–180 s na 110–200 s (spis kart na grę: 40,6 przy celu 30–40).
-    // Jedenasty raz w rundzie poprawek 1 zadania 16: łańcuchy kart są domyślnie wyłączone (`GovState.lancuchy`, adres `?lancuchy=1`),
-    // więc zarząd nie wybiera wątków i nie losuje z ziarna (były 10242b95, f01804b8 i 53bab003).
+    // Jedenasty raz w rundzie poprawek 1 zadania 16: łańcuchy kart dostały przełącznik (`GovState.lancuchy`). Ten test gra przez
+    // `run(…)` z atrapy, które bez piątego argumentu zaczyna od `newGov(ziarno, 'zwykly', false)`, czyli bez łańcuchów: zarząd nie
+    // wybiera wątków i nie losuje z ziarna, więc skróty niżej są skrótami gry sprzed łańcuchów (były 10242b95, f01804b8 i 53bab003).
+    // Sama gra w przeglądarce ma łańcuchy domyślnie włączone (`?lancuchy=0` wyłącza), a jej przebieg pilnują boty i
+    // lancuchy-przelacznik.test.ts; tu zostaje przebieg bez łańcuchów, żeby skróty mierzyły tylko drogi do zwycięstwa.
     const przebiegi = [
       [1, 'propozycja', '401232fa'],
       [3, 'zawsze-warta', '563c8664'],

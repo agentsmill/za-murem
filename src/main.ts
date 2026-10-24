@@ -198,7 +198,16 @@ import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
-import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
+import {
+  adresStartowy,
+  clearSave,
+  pietraWlaczone,
+  readSave,
+  type Save,
+  saveLabel,
+  worldKey,
+  writeSave,
+} from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import type { Geo } from './world/geo.ts';
@@ -532,16 +541,8 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, z ?pietra=1 i z ?lang=, dopóki są w adresie) */
-const startUrl = () => {
-  const q = new URLSearchParams();
-  if (params.get('siec') === '1') q.set('siec', '1');
-  if (params.get('pietra') === '1') q.set('pietra', '1');
-  const lang = new URLSearchParams(location.search).get('lang');
-  if (lang) q.set('lang', lang);
-  const s = q.toString();
-  return location.pathname + (s ? `?${s}` : '');
-};
+/** ekran startowy od nowa (z ?siec=1, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
+const startUrl = () => adresStartowy(location.pathname, location.search);
 /** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
 const DEMO_LABEL_EN: Record<string, string> = {
   przymorze: 'Obrońców Wybrzeża, Gdańsk (a wave block, large concrete panels)',
