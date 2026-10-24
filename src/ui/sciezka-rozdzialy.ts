@@ -35,8 +35,9 @@
    R6 „Badania” uczy pracowni, wyboru badania na tablicy (linia celu w oknie tablicy), stołu pracowni, pierwszej technologii
    i kartki z ery 2. Cele badań istnieją tylko tam, gdzie osada ma dość wiedzy na kartkę ery 1 albo 2 (`mozeWziacKartke`:
    wiedza jak w `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie), żeby zarząd bez fachu ery 1 nie utknął w rozdziale.
-   Podpowiedź pracowni w domu jednorodzinnym z domami obok (Zielonki) odsyła też po deski i części do sąsiednich domów
-   (`sasiednieDomy`): taki dom zbiera z własnych pomieszczeń za mało desek, a pracownia bierze 14.
+   Podpowiedź pracowni mówi na końcu, skąd jeszcze deski i części (`deskiSkadJeszcze`), bo pracownia bierze 14 desek, a
+   własne pomieszczenia i automat dają ich za mało: w bloku z mebli przeszukanych pustych mieszkań („Rozebrać …”), w domu
+   jednorodzinnym z domami obok (Zielonki) z sąsiednich domów, a w zombie z dopiskiem o szwendaczach jak w pukaniu.
    R7 „Sąsiedzi” uczy pukania (praca przy drzwiach z pukaniem, wynik pukania albo spotkanie), rozmowy w oknie spotkania
    (zalicza się po jego zakończeniu, żeby linia celu była w tym oknie), wejścia do zamkniętego budynku i przeszukania
    pomieszczenia u sąsiada; rozdziału nie ma, gdy w 120 m od siedziby nie stoi ani blok, ani dom. R8 „Drogi do zwycięstwa” uczy
@@ -649,12 +650,43 @@ const jestGdyMoznaBadac =
   (o: OdczytCelow, s: StanSciezki): boolean =>
     Object.hasOwn(s.zrobione, klucz) || warunek(o.st) || mozeWziacKartke(o.st, era);
 
-/** Dom jednorodzinny z domami obok (Zielonki). Pracownia bierze 14 desek, a taki dom zbiera z własnych pomieszczeń ich
-    za mało (4 na początku drugiego dnia, po przeszukaniu i rozbiórce najwyżej około 10, a z automatem pracy ludzi 7 do 8
-    w sześć dób), więc deski i części trzeba wziąć też z sąsiednich domów. W bloku (i w domu bez domów obok, gdzie nie ma
-    do kogo iść) zdania nie ma: blok ma własne puste mieszkania, a w słowniku `szukanie.obok` jest tylko dla domu. */
-const sasiednieDomy = (o: OdczytCelow): boolean =>
-  o.words.szukanie.obok !== null && sasiedzi(placeOfWorld(o.w)) === 'domy';
+/** Dopisek trybu zombie do wyjścia za siatkę po łup albo do cudzych drzwi, z pierwszą spacją: ten sam tekst w podpowiedzi
+    pukania (R7.1) i w podpowiedzi pracowni, która odsyła do sąsiednich domów po deski (R6.1). */
+const ZA_SIATKA = {
+  pl: ' Za siatką są szwendacze: idźcie za dnia, z dzidą.',
+  en: ' There are shamblers out there: go by day, with a spear.',
+} as const;
+
+/** Skąd jeszcze deski i części na pracownię: zdanie na końcu podpowiedzi celu `pracownia` (z pierwszą spacją; puste, gdy
+    nie ma co dopisać). Pracownia bierze 14 desek, a własne pomieszczenia i sam automat pracy ludzi dają ich za mało
+    (dom na Zielonkach 7 do 8 w sześć dób, mapy blokowe w zombie około 12 z 14 do ósmego dnia, osiedle zapasowe w zwykłym
+    trybie mniej, niż trzeba), więc podpowiedź mówi, skąd wziąć resztę:
+    - blok (słownik bez `szukanie.obok`): meble z przeszukanych pustych mieszkań, prawy przycisk na meblu, „Rozebrać …”
+      (napis z menu meblu w src/sim/orders.ts; meble pustego mieszkania da się rozebrać dopiero po przeszukaniu jego
+      pomieszczenia), deski dają stoły, krzesła, łóżka i meblościanki, części lodówki; rozbiórka jest w środku, więc bez
+      dopisku o szwendaczach;
+    - dom jednorodzinny z domami obok (Zielonki): sąsiednie domy, jak zdanie `szukanie.obok` z celu „pierwsza budowla”;
+      to wyjście za siatkę, więc w zombie z dopiskiem o szwendaczach jak w pukaniu (`ZA_SIATKA`);
+    - samotny dom i dom wśród bloków: nic (nie ma do kogo iść, a dom komitetu nie jest pustym mieszkaniem, więc jego
+      mebli nie rozbiera się na deski). */
+function deskiSkadJeszcze(o: OdczytCelow): { pl: string; en: string } {
+  const dotyk = o.touch;
+  if (o.words.szukanie.obok === null)
+    return {
+      pl: ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na meblu, „Rozebrać …”.`,
+      en: ` Furniture from searched empty flats gives planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} a piece, “Take apart the …”.`,
+    };
+  if (sasiedzi(placeOfWorld(o.w)) !== 'domy') return { pl: '', en: '' };
+  const zombie = zombieMode(o.st, o.gov);
+  return {
+    pl: ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
+      zombie ? ZA_SIATKA.pl : ''
+    }`,
+    en: ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
+      zombie ? ZA_SIATKA.en : ''
+    }`,
+  };
+}
 
 const R6: DefRozdzialu = {
   k: 'r6',
@@ -666,18 +698,10 @@ const R6: DefRozdzialu = {
       jak: (o) => {
         const koszt = costText(BUILDS.pracownia.cost);
         const b = budowaZakladka(o.touch);
-        const obok = sasiednieDomy(o);
+        const skad = deskiSkadJeszcze(o);
         return L(
-          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${
-            obok
-              ? ` Deski i części mają też sąsiednie domy: ${o.touch ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.`
-              : ''
-          }`,
-          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${
-            obok
-              ? ` The houses next door have planks and parts too: ${o.touch ? 'press and hold on' : 'right-click'} their door.`
-              : ''
-          }`,
+          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}`,
+          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${skad.en}`,
         );
       },
       // postawiona wcześniej zalicza od razu przy otwarciu rozdziału; sam plan budowy nie wystarcza
@@ -777,14 +801,10 @@ const R7: DefRozdzialu = {
         return L(
           `${o.touch ? 'Stuknijcie kogoś i przytrzymajcie palec' : 'Zaznaczcie kogoś i prawy przycisk'} na drzwiach sąsiedniego ${
             dom ? 'domu' : 'bloku'
-          }: „Zapukać”. Za dnia ludzie bywają w domu, nocą otwierają niechętnie.${
-            zombie ? ' Za siatką są szwendacze: idźcie za dnia, z dzidą.' : ''
-          }`,
+          }: „Zapukać”. Za dnia ludzie bywają w domu, nocą otwierają niechętnie.${zombie ? ZA_SIATKA.pl : ''}`,
           `${o.touch ? 'Tap someone and press and hold on' : 'Select someone and right-click'} the door of the ${
             dom ? 'house' : 'block'
-          } next door: “Knock”. By day people tend to be in; at night they’re slow to open.${
-            zombie ? ' There are shamblers out there: go by day, with a spear.' : ''
-          }`,
+          } next door: “Knock”. By day people tend to be in; at night they’re slow to open.${zombie ? ZA_SIATKA.en : ''}`,
         );
       },
       // Praca przy drzwiach z pukaniem trwa od polecenia do skutku (dojście, pukanie), więc okienko ją zobaczy. Krótką pracę

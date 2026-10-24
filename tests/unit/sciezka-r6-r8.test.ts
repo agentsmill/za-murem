@@ -34,7 +34,11 @@ import {
 import { kartka, nazwaTech, TECH_BY, TECHS } from '../../src/sim/badania.ts';
 import { BUILDS } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import { houseOf } from '../../src/sim/house.ts';
+import { RUBBISH } from '../../src/sim/mieszkania.ts';
+import { commandsAt } from '../../src/sim/orders.ts';
 import { drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
+import { dismantlable } from '../../src/sim/sim.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
 import { modeOf } from '../../src/sim/tryb.ts';
 import { tablicaHtml } from '../../src/ui/badania.ts';
@@ -1155,69 +1159,122 @@ const slowa = (g: Gra, touch: boolean, k: string) => {
 };
 
 describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () => {
-  it('pracownia: koszt z BUILDS, pokój „waszego mieszkania” w bloku i „waszego domu” w domu, a w domu wskazówka o sąsiednich domach', () => {
-    for (const key of ['przymorze', 'zielonki'] as const) {
-      const dom = wDomu(key);
-      const g = wRozdziale(key, 'zwykly', 'r6');
-      expect(slowa(g, false, 'pracownia')).toEqual({
-        text: 'Postawcie pracownię.',
-        how: `Budowa, zakładka Dom: Pracownia (deski 14, części 4) w pokoju ${dom ? 'waszego domu' : 'waszego mieszkania'}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${
-          dom ? ' Deski i części mają też sąsiednie domy: prawy przycisk na ich drzwiach.' : ''
-        }`,
-      });
-      const dotyk = slowa(g, true, 'pracownia').how;
-      expect(dotyk.startsWith('Przycisk Budowa u góry, zakładka Dom: Pracownia (deski 14, części 4)')).toBe(true);
-      expect(dotyk.endsWith('Deski i części mają też sąsiednie domy: przytrzymajcie palec na ich drzwiach.')).toBe(dom);
-      ustawJezyk('en');
-      expect(slowa(g, false, 'pracownia')).toEqual({
-        text: 'Build a research room.',
-        how: `Build, Home tab: Research room (planks 14, parts 4) in a room of ${dom ? 'your house' : 'your flat'}. Parts come from searching and from the workshop (“Make a part from scrap”).${
-          dom ? ' The houses next door have planks and parts too: right-click their door.' : ''
-        }`,
-      });
-      const touchEn = slowa(g, true, 'pracownia').how;
-      expect(touchEn.startsWith('The Build button at the top, Home tab: Research room')).toBe(true);
-      expect(touchEn.endsWith('The houses next door have planks and parts too: press and hold on their door.')).toBe(
-        dom,
-      );
-      ustawJezyk('pl');
+  it('pracownia: koszt z BUILDS, pokój „waszego mieszkania” w bloku i „waszego domu” w domu, na końcu skąd jeszcze deski (blok: meble, dom: sąsiednie domy, w zombie z szwendaczami)', () => {
+    // ten sam dopisek o szwendaczach, co w podpowiedzi pukania (R7.1)
+    const ZA_SIATKA_PL = ' Za siatką są szwendacze: idźcie za dnia, z dzidą.';
+    const ZA_SIATKA_EN = ' There are shamblers out there: go by day, with a spear.';
+    for (const key of ['przymorze', 'zielonki'] as const)
+      for (const mode of TRYBY) {
+        const dom = wDomu(key);
+        const zombie = mode === 'zombie';
+        const g = wRozdziale(key, mode, 'r6');
+        const lokumPl = dom ? 'waszego domu' : 'waszego mieszkania';
+        const lokumEn = dom ? 'your house' : 'your flat';
+        const koniecPl = (dotyk: boolean): string =>
+          dom
+            ? ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
+                zombie ? ZA_SIATKA_PL : ''
+              }`
+            : ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${
+                dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'
+              } na meblu, „Rozebrać …”.`;
+        const koniecEn = (dotyk: boolean): string =>
+          dom
+            ? ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
+                zombie ? ZA_SIATKA_EN : ''
+              }`
+            : ` Furniture from searched empty flats gives planks and parts too: ${
+                dotyk ? 'press and hold on' : 'right-click'
+              } a piece, “Take apart the …”.`;
+        const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`;
+        const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and from the workshop (“Make a part from scrap”).`;
+        const opis = `${key} ${mode}`;
+        expect(slowa(g, false, 'pracownia'), opis).toEqual({
+          text: 'Postawcie pracownię.',
+          how: `Budowa, zakładka Dom: ${srodekPl}${koniecPl(false)}`,
+        });
+        expect(slowa(g, true, 'pracownia').how, `${opis} dotyk`).toBe(
+          `Przycisk Budowa u góry, zakładka Dom: ${srodekPl}${koniecPl(true)}`,
+        );
+        if (dom) expect(slowa(g, false, 'pracownia').how, `${opis} bez słów z bloku`).not.toMatch(FORBIDDEN_DOM);
+        ustawJezyk('en');
+        expect(slowa(g, false, 'pracownia'), opis).toEqual({
+          text: 'Build a research room.',
+          how: `Build, Home tab: ${srodekEn}${koniecEn(false)}`,
+        });
+        expect(slowa(g, true, 'pracownia').how, `${opis} touch`).toBe(
+          `The Build button at the top, Home tab: ${srodekEn}${koniecEn(true)}`,
+        );
+        if (dom) expect(slowa(g, false, 'pracownia').how).not.toMatch(/\b(flat|stairwell|block)\b/i);
+        ustawJezyk('pl');
+      }
+  });
+
+  it('pracownia: dopisek o sąsiednich domach tylko tam, gdzie siedziba to dom, a obok stoją domy; meble tylko w bloku; szwendacze tylko przy wyjściu za siatkę w zombie', () => {
+    const pracownia = ROZDZIALY.find((r) => r.k === 'r6')!.cele.find((c) => c.key === 'pracownia')!;
+    const SASIEDNIE = /sąsiednie domy|houses next door/;
+    const MEBLE = /„Rozebrać …”|“Take apart the …”/;
+    const SZWENDACZE = /szwendacze|shamblers/;
+    for (const mode of TRYBY) {
+      const g = wRozdziale('zielonki', mode, 'r6');
+      const zombie = mode === 'zombie';
+      const jak = (swiat: ReturnType<typeof placeWorld>): { pl: string; en: string } => {
+        const o = {
+          ...odczyt(g),
+          w: swiat as unknown as ReturnType<typeof odczyt>['w'],
+          words: wordsOfWorld(swiat),
+          wordsEn: wordsEnOfWorld(swiat),
+        };
+        const pl = pracownia.jak(o, g.sciezka);
+        ustawJezyk('en');
+        const en = pracownia.jak(o, g.sciezka);
+        ustawJezyk('pl');
+        return { pl, en };
+      };
+      const oba = (t: { pl: string; en: string }, re: RegExp): boolean[] => [re.test(t.pl), re.test(t.en)];
+      // dom z domami obok (Zielonki są tak ustawione): sąsiednie domy, w zombie z szwendaczami, bez mebli
+      const domZDomami = jak(placeWorld([bud(0, 'dom', 0, 0), bud(1, 'dom', 40, 0)]));
+      expect(oba(domZDomami, SASIEDNIE), `${mode} dom z domami`).toEqual([true, true]);
+      expect(oba(domZDomami, SZWENDACZE), `${mode} dom z domami: szwendacze`).toEqual([zombie, zombie]);
+      expect(oba(domZDomami, MEBLE), `${mode} dom z domami: meble`).toEqual([false, false]);
+      // samotny dom: nie ma do kogo iść, więc ani sąsiadów, ani szwendaczy, ani mebli
+      const samotny = jak(placeWorld([bud(0, 'dom', 0, 0)]));
+      for (const re of [SASIEDNIE, SZWENDACZE, MEBLE])
+        expect(oba(samotny, re), `${mode} samotny dom ${re}`).toEqual([false, false]);
+      expect(samotny.pl).toContain('waszego domu');
+      // dom z blokami obok: sąsiedzi to nie domy
+      const domZBlokami = jak(placeWorld([bud(0, 'dom', 0, 0), bud(1, 'blok', 40, 0, { levels: 5 })]));
+      for (const re of [SASIEDNIE, SZWENDACZE, MEBLE])
+        expect(oba(domZBlokami, re), `${mode} dom z blokami ${re}`).toEqual([false, false]);
+      // siedziba w bloku, choćby domy obok: meble z pustych mieszkań (rozbiórka jest w środku, bez szwendaczy), bez sąsiadów
+      const blokZDomami = jak(placeWorld([bud(0, 'blok', 0, 0, { levels: 5 }), bud(1, 'dom', 40, 0)]));
+      expect(oba(blokZDomami, MEBLE), `${mode} blok`).toEqual([true, true]);
+      expect(oba(blokZDomami, SASIEDNIE), `${mode} blok: sąsiedzi`).toEqual([false, false]);
+      expect(oba(blokZDomami, SZWENDACZE), `${mode} blok: szwendacze`).toEqual([false, false]);
     }
   });
 
-  it('pracownia: wskazówka o sąsiednich domach tylko tam, gdzie siedziba to dom, a obok stoją domy', () => {
-    const g = wRozdziale('zielonki', 'zwykly', 'r6');
-    const pracownia = ROZDZIALY.find((r) => r.k === 'r6')!.cele.find((c) => c.key === 'pracownia')!;
-    const jak = (swiat: ReturnType<typeof placeWorld>): { pl: string; en: string } => {
-      const o = {
-        ...odczyt(g),
-        w: swiat as unknown as ReturnType<typeof odczyt>['w'],
-        words: wordsOfWorld(swiat),
-        wordsEn: wordsEnOfWorld(swiat),
-      };
-      const pl = pracownia.jak(o, g.sciezka);
-      ustawJezyk('en');
-      const en = pracownia.jak(o, g.sciezka);
-      ustawJezyk('pl');
-      return { pl, en };
-    };
-    const SASIEDNIE = /sąsiednie domy|houses next door/;
-    // dom z domami obok: jest (Zielonki są tak ustawione)
-    const domZDomami = jak(placeWorld([bud(0, 'dom', 0, 0), bud(1, 'dom', 40, 0)]));
-    expect(domZDomami.pl).toMatch(SASIEDNIE);
-    expect(domZDomami.en).toMatch(SASIEDNIE);
-    // samotny dom: nie ma do kogo iść, więc wskazówki nie ma
-    const samotny = jak(placeWorld([bud(0, 'dom', 0, 0)]));
-    expect(samotny.pl).not.toMatch(SASIEDNIE);
-    expect(samotny.en).not.toMatch(SASIEDNIE);
-    expect(samotny.pl).toContain('waszego domu');
-    // dom z blokami obok: sąsiedzi to nie domy
-    const domZBlokami = jak(placeWorld([bud(0, 'dom', 0, 0), bud(1, 'blok', 40, 0, { levels: 5 })]));
-    expect(domZBlokami.pl).not.toMatch(SASIEDNIE);
-    expect(domZBlokami.en).not.toMatch(SASIEDNIE);
-    // siedziba w bloku, choćby domy obok: blok ma własne puste mieszkania i słownik bez sąsiednich domów
-    const blokZDomami = jak(placeWorld([bud(0, 'blok', 0, 0, { levels: 5 }), bud(1, 'dom', 40, 0)]));
-    expect(blokZDomami.pl).not.toMatch(SASIEDNIE);
-    expect(blokZDomami.en).not.toMatch(SASIEDNIE);
+  it('pracownia w bloku: „Rozebrać …” i “Take apart the …” z podpowiedzi to napis z prawdziwego menu meblu w przeszukanym pustym mieszkaniu', () => {
+    const g = wRozdziale('przymorze', 'zwykly', 'r6');
+    const { st, w } = g.sim;
+    // przeszukane wszystkie pomieszczenia pustych mieszkań (meble pustego mieszkania da się rozebrać dopiero potem)
+    const dom = houseOf(w)!;
+    for (const a of st.apts)
+      if (a.state === 'puste')
+        dom.rooms.forEach((r, i) => {
+          if (r.apt === a.apt && !a.searched.includes(i)) a.searched.push(i);
+        });
+    const mebel = st.things.find((t) => !RUBBISH.has(t.kind) && dismantlable(st, w, t));
+    expect(mebel, 'w pustym mieszkaniu stoi mebel do rozebrania').toBeDefined();
+    const ids = rdzen(g.sim).map((p) => p.id);
+    const napisMenu = (): string =>
+      commandsAt(st, w, ids, mebel!.y * w.size + mebel!.x).find((m) => m.cmd.t === 'dismantle')!.label;
+    expect(napisMenu().startsWith('Rozebrać ')).toBe(true);
+    expect(slowa(g, false, 'pracownia').how).toContain('„Rozebrać …”');
+    ustawJezyk('en');
+    expect(napisMenu().startsWith('Take apart the ')).toBe(true);
+    expect(slowa(g, false, 'pracownia').how).toContain('“Take apart the …”');
+    ustawJezyk('pl');
   });
 
   it('badanie, odkrycie i era2: teksty z projektu, na dotyku bez klawisza T i „klik” zamiast „stuknięcia”', () => {
