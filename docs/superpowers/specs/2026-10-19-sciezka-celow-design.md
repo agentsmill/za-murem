@@ -295,7 +295,11 @@ R4.2 `wkurzenie`: „Sprawdźcie rano w raporcie, jak zmieniło się wkurzenie.�
 
 R4.3 `nowi`: „Przyjmijcie kogoś nowego.” / “Take someone new in.”
 - Jak: „Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od [bramy], a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.” / “Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from the gate, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.” Po scaleniu `wydarzenia`: „Gość pod [bramą] ma kartę z „Pokaż”: „Przyjąć do spółdzielni”.” (zadanie 13 planu).
-- Warunek: ludność (zarząd i mieszkańcy, `ludnoscOf(govInput)`) większa niż przy otwarciu rozdziału. Zgon w międzyczasie tylko opóźnia cel.
+- Podpowiedź po regule A zostaje bez zmian, po polsku i po angielsku, i jest prawdziwa: obie nazwane karty zaliczają cel, „Wciągnąć do roboty” w bloku awansem, a w domu nową osobą, „Przyjąć wszystkich” i „Przyjąć do spółdzielni” jako przyjęcie gości z bramy (test `tests/unit/sciezka-nowi.test.ts`).
+- Warunek, reguła A (oba tryby; rozstrzygnięcie 24.10.2026): od otwarcia rozdziału ktoś został przyjęty. Liczą się przyjęcia, nie ludność netto. Przyjęciem jest zamknięcie karty wyborem, który kogoś bierze (`przyjmijGosci`, `przyjmijDoZarzadu`, `joinPerson`), awans „Wciągnąć do roboty” (`awansuj`: w bloku mieszkaniec idzie do zarządu; liczy się jako „ręce do pracy”, jak mówi tekst karty) i udane zaproszenie wędrowca. Zgon po drodze go nie cofa, przyjęcie po zgonie liczy się tak samo, a przyjęcie sprzed otwarcia rozdziału się nie liczy. Wcześniej cel liczył ludność netto (`ludnoscOf(govInput)` większa niż przy otwarciu), więc awans z karty „Fachowiec”, który podpowiedź podaje jako przykład, go nie zaliczał, a zgon w międzyczasie go opóźniał.
+- Jak liczymy przyjęcia: w stanie ścieżki, bez zmian w symulacji i zarządzie (skróty botów te same). Pionek ma numer na stałe, a gość z karty, wędrowiec i awansowany mieszkaniec zostają tymi samymi pionkami i zmieniają tylko rodzaj, więc przy otwarciu rozdziału `StanSciezki.start` zapisuje numery pionków zarządu (`zarzad`) i zarządu razem z mieszkańcami (`osoby`). Cel jest zaliczony, gdy w zarządzie stoi pionek spoza pierwszej listy albo między mieszkańcami pionek spoza drugiej. Zapis sprzed tych list liczy jak dawniej ludność netto.
+- Zapas, reguła B (tylko zombie; rozstrzygnięcie 24.10.2026): po trzech dobach gry od otwarcia R4 bez przyjęcia cel zalicza się sam (`DOBY_NOWI_ZAPAS`), a pod nim stoi niewykreślona linia „Nikt nie zapukał: gdy ktoś poprosi o miejsce, karta zapyta.” / “Nobody knocked: when someone asks for a place, a card will ask you.” Powód: w zombie karta, która prosi o miejsce (goście płoszeni na zasięg ugryzienia, kroki łańcuchów, wędrowcy przy siatce), wypada średnio raz na 8 do 12 dób, a kolonia często ginie przed nią, więc cel nie może wstrzymywać reszty ścieżki. W trybie zwykłym zapasu nie ma: bot zaliczał tam cel w 21 z 21 gier (mediana 0,7 doby od otwarcia R4, najdłużej 2,7), bo dochodzą uchodźcy, influencerzy i zaproszeni wędrowcy.
+- Koszt pomyłki. A: kredyt przy decyzji, a nie przy dojściu grupy. W próbie 13 z 13 przyjętych grup weszło, 2 z 3 kroków łańcucha, więc fałszywy kredyt zdarzyłby się tylko wtedy, gdyby grupa zginęła po drodze, a lekcja (decyzja o przyjęciu) i tak się odbyła. Awans nie dokłada ust do wykarmienia, więc część lekcji z podpowiedzi („ręce do pracy i usta do wykarmienia”) przy awansie się nie dzieje. B: gracz przechodzi R4 bez przyjęcia kogokolwiek i nie zobaczy tej lekcji; wraca ona w R8 `ludnosc` i przy każdej karcie gościa.
 - Uczy M33, M54. W sondach (tydzień, bot bez sąsiadów i bez werbunku) ludność rosła w pięciu z sześciu przebiegów między 3. a 6. dniem (karty „Fachowiec”, „Influencer”, uchodźcy); w szóstym (Lanciego, zombie) bot tracił ludzi przez ugryzienia. Z „Zaprosić do nas” u sąsiadów i u wędrowców przychodzi szybciej.
 
 R4.4 `ludzie`: w bloku z mieszkańcami „Poznajcie mieszkańców siedziby.” / “Meet the residents of your block.”; w domu jednorodzinnym i w siedzibie bez mieszkańców „Poznajcie sąsiadów zza płotu.” / “Get to know the neighbours over the fence.”
@@ -460,7 +464,9 @@ interface StanSciezki {
   rozdzial: 'r0' | 'r1' | 'r2' | 'r3' | 'r4' | 'r5' | 'r6' | 'r7' | 'r8' | 'koniec';
   od: number;
   /** liczniki z chwili otwarcia rozdziału do warunków „od otwarcia” */
-  start: { uchwaly: number; raporty: number; ludnosc: number; lup: number; spotkania: number; kamienLudnosci: number };
+  start: { uchwaly: number; raporty: number; ludnosc: number; lup: number; spotkania: number; kamienLudnosci: number;
+    /** numery pionków z chwili otwarcia do celu R4 `nowi` (przyjęcia): zarząd z mieszkańcami i sam zarząd; w starym zapisie ich brak */
+    osoby?: number[]; zarzad?: number[] };
   /** zaliczone cele głównej ścieżki i okazji: klucz ('r1.przeszukaj', 'o2.wymiana') → tick zaliczenia */
   zrobione: Record<string, number>;
   /** cele, które przepadły (termin minął) */
@@ -480,9 +486,10 @@ Determinizm: ścieżka niczego nie zmienia w symulacji ani w zarządzie, tylko c
 
 - `#goals` zostaje w tym samym miejscu i rozmiarze (`src/style.css:702`). Okazja to blok nad nagłówkiem rozdziału: tytuł „Teraz: …” i jej cele z podpowiedzią bieżącego. Rozdział pod spodem jak dziś: nagłówek z tytułem i licznikiem, lista, podpowiedź pod bieżącym.
 - Cel czekający jest przyciemniony z krótkim dopiskiem („czeka do 20:00”, „czeka do zebrania”, „czeka do rana” / “waiting for 20:00”, “waiting for the meeting”, “waiting for morning”).
+- Zaliczony cel może mieć linię pod sobą (`Cel.uwaga`, dziś tylko R4 `nowi` zaliczony zapasem w zombie): osobny element `.goal-uwaga`, kursywą i niewykreślony, bo przekreślenie zaliczonego celu przechodzi na elementy wewnątrz wiersza. Zwinięte okienko jej nie pokazuje, bo pokazuje tylko bieżący cel.
 - Na telefonie zwinięte okienko pokazuje bieżący cel okazji, a bez okazji bieżący cel rozdziału (dziś: bieżący cel dnia).
 - Linia „Cel: …” w oknach karty nocy, uchwały, tablicy badań i spotkania, gdy bieżący cel ma `okno` tego okna.
-- `window.zm.cele()` zwraca widok ścieżki, a `window.zm.rozdzial(k)` ustawia rozdział (tylko do zrzutów, jak `zm.wygraj`).
+- `window.zm.cele()` zwraca widok ścieżki, a `window.zm.rozdzial(k, dobyTemu?)` ustawia rozdział, a z drugim argumentem cofa jego otwarcie o tyle dób (do zrzutu zapasu `nowi` w zombie bez grania trzech dób); tylko do zrzutów, jak `zm.wygraj`.
 - Zdarzenia interfejsu do `StanSciezki.ui`: wybór z listy ludzi (`wybierz` w `src/main.ts:420` i klawisze Q, E), karta mieszkańca (`residentFocus` w `src/main.ts:3253`, `:3260`), karta budynku (`budFocus` w `focusTile`, `src/main.ts:2755`), ekran dróg (`showDrogi`, `src/main.ts:1222`).
 
 ## Styk z gałęziami
@@ -495,8 +502,8 @@ Determinizm: ścieżka niczego nie zmienia w symulacji ani w zarządzie, tylko c
 
 `wydarzenia`:
 - Etap 1 usuwa karty bez ludzi (U15) i dokłada kartę „Szwendacz w siatce”; ścieżka tego nie wymaga.
-- Etap 3 (goście z klocków) zmienia drogę nowych ludzi: R4 `nowi` dostaje zdanie o gościu pod bramą i „Pokaż”; warunek (ludność) zostaje.
-- Etap 2 (awans, wyjście bramą) zmienia ludność w obie strony; R4 `nowi` liczy ludność, więc wyrzucenie kogoś opóźnia cel, co jest uczciwe.
+- Etap 3 (goście z klocków) zmienia drogę nowych ludzi: R4 `nowi` dostaje zdanie o gościu pod bramą i „Pokaż”; gość przyjęty kartą zalicza cel jako przyjęcie (reguła A).
+- Etap 2 (awans, wyjście bramą) zmienia ludność w obie strony; R4 `nowi` liczy przyjęcia, nie ludność netto (reguła A): awans mieszkańca kartą „Wciągnąć do roboty” cel zalicza, a zgon ani wyrzucenie kogoś zaliczonego przyjęcia nie cofają.
 
 ## Jak sprawdzono
 
@@ -505,7 +512,8 @@ Skrypty w Node 25 bez kompilacji, na `src/` z 715df48 (poza repo, w notatniku se
 ## Jak sprawdzamy budowę
 
 - Vitest na prawdziwej symulacji (dema z `public/demo`, świat z ziarna adresu jak w testach sąsiadów): każdy cel zalicza się dokładnie wtedy, gdy zrobi się to, co mówi podpowiedź, i nie wcześniej; cele przepadają tylko z terminem; okazje otwierają się i zamykają z wyzwalaczem; stan ścieżki przechodzi przez zapis i wczytanie; po angielsku bez polskich liter, w domu bez słów z bloku.
-- Bot ścieżki (`npm run bot:cele`): trzy dema w obu trybach przez 10 dni, gracz robi to, co mówią podpowiedzi; drukuje dzień i godzinę otwarcia i końca każdego rozdziału, cele przepadłe i cele okazji. Każdy rozdział ma się kończyć na każdym z sześciu przebiegów.
+- Bot ścieżki (`npm run bot:cele`): trzy dema w obu trybach przez 10 dni, gracz robi to, co mówią podpowiedzi; drukuje dzień i godzinę otwarcia i końca każdego rozdziału, cele przepadłe i cele okazji. Kod wyjścia decyduje tylko tryb zwykły: każdy rozdział ma się kończyć w 10 dobach na każdym z trzech dem, bez przepadłych celów i bez niezgodności menu z podpowiedzią. Zombie zostaje w tabeli jako informacja i kodu nie zmienia, bo ścieżka w zombie staje na R5 (ogródek, 14 desek) albo R6 (pracownia i badania) także bez śmierci (`bezsmierci`); to pytanie o projekt ścieżki w zombie, nie o bota.
+- Testy reguł R4 `nowi` (`tests/unit/sciezka-nowi.test.ts`, prawdziwa gra): blok z awansem „Fachowiec” zalicza cel, przyjęcie po zgonie też, przyjęcie sprzed otwarcia rozdziału nie, zapis i wczytanie w środku nie gubią licznika; zapas w zombie po trzech dobach (z linią pod celem po polsku i angielsku), a w trybie zwykłym nigdy.
 - Zrzuty w Chromium (`npm run shots -- cele`): drugi dzień na komputerze i telefonie, w domu i w bloku, linia celu na karcie nocy, okazja z handlarzem, ugryzienie w trybie zombie, okienko dróg po ostatnim rozdziale, po angielsku.
 - Boty gry (`npm run bot`, `npm run bot:zombie`) bez zmian skrótów poza poprawką 8, która ma własny wpis w dzienniku.
 
