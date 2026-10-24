@@ -2447,6 +2447,16 @@ const SHOTS: Shot[] = [
               if (p.kind === 'resident' && p.person >= 0)
                 p.moods.push({ why: 'Głód w piwnicy', d: -40, until: st.tick + 200 * 800 });
           });
+          // Pula zarządu tylko z tą jedną kartą (jak w `wyd-przyjety`): „Kradzież z piwnicy” jest rzadką kartą nocy, więc
+          // czekanie na nią w całej puli zależy od przebiegu losowań. Raz już nie wypadła w 150 godzin, gdy zmiana imion
+          // gości (dwie różne osoby nie mają tego samego imienia) przesunęła losowania w tej grze, a scenariusz sprawdza
+          // samą kartę i jej wybory, nie szansę, że wypadnie.
+          await page.evaluate(async () => {
+            const url = '/src/gov/wydarzenia.ts';
+            const m = (await import(/* @vite-ignore */ url)) as { M1_EVENTS: { id: string }[] };
+            const gov = window.zm!.gov!;
+            for (const e of m.M1_EVENTS) if (e.id !== 'kradziez') gov.ev.last[e.id] = 1e9;
+          });
           const krok = await doKarty(page, 'kradziez');
           await waitIdle(page);
           const przed = await page.evaluate(() => {
