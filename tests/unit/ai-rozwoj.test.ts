@@ -687,7 +687,9 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   const poranki: { dzien: number; ludnosc: number; budowle: number; badania: string[] }[] = [];
   let g: GraAi;
 
-  /** ocena wyboru z pełnego przeglądu na kopiach, niezależnie od `wyborWydarzenia` */
+  /** ocena wyboru z pełnego przeglądu na kopiach, niezależnie od `wyborWydarzenia`. Jedna kopia ze stanem prawdziwego generatora:
+      skutki okien z pierwszych dni nie zależą od losowania (jedyny losowy skutek to odejście przegranego w kłótni, a mediacja
+      tam wygrywa zawsze), więc to samo co średnia z kopii o ziarnach pochodnych w `wyborWydarzenia` (reguła 0, zadanie 6) */
   function przeglad(gr: GraAi, p: Extract<Prompt, { k: 'wydarzenie' }>): (number | null)[] {
     const i = wejscie(gr);
     return p.choices.map((c, k) => {
