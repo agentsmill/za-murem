@@ -289,6 +289,8 @@ export function nightSheet(
         })
         .join('');
       const cur = p.options.find((o) => o.key === sel) ?? p.options[0];
+      // pełny tekst wybranej opcji pod listą: zamknięta lista na telefonie ucina długie opcje (src/ui/okno.ts pokazuje go, gdy tak jest)
+      const curText = optionText(card, assign, p.id, cur, cur.key === p.proposal).text;
       return `<li class="mate"><div class="who"><b class="who-n">${esc(p.name)}</b><small class="who-s">${L(
         'siły',
         'energy',
@@ -296,7 +298,9 @@ export function nightSheet(
         p.needs.health,
       )}</small></div><select class="pick" data-id="${esc(p.id)}" aria-label="${L('Ta noc', 'Tonight')}: ${esc(
         p.name,
-      )}">${opts}</select><p class="opt" data-for="${esc(p.id)}">${esc(optionDetail(cur))}</p></li>`;
+      )}">${opts}</select><p class="pick-full" aria-hidden="true" hidden>${esc(curText)}</p><p class="opt" data-for="${esc(
+        p.id,
+      )}">${esc(optionDetail(cur))}</p></li>`;
     })
     .join('');
   const first = card.day === 1;

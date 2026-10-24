@@ -1533,6 +1533,15 @@ a.btn {
   font-size: 13px;
   color: var(--lamp);
 }
+/* Zamknięta lista wyboru ucina długą opcję („Warta przy dziurze od południowego wschodu, obr…”), a decydujące słowa
+   (obrona, ryzyko, „propozycja”) są na końcu: pod listą stoi wtedy pełny tekst wybranej opcji (src/ui/okno.ts pokazuje go
+   tylko wtedy, gdy się nie mieści, więc na komputerze zwykle go nie ma) */
+.pick-full {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--ink);
+}
 .advice {
   font-size: 14px;
   color: var(--ink-dim);
