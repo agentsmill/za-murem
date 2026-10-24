@@ -53,6 +53,7 @@ import { snapshot } from '../sim/snapshot.ts';
 import { type Decydent, type GraAi, odpowiedzDomyslna, type Rece, wejscie } from './gra.ts';
 import { turaJedzenia } from './jedzenie.ts';
 import { odpowiedzNaWydarzenie, wyborUchwaly } from './okna.ts';
+import { wolnaOsoba, zarzadNaMiejscu } from './osoby.ts';
 import { turaRozwoju } from './rozwoj.ts';
 import { dyzurNaKarcie, type PamiecZimy, progDrewna, turaZimy } from './zima.ts';
 
@@ -85,15 +86,12 @@ const DREWNA_MIN = 6;
 /** warstwy (zima, jedzenie, rozwój) idą najwyżej raz na tyle ticków: 30 sekund przy ekranie */
 const CO_TIKOW_WARSTWY = 30 * TICKS_PER_SECOND;
 
-/** zarząd na miejscu (bez wyprawy) */
-const rdzen = (g: GraAi): Pawn[] => g.sim.st.pawns.filter((p) => p.kind === 'core' && !p.away);
-
 /** samouczek: zaznaczyć kogoś z zarządu i kliknąć suche drzewo */
 function samouczek(g: GraAi, r: Rece): void {
   const { w } = g;
   const st = g.sim.st;
   const suche = dryTreeOf(w);
-  const kto = rdzen(g)[0];
+  const kto = zarzadNaMiejscu(st)[0];
   if (suche < 0 || !kto) return;
   r.polecenie({ t: 'select', ids: [kto.id] });
   const polecenie = commandFor(st, w, [kto.id], trunkOf(w, w.trees[suche]));
@@ -145,9 +143,10 @@ function turaDrewna(
   pam.zlecone = -1;
   if (ktosScina || drewno >= prog(g)) return;
   const k = najblizszeDrzewo(g, pam.pominieteDrzewa);
-  const zarzad = rdzen(g);
-  const nieSpiNieStoi = (p: Pawn): boolean => p.job?.t !== 'sleep' && p.job?.t !== 'guard';
-  const kto = wolny ? zarzad.find((p) => nieSpiNieStoi(p) && wolny(g, p)) : (zarzad.find(nieSpiNieStoi) ?? zarzad[0]);
+  const naMiejscu = zarzadNaMiejscu(st);
+  const kto = wolny
+    ? naMiejscu.find((p) => wolnaOsoba(p) && wolny(g, p))
+    : (naMiejscu.find(wolnaOsoba) ?? naMiejscu[0]);
   if (k < 0 || !kto) return;
   r.polecenie({ t: 'chop', ids: [kto.id], tree: k });
   pam.zlecone = k;

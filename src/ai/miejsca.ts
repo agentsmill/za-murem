@@ -25,9 +25,12 @@ import { houseOf } from '../sim/house.ts';
 import { fenceShape } from '../sim/perimeter.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { World } from '../world/world.ts';
+import { zarzad } from './osoby.ts';
 
-/** łóżka z kontraktu wnętrza: te same rodzaje, na których zarząd śpi w symulacji */
-const LOZKA = new Set(['lozko', 'wersalka', 'lozka_pietrowe']);
+/** Łóżka z kontraktu wnętrza, na których zarząd śpi w symulacji, i liczba miejsc do spania, którą dają (piętrowe dwa). To kopia
+    prywatnego `BEDS` z src/sim/sim.ts (około wiersza 1277), a liczbę miejsc liczy tam `bedsIn` (około wiersza 1904): zmiana rodzajów
+    łóżek w symulacji wymaga zmiany także tutaj. */
+export const LOZKA: Readonly<Record<string, number>> = { lozko: 1, wersalka: 1, lozka_pietrowe: 2 };
 
 /** Pokój (indeks w `houseOf(w).rooms`), w którym śpi najwięcej osób zarządu: najwięcej łóżek z właścicielem z zarządu
     w mieszkaniu zarządu, remis rozstrzyga niższy numer pokoju. Bez takich łóżek pierwszy pokój (rodzaj `pokoj`) mieszkania
@@ -36,10 +39,10 @@ export function pokojZarzadu(st: SimState, w: World): number {
   const h = houseOf(w);
   if (!h) return -1;
   const size = w.size;
-  const rdzen = new Set(st.pawns.filter((p) => p.kind === 'core').map((p) => p.id));
+  const rdzen = new Set(zarzad(st).map((p) => p.id));
   const lozka = new Map<number, number>();
   for (const t of st.things) {
-    if (!LOZKA.has(t.kind) || !rdzen.has(t.owner)) continue;
+    if (!Object.hasOwn(LOZKA, t.kind) || !rdzen.has(t.owner)) continue;
     const r = h.room[t.y * size + t.x];
     if (r < 0 || h.rooms[r].apt !== h.home) continue;
     lozka.set(r, (lozka.get(r) ?? 0) + 1);

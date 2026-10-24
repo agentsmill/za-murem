@@ -21,10 +21,11 @@
      numer osoby; bez nikogo z umiejętnością co najmniej 1 nic, bo wtedy badanie niosą mieszkańcy albo książki) i próg drewna
      dwa razy większy niż drewno na noc (`drewnoNaNoc`): automat Drwala trzyma zapas na dwie noce, a warsztat piłuje deski
      z drewna ponad ten zapas;
-   - werbunek: wędrowiec stojący przy siatce dostaje rozmowę najbliższej wolnej osoby z zarządu (menu `commandsAt`, polecenie
-     `talk`), a po rozmowie zaproszenie (`zapros`), gdy po przyjęciu starcza jedzenia (`stacNaPrzyjecie`) i jest wolne łóżko
-     (`okazjaWerbunku`). Wędrowiec stoi przy siatce 20–40 minut gry i godzinę po rozmowie, a warstwa idzie co 30 sekund przy
-     ekranie, więc większość wędrowców dostaje rozmowę i zaproszenie dokładnie jeden raz.
+   - werbunek: wędrowiec stojący przy siatce dostaje rozmowę najbliższej wolnej osoby z zarządu (`najblizszaWolna` z
+     src/ai/osoby.ts; menu `commandsAt`, polecenie `talk`), a po rozmowie zaproszenie (`zapros`), gdy po przyjęciu starcza
+     jedzenia (`stacNaPrzyjecie`) i jest wolne łóżko (`okazjaWerbunku`). Wędrowiec stoi przy siatce 20–40 minut gry i godzinę
+     po rozmowie, a warstwa idzie co 30 sekund przy ekranie, więc większość wędrowców dostaje rozmowę i zaproszenie dokładnie
+     jeden raz.
 
    Warstwa czyta stan gry jak gracz (`wejscie`, `SimState`, świat) i działa tylko rękami; nie ma własnego stanu poza stanem gry
    (łóżka, plany, badania i tabela Pracy wynikają z niego, więc zapis i wczytanie w połowie nic nie zmieniają), niczego nie
@@ -37,13 +38,14 @@ import { BUILDS, type BuildKind, isUnlocked, limitWhy, type Mat } from '../sim/b
 import { houseOf, inHomeApt } from '../sim/house.ts';
 import { commandsAt } from '../sim/orders.ts';
 import { priorytet, progi, ZARZAD_MAX } from '../sim/praca.ts';
-import { okazjaWerbunku, type Pawn, type SimState, STACK } from '../sim/sim.ts';
+import { okazjaWerbunku, type SimState, STACK } from '../sim/sim.ts';
 import { snapshot } from '../sim/snapshot.ts';
 import { modeOf } from '../sim/tryb.ts';
 import type { World } from '../world/world.ts';
 import { type GraAi, type Rece, wejscie } from './gra.ts';
 import { stacNaPrzyjecie } from './jedzenie.ts';
-import { type Miejsce, miejscaNa, miejsceNa, pokojZarzadu } from './miejsca.ts';
+import { LOZKA, type Miejsce, miejscaNa, miejsceNa, pokojZarzadu } from './miejsca.ts';
+import { najblizszaWolna, zarzad } from './osoby.ts';
 import { drewnoNaNoc, zimaWToku } from './zima.ts';
 
 /** badania po kolei: koza z beczki (zima), okna (+3°C w naszych mieszkaniach), konserwy, grzyby (pieczarkarnia), zielarstwo, szklarnia */
@@ -56,12 +58,6 @@ export const KOLEJKA_BADAN: readonly string[] = [
   't_szklarnia',
 ];
 
-/** miejsca do spania, które dają łóżka z kontraktu wnętrza (piętrowe dwa) */
-const LOZKA: Readonly<Record<string, number>> = { lozko: 1, wersalka: 1, lozka_pietrowe: 2 };
-
-/** osoby zarządu, także te na wyprawie */
-const rdzen = (st: SimState): number => st.pawns.filter((p) => p.kind === 'core').length;
-
 /** miejsca do spania w mieszkaniu zarządu (łóżka całe po jednym, piętrowe po dwa), jak `bedsIn` w symulacji */
 function lozkaZarzadu(st: SimState, w: World): number {
   const h = houseOf(w);
@@ -71,7 +67,7 @@ function lozkaZarzadu(st: SimState, w: World): number {
 
 /** czy w mieszkaniu zarządu nie ma wolnego łóżka, choć zarząd może jeszcze rosnąć (od `ZARZAD_MAX` nowi trafiają do mieszkańców) */
 function brakLozek(st: SimState, w: World): boolean {
-  const ludzie = rdzen(st);
+  const ludzie = zarzad(st).length;
   return ludzie < ZARZAD_MAX && lozkaZarzadu(st, w) <= ludzie;
 }
 
@@ -184,14 +180,6 @@ function turaPracy(g: GraAi, r: Rece, i: GovInput, tech: string | null): void {
   }
   if (najlepsza && najlepsza.umiejetnosc >= 1 && priorytet(st, najlepsza.osoba, 'badania') !== 1)
     r.polecenie({ t: 'prio', ids: [], osoba: najlepsza.osoba, rodzaj: 'badania', prio: 1 });
-}
-
-/** Osoba z zarządu najbliższa pionkowi, która może do niego podejść: na miejscu, nie śpi i nie stoi na warcie. */
-function najblizszaWolna(st: SimState, cel: Pawn): Pawn | undefined {
-  const odleglosc = (p: Pawn): number => (p.x - cel.x) ** 2 + (p.y - cel.y) ** 2;
-  return st.pawns
-    .filter((p) => p.kind === 'core' && !p.away && p.job?.t !== 'sleep' && p.job?.t !== 'guard')
-    .sort((a, b) => odleglosc(a) - odleglosc(b) || a.id - b.id)[0];
 }
 
 /** Werbunek: wędrowiec przy siatce dostaje rozmowę (menu `commandsAt`), a po niej zaproszenie, gdy starcza jedzenia na jedno

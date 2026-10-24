@@ -48,7 +48,8 @@ import { snapshot } from '../sim/snapshot.ts';
 import { modeOf } from '../sim/tryb.ts';
 import type { World } from '../world/world.ts';
 import { type GraAi, type Rece, wejscie } from './gra.ts';
-import { miejscaNa, miejsceNa, pokojZarzadu } from './miejsca.ts';
+import { type Miejsce, miejscaNa, miejsceNa, pokojZarzadu } from './miejsca.ts';
+import { najblizszaWolna } from './osoby.ts';
 
 /** Pamięć warstwy zimy (zwykły JSON w `PamiecSilnika.zima`, powstaje przy pierwszym użyciu): sterty (id rzeczy), którym
     zlecono rozbiórkę, po jednym wpisie na każde zlecenie (to samo id wraca, gdy zlecenie się nie powiodło). */
@@ -139,10 +140,7 @@ function zbierzMaterial(g: GraAi, r: Rece, kind: BuildKind, plan: BuildPlan | un
     )
     .sort((a, b) => zysk(b) - zysk(a) || a.id - b.id)[0];
   if (!sterta) return;
-  const odleglosc = (p: { x: number; y: number }): number => (p.x - sterta.x) ** 2 + (p.y - sterta.y) ** 2;
-  const kto = st.pawns
-    .filter((p) => p.kind === 'core' && !p.away && p.job?.t !== 'sleep' && p.job?.t !== 'guard')
-    .sort((a, b) => odleglosc(a) - odleglosc(b) || a.id - b.id)[0];
+  const kto = najblizszaWolna(st, sterta);
   if (!kto) return;
   (g.pamiec.zima ??= { rozbiorki: [] }).rozbiorki.push(sterta.id);
   r.polecenie({ t: 'dismantle', ids: [kto.id], thing: sterta.id });
@@ -157,39 +155,38 @@ function kafelkiKozy(st: SimState, w: World): Set<number> {
   return new Set(miejscaNa(poBadaniu, w, 'koza_beczka', pokoj).map((m) => m.y * w.size + m.x));
 }
 
+/** Co jest do zrobienia z kozą z beczki w pokoju zarządu: nic (koza już stoi albo nie ma dla niej miejsca, np. Lanciego:
+    sypialnie bez okna), jej plan już stoi i czeka na materiał i ręce, albo kozy nie ma i jest dla niej miejsce. */
+type ZadanieKozy = { co: 'nic' } | { co: 'plan'; plan: BuildPlan } | { co: 'postaw'; miejsce: Miejsce };
+
+/** Zadanie kozy w pokoju zarządu. Wspólne warunki dla `turaKozy` (co zrobić) i `kozaCzeka` (czy zima ma jeszcze coś na drodze
+    do kozy), żeby jedno nie rozjechało się z drugim przy zmianie. */
+function zadanieKozy(g: GraAi): ZadanieKozy {
+  const { sim, w } = g;
+  const st = sim.st;
+  const pokoj = pokojZarzadu(st, w);
+  const h = houseOf(w);
+  if (!h || pokoj < 0) return { co: 'nic' };
+  const plan = st.builds.find((b) => b.kind === 'koza_beczka');
+  if (plan) return { co: 'plan', plan };
+  if (st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * w.size + t.x] === pokoj)) return { co: 'nic' };
+  const miejsce = miejsceNa(st, w, 'koza_beczka', pokoj);
+  return miejsce ? { co: 'postaw', miejsce } : { co: 'nic' };
+}
+
 /** Koza z beczki w pokoju zarządu po badaniu `t_kozy` (nie potrzebuje pracowni: stół jest tylko do badania): plan kozy
     w tym pokoju albo zbieranie materiału do planu, który już stoi. true, gdy coś z tego tej tury zrobiono albo plan
     czeka na kozę; false, gdy koza już stoi albo nie ma dla niej miejsca. */
 function turaKozy(g: GraAi, r: Rece): boolean {
-  const { sim, w } = g;
-  const st = sim.st;
-  const pokoj = pokojZarzadu(st, w);
-  const h = houseOf(w);
-  if (!h || pokoj < 0) return false;
-  const plan = st.builds.find((b) => b.kind === 'koza_beczka');
-  if (plan) {
-    zbierzMaterial(g, r, 'koza_beczka', plan);
-    return true;
-  }
-  if (st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * w.size + t.x] === pokoj)) return false;
-  const miejsce = miejsceNa(st, w, 'koza_beczka', pokoj);
-  if (!miejsce) return false;
-  r.polecenie({ t: 'build', ids: [], kind: 'koza_beczka', ...miejsce });
-  return true;
+  const zadanie = zadanieKozy(g);
+  if (zadanie.co === 'plan') zbierzMaterial(g, r, 'koza_beczka', zadanie.plan);
+  else if (zadanie.co === 'postaw') r.polecenie({ t: 'build', ids: [], kind: 'koza_beczka', ...zadanie.miejsce });
+  return zadanie.co !== 'nic';
 }
 
 /** Czy koza z beczki czeka na postawienie w pokoju zarządu: jej plan już stoi, albo kozy w tym pokoju nie ma i jest dla niej
-    miejsce (te same warunki co w `turaKozy`). Bez miejsca (Lanciego: sypialnie bez okna) nie czeka na nic. */
-function kozaCzeka(g: GraAi): boolean {
-  const { sim, w } = g;
-  const st = sim.st;
-  const pokoj = pokojZarzadu(st, w);
-  const h = houseOf(w);
-  if (!h || pokoj < 0) return false;
-  if (st.builds.some((b) => b.kind === 'koza_beczka')) return true;
-  if (st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * w.size + t.x] === pokoj)) return false;
-  return miejsceNa(st, w, 'koza_beczka', pokoj) !== null;
-}
+    miejsce (te same warunki co w `turaKozy`: `zadanieKozy`). Bez miejsca (Lanciego: sypialnie bez okna) nie czeka na nic. */
+const kozaCzeka = (g: GraAi): boolean => zadanieKozy(g).co !== 'nic';
 
 /** Czy warstwa zimy ma jeszcze coś na drodze do kozy z beczki w pokoju zarządu: pracownia nie stoi, badanie kozy trwa albo da
     się je zacząć, albo zbadana koza czeka na postawienie. Inne warstwy nie zaczynają wtedy budowy (`turaRozwoju`), żeby nie
