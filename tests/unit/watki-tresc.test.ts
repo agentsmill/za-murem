@@ -6,7 +6,7 @@
    psa, handlarz, napad zgodny z raportem, ugryziony i dobicie. */
 
 import { describe, expect, it } from 'vitest';
-import { LANCUCHY, sprawdzLancuchy, zajeciLudzie } from '../../src/gov/watki.ts';
+import { krokPoId, LANCUCHY, sprawdzLancuchy, zajeciLudzie } from '../../src/gov/watki.ts';
 import { eventView, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent } from '../../src/gov/zarzad.ts';
 import { doPowrotu, obecniWOsiedlu } from '../../src/gov/znajomi.ts';
@@ -198,6 +198,24 @@ describe('teksty: angielski bez polskich słów, bez pięter, numerów mieszkań
     }
     expect(pl).toBeGreaterThan(10);
     expect(en).toBeGreaterThan(10);
+  });
+
+  it('kroki od drugiego nie zakładają, ile czasu minęło od haka: bez „od wczoraj”, „od dwóch dni”, „całą noc”, „last night”…', () => {
+    // krok może wypaść o `po` godzin po haku, ale przy tempie 8× także o dobę i więcej, więc tekst nie liczy dni ani nocy
+    const ZALOZENIE =
+      /zeszłej nocy|od wczoraj|dwóch dni|dwie noce|całą noc|następnego dnia|(?<![a-ząćęłńóśźż])Tej nocy|last night|since yesterday|two days|all night|next day|This morning/;
+    let sprawdzone = 0;
+    for (const id of IDY) {
+      const sc = SCEN[id][0];
+      const w = przejdz(lancuch(id), nowySwiat(id, sc.o));
+      for (const t of w.teksty) {
+        if ((krokPoId(t.krok)?.nr ?? 1) < 2) continue;
+        sprawdzone++;
+        expect(t.tx.pl, `${t.krok}: założenie o czasie`).not.toMatch(ZALOZENIE);
+        expect(t.tx.en, `${t.krok}: założenie o czasie (EN)`).not.toMatch(ZALOZENIE);
+      }
+    }
+    expect(sprawdzone).toBeGreaterThan(50);
   });
 
   it('teksty nie zawierają pauz ani wykrzykników z sufitu', () => {
