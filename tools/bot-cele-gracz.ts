@@ -167,11 +167,17 @@ export interface Gracz {
   krok(v: WidokSciezki): void;
   /** niezgodności napisu menu z podpowiedzią, które gracz napotkał (każda raz); puste, gdy podpowiedzi zgadzają się z menu */
   niezgodnosci(): string[];
+  /** ile razy gracz rozmawiał z wędrowcem przy siatce, pytał go o rękę (zombie) i zapraszał (polecenia z menu, od początku gry) */
+  werbunek(): { rozmowy: number; rece: number; zaproszenia: number };
   /** odpowiedź na okno zarządu (skutki zastosuje wołający) */
   karta(card: NightCard, v: WidokSciezki): void;
   uchwala(p: Extract<Prompt, { k: 'uchwala' }>): string | null;
   wydarzenie(p: Extract<Prompt, { k: 'wydarzenie' }>, v: WidokSciezki): number;
 }
+
+/** Wybór karty zdarzenia, który wpuszcza ludzi albo zwierzę („Przyjąć do spółdzielni”, „Wciągnąć do roboty”, „Przygarnąć”);
+    gracz bierze go, gdy cel każe zebrać ludzi, a analiza R4 (`karty` w bot-cele.ts) liczy po nim karty, które o to proszą. */
+export const WPUSZCZA = /^(Przyj|Wciągn|Przygarn)/;
 
 /** pełny klucz celu: „rozdział.cel” albo „okazja.cel” */
 const pelny = (prefiks: string, c: Pick<Cel, 'key'>): string => `${prefiks}.${c.key}`;
@@ -326,23 +332,28 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       drogę, którą wyznaczyła symulacja po poleceniu. */
   const drogaNaZewnatrz = (p: Pawn): boolean => p.path.slice(p.pi).some((t) => !wewnatrz(t));
 
-  /** Odcinek ulicą (albo do dalszej klatki) jest wolny: za dnia, osoba zdrowa i nieugryziona, cel nie dalej niż 60 m od kozy,
-      a żaden szwendacz nie jest bliżej niż 10 kafelków (tyle, co reguła `szwendaczBlisko` w symulacji) od osoby ani od żadnego
-      kafelka reszty jej drogi na ulicy. Tak ocenia człowiek, który po „Budować …” z menu planu patrzy, czy po drodze ktoś
-      stoi; bot sprawdza to co sekundę, więc szwendacz, który się pojawi, przerywa odcinek. */
-  const ulicaWolna = (p: Pawn): boolean => {
+  /** Co zatrzymuje odcinek ulicą (albo do dalszej klatki), a gdy nic: `null`. Odcinek jest wolny: za dnia, osoba zdrowa
+      i nieugryziona, cel nie dalej niż 60 m od kozy, a żaden szwendacz nie jest bliżej niż 10 kafelków (tyle, co reguła
+      `szwendaczBlisko` w symulacji) od osoby ani od żadnego kafelka reszty jej drogi na ulicy. Tak ocenia człowiek, który po
+      „Budować …” z menu planu albo „Spalić …” z menu mebla patrzy, czy po drodze ktoś stoi; bot sprawdza to co sekundę, więc
+      szwendacz, który się pojawi, przerywa odcinek. */
+  const przeszkodaNaUlicy = (p: Pawn): string | null => {
     const h = hourOf(st.tick);
-    if (h < 7 || h >= 18 || (p.needs?.health ?? 0) < 50 || p.bite !== undefined) return false;
-    if (p.job && zaDaleko(p.job.tile, 60)) return false;
+    if (h < 7 || h >= 18) return 'poza dniem (7 do 18)';
+    if ((p.needs?.health ?? 0) < 50) return 'słabe zdrowie';
+    if (p.bite !== undefined) return 'ugryziony';
+    if (p.job && zaDaleko(p.job.tile, 60)) return 'cel dalej niż 60 m od kozy';
     const szwendacze = st.pawns.filter((q) => q.kind === 'zombie' && !q.away);
-    if (!szwendacze.length) return true;
+    if (!szwendacze.length) return null;
     const punkty = [Math.floor(p.y) * size + Math.floor(p.x), ...p.path.slice(p.pi).filter((t) => !wewnatrz(t))];
-    return punkty.every((t) => {
+    const blisko = (t: number): boolean => {
       const tx = t % size;
       const ty = Math.floor(t / size);
-      return szwendacze.every((q) => Math.max(Math.abs(Math.floor(q.x) - tx), Math.abs(Math.floor(q.y) - ty)) >= 10);
-    });
+      return szwendacze.some((q) => Math.max(Math.abs(Math.floor(q.x) - tx), Math.abs(Math.floor(q.y) - ty)) < 10);
+    };
+    return punkty.some(blisko) ? 'szwendacz bliżej niż 10 kafelków' : null;
   };
+  const ulicaWolna = (p: Pawn): boolean => przeszkodaNaUlicy(p) === null;
 
   /** Drewno do zapasu `cel` sztuk (skład, luzem, w rękach): jedno polecenie ścięcia albo spalenia naraz. W zombie najpierw
       drzewo w obrębie siatki, potem mebel. */
@@ -770,6 +781,7 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
   /** Wędrowiec (w trybie zombie ocalały) przy siatce, gdy cel każe zebrać ludzi: rozmowa („Zagadać”), w zombie pytanie o rękę
       („Zapytać o rękę”, bo co piąty ukrywa ugryzienie), potem „Zaprosić do nas” z szansą w procentach. Menu pokazuje te pozycje
       kolejno, jedna po drugiej, gdy rozmowa się odbyła. */
+  const werbunek = { rozmowy: 0, rece: 0, zaproszenia: 0 };
   const werbuj = (c: Ctx): void => {
     if (!nieZrobiony(c.v, 'r4.nowi') && !nieZrobiony(c.v, 'r8.ludnosc')) return;
     const wedrowiec = st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1);
@@ -782,6 +794,9 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       menu.find((x) => x.cmd.t === 'zapros');
     if (!m) return;
     c.wolni.splice(c.wolni.indexOf(kto), 1);
+    if (m.cmd.t === 'talk') werbunek.rozmowy++;
+    else if (m.cmd.t === 'reka') werbunek.rece++;
+    else werbunek.zaproszenia++;
     polecenie(m.cmd, m.label);
   };
 
@@ -1139,6 +1154,9 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
         c ? 'samouczek: zaznaczenie i ścięcie suchego drzewa' : 'samouczek: zaznaczenie (świat bez suchego drzewa)',
       );
     },
+    werbunek() {
+      return { ...werbunek };
+    },
     niezgodnosci() {
       return [...niezgodnosci];
     },
@@ -1149,19 +1167,24 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       kolejka = [];
       // zombie: praca z polecenia w siedzibie, której droga wychodzi na ulicę (meble, pomieszczenia i drzwi z drugiego końca
       // bloku), idzie do kosza, zanim ktoś zginie; gospodarka, która tę pracę zleciła, uzna cel za nieosiągalny. Wyjątek:
-      // budowa („Budować …” z menu planu idzie po deski ulicą i do innych klatek), dopóki odcinek jest wolny od szwendaczy
+      // budowa („Budować …” z menu planu idzie po deski ulicą i do innych klatek) i palenie mebli z klatki za ulicą („Spalić …”,
+      // drewno na wieczór), dopóki odcinek jest wolny od szwendaczy
       if (g.tryb === 'zombie')
         for (const p of rdzen(st))
           if (p.job?.order && W_SIEDZIBIE.has(p.job.t) && (drogaNaZewnatrz(p) || zaDaleko(p.job.tile))) {
-            if (p.job.t === 'build' && ulicaWolna(p)) {
-              if (mozna(`ulica:${p.id}`, c.s, 60)) gadaj('build: odcinek ulicą wolny od szwendaczy, idziemy');
+            if ((p.job.t === 'build' || p.job.t === 'burn') && ulicaWolna(p)) {
+              if (mozna(`ulica:${p.id}`, c.s, 60)) gadaj(`${p.job.t}: odcinek ulicą wolny od szwendaczy, idziemy`);
               continue;
             }
             if (p.job.t === 'burn') zle.add(`mebel:${p.job.target}`);
             const koza = st.things.find((t) => t.kind === 'koza');
+            const powod =
+              p.job.t === 'build' || p.job.t === 'burn'
+                ? (przeszkodaNaUlicy(p) ?? 'odcinek wolny')
+                : 'praca poza wyjątkami (budowa, palenie)';
             polecenie(
               { t: 'move', ids: [p.id], to: koza ? koza.y * size + koza.x : drzwiHq },
-              `${p.job.t}: droga na ulicę, wracamy`,
+              `${p.job.t}: droga na ulicę, wracamy (${powod})`,
             );
           }
       obronaZombie(c);
@@ -1210,12 +1233,18 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       // celu nikogo się nie wyrzuca ani nie odprawia (kradzież z piwnicy: pierwszy wybór to wyrzucenie sprawcy)
       const chceLudzi = nieZrobiony(v, 'r4.nowi') || nieZrobiony(v, 'r8.ludnosc');
       if (chceLudzi) {
-        const k = p.choices.findIndex((x) => x.ok && /^(Przyj|Wciągn|Przygarn)/.test(x.label.pl));
+        const k = p.choices.findIndex((x) => x.ok && WPUSZCZA.test(x.label.pl));
         if (k >= 0) return k;
       }
+      const bezOdprawy = p.choices.findIndex(
+        (x) => x.ok && !(chceLudzi && /^(Wyrzuc|Odpraw|Wygon|Przegon)/.test(x.label.pl)),
+      );
+      if (bezOdprawy >= 0) return bezOdprawy;
+      // jedyny dozwolony wybór to odprawa (karta gościa po „Obejrzeć ręce”: wpuszczenie i jedzenie są wyszarzone): bez niej
+      // karta wraca bez końca, a bot klikałby wyszarzoną pozycję zamiast zamknąć okno
       return Math.max(
         0,
-        p.choices.findIndex((x) => x.ok && !(chceLudzi && /^(Wyrzuc|Odpraw|Wygon|Przegon)/.test(x.label.pl))),
+        p.choices.findIndex((x) => x.ok),
       );
     },
   };
