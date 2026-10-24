@@ -25,7 +25,6 @@ import {
   grajDo,
   krokGry,
   nowaGraAi,
-  type Rece,
   skrotGry,
   wczytajGre,
   wejscie,
@@ -39,10 +38,11 @@ import { drewnoNaNoc, dyzurNaKarcie, progDrewna, turaZimy } from '../../src/ai/z
 import { KOZA_KEY, WOOD_PER_HOUR } from '../../src/gov/noc.ts';
 import type { Prompt } from '../../src/gov/typy.ts';
 import { canPlace } from '../../src/sim/budowle.ts';
-import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
 import type { Thing } from '../../src/sim/sim.ts';
 import { przygotujGre } from '../../tools/bot-osada.ts';
+import { rzecz, szpieg, tickDnia } from './ai-pomoc.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
@@ -55,10 +55,6 @@ type Karta = Extract<Prompt, { k: 'karta' }>;
 /** łóżka z kontraktu wnętrza (te same rodzaje co w symulacji) */
 const LOZKA = new Set(['lozko', 'wersalka', 'lozka_pietrowe']);
 
-/** tick danego dnia gry o pełnej godzinie (gra zaczyna się o 15:00 dnia 1; godzina przed 15:00 to ten sam dzień) */
-const tickDnia = (dzien: number, godzina: number): number =>
-  (dzien - 1) * TICKS_PER_DAY + (godzina - 15) * TICKS_PER_HOUR;
-
 /** czy koza z beczki stoi w pokoju, w którym śpi zarząd */
 function kozaWPokoju(g: GraAi): boolean {
   const pokoj = pokojZarzadu(g.sim.st, g.w);
@@ -66,39 +62,11 @@ function kozaWPokoju(g: GraAi): boolean {
   return pokoj >= 0 && g.sim.st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * g.w.size + t.x] === pokoj);
 }
 
-/** rzecz z gry (do dokładania drewna w testach) */
-function rzecz(g: GraAi, kind: string, x: number, y: number, n = 0): Thing {
-  return { id: g.sim.st.nextThing++, kind, x, y, w: 1, h: 1, rot: 0, n, fuel: 0, by: -1, owner: -1 };
-}
-
 /** dużo drewna w składzie: zapas na noc bez względu na to, co gra zdążyła zebrać */
 function dorzucDrewno(g: GraAi, ile = 80): void {
   const h = houseOf(g.w)!;
   const kafelek = h.sklad[0];
   g.sim.st.things.push(rzecz(g, 'drewno', kafelek % g.w.size, Math.floor(kafelek / g.w.size), ile));
-}
-
-/** ręce, które tylko zapisują ruchy (przydział odmawia, gdy klucz jest na liście `odmow`; reszta się udaje) */
-function szpieg(odmow: readonly string[] = []): { r: Rece; ruchy: string[] } {
-  const ruchy: string[] = [];
-  const r: Rece = {
-    polecenie: (c) => ruchy.push(`polecenie:${JSON.stringify(c)}`),
-    potwierdzRaport: () => ruchy.push('raport'),
-    podpisz: (id) => ruchy.push(`uchwala:${id}`),
-    przydziel: (osoba, klucz) => {
-      if (odmow.includes(klucz)) return false;
-      ruchy.push(`noc:${osoba}=${klucz}`);
-      return true;
-    },
-    zatwierdzNoc: () => ruchy.push('zatwierdz'),
-    wybierz: (k) => ruchy.push(`wydarzenie:${k}`),
-    grajDalej: () => ruchy.push('dalej'),
-    wyslij: () => {
-      ruchy.push('wyprawa');
-      return true;
-    },
-  };
-  return { r, ruchy };
 }
 
 /** zdrowie osób na karcie: 100 dla osób o podanych numerach na karcie, 39 (za mało na dyżur i wartę) dla reszty */

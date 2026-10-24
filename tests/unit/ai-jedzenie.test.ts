@@ -43,20 +43,16 @@ import { silnik, silnikPodstawowy } from '../../src/ai/silnik.ts';
 import { FIRST_LAWS } from '../../src/gov/tresc.ts';
 import type { GovInput, LawOption, Prompt } from '../../src/gov/typy.ts';
 import { lawState } from '../../src/gov/uchwaly.ts';
-import { type Cel, celZMiejsca, zostaloZMiejsca } from '../../src/gov/wyprawy.ts';
-import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { celZMiejsca, zostaloZMiejsca } from '../../src/gov/wyprawy.ts';
+import { dayOf, hourOf, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
-import type { Thing } from '../../src/sim/sim.ts';
 import { naMapieLokalnej } from '../../src/world/miasto.ts';
 import { poranekTick, przygotujGre } from '../../tools/bot-osada.ts';
+import { rzecz, szpieg, tickDnia } from './ai-pomoc.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
-
-/** tick danego dnia gry o pełnej godzinie (gra zaczyna się o 15:00 dnia 1; godzina przed 15:00 to ten sam dzień) */
-const tickDnia = (dzien: number, godzina: number): number =>
-  (dzien - 1) * TICKS_PER_DAY + (godzina - 15) * TICKS_PER_HOUR;
 
 /** gra z mapą miasta jak w przeglądarce (okolica z geo dema, bez mieszkańców z adresu), doprowadzona silnikiem
     podstawowym (bez warstw) do dnia i godziny */
@@ -64,11 +60,6 @@ function graNa(dzien: number, godzina: number): GraAi {
   const g = nowaGraAi(demoWorld('przymorze'), 11, { okolica: okolicaZGeo(demo.geo) });
   grajDo(g, silnikPodstawowy, tickDnia(dzien, godzina));
   return g;
-}
-
-/** rzecz z gry */
-function rzecz(g: GraAi, kind: string, x: number, y: number, n = 0): Thing {
-  return { id: g.sim.st.nextThing++, kind, x, y, w: 1, h: 1, rot: 0, n, fuel: 0, by: -1, owner: -1 };
 }
 
 /** w zapasach dokładnie `porcje` porcji surowego jedzenia (bez ugotowanych) */
@@ -87,34 +78,6 @@ function ustawLudzi(g: GraAi, zdrowie: readonly number[], wypoczecie: readonly n
     p.needs!.rest = wypoczecie[k] ?? 80;
   });
   return rdzen.map((p) => g.sim.st.people[p.person].id);
-}
-
-interface Szpieg {
-  r: Rece;
-  wyslano: { cel: Cel; ids: string[] }[];
-  polecenia: string[];
-  uchwaly: (string | null)[];
-}
-
-/** ręce, które tylko zapisują ruchy (wyprawa zawsze się udaje) */
-function szpieg(): Szpieg {
-  const wyslano: Szpieg['wyslano'] = [];
-  const polecenia: string[] = [];
-  const uchwaly: (string | null)[] = [];
-  const r: Rece = {
-    polecenie: (c) => polecenia.push(JSON.stringify(c)),
-    potwierdzRaport: () => {},
-    podpisz: (id) => uchwaly.push(id),
-    przydziel: () => true,
-    zatwierdzNoc: () => {},
-    wybierz: () => {},
-    grajDalej: () => {},
-    wyslij: (cel, ids) => {
-      wyslano.push({ cel, ids });
-      return true;
-    },
-  };
-  return { r, wyslano, polecenia, uchwaly };
 }
 
 /** Ręce bez tego, co robi warstwa jedzenia: wyprawy nie wychodzą (`wyslij` odmawia), plan ogródka nie powstaje; reszta
@@ -346,7 +309,7 @@ describe('ogródek', () => {
     turaJedzenia(g, s.r);
     const miejsce = miejsceNa(g.sim.st, g.w, 'ogrodek')!;
     expect(miejsce).not.toBeNull();
-    expect(s.polecenia).toEqual([JSON.stringify({ t: 'build', ids: [], kind: 'ogrodek', ...miejsce })]);
+    expect(s.polecenia).toEqual([{ t: 'build', ids: [], kind: 'ogrodek', ...miejsce }]);
   });
 
   it('w 1. dniu jeszcze nie', () => {
@@ -424,7 +387,7 @@ describe('ogródek i deski pracowni', () => {
     const s = szpieg();
     turaJedzenia(g, s.r);
     expect(s.polecenia).toHaveLength(1);
-    expect(s.polecenia[0]).toContain('"kind":"ogrodek"');
+    expect(s.polecenia[0]).toMatchObject({ t: 'build', kind: 'ogrodek' });
   });
 });
 
@@ -597,11 +560,12 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     expect(srednia).toBeGreaterThanOrEqual(8);
   });
 
-  // Cel etapu z planu: „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”. Nie jest tu sprawdzany: ten przebieg
-  // (Przymorze 11) kończy się odwołaniem w 20. dniu, a poza tym najedzenie o 6:00 jest zaniżone także przy pełnej spiżarni
-  // (zarząd je dopiero poniżej 35, a dwie osoby czuwają całą noc bez posiłku: 16–29 w dniach 3–11, gdy zapas jest). Wspólny
-  // kocioł podniósłby je do 62–66 (dni 5–8), ale `u_warty` z pierwszego wieczoru go blokuje. Cel mierzy bramka etapu
-  // (zadanie 7, `npm run bot:osada`, kolumny „głodni” i dzień końca), więc tu zostaje jako zapowiedź.
+  // Cel etapu z planu: „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”. Nie jest tu sprawdzany: cel mierzy
+  // bramka etapu na wszystkich demach i ziarnach (zadanie 7, `npm run bot:osada`, kolumny „głodni” i dzień końca), więc tu
+  // zostaje jako zapowiedź. W tym przebiegu (Przymorze 11, kocioł z pierwszego okna) jest spełniony: średnia 41 (od 22,8 w 17. dniu
+  // do 56,8 w 24.). W zadaniu 4, gdy silnik podpisywał `u_warty` pierwszego wieczoru (blokuje kocioł), ten sam przebieg kończył się
+  // odwołaniem w 20. dniu, a najedzenie o 6:00 w dniach 3–11 wynosiło 16–29 (zarząd je dopiero poniżej 35, a dwie osoby czuwają
+  // całą noc bez posiłku).
   it.todo('cel etapu (bramka zadania 7): w dniach 15–25 średnie najedzenie zarządu o 6:00 co najmniej 25');
 
   it('wyprawy wychodzą tylko między 8:00 a 15:00 i nigdy dwie naraz', () => {

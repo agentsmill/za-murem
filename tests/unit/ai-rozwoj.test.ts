@@ -37,23 +37,20 @@ import type { Prompt } from '../../src/gov/typy.ts';
 import { chooseEvent } from '../../src/gov/zarzad.ts';
 import { kartka } from '../../src/sim/badania.ts';
 import { BUILDS, canPlace } from '../../src/sim/budowle.ts';
-import { TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { houseOf, inHomeApt } from '../../src/sim/house.ts';
 import { priorytet, progi } from '../../src/sim/praca.ts';
-import { type Command, okazjaWerbunku, STACK, type Thing } from '../../src/sim/sim.ts';
+import { type Command, okazjaWerbunku, STACK } from '../../src/sim/sim.ts';
 import { populacja } from '../../src/sim/snapshot.ts';
 import { modeOf } from '../../src/sim/tryb.ts';
 import { poranekTick, przygotujGre } from '../../tools/bot-osada.ts';
 import { budowleStojace } from '../../tools/osada-ocena.ts';
+import { rzecz, type Szpieg, szpieg, tickDnia } from './ai-pomoc.ts';
 import { okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
 const okolica = okolicaZGeo(demo.geo);
-
-/** tick danego dnia gry o pełnej godzinie (gra zaczyna się o 15:00 dnia 1; godzina przed 15:00 to ten sam dzień) */
-const tickDnia = (dzien: number, godzina: number): number =>
-  (dzien - 1) * TICKS_PER_DAY + (godzina - 15) * TICKS_PER_HOUR;
 
 type Budowa = Extract<Command, { t: 'build' }>;
 
@@ -81,33 +78,7 @@ const receBezRozwoju = (r: Rece): Rece => ({ ...r, polecenie: (c) => (zRozwoju(c
 /** Silnik „bez rozwoju”: warstwy zimy i jedzenia oraz okna jak w `silnik`, a rozwojowi ręce nic nie przepuszczają. */
 const silnikBezRozwoju: Decydent = { ...silnik, tura: (g, r) => silnik.tura(g, receBezRozwoju(r)) };
 
-interface Szpieg {
-  r: Rece;
-  polecenia: Command[];
-}
-
-/** ręce, które tylko zapisują polecenia */
-function szpieg(): Szpieg {
-  const polecenia: Command[] = [];
-  const r: Rece = {
-    polecenie: (c) => polecenia.push(c),
-    potwierdzRaport: () => {},
-    podpisz: () => {},
-    przydziel: () => true,
-    zatwierdzNoc: () => {},
-    wybierz: () => {},
-    grajDalej: () => {},
-    wyslij: () => true,
-  };
-  return { r, polecenia };
-}
-
 const budowy = (s: Szpieg): Budowa[] => s.polecenia.filter((c): c is Budowa => c.t === 'build');
-
-/** rzecz z gry */
-function rzecz(g: GraAi, kind: string, x: number, y: number, n = 0): Thing {
-  return { id: g.sim.st.nextThing++, kind, x, y, w: 1, h: 1, rot: 0, n, fuel: 0, by: -1, owner: -1 };
-}
 
 /** w zapasach dokładnie tyle desek, złomu i części (reszta zapasów bez zmian) */
 function ustawMaterialy(g: GraAi, m: { deski?: number; zlom?: number; czesci?: number }): void {
