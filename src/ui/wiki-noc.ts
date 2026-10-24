@@ -7,7 +7,7 @@
    odparcia i wtargnięcia, szansa zaśnięcia na warcie, koszty wyprawy, znaleziska): zebrane w `NOC`, a test
    (tests/unit/wiki-noc.test.ts) przypina je do tekstu src/gov/noc.ts. */
 
-import { L } from '../core/jezyk.ts';
+import { L, tr } from '../core/jezyk.ts';
 import {
   CARD_DEADLINE,
   CARD_HOUR,
@@ -23,15 +23,15 @@ import {
   WOOD_PER_HOUR,
   weaponFactor,
 } from '../gov/noc.ts';
-import { TARGETS } from '../gov/tresc.ts';
+import { lawNameTx, TARGETS } from '../gov/tresc.ts';
 import type { GovInput, GovPerson } from '../gov/typy.ts';
 import { BLISKO_DO_M, UDZWIG_NA_OSOBE } from '../gov/wyprawy.ts';
 import { REST_AWAKE } from '../sim/needs.ts';
 import { num, signed } from './tekst.ts';
 import { cechaNazwa, ryzykoMnoznik, wartaMnoznik, wartaNaPoziom } from './wiki-ludzie.ts';
-import { cyt, godz, polecenie, proc } from './wiki-slowa.ts';
+import { cyt, godz, polecenie, proc, wCyt } from './wiki-slowa.ts';
 import { granica, progiKarty, sondaOsoba, sondaStan, sondaStanZUchwalami, sondaWejscie } from './wiki-sondy.ts';
-import { type Def, def, type Fakt, fakt, type Tresc } from './wiki-typy.ts';
+import { type Def, def, type Fakt, fakt, type Tresc, type WikiCtx } from './wiki-typy.ts';
 
 /** Liczby, które zarząd ma na stałe w kodzie karty nocy (src/gov/noc.ts) i w jego skutkach; test je przypina. */
 export const NOC = {
@@ -79,7 +79,7 @@ function leniwie<T>(f: () => T): () => T {
 
 const dziury = (n: number) => Array.from({ length: n }, (_, k) => ({ id: k + 1, size: 0.6 }));
 
-interface Warunki {
+export interface Warunki {
   noc?: number;
   dziury?: number;
   trwalosc?: number;
@@ -100,14 +100,14 @@ function wejscie(o: Warunki = {}): GovInput {
 }
 
 /** szansa napadu (z `raidChance`) przy podanych warunkach */
-function szansa(o: Warunki = {}): number {
+export function szansa(o: Warunki = {}): number {
   const st = sondaStanZUchwalami(...(o.uchwaly ?? []));
   st.flags.dog = !!o.pies;
   return raidChance(st, wejscie(o));
 }
 
 /** o ile punktów procentowych zmienia szansę napadu dana zmiana warunków (względem nocy 1 i zwykłej siatki) */
-const zmianaSzansy = (o: Warunki): number => Math.round((szansa(o) - szansa()) * 100);
+export const zmianaSzansy = (o: Warunki): number => Math.round((szansa(o) - szansa()) * 100);
 
 /** liczby szansy napadu do artykułu */
 const napad = leniwie(() => ({
@@ -149,7 +149,7 @@ const progiNapastnikow = leniwie((): [number, number] => {
 });
 
 /** obrona bramy bez warty przy słabej i mocnej siatce, z psem i z uchwałą o wartach (z `defenseAt`) */
-const obrona = leniwie(() => {
+export const obrona = leniwie(() => {
   const st = sondaStan();
   const stU = sondaStanZUchwalami('u_warty');
   const stPies = sondaStan();
@@ -171,7 +171,7 @@ const iloraz = (a: number, b: number): number => Math.round((a / b) * 20) / 20;
 
 /** siła warty przy bramie osoby wypoczętej, zmęczonej i rannej, progi, na których się zmienia, i mnożniki od uchwały o wartach
     i lampy przy bramie (z `guardValue`, na osobie z bronią palną i Obroną 4, żeby wartość była duża) */
-const warta = leniwie(() => {
+export const warta = leniwie(() => {
   const st = sondaStan();
   const i = sondaWejscie();
   const v = (needs: Partial<GovPerson['needs']>) =>
@@ -232,12 +232,13 @@ const wyprawa = leniwie(() => {
 /** drewno na noc przy dyżurze od 20:00: ile sztuk zjada jedno palenisko (z `nightWood`) */
 const drewnoNaNoc = leniwie(() => nightWood(sondaWejscie({ stock: { wood: 0, supplies: 0 } })).need);
 
-const wstawGodz = (g: number): string => `${g}:00`;
+export const wstawGodz = (g: number): string => `${g}:00`;
 
 /** sama noc od karty do rana w godzinach */
-const GODZIN_NOCY = (MORNING - CARD_HOUR + 24) % 24;
+export const GODZIN_NOCY = (MORNING - CARD_HOUR + 24) % 24;
 
-function faktyNapadu(): Fakt[] {
+function faktyNapadu(c: WikiCtx): Fakt[] {
+  const { words: w, e } = c;
   const n = napad();
   const o = odstraszanie();
   const ob = obrona();
@@ -269,13 +270,16 @@ function faktyNapadu(): Fakt[] {
     ),
     fakt(
       'swiatlo',
-      L('Lampa przy bramie, ognisko', 'Gate lamp, campfire'),
+      L(`Lampa ${w.brama.przy}, ognisko`, `A lamp at ${e.brama}, campfire`),
       L(`${signed(n.lampa, 0)} i ${signed(n.ognisko, 0)} pkt`, `${signed(n.lampa, 0)} and ${signed(n.ognisko, 0)} pts`),
     ),
     fakt('pies', L('Pies', 'A dog'), L(`${signed(n.pies, 0)} pkt`, `${signed(n.pies, 0)} pts`)),
     fakt(
       'uchwaly',
-      L('Uchwały o wartach i o bramie', 'The resolutions on watches and on the gate'),
+      L(
+        `Uchwały ${wCyt(tr(lawNameTx('u_warty', c.place)))} i ${wCyt(tr(lawNameTx('u_brama', c.place)))}`,
+        `The resolutions ${wCyt(tr(lawNameTx('u_warty', c.place)))} and ${wCyt(tr(lawNameTx('u_brama', c.place)))}`,
+      ),
       L(`${signed(n.warty, 0)} i ${signed(n.brama, 0)} pkt`, `${signed(n.warty, 0)} and ${signed(n.brama, 0)} pts`),
     ),
     fakt('zakres', L('Najmniej i najwięcej', 'Lowest and highest'), `${proc(n.najmniej)} / ${proc(n.najwiecej)}`),
@@ -309,12 +313,18 @@ function faktyNapadu(): Fakt[] {
     ),
     fakt(
       'brama',
-      L('Obrona bramy bez warty: słaba i mocna siatka', 'Gate defence with no watch: ruined and strong fence'),
+      L(
+        `Obrona ${w.brama.d} bez warty: zniszczona i nowa siatka`,
+        `Defence of ${e.brama} with no watch: ruined and new fence`,
+      ),
       `${num(ob.slaba)} / ${num(ob.mocna)}`,
     ),
     fakt(
       'pies-obrona',
-      L('Pies dokłada do obrony bramy i innych miejsc', 'A dog adds to the gate and to other posts'),
+      L(
+        `Pies dokłada do obrony ${w.brama.d} i innych miejsc`,
+        `A dog adds to the defence of ${e.brama} and of other posts`,
+      ),
       `${num(ob.pies)} / ${num(ob.piesInne)}`,
     ),
     fakt(
@@ -438,8 +448,8 @@ export function definicjeNoc(): Def[] {
               `A watch stands at one of the places where looters can get in: at ${e.brama} or at a hole in the fence, and with a tower also on the tower.`,
             ),
             L(
-              'Szabrownicy wybierają miejsce losowo, ale częściej to słabsze: większa dziura albo brama przy zniszczonej siatce.',
-              'Looters pick the place at random, but the weaker one more often: a bigger hole, or the gate in a ruined fence.',
+              `Szabrownicy wybierają miejsce losowo, ale częściej to słabsze: większa dziura albo ${w.brama.m} przy zniszczonej siatce.`,
+              `Looters pick the place at random, but the weaker one more often: a bigger hole, or ${e.brama} in a ruined fence.`,
             ),
             L(
               `Warta odstrasza: z jedną osobą szansa napadu spada do ${proc(o.jedna)}, z dwiema do ${proc(o.dwie)}, a przy świetle jeszcze niżej.`,
@@ -489,7 +499,7 @@ export function definicjeNoc(): Def[] {
               ),
               `×${num(wartaMnoznik('odwazny'))} / ×${num(wartaMnoznik('tchorz'))}`,
             ),
-            fakt('lampa', L('Lampa przy bramie', 'A lamp at the gate'), `×${num(warta().lampa, 2)}`),
+            fakt('lampa', L(`Lampa ${w.brama.przy}`, `A lamp at ${e.brama}`), `×${num(warta().lampa, 2)}`),
             fakt('uchwala', L('Uchwała o wartach', 'The resolution on watches'), `×${num(warta().uchwala, 2)}`),
             fakt(
               'sen',
@@ -747,7 +757,7 @@ export function definicjeNoc(): Def[] {
               `If they get in, they take part of the wood, supplies and scrap, trust and safety fall, and one guard at that place gets hurt. In zombie mode there are no looters: the herd comes instead.`,
             ),
           ],
-          fakty: faktyNapadu(),
+          fakty: faktyNapadu(c),
           jak: [
             L(
               `Za dnia łatajcie dziury i wzmacniajcie ${w.brama.b}, wieczorem rozpalcie ognisko, a na karcie nocy postawcie wartę przy najsłabszym miejscu.`,

@@ -10,6 +10,7 @@ import { definicjeNoc } from './wiki-noc.ts';
 import { definicjePraca } from './wiki-praca.ts';
 import { definicjeStart } from './wiki-start.ts';
 import type { Def } from './wiki-typy.ts';
+import { definicjeZarzad } from './wiki-zarzad.ts';
 import { definicjeZasoby } from './wiki-zasoby.ts';
 
 export function definicjeTresc(): Def[] {
@@ -22,5 +23,6 @@ export function definicjeTresc(): Def[] {
     ...definicjeBron(),
     ...definicjePraca(),
     ...definicjeNoc(),
+    ...definicjeZarzad(),
   ];
 }

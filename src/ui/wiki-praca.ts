@@ -117,7 +117,14 @@ const umiejetnoscOpis = (r: RodzajPracy): string => {
 
 const matNazwa = (m: Mat): string => L(MAT_NAME[m], MAT_EN[m]);
 
-function faktyRodzaju(r: RodzajPracy): Fakt[] {
+/** Opis z panelu Pracy mówi o „naszych mieszkaniach” także w domu jednorodzinnym; w tym miejscu wiki podaje zamiast nich lokum
+    z miejsca (w domu „w naszym domu”), żeby w domu nie było słów z bloku. */
+function opisWDomu(opis: string, c: WikiCtx): string {
+  if (!c.dom) return opis;
+  return opis.replaceAll('w naszych mieszkaniach', c.words.lokal.w).replaceAll('in our flats', 'in our house');
+}
+
+function faktyRodzaju(r: RodzajPracy, c: WikiCtx): Fakt[] {
   const przysp = przyspiesza(r);
   return [
     fakt(
@@ -134,7 +141,7 @@ function faktyRodzaju(r: RodzajPracy): Fakt[] {
     ),
     fakt(
       'start',
-      L('Zarząd bierze się za to sam', 'The board starts doing it on its own'),
+      L(`${c.words.Zarzad} bierze się za to sam`, `${c.e.Zarzad} starts doing it on its own`),
       NOWE.has(r)
         ? L('od pierwszego ranka', 'from the first morning')
         : L('od początku gry', 'from the start of the game'),
@@ -153,12 +160,12 @@ const OPISY: Record<RodzajPracy, Opis> = {
         'Fire feeds the stove from the woodpile and carries loose wood to the woodpile by the stove.',
       ),
       L(
-        'Razem z kuchnią to jedyna praca, którą zarząd robi też w nocy, i u każdego stoi domyślnie na pierwszym miejscu.',
-        'Together with the kitchen it is the only job the people also do at night, and for everyone it is first by default.',
+        `Razem z kuchnią to jedyna praca, którą ${c.words.zarzad.m} robi też w nocy, i u każdego stoi domyślnie na pierwszym miejscu.`,
+        `Together with the kitchen it is the only job ${c.e.krotko} also does at night, and for everyone it is first by default.`,
       ),
       L(
-        'Kto ma Ogień wyłączony (puste pole) i nie ma go jako stałego zajęcia, sam do kozy nie dołoży, a panel ostrzega, gdy nikt w zarządzie go nie ma.',
-        'Anyone with Fire switched off (a blank cell) and not as a fixed job will not feed the stove on their own, and the panel warns when nobody on the board has it.',
+        `Kto ma Ogień wyłączony (puste pole) i nie ma go jako stałego zajęcia, sam do kozy nie dołoży, a panel ostrzega, gdy nikt z ${c.words.zarzad.dk} go nie ma.`,
+        `Anyone with Fire switched off (a blank cell) and not as a fixed job will not feed the stove on their own, and the panel warns when nobody on ${c.e.krotko} has it.`,
       ),
     ],
     zobacz: ['zasob:koza', 'zasob:drewno', 'noc:koza'],
@@ -167,8 +174,8 @@ const OPISY: Record<RodzajPracy, Opis> = {
   kuchnia: (c) => ({
     zdania: [
       L(
-        'Kuchnia gotuje porcje, kiedy ktoś z zarządu zaraz zgłodnieje, a są zapasy i ogień albo gaz.',
-        'The kitchen cooks portions when someone on the board is about to get hungry and there are supplies and fire or gas.',
+        `Kuchnia gotuje porcje, kiedy ktoś z ${c.words.zarzad.dk} zaraz zgłodnieje, a są zapasy i ogień albo gaz.`,
+        `The kitchen cooks portions when someone on ${c.e.krotko} is about to get hungry and there are supplies and fire or gas.`,
       ),
       L(
         `Z kuchnią społeczną albo uchwałą „Wspólny kocioł” gotuje się raz dziennie, godzinę przed obiadem, dla wszystkich.`,
@@ -349,8 +356,8 @@ function rodzaj(r: RodzajPracy): Def {
       return {
         zdania: o.zdania,
         fakty: [
-          fakt('opis', L('Tak mówi panel Pracy', 'What the Work panel says'), opisRodzaju(r, en())),
-          ...faktyRodzaju(r),
+          fakt('opis', L('Tak mówi panel Pracy', 'What the Work panel says'), opisWDomu(opisRodzaju(r, en()), c)),
+          ...faktyRodzaju(r, c),
           ...(o.fakty ?? []),
         ],
         jak: o.jak ?? [],
@@ -509,8 +516,8 @@ export function definicjePraca(): Def[] {
       (c) => ({
         zdania: [
           L(
-            'Panel Pracy to tabela: wiersz to osoba z zarządu, kolumna to rodzaj pracy, a cyfra w komórce mówi, jak chętnie osoba sama się tym zajmie.',
-            'The Work panel is a table: a row is a person on the board, a column is a kind of work, and the digit in a cell says how readily the person does it on their own.',
+            `Panel Pracy to tabela: wiersz to osoba z ${c.words.zarzad.dk}, kolumna to rodzaj pracy, a cyfra w komórce mówi, jak chętnie osoba sama się tym zajmie.`,
+            `The Work panel is a table: a row is a person on ${c.e.krotko}, a column is a kind of work, and the digit in a cell says how readily the person does it on their own.`,
           ),
           L(
             '1 znaczy najpierw, 4 na końcu, a puste pole: nie robi tego wcale.',
@@ -624,11 +631,11 @@ export function definicjePraca(): Def[] {
       'praca:zapas',
       'praca',
       () => L('Trzymać w zapasie', 'Keep in stock'),
-      () => ({
+      (c) => ({
         zdania: [
           L(
-            'Progi zapasów mówią, ile drewna, desek, części (a w trybie zombie dzid) zarząd ma sam trzymać na stanie.',
-            'The stock levels say how much wood, planks, parts (and, in Zombie mode, spears) the people should keep in store on their own.',
+            `Progi zapasów mówią, ile drewna, desek, części (a w trybie zombie dzid) ${c.words.zarzad.m} ma sam trzymać na stanie.`,
+            `The stock levels say how much wood, planks, parts (and, in Zombie mode, spears) ${c.e.krotko} should keep in store on its own.`,
           ),
           L(
             'Drwal tnie drzewa, póki drewna jest mniej niż próg, a Warsztat robi deski i części z nadwyżki do ich progów.',
@@ -716,14 +723,14 @@ export function definicjePraca(): Def[] {
       'praca:automat',
       'praca',
       () => L('Praca bez poleceń', 'Work without orders'),
-      () => {
+      (c) => {
         const nowe = RODZAJE.filter((r) => NOWE.has(r));
         const odRazu = RODZAJE.filter((r) => !NOWE.has(r));
         return {
           zdania: [
             L(
-              'Wolny człowiek z zarządu sam bierze zlecenia według tabeli pracy; polecenie z menu zawsze ma pierwszeństwo.',
-              'A free person on the board picks up jobs by itself according to the work table; an order from the menu always comes first.',
+              `Wolny człowiek z ${c.words.zarzad.dk} sam bierze zlecenia według tabeli pracy; polecenie z menu zawsze ma pierwszeństwo.`,
+              `A free person on ${c.e.krotko} picks up jobs by itself according to the work table; an order from the menu always comes first.`,
             ),
             L(
               `${listaI(odRazu.map(rodzajNazwa))} działają od początku gry, a ${listaI(nowe.map(rodzajNazwa))} dopiero od pierwszego ranka.`,

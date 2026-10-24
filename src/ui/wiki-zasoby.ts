@@ -225,8 +225,8 @@ export function definicjeZasoby(): Def[] {
               `They come from ${e.szukanie.zrodla.deski}, and the workshop saws them from wood.`,
             ),
             L(
-              'Zarząd nosi deski na podwórko i zużywa je sam, kiedy łata dziurę, naprawia coś albo buduje.',
-              'The people carry planks into the yard and use them up on their own when they patch a hole, repair something or build.',
+              `${w.Zarzad} nosi deski na podwórko i zużywa je sam, kiedy łata dziurę, naprawia coś albo buduje.`,
+              `${e.Zarzad} carries planks into the yard and uses them up on its own when they patch a hole, repair something or build.`,
             ),
           ],
           fakty: [
@@ -469,8 +469,8 @@ export function definicjeZasoby(): Def[] {
           ],
           jak: [
             L(
-              'Zarząd gotuje sam, kiedy ktoś robi się głodny; polecenie „Gotować” w menu przy kuchence albo zapasach gotuje od razu.',
-              'The people cook on their own when someone gets hungry; the “Cook” order, given at the cooker or the stock, cooks at once.',
+              `${w.Zarzad} gotuje sam, kiedy ktoś robi się głodny; polecenie „Gotować” w menu przy kuchence albo zapasach gotuje od razu.`,
+              `${e.Zarzad} cooks on its own when someone gets hungry; the “Cook” order, given at the cooker or the stock, cooks at once.`,
             ),
             L(
               'Wyprawę po jedzenie wysyła się z mapy miasta: do sklepu spożywczego, sklepu albo ogrodnika.',
@@ -495,7 +495,7 @@ export function definicjeZasoby(): Def[] {
       'zasob:leki',
       'zasoby',
       () => L('Leki', 'Meds'),
-      () => ({
+      (c) => ({
         zdania: [
           L(
             'Leki to paczki lekarstw i opatrunków, których w 2051 roku prawie nie ma.',
@@ -506,8 +506,8 @@ export function definicjeZasoby(): Def[] {
             'They lie in pharmacies and clinics, turn up in wreck glove boxes, and a vegetable patch occasionally yields some after the herbalism research.',
           ),
           L(
-            'Pomagają przy amputacji, a prosi o nie wielu gości pod bramą.',
-            'They help with an amputation, and many guests at the gate ask for them.',
+            `Pomagają przy amputacji, a prosi o nie wielu gości ${c.words.brama.pod}.`,
+            `They help with an amputation, and many guests at ${c.e.brama} ask for them.`,
           ),
           L(
             'Handlarz czasem wymienia leki na części albo kupuje je za jedzenie.',
@@ -592,8 +592,8 @@ export function definicjeZasoby(): Def[] {
               `The potbelly stove stands in ${e.krotko}’s kitchen: it burns wood, heats the kitchen and lets you cook when the gas runs out.`,
             ),
             L(
-              'Czip „koza” mówi, na ile godzin gry starczy ognia; zarząd sam dokłada, póki jest drewno.',
-              'The “stove” chip shows how many game hours of fire are left; people feed it on their own as long as there is wood.',
+              `Czip „koza” mówi, na ile godzin gry starczy ognia; ${w.zarzad.m} sam dokłada, póki jest drewno.`,
+              `The “stove” chip shows how many game hours of fire are left; ${e.krotko} feeds it on its own as long as there is wood.`,
             ),
             L(
               'Bez polecenia dokładają do niej tylko wtedy, gdy ogień jest potrzebny: ktoś marznie, kuchnia stygnie, trzeba gotować albo zaczyna się wieczór.',
@@ -671,8 +671,12 @@ export function definicjeZasoby(): Def[] {
           jak: [
             polecenie(c, ['meblu', 'a piece of furniture'], ['Spalić …', 'Burn the …']),
             L(
-              'W sąsiednich budynkach mebli nie wolno palić; w pustym mieszkaniu zarządu można je też rozebrać na deski.',
-              'Furniture in neighbouring buildings cannot be burned; furniture in your own empty rooms can also be taken apart for planks.',
+              c.dom
+                ? 'W sąsiednich budynkach mebli nie wolno palić; w waszym domu można je też rozebrać na deski.'
+                : 'W sąsiednich budynkach mebli nie wolno palić; w pustym mieszkaniu zarządu można je też rozebrać na deski.',
+              c.dom
+                ? 'Furniture in neighbouring buildings cannot be burned; furniture in your own house can also be taken apart for planks.'
+                : 'Furniture in neighbouring buildings cannot be burned; furniture in your own empty rooms can also be taken apart for planks.',
             ),
           ],
           zobacz: ['zasob:drewno', 'zasob:koza', 'uchwala:u_meble', 'zarzad:wkurzenie', 'zasob:deski'],
@@ -735,8 +739,8 @@ export function definicjeZasoby(): Def[] {
               'Planks, scrap and parts are salvaged materials: on a phone the “pl·sc·pa” chip shows them together.',
             ),
             L(
-              `Dają je przede wszystkim ${w.szukanie.d} i rozbiórka rzeczy; zarząd nosi je na podwórko i zużywa na łaty, naprawy i budowę.`,
-              `They come mainly from searching ${e.szukanie.d} and taking things apart; the people carry them into the yard and use them for patches, repairs and building.`,
+              `Dają je przede wszystkim ${w.szukanie.d} i rozbiórka rzeczy; ${w.zarzad.m} nosi je na podwórko i zużywa na łaty, naprawy i budowę.`,
+              `They come mainly from searching ${e.szukanie.d} and taking things apart; ${e.krotko} carries them into the yard and uses them for patches, repairs and building.`,
             ),
             L(
               'Warsztat przerabia drewno na deski, a złom na części.',

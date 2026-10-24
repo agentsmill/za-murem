@@ -67,7 +67,7 @@ const sezony = (wartosci: readonly number[]): string =>
   SEASONS.map((_, i) => `${L(SEASONS[i], SEASONS_EN[i])} ${wartosci[i]}`).join(', ');
 
 const OPISY: Record<BuildKind, Opis> = {
-  warsztat: () => ({
+  warsztat: (c) => ({
     zdania: [
       L(
         'Warsztat przerabia surowce: z drewna piłuje się w nim deski, a ze złomu robi części.',
@@ -78,8 +78,8 @@ const OPISY: Record<BuildKind, Opis> = {
         'With a workshop, patches, repairs and shoring up the fence go faster, and taking furniture, appliances and wrecks apart yields more.',
       ),
       L(
-        'Zarząd sam robi deski, części i dzidy do progów ustawionych w panelu Pracy.',
-        'The people make planks, parts and spears on their own, up to the levels set in the Work panel.',
+        `${c.words.Zarzad} sam robi deski, części i dzidy do progów ustawionych w panelu Pracy.`,
+        `${c.e.Zarzad} makes planks, parts and spears on its own, up to the levels set in the Work panel.`,
       ),
     ],
     fakty: [
@@ -203,7 +203,7 @@ const OPISY: Record<BuildKind, Opis> = {
     zobacz: ['badania:jak', 'badania:wiedza', 'praca:badania'],
   }),
 
-  koza_beczka: () => ({
+  koza_beczka: (c) => ({
     zdania: [
       L(
         'Koza z beczki to druga koza, którą stawia się w pokoju, kuchni albo przedpokoju, blisko okna.',
@@ -214,8 +214,8 @@ const OPISY: Record<BuildKind, Opis> = {
         'The flue goes out through the window, so it cannot stand deep inside a room.',
       ),
       L(
-        'Grzeje swoje pomieszczenie i pali drewno tak samo jak koza w kuchni; zarząd dokłada do niej sam.',
-        'It heats its own room and burns wood just like the kitchen stove; the people feed it on their own.',
+        `Grzeje swoje pomieszczenie i pali drewno tak samo jak koza w kuchni; ${c.words.zarzad.m} dokłada do niej sam.`,
+        `It heats its own room and burns wood just like the kitchen stove; ${c.e.krotko} feeds it on its own.`,
       ),
     ],
     fakty: [
@@ -239,7 +239,10 @@ const OPISY: Record<BuildKind, Opis> = {
           ? 'It stands in the hallway of the house.'
           : 'It stands in the HQ stairwell, from where heat goes to the board’s flats.',
       ),
-      L('Zarząd dokłada do niego sam, jak do kozy.', 'The people feed it on their own, as they do the stove.'),
+      L(
+        `${c.words.Zarzad} dokłada do niego sam, jak do kozy.`,
+        `${c.e.Zarzad} feeds it on its own, as it does the stove.`,
+      ),
     ],
     fakty: [
       fakt('zuzycie', L('Zużycie drewna (koza = 1)', 'Wood use (stove = 1)'), `${PALENISKA.kociol}`),

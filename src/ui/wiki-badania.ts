@@ -187,11 +187,11 @@ function technologia(t: TechNowa): Def {
           : maWlasnyOpis(t)
             ? L(
                 `${opisTech(t, c)} Na razie nie da się jej zbadać: karta na tablicy leży odwrócona, bo czeka na prąd.`,
-                `${opisTech(t, c)} It cannot be researched yet: its card on the board lies face down, waiting for power.`,
+                `${opisTech(t, c)} It cannot be researched yet: its card on the research board lies face down, waiting for power.`,
               )
             : L(
                 'Do tego trzeba prądu: na razie nie da się jej zbadać, karta na tablicy leży odwrócona.',
-                'This needs power: it cannot be researched yet, and its card on the board lies face down.',
+                'This needs power: it cannot be researched yet, and its card on the research board lies face down.',
               ),
         L(
           `Badanie kosztuje ${mnogaPl(kosztDoPokazania(kosztTech(t.id)), 'punkt', 'punkty', 'punktów')}, a osada musi znać dziedzinę na poziomie ${poziomy(t)}.`,
@@ -216,7 +216,7 @@ function technologia(t: TechNowa): Def {
               ),
               L(
                 `Na tablicy wybierzcie kartkę ${cyt(nazwaPl(t), nazwa)} i ${cyt('Badać', 'Research')}; badają zaznaczeni ludzie przy stole.`,
-                `On the board pick the card ${cyt(nazwaPl(t), nazwa)} and ${cyt('Badać', 'Research')}; the people you have selected research it at the desk.`,
+                `On the research board pick the card ${cyt(nazwaPl(t), nazwa)} and ${cyt('Badać', 'Research')}; the people you have selected research it at the desk.`,
               ),
               polecenie(c, ['pracowni', 'the research room'], [`Badać: ${nazwaPl(t)}`, `Research: ${nazwa}`]),
             ]
@@ -411,7 +411,7 @@ export function definicjeBadania(): Def[] {
             czekaja.length
               ? L(
                   `Ery ${listaI(dzialaja.map(String))} działają w grze, a ${listaI(czekaja.map(String))} czekają na prąd i na tablicy mają karty odwrócone.`,
-                  `Eras ${listaI(dzialaja.map(String))} work in the game, while ${listaI(czekaja.map(String))} wait for power and have their cards face down on the board.`,
+                  `Eras ${listaI(dzialaja.map(String))} work in the game, while ${listaI(czekaja.map(String))} wait for power and have their cards face down on the research board.`,
                 )
               : L('Wszystkie ery działają w grze.', 'All eras work in the game.'),
           ],

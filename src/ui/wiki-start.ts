@@ -89,7 +89,7 @@ export function definicjeStart(): Def[] {
             ),
             fakt(
               'osoby',
-              L('Osób w zarządzie', 'People on the board'),
+              L('Osób na starcie', 'People at the start'),
               L(
                 `${OSOB_DOMYSLNIE} (na ekranie startowym od ${OSOB_MIN} do ${OSOB_MAX})`,
                 `${OSOB_DOMYSLNIE} (from ${OSOB_MIN} to ${OSOB_MAX} on the start screen)`,
@@ -421,8 +421,8 @@ export function definicjeStart(): Def[] {
             'The goals come in chapters, from the first day through work and research to the roads to victory.',
           ),
           L(
-            'Gdy zdarzy się coś ważnego, na przykład handlarz pod bramą albo ugryzienie, nad rozdziałem pojawia się krótka okazja z własnymi celami.',
-            'When something important happens, such as a trader at the gate or a bite, a short opportunity with its own goals appears above the chapter.',
+            `Gdy zdarzy się coś ważnego, na przykład handlarz ${c.words.brama.pod} albo ugryzienie, nad rozdziałem pojawia się krótka okazja z własnymi celami.`,
+            `When something important happens, such as a trader at ${c.e.brama} or a bite, a short opportunity with its own goals appears above the chapter.`,
           ),
           L(
             'Cel, który przepadł, na przykład drewno na wieczór po nadejściu nocy, zostaje skreślony.',
@@ -494,9 +494,9 @@ export function definicjeStart(): Def[] {
           fakty: [
             fakt(
               'zarzad',
-              w.Zarzad,
+              L(w.Zarzad, e.Zarzad),
               L(
-                `Wy: kilka osób z imionami, którym wydajecie polecenia. ${w.Zarzad} odpowiada przed ${w.mieszkancy.m}.`,
+                `Wy: kilka osób z imionami, którym wydajecie polecenia. ${w.Zarzad} odpowiada wobec ${w.mieszkancy.d}.`,
                 `You: a few named people to whom you give orders. ${e.Zarzad} answers to the ${e.mieszkancy}.`,
               ),
             ),
@@ -548,7 +548,10 @@ export function definicjeStart(): Def[] {
             fakt(
               'warta',
               L('Warta', 'The watch'),
-              L('Osoby, które nocą pilnują siatki albo bramy.', 'The people who guard the fence or the gate at night.'),
+              L(
+                `Osoby, które nocą pilnują siatki albo ${w.brama.d}.`,
+                `The people who guard the fence or ${e.brama} at night.`,
+              ),
             ),
             fakt(
               'napad',
