@@ -1,31 +1,40 @@
 /* Zrzuty i sprawdzenia okienka celów ze ścieżki (src/ui/sciezka.ts) do `npm run shots` (scenariusze cele-* i en-cele-r1):
    drugi dzień (R1) w bloku, w domu i w trybie zombie, cel czekający, okazje (handlarz, ugryzienie), linia „Cel: …” w oknach
    karty nocy, uchwały, spotkania z sąsiadami i na tablicy badań, widok dróg do zwycięstwa po ostatnim rozdziale (świeża gra),
-   telefon 390×844 i 360 px, angielski bez polskich liter oraz zaliczenie drewna na wieczór, które przeżywa zapis, zjedzenie
-   zapasu przez kozę i przeładowanie strony („Kontynuuj”).
+   telefon 390×844 i 360 px, angielski bez polskich liter, okienko ograniczone do miejsca nad kartą osoby i przewijane do
+   bieżącego celu (`cele-przewijanie`) oraz zaliczenie drewna na wieczór, które przeżywa zapis, zjedzenie zapasu przez kozę
+   i przeładowanie strony („Kontynuuj”).
 
    Każdy scenariusz sam sprawdza tekst okienka `#goals` (tytuł, licznik, teksty celów, podpowiedź tylko przy bieżącym,
    dopisek „czeka”, kolejność bloku okazji i rozdziału) i to, że okienko nie nachodzi na pasek u góry, listę ludzi, kartę
-   osoby i panel budowy (`ukladZPanelami`: zaznacza osobę, otwiera panel budowy i po każdym kroku sprawdza przecięcia
-   prostokątów, a także że okienko mieści się w oknie i nie przewija strony w bok). Okna z linią „Cel: …” sprawdza po
-   tekście linii i po tym, że mieści się w oknie na komputerze i na telefonie.
+   osoby i panel budowy (`sprawdzUklad` → `ukladZPanelami`: zaznacza osobę, otwiera panel budowy i po każdym kroku sprawdza
+   przecięcia prostokątów, a także że okienko mieści się w oknie i nie przewija strony w bok). Okna z linią „Cel: …”
+   sprawdza po tekście linii i po tym, że mieści się w oknie na komputerze i na telefonie.
+
+   Okienko ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby) i przewija się w środku, więc
+   `naruszenia` sprawdza też, że pierwszy bieżący cel z podpowiedzią mieści się w całości w widocznej części okienka (bez
+   tego przycięta lista przechodziłaby, bo prostokąt okienka się mieści), a nachodzenie okienka na kartę osoby, pasek, listę
+   ludzi i panel budowy jest po prostu usterką, także na komputerze. Przewijanie do bieżącego celu robi `pokazBiezacyCel`
+   w src/main.ts, a `cele-przewijanie` pilnuje go na długiej liście zrobionych.
 
    Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu; rozwiniętą listę
    (stuknięcie w nagłówek) tylko tak, że karta osoby, arkusz budowy od dołu i podpowiedź u dołu, które rysuje się nad nią, są
-   zamierzone (`dozwolone`), a pasek, lista ludzi i krawędzie okna dalej muszą się zgadzać. Znane nachodzenie na komputerze
-   (karta osoby przy wysokim okienku, `ZNANE_NA_KOMPUTERZE`) jest zapisane i pilnowane. Uwagi o liście ludzi na arkuszu
-   budowy (poza okienkiem celów) idą tylko do logu.
+   zamierzone (`dozwolone`), ale zakrywają najwyżej to, co leży pod bieżącym celem z jego podpowiedzią, a pasek, lista ludzi
+   i krawędzie okna dalej muszą się zgadzać. Lista ludzi na telefonie schodzi pod okienko, więc jej nachodzenie na arkusz
+   budowy albo kartę osoby idzie do logu, ale nie może przekroczyć `LISTA_NA_PRZESZKODZIE_MAX` px.
 
    Stan gry scenariusze prowadzą grą (samouczek, noc, raport, przewijanie przez `zm.ff` z odpowiedziami na okna zarządu),
    a tam, gdzie gra potrzebuje do tego godzin ludzkiej roboty, ustawiają stan wprost jak dzisiejsze scenariusze (pracownia,
-   ugryzienie, zapas drewna, trzy pierwsze cele), a rozdział hakiem `zm.rozdzial`. Tekst jest sprawdzany w DOM, nie w widoku
-   `zm.cele()`; widok służy do sprawdzenia, co jest zaliczone, a co przepadło. Żadnych zmian w `src/`: hak `window.zm` ma już
-   `cele()` i `rozdzial()`. */
+   ugryzienie, zapas drewna, trzy pierwsze cele), a rozdział hakiem `zm.rozdzial` (na świeżej grze czekają wtedy, aż zniknie
+   podpowiedź startowa). Tekst jest sprawdzany w DOM, nie w widoku `zm.cele()`; widok służy do sprawdzenia, co jest
+   zaliczone, a co przepadło. Hak `window.zm` ma już `cele()` i `rozdzial()`. Czekanie na stan idzie przez selektory
+   i treść okienka; tam, gdzie nie ma na co czekać, przez `poHudzie` (jedyne `waitForTimeout` w pliku). */
 
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import type { BuildKind } from '../src/sim/budowle.ts';
-import { minutesAt } from '../src/sim/clock.ts';
+import { minutesAt, TICKS_PER_HOUR } from '../src/sim/clock.ts';
+import { NIGHT_WOOD } from '../src/ui/cele.ts';
 import type { KluczRozdzialu, WidokSciezki } from '../src/ui/sciezka.ts';
 import { waitIdle } from './browser.ts';
 
@@ -41,8 +50,6 @@ export interface ShotCele {
 }
 
 const SAVE = 'za-murem-0.4-zapis';
-/** katalog zrzutów (ustawia `celeShots`), do zrzutów zapisywanych przez `ukladZPanelami` */
-let WYJSCIE = '';
 const TILE = 32;
 const GRA = 'speed=0&cam=hq,1.3';
 /** słowa z bloku, których w domu nie ma w celach i w ich podpowiedziach (jak BLOKOWE_UI w tools/shots.ts) */
@@ -52,6 +59,15 @@ const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|paw
 const dotykowy = (w: number): boolean => w < 640;
 /** klik albo stuknięcie, zależnie od ekranu */
 const kliknij = (page: Page, sel: string, dotyk: boolean) => (dotyk ? page.tap(sel) : page.click(sel));
+
+/** Co ile `hud` w main.ts odświeża okienko celów, listę ludzi i kartę osoby (ms). */
+const HUD_MS = 200;
+/** Czeka, aż odświeży się wszystko, co rysuje `hud`, i dojdzie układ: po zmianie stanu gry, której żaden hak nie odświeża od razu
+    (`zm.rozdzial` i `zm.cele` odświeżają okienko same), trzeba odczekać dwa okresy `HUD_MS` oraz klatkę, w której
+    ResizeObserver ustawia `--goals-h` i `--card-h`; `okresy` to liczba okresów (dłuższe czekanie sprawdza, że odświeżenia
+    czegoś nie cofają). Tylko tu jest `waitForTimeout`: gdzie jest stan, na który da się poczekać (selektor, treść okienka),
+    scenariusze czekają na niego. */
+const poHudzie = (page: Page, okresy = 2): Promise<void> => page.waitForTimeout(okresy * HUD_MS + 50);
 
 /** minuta gry (od początku dnia 1, 0:00) dla dnia, godziny i minuty */
 const minutaGry = (dzien: number, godz: number, min = 0): number => (dzien - 1) * 1440 + godz * 60 + min;
@@ -209,10 +225,18 @@ async function bezDrwala(page: Page): Promise<void> {
   });
 }
 
-/** ustawia rozdział ścieżki hakiem do zrzutów i czeka, aż okienko go pokaże */
+/** ustawia rozdział ścieżki hakiem do zrzutów (haczyk rysuje okienko od razu) i czeka na układ po jego zmianie */
 async function rozdzial(page: Page, k: KluczRozdzialu): Promise<void> {
   await page.evaluate((r) => window.zm!.rozdzial(r), k);
-  await page.waitForTimeout(450);
+  await poHudzie(page);
+}
+
+/** Podpowiedź z początku nowej gry („To wasz zarząd… Cele pierwszego dnia są po lewej.”) wisi 9 s od startu (`say(…, 9000)`
+    w main.ts) i mija sama. Scenariusze, które ustawiają rozdział hakiem na świeżej grze (uchwała, spotkanie, tablica,
+    drogi), czekają, aż zniknie, tak jak w grze: inaczej zrzut pokazywałby obok rozdziału R4, R6, R7 albo „Dróg do
+    zwycięstwa” zdanie o celach pierwszego dnia, którego gracz w tym rozdziale nie zobaczy. */
+async function poPodpowiedziStartowej(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 });
 }
 
 async function widok(page: Page): Promise<WidokSciezki> {
@@ -276,33 +300,37 @@ const naglowek = (page: Page): Promise<{ tytul: string; licznik: string }> =>
     };
   });
 
-/** Nachodzenie okienka celów na inny element ekranu: `co` to nazwa przeszkody (do list `znane` i `dozwolone`), `w` i `h`
-    to wymiary części wspólnej w pikselach, `tekst` to opis do komunikatu. */
+/** Nachodzenie okienka celów na inny element ekranu: `co` to nazwa przeszkody (do listy `dozwolone`), `gora` to jej górna
+    krawędź na ekranie, `w` i `h` to wymiary części wspólnej w pikselach, `tekst` to opis do komunikatu. */
 interface Nachodzenie {
   co: string;
+  gora: number;
   w: number;
   h: number;
   tekst: string;
 }
 
-/** nazwy przeszkód w bierniku (do komunikatów i do list `dozwolone` i `znane` niżej) */
+/** Wynik `naruszenia`: nachodzenia na przeszkody, inne naruszenia (opisy) i położenie na ekranie pierwszego bieżącego celu
+    z podpowiedzią (null, gdy okienko nie ma bieżącego celu). */
+interface Naruszenia {
+  nachodzi: Nachodzenie[];
+  inne: string[];
+  cel: { gora: number; dol: number } | null;
+}
+
+/** nazwy przeszkód w bierniku (do komunikatów i do listy `dozwolone` niżej) */
 const KARTA = 'kartę osoby';
 const PANEL_BUDOWY = 'panel budowy';
 const PODPOWIEDZ = 'podpowiedź u dołu';
 
-/** Znana usterka układu na komputerze 1440×900 (raport zadania 10): okienko celów nie ma ograniczenia wysokości, a karta
-    zaznaczonej osoby stoi 40 px od dołu i ma 470–540 px, więc dolna część okienka znika pod kartą, gdy okienko jest wysokie:
-    blok okazji nad rozdziałem (handlarz 410 px, ugryzienie przy pierwszym dniu 450 px) albo długa podpowiedź bieżącego celu
-    po nocy (R1 „budowla”: 262 px, 19 px za dużo). Scenariusze z takim stanem zapisują ją tu, zamiast ją ukrywać, i pilnują,
-    że nadal występuje: po poprawce układu (np. `max-height` okienka do górnej krawędzi karty, `--card-h` mierzy main.ts)
-    przerwą się z komunikatem „zniknęło” i wystarczy usunąć ten wpis. */
-const ZNANE_NA_KOMPUTERZE: readonly string[] = [KARTA];
-
 /** Okienko celów nie nachodzi na nic, co stoi obok (pasek u góry, chipy listy ludzi, karta osoby, panele budowy i Pracy,
     przyciski przybliżenia, minimapa, komunikat o przybyszach, znacznik suchego drzewa, pasek stawiania, podpowiedź u dołu),
-    mieści się w oknie, nie jest szersze niż jego ramka i nie przewija strony w bok. Zwraca nachodzenia i inne naruszenia
-    (opisy). */
-async function naruszenia(page: Page): Promise<{ nachodzi: Nachodzenie[]; inne: string[] }> {
+    mieści się w oknie, nie jest szersze niż jego ramka i nie przewija strony w bok. Okienko wyższe od miejsca nad kartą
+    przewija się w środku (`max-height` w style.css), więc dodatkowo pierwszy bieżący cel z podpowiedzią (`ol.goal-list
+    li.now` i jego `.goal-how`) ma być w całości w widocznej części okienka (między jego ramkami), a nie pod dolną krawędzią
+    ani nad górną: bez tego przycięta lista przechodziłaby, bo prostokąt okienka się mieści. Zwraca nachodzenia, inne
+    naruszenia (opisy) i położenie tego celu. */
+async function naruszenia(page: Page): Promise<Naruszenia> {
   return page.evaluate(
     ([karta, panel, podpowiedz]) => {
       const widoczny = (e: Element): boolean => {
@@ -314,7 +342,7 @@ async function naruszenia(page: Page): Promise<{ nachodzi: Nachodzenie[]; inne: 
         return r.width > 0 && r.height > 0;
       };
       const cele = document.getElementById('goals')!;
-      if (!widoczny(cele)) return { nachodzi: [], inne: ['okienko celów jest niewidoczne'] };
+      if (!widoczny(cele)) return { nachodzi: [], inne: ['okienko celów jest niewidoczne'], cel: null };
       const opis = (r: DOMRect) =>
         `${Math.round(r.left)},${Math.round(r.top)}–${Math.round(r.right)},${Math.round(r.bottom)}`;
       const a = cele.getBoundingClientRect();
@@ -324,6 +352,25 @@ async function naruszenia(page: Page): Promise<{ nachodzi: Nachodzenie[]; inne: 
       if (cele.scrollWidth > cele.clientWidth + 1)
         inne.push(`treść okienka szersza niż ono samo (${cele.scrollWidth} > ${cele.clientWidth})`);
       if (document.documentElement.scrollWidth > innerWidth + 1) inne.push('strona przewija się w poziomie');
+      // widoczna część okienka: pole z dopełnieniem, bez ramki (i bez paska przewijania)
+      const widocznaGora = a.top + cele.clientTop;
+      const widocznyDol = widocznaGora + cele.clientHeight;
+      let cel: { gora: number; dol: number } | null = null;
+      const biezacy = cele.querySelector<HTMLElement>('ol.goal-list li.now');
+      if (biezacy) {
+        const r = biezacy.getBoundingClientRect();
+        const jak = biezacy.querySelector('.goal-how')?.getBoundingClientRect();
+        const dol = Math.max(r.bottom, jak?.bottom ?? r.bottom);
+        cel = { gora: r.top, dol };
+        if (dol > widocznyDol + 1)
+          inne.push(
+            `bieżący cel albo jego podpowiedź przycięte u dołu okienka (kończą się na ${Math.round(dol)} px, widoczna część okienka na ${Math.round(widocznyDol)} px, przewinięcie ${Math.round(cele.scrollTop)} px z ${Math.round(cele.scrollHeight - cele.clientHeight)})`,
+          );
+        if (r.top < widocznaGora - 1)
+          inne.push(
+            `bieżący cel przycięty u góry okienka (zaczyna się na ${Math.round(r.top)} px, widoczna część okienka od ${Math.round(widocznaGora)} px, przewinięcie ${Math.round(cele.scrollTop)} px)`,
+          );
+      }
       const przeszkody: [string, string][] = [
         ['#top', 'pasek u góry'],
         ['#lista .lp', 'listę ludzi'],
@@ -337,7 +384,7 @@ async function naruszenia(page: Page): Promise<{ nachodzi: Nachodzenie[]; inne: 
         ['#placeBar', 'pasek stawiania'],
         ['#hint', podpowiedz],
       ];
-      const nachodzi: { co: string; w: number; h: number; tekst: string }[] = [];
+      const nachodzi: { co: string; gora: number; w: number; h: number; tekst: string }[] = [];
       for (const [sel, nazwa] of przeszkody)
         for (const e of document.querySelectorAll(sel)) {
           if (!widoczny(e)) continue;
@@ -347,21 +394,26 @@ async function naruszenia(page: Page): Promise<{ nachodzi: Nachodzenie[]; inne: 
           if (w > 1 && h > 1)
             nachodzi.push({
               co: nazwa,
+              gora: b.top,
               w: Math.round(w),
               h: Math.round(h),
               tekst: `okienko celów nachodzi na ${nazwa} o ${Math.round(w)}×${Math.round(h)} px (okienko ${opis(a)}, ${nazwa} ${opis(b)})`,
             });
         }
-      return { nachodzi, inne };
+      return { nachodzi, inne, cel };
     },
     [KARTA, PANEL_BUDOWY, PODPOWIEDZ] as const,
   );
 }
 
-/** Uwagi poza okienkiem celów (tylko do logu, nic nie przerywa): lista ludzi stoi pod okienkiem, więc jego wysokość
-    przesuwa ją, a na telefonie arkusz budowy (od dołu) i karta osoby mogą ją przykryć. Zwraca opisy nachodzenia chipów listy
-    na panel budowy i kartę osoby. */
-const uwagiOLiscie = (page: Page): Promise<string[]> =>
+/** Ile pikseli listy ludzi na telefonie może leżeć na arkuszu budowy albo na karcie osoby (log, ale nie więcej niż tyle:
+    najwięcej mierzę 54 px przy rozwiniętym okienku z okazją; granica ma pilnować, żeby nie urosło po cichu). */
+const LISTA_NA_PRZESZKODZIE_MAX = 60;
+
+/** Lista ludzi stoi pod okienkiem celów (na telefonie pod jego dolną krawędzią), więc wysokość okienka przesuwa ją, a arkusz
+    budowy (od dołu) i karta osoby mogą ją przykryć. Zwraca, o ile pikseli chip listy leży na każdej z tych przeszkód
+    (największe nachodzenie jednego chipa); pusta lista, gdy na żadnej. */
+const listaNaPrzeszkodach = (page: Page): Promise<{ co: string; px: number }[]> =>
   page.evaluate(() => {
     const widoczny = (e: Element): boolean => {
       const h = e as HTMLElement;
@@ -369,7 +421,7 @@ const uwagiOLiscie = (page: Page): Promise<string[]> =>
       const r = h.getBoundingClientRect();
       return getComputedStyle(h).display !== 'none' && r.width > 0 && r.height > 0;
     };
-    const wynik: string[] = [];
+    const wynik: { co: string; px: number }[] = [];
     for (const [sel, nazwa] of [
       ['#buildPanel', 'panel budowy'],
       ['#card', 'kartę osoby'],
@@ -385,84 +437,82 @@ const uwagiOLiscie = (page: Page): Promise<string[]> =>
         const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
         if (w > 1 && h > naj) naj = h;
       }
-      if (naj > 1) wynik.push(`lista ludzi nachodzi na ${nazwa} o ${Math.round(naj)} px`);
+      if (naj > 1) wynik.push({ co: nazwa, px: Math.round(naj) });
     }
     return wynik;
   });
 
 interface DozwolonePrzeszkody {
-  /** przeszkody, na które okienko może nachodzić, bo je rysuje się nad nim (zamierzone) */
+  /** przeszkody, na które okienko może nachodzić, bo je rysuje się nad nim (zamierzone), ale tylko poniżej bieżącego celu
+      z jego podpowiedzią */
   dozwolone?: readonly string[];
-  /** znane nachodzenie na te przeszkody (opisane w raporcie zadania 10): nie przerywa scenariusza, ale musi dalej występować */
-  znane?: readonly string[];
 }
 
-/** Sprawdza układ okienka celów w tej chwili. Nachodzenie na przeszkodę z `dozwolone` jest zamierzone (tylko log), na
-    przeszkodę ze `znane` to znana usterka (log z oznaczeniem), każde inne przerywa scenariusz. Zwraca znane nachodzenia,
-    które wystąpiły (do sprawdzenia, że usterka dalej jest, dopóki scenariusz ją zna). */
-async function bezNachodzenia(page: Page, opis: string, o: DozwolonePrzeszkody = {}): Promise<string[]> {
+/** Sprawdza układ okienka celów w tej chwili: każde naruszenie przerywa scenariusz. Wyjątek to nachodzenie na przeszkodę
+    z `dozwolone` (telefon, rozwinięta lista: karta, arkusz budowy i podpowiedź u dołu leżą nad nią z zamysłu), ale i ono ma
+    granicę: przeszkoda zaczyna się poniżej bieżącego celu z jego podpowiedzią (pierwszy `li.now`), więc nie zakrywa tego,
+    co gracz ma przeczytać. */
+async function bezNachodzenia(page: Page, opis: string, o: DozwolonePrzeszkody = {}): Promise<void> {
   const n = await naruszenia(page);
   const r = await page.$eval('#goals', (e) => {
     const x = e.getBoundingClientRect();
     return `${Math.round(x.left)},${Math.round(x.top)}–${Math.round(x.right)},${Math.round(x.bottom)}`;
   });
   const zle: string[] = [...n.inne];
-  const znane: string[] = [];
   const zamierzone: string[] = [];
   for (const x of n.nachodzi) {
-    if (o.dozwolone?.includes(x.co)) zamierzone.push(`${x.co} ${x.w}×${x.h}`);
-    else if (o.znane?.includes(x.co)) znane.push(x.co);
-    else zle.push(x.tekst);
+    if (!o.dozwolone?.includes(x.co)) zle.push(x.tekst);
+    else if (n.cel && x.gora < n.cel.dol - 1)
+      zle.push(
+        `${x.co} zakrywa bieżący cel okienka (${x.co} od ${Math.round(x.gora)} px, bieżący cel z podpowiedzią do ${Math.round(n.cel.dol)} px)`,
+      );
+    else zamierzone.push(`${x.co} ${x.w}×${x.h}`);
   }
-  const dopisek = [
-    ...(zamierzone.length ? [`zamierzone: ${zamierzone.join(', ')}`] : []),
-    ...(znane.length
-      ? [
-          `ZNANE nachodzenie: ${n.nachodzi
-            .filter((x) => znane.includes(x.co))
-            .map((x) => `${x.co} ${x.w}×${x.h}`)
-            .join(', ')}`,
-        ]
-      : []),
-  ].join('; ');
-  console.log(`  ${opis}: okienko ${r}, ${zle.length ? `NARUSZENIA: ${zle.length}` : dopisek || 'bez nachodzenia'}`);
+  const dopisek = zamierzone.length ? `zamierzone: ${zamierzone.join(', ')}` : 'bez nachodzenia';
+  console.log(`  ${opis}: okienko ${r}, ${zle.length ? `NARUSZENIA: ${zle.length}` : dopisek}`);
   if (zle.length) throw new Error(`${opis}: ${zle.join('; ')}`);
-  return znane;
 }
 
 /** Opcje `ukladZPanelami`. `rozwiniete` (telefon): sprawdź okienko rozwinięte, a nie zwinięte (domyślne); karta osoby, arkusz
-    budowy i podpowiedź u dołu leżą wtedy nad rozwiniętą listą, co jest zamierzone. `znane`: znane nachodzenie na te przeszkody
-    (komputer 1440×900, karta osoby: raport zadania 10). `zrzut`: nazwa zrzutu stanu z kartą osoby i panelem budowy. */
+    budowy i podpowiedź u dołu leżą wtedy nad rozwiniętą listą, co jest zamierzone, dopóki nie zakrywają bieżącego celu.
+    `zrzut`: nazwa zrzutu stanu z kartą osoby i panelem budowy. */
 interface OpcjeUkladu {
   rozwiniete?: boolean;
-  znane?: readonly string[];
   zrzut?: string;
 }
 
 /** Układ okienka celów w trzech stanach: samo, z kartą osoby (zaznaczoną przez chip na liście) i z kartą oraz panelem
     budowy. Na telefonie sprawdza okienko w jego domyślnym stanie, zwiniętym (z `rozwiniete` w rozwiniętym). Po sprawdzeniu
-    zamyka panel i zaznaczenie (Esc dwa razy) i przywraca kamerę, którą klik w chip przesuwa. */
-async function ukladZPanelami(page: Page, opis: string, dotyk: boolean, o: OpcjeUkladu = {}): Promise<void> {
+    zamyka panel i zaznaczenie (Esc dwa razy) i przywraca kamerę, którą klik w chip przesuwa. `out` to katalog zrzutów. */
+async function ukladZPanelami(
+  page: Page,
+  opis: string,
+  dotyk: boolean,
+  out: string,
+  o: OpcjeUkladu = {},
+): Promise<void> {
   if (dotyk) await ustawOkienko(page, !!o.rozwiniete, true);
-  const dozwolone = dotyk && o.rozwiniete ? [KARTA, PANEL_BUDOWY, PODPOWIEDZ] : [];
-  const opcje = { dozwolone, ...(o.znane ? { znane: o.znane } : {}) };
+  const opcje = { dozwolone: dotyk && o.rozwiniete ? [KARTA, PANEL_BUDOWY, PODPOWIEDZ] : [] };
   await bezNachodzenia(page, `${opis}, samo okienko`, opcje);
   const cam = await kamera(page);
   await kliknij(page, '#lista .lp >> nth=0', dotyk);
   await page.waitForSelector('#card:not([hidden])');
-  await page.waitForTimeout(500);
-  const znane = await bezNachodzenia(page, `${opis}, z kartą osoby`, opcje);
-  // znane nachodzenie ma dalej występować: gdy go nie ma, lista znanych jest nieaktualna (i odwrotnie przy nowej usterce)
-  const zniklo = (o.znane ?? []).filter((z) => !znane.includes(z));
-  if (zniklo.length)
-    throw new Error(`${opis}: znane nachodzenie na ${zniklo.join(', ')} zniknęło, usuń je z listy znanych`);
+  // karta zmienia wysokość okienka (`--card-h` w `max-height`), a `hud` przewija je do bieżącego celu
+  await poHudzie(page);
+  await bezNachodzenia(page, `${opis}, z kartą osoby`, opcje);
   await kliknij(page, '#btnBuild', dotyk);
   await page.waitForSelector('#buildPanel .tile');
-  await page.waitForTimeout(500);
+  await poHudzie(page);
   await bezNachodzenia(page, `${opis}, z kartą osoby i panelem budowy`, opcje);
-  const uwagi = await uwagiOLiscie(page);
-  if (uwagi.length) console.log(`    uwaga (poza okienkiem celów): ${uwagi.join('; ')}`);
-  if (o.zrzut) await page.screenshot({ path: path.join(WYJSCIE, `${o.zrzut}.png`) });
+  const nakladaSie = await listaNaPrzeszkodach(page);
+  for (const x of nakladaSie)
+    console.log(`    uwaga (poza okienkiem celów): lista ludzi nachodzi na ${x.co} o ${x.px} px`);
+  const za = nakladaSie.filter((x) => x.px > LISTA_NA_PRZESZKODZIE_MAX);
+  if (za.length)
+    throw new Error(
+      `${opis}: lista ludzi nachodzi za bardzo (limit ${LISTA_NA_PRZESZKODZIE_MAX} px): ${za.map((x) => `${x.co} o ${x.px} px`).join(', ')}`,
+    );
+  if (o.zrzut) await page.screenshot({ path: path.join(out, `${o.zrzut}.png`) });
   // pierwszy Esc zamyka panel budowy, drugi zdejmuje zaznaczenie (karta znika)
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
@@ -472,7 +522,8 @@ async function ukladZPanelami(page: Page, opis: string, dotyk: boolean, o: Opcje
     { timeout: 3000 },
   );
   await przywrocKamere(page, cam);
-  await page.waitForTimeout(300);
+  // bez karty i panelu okienko odzyskuje wysokość, a lista ludzi miejsce
+  await poHudzie(page);
 }
 
 /** Linia „Cel: …” otwartego okna (`.sheet-cel`): jej tekst, położenie w oknie na ekranie i to, że okno mieści się
@@ -579,7 +630,11 @@ async function sprawdzR1(page: Page, opis: string, v: WariantR1): Promise<Wiersz
 
 /* ---------------------------------------------------------------- stan ustawiany wprost */
 
-/** budowla gotowa w stanie gry (jak po `finishBuild`), na pierwszym dozwolonym miejscu z menu budowy */
+/** Budowla gotowa w stanie gry, na pierwszym dozwolonym miejscu z menu budowy: sama rzecz w `st.things`, jak w scenariuszu
+    `badania-tablica-sama` w tools/shots.ts. To nie jest `finishBuild` z src/sim/sim.ts: nie ma planu budowy do zdjęcia
+    z `st.builds`, zasieki nie mają `prev` (stanu odcinka siatki sprzed budowy) i nie wzmacniają siatki (`fenceAt`), a `st.cap`
+    (miejsca dla mieszkańców) nie jest przeliczone (`updateCap`). Cele „budowla” i „obwód” patrzą tylko na rzecz, więc okienko
+    jest takie jak po prawdziwej budowie; skutków dla siatki i miejsc scenariusze nie sprawdzają. */
 async function postawBudowle(page: Page, kind: BuildKind): Promise<void> {
   await page.evaluate(async (k) => {
     const budowa = '/src/ui/budowa.ts';
@@ -618,7 +673,7 @@ const zapasDrewna = (page: Page): Promise<number> =>
     return s.woodSklad + s.woodLoose + s.woodCarried;
   });
 
-/** n sztuk drewna na składzie przy kozie (jak po zniesieniu ściętego drzewa) */
+/** n sztuk drewna na składzie przy kozie: sama sterta w `st.things`, jak po zniesieniu ściętego drzewa (bez ścinania i noszenia) */
 async function dolozDrewno(page: Page, n: number): Promise<void> {
   await page.evaluate(async (ile) => {
     const modul = '/src/sim/house.ts';
@@ -660,7 +715,8 @@ async function ustawJezyk(page: Page, jezyk: 'pl' | 'en'): Promise<void> {
     const m = await import(/* @vite-ignore */ adres);
     m.ustawJezyk(l);
   }, jezyk);
-  await page.waitForTimeout(350);
+  // zmiana języka przerysowuje okno i okienko od razu, a układ dochodzi w następnej klatce
+  await poHudzie(page);
 }
 
 /** drewno z karty nocy: ile jest i ile zje noc (z wiersza „Koza w nocy”) */
@@ -684,7 +740,12 @@ async function trzyPierwsze(page: Page): Promise<void> {
     mieszkanie.searched.push(pokoj.id);
   });
   await postawBudowle(page, 'zasieki');
-  await page.waitForTimeout(450);
+  // okienko liczy zrobione cele w nagłówku: trzy z pięciu
+  await page.waitForFunction(
+    () => /^3\//.test(document.querySelector('#goals > .goals-head .goals-n')?.textContent ?? ''),
+    null,
+    { timeout: 5000 },
+  );
 }
 
 /** okienko celów rozwiniete (cała lista) albo zwinięte (jeden bieżący cel), przez klik albo stuknięcie w nagłówek rozdziału
@@ -698,7 +759,8 @@ async function ustawOkienko(page: Page, rozwiniete: boolean, dotyk: boolean): Pr
     rozwiniete,
     { timeout: 3000 },
   );
-  await page.waitForTimeout(400);
+  // HTML okienka zmienia się od razu, układ (`--goals-h`, przewinięcie do bieżącego celu) w następnej klatce
+  await poHudzie(page);
 }
 
 /** Puka do domów w Zielonkach od najbliższego, aż ktoś otworzy (spotkanie w drzwiach); lokatorzy z generatora mieszkańców,
@@ -766,12 +828,46 @@ async function okienkoBezPolskich(page: Page, opis: string): Promise<void> {
     throw new Error(`${opis}: polskie litery w okienku po angielsku: ${[...tekst, ...atrybuty].join(', ')}`);
 }
 
+/** Teksty celów w kolejności okienka to dokładnie te z projektu (sam zestaw kluczy nie wystarczy: tekst celu jest tym, co
+    gracz czyta). */
+function tekstyCelow(opis: string, wr: readonly Wiersz[], klucze: readonly string[], teksty: readonly string[]): void {
+  if (wr.map((x) => x.key).join() !== klucze.join()) throw new Error(`${opis}: cele ${wr.map((x) => x.key).join()}`);
+  wr.forEach((x, k) => {
+    if (x.tekst !== teksty[k]) throw new Error(`${opis}: cel ${k + 1} „${x.tekst}” zamiast „${teksty[k]}”`);
+  });
+}
+
+/** Blok okazji stoi w okienku przed nagłówkiem rozdziału (jest jego pierwszym dzieckiem), a oba mają oczekiwane tytuły. */
+async function okazjaPrzedRozdzialem(page: Page, opis: string, okazja: string, rozdzial: string): Promise<void> {
+  const u = await page.evaluate(() => {
+    const g = document.getElementById('goals')!;
+    const blok = g.querySelector('.goals-okazja');
+    const glowa = g.querySelector(':scope > .goals-head');
+    return {
+      pierwszy: g.firstElementChild?.className ?? '',
+      tytul: blok?.querySelector('.goals-head span')?.textContent ?? '',
+      rozdzial: glowa?.querySelector('span')?.textContent ?? '',
+      blokPrzed: !!blok && !!glowa && !!(blok.compareDocumentPosition(glowa) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  });
+  if (u.pierwszy !== 'goals-okazja' || !u.blokPrzed)
+    throw new Error(`${opis}: blok okazji nie stoi przed rozdziałem: ${JSON.stringify(u)}`);
+  if (u.tytul !== okazja || u.rozdzial !== rozdzial)
+    throw new Error(`${opis}: tytuły „${u.tytul}” / „${u.rozdzial}” zamiast „${okazja}” / „${rozdzial}”`);
+}
+
+/** Ile temu ugryziona jest osoba w scenariuszu ugryzienia: pół godziny gry, więc do końca okna amputacji (dwie godziny)
+    zostaje półtorej. */
+const UGRYZIONA_PRZED = TICKS_PER_HOUR / 2;
+
 /* ---------------------------------------------------------------- scenariusze */
 
 export function celeShots(out: string): ShotCele[] {
-  WYJSCIE = out;
   const shot = (s: ShotCele) => s;
   const zrzut = (page: Page, nazwa: string) => page.screenshot({ path: path.join(out, `${nazwa}.png`) });
+  /** układ okienka celów (`ukladZPanelami`) ze zrzutami w katalogu `out` */
+  const sprawdzUklad = (page: Page, opis: string, dotyk: boolean, o: OpcjeUkladu = {}) =>
+    ukladZPanelami(page, opis, dotyk, out, o);
 
   /** drugi dzień w trzech miejscach i dwóch trybach: tekst okienka i układ z kartą osoby i panelem budowy; na telefonie okienko
       najpierw rozwinięte do sprawdzenia tekstów, a układ w jego domyślnym, zwiniętym stanie */
@@ -803,7 +899,7 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(name, cele.find((c) => c.key === 'drewno2')!.how, 'Za siatką są szwendacze', 'Spalić');
           if (dotyk) zawiera(name, cele.find((c) => c.key === 'dzida')!.how, 'Przytrzymajcie palec na stercie');
         }
-        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
         if (!opcje.zombie && !opcje.dom && !dotyk) {
           // zmiana języka przy otwartym okienku przerysowuje je od nowa (bez polskich liter po angielsku), a po powrocie
           // do polskiego wszystko jest jak było
@@ -834,7 +930,7 @@ export function celeShots(out: string): ShotCele[] {
         await doDrugiegoDnia(page, dotyk);
         if (v.malo) await bezDrwala(page);
         if (v.trzy) await trzyPierwsze(page);
-        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
         const o = await przewin(page, () => false, { dotyk, stop: ['karta'] });
         if (o !== 'karta') throw new Error(`${name}: przed 20:00 nie otworzyła się karta nocy`);
         const drewno = await drewnoNaKarcie(page);
@@ -874,7 +970,7 @@ export function celeShots(out: string): ShotCele[] {
         await page.selectOption('#sheet select.pick >> nth=1', 'warta:koza');
         await kliknij(page, '#sheet [data-act="night-go"]', dotyk);
         await zamknijOkna(page, dotyk);
-        await page.waitForTimeout(500);
+        await poHudzie(page);
         const po = await widok(page);
         if (v.trzy) {
           if (po.rozdzial?.k !== 'r2') throw new Error(`${name}: po rozdziale R1 otwarty ${po.rozdzial?.k}`);
@@ -898,7 +994,7 @@ export function celeShots(out: string): ShotCele[] {
             `  po karcie: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}, licznik ${n.licznik}`,
           );
         }
-        await ukladZPanelami(page, `${name} po karcie`, dotyk, dotyk || v.trzy ? {} : { znane: ZNANE_NA_KOMPUTERZE });
+        await sprawdzUklad(page, `${name} po karcie`, dotyk, { zrzut: `${name}-po-karcie` });
       },
     });
 
@@ -914,13 +1010,23 @@ export function celeShots(out: string): ShotCele[] {
         const dotyk = dotykowy(w);
         await start(page, base, `demo=przymorze&${GRA}&godzina=19.5`);
         await rozdzial(page, 'r4');
+        await poPodpowiedziStartowej(page);
         await ustawOkienko(page, true, dotyk);
         const n = await naglowek(page);
         if (n.tytul !== 'Zarząd' || n.licznik !== '0/4')
           throw new Error(`${name}: nagłówek „${n.tytul}” „${n.licznik}”`);
         const wr = await wiersze(page, 'rozdzial');
-        if (wr.map((x) => x.key).join() !== 'uchwala,wkurzenie,nowi,ludzie')
-          throw new Error(`${name}: cele ${wr.map((x) => x.key).join()}`);
+        tekstyCelow(
+          name,
+          wr,
+          ['uchwala', 'wkurzenie', 'nowi', 'ludzie'],
+          [
+            'Podpiszcie kolejną uchwałę.',
+            'Sprawdźcie rano w raporcie, jak zmieniło się wkurzenie.',
+            'Przyjmijcie kogoś nowego.',
+            'Poznajcie mieszkańców siedziby.',
+          ],
+        );
         const [u, k, nowi] = wr;
         if (!u.klasy.includes('czeka') || u.czeka !== 'czeka do zebrania')
           throw new Error(`${name}: uchwała przed zebraniem ${u.klasy.join('+')} / ${u.czeka}`);
@@ -928,7 +1034,7 @@ export function celeShots(out: string): ShotCele[] {
           throw new Error(`${name}: wkurzenie przed rankiem ${k.klasy.join('+')} / ${k.czeka}`);
         if (!nowi.klasy.includes('now') || !nowi.jak)
           throw new Error(`${name}: bieżący cel to nie „nowi” (${nowi.klasy.join('+')})`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, przed zebraniem`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, przed zebraniem`, dotyk);
         await zrzut(page, `${name}-przed`);
         const p = await page.evaluate(() => window.zm!.govTick());
         if (p !== 'uchwala') throw new Error(`${name}: o 19:30 zamiast uchwały ${p}`);
@@ -938,12 +1044,12 @@ export function celeShots(out: string): ShotCele[] {
         await zrzut(page, `${name}-okno`);
         await kliknij(page, '#sheet [data-act="law"][data-arg="u_warty"]', dotyk);
         await zamknijOkna(page, dotyk);
-        await page.waitForTimeout(500);
+        await poHudzie(page);
         await ustawOkienko(page, true, dotyk);
         const po = await wiersze(page, 'rozdzial');
         if (!po[0].klasy.includes('done')) throw new Error(`${name}: uchwała po podpisie ${po[0].klasy.join('+')}`);
         console.log(`  po podpisie: ${po.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, po podpisie`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po podpisie`, dotyk);
       },
     });
 
@@ -959,16 +1065,25 @@ export function celeShots(out: string): ShotCele[] {
         const dotyk = dotykowy(w);
         await start(page, base, 'demo=zielonki&speed=0&cam=hq,1&godzina=18.5');
         await rozdzial(page, 'r7');
+        await poPodpowiedziStartowej(page);
         await ustawOkienko(page, true, dotyk);
         const n = await naglowek(page);
         if (n.tytul !== 'Sąsiedzi' || n.licznik !== '0/4')
           throw new Error(`${name}: nagłówek „${n.tytul}” „${n.licznik}”`);
         const wr = await wiersze(page, 'rozdzial');
-        if (wr.map((x) => x.key).join() !== 'pukanie,spotkanie,wejscie,szaber')
-          throw new Error(`${name}: cele ${wr.map((x) => x.key).join()}`);
+        tekstyCelow(
+          name,
+          wr,
+          ['pukanie', 'spotkanie', 'wejscie', 'szaber'],
+          [
+            'Zapukajcie do sąsiadów.',
+            'Porozmawiajcie z sąsiadami.',
+            'Wejdźcie do zamkniętego budynku.',
+            'Przeszukajcie pomieszczenie u sąsiadów.',
+          ],
+        );
         if (!wr[0].klasy.includes('now')) throw new Error(`${name}: bieżący cel to nie pukanie`);
-        zawiera(name, wr[1].tekst, 'Porozmawiajcie z sąsiadami.');
-        await ukladZPanelami(page, `${name} ${w}×${h}, przed pukaniem`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, przed pukaniem`, dotyk);
         await zapukajAzOtworza(page);
         const linia = await liniaCeluOkna(page, `${name}, okno spotkania`);
         if (linia !== 'Cel: Porozmawiajcie z sąsiadami.') throw new Error(`${name}: linia celu „${linia}”`);
@@ -976,7 +1091,7 @@ export function celeShots(out: string): ShotCele[] {
         await kliknij(page, '#sheet [data-act="meet"][data-arg="odejscie"]', dotyk);
         await page.evaluate(() => window.zm!.ff(3));
         await zamknijOkna(page, dotyk);
-        await page.waitForTimeout(500);
+        await poHudzie(page);
         await ustawOkienko(page, true, dotyk);
         const po = await wiersze(page, 'rozdzial');
         console.log(`  po spotkaniu: ${po.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
@@ -984,7 +1099,7 @@ export function celeShots(out: string): ShotCele[] {
           throw new Error(
             `${name}: pukanie i rozmowa po spotkaniu: ${po[0].klasy.join('+')}, ${po[1].klasy.join('+')}`,
           );
-        await ukladZPanelami(page, `${name} ${w}×${h}, po spotkaniu`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po spotkaniu`, dotyk);
       },
     });
 
@@ -1000,18 +1115,29 @@ export function celeShots(out: string): ShotCele[] {
         const dotyk = dotykowy(w);
         await start(page, base, `demo=przymorze&${GRA}&godzina=11`);
         await rozdzial(page, 'r6');
+        await poPodpowiedziStartowej(page);
         await ustawOkienko(page, true, dotyk);
         const n = await naglowek(page);
         if (n.tytul !== 'Badania' || n.licznik !== '0/5')
           throw new Error(`${name}: nagłówek „${n.tytul}” „${n.licznik}”`);
         const wr = await wiersze(page, 'rozdzial');
-        if (wr.map((x) => x.key).join() !== 'pracownia,badanie,stol,odkrycie,era2')
-          throw new Error(`${name}: cele ${wr.map((x) => x.key).join()}`);
+        tekstyCelow(
+          name,
+          wr,
+          ['pracownia', 'badanie', 'stol', 'odkrycie', 'era2'],
+          [
+            'Postawcie pracownię.',
+            'Wybierzcie pierwsze badanie.',
+            'Posadźcie kogoś przy stole pracowni.',
+            'Zbadajcie pierwszą technologię.',
+            'Zacznijcie badanie z ery 2.',
+          ],
+        );
         if (!wr[0].klasy.includes('now')) throw new Error(`${name}: bieżący cel to nie pracownia`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, bez pracowni`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, bez pracowni`, dotyk);
         await postawBudowle(page, 'pracownia');
         await page.waitForFunction(() => window.zm!.badania().open, null, { timeout: 5000 });
-        await page.waitForTimeout(500);
+        await page.waitForSelector('#tablica .tb-bar');
         const linia = await page.evaluate(() => {
           const l = document.querySelector('#tablica .tb-linia-celu') as HTMLElement | null;
           if (!l) return null;
@@ -1041,7 +1167,7 @@ export function celeShots(out: string): ShotCele[] {
         await zrzut(page, `${name}-tablica`);
         // wybór badania z tablicy zalicza cel: po ponownym otwarciu linii nie ma
         await kliknij(page, '#tablica [data-akcja="badaj"]', dotyk);
-        await page.waitForTimeout(500);
+        await page.waitForFunction(() => !window.zm!.badania().open, null, { timeout: 5000 });
         await page.evaluate(() => window.zm!.ff(1));
         await ustawOkienko(page, true, dotyk);
         const po = await wiersze(page, 'rozdzial');
@@ -1060,7 +1186,7 @@ export function celeShots(out: string): ShotCele[] {
           throw new Error(`${name}: linia celu została po zaliczeniu badania`);
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => !window.zm!.badania().open, null, { timeout: 5000 });
-        await ukladZPanelami(page, `${name} ${w}×${h}, po wyborze badania`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po wyborze badania`, dotyk);
       },
     });
 
@@ -1111,7 +1237,7 @@ export function celeShots(out: string): ShotCele[] {
           throw new Error(`${name}: kółko czekającego ${styl.kolko}, bieżącego ${styl.kolkoBiezacego}`);
         if (styl.nieprzezroczystosc !== '1' || styl.dopisek !== 'italic' || styl.kreska.includes('line-through'))
           throw new Error(`${name}: styl czekającego ${JSON.stringify(styl)}`);
-        await ukladZPanelami(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
+        await sprawdzUklad(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
       },
     });
 
@@ -1130,7 +1256,9 @@ export function celeShots(out: string): ShotCele[] {
   };
 
   /** Okazja z handlarzem pod bramą nad rozdziałem „Drugi dzień”: blok okazji stoi przed nagłówkiem rozdziału, ma bieżący cel
-      i jego podpowiedź, a rozdział pod nim swoją. Prawy przycisk na handlarzu daje w menu oferty „Dać … za …”. */
+      i jego podpowiedź, a rozdział pod nim swoją. Prawy przycisk na handlarzu daje w menu oferty „Dać … za …”, a wymiana
+      zamyka okazję. Na Przymorzu handlarz staje pod bramą dnia 2 około 12:00 (plan mówił o 11:00), więc scenariusz przewija do
+      chwili, w której okazja się otwiera, a nie do godziny. */
   const handlarz = (name: string): ShotCele =>
     shot({
       name,
@@ -1145,21 +1273,7 @@ export function celeShots(out: string): ShotCele[] {
           () => `${document.getElementById('hDay')!.textContent} ${document.getElementById('hTime')!.textContent}`,
         );
         console.log(`  handlarz pod bramą: ${hm}`);
-        const uklad = await page.evaluate(() => {
-          const g = document.getElementById('goals')!;
-          const blok = g.querySelector('.goals-okazja');
-          const glowa = g.querySelector(':scope > .goals-head');
-          return {
-            pierwszy: g.firstElementChild?.className ?? '',
-            tytul: blok?.querySelector('.goals-head span')?.textContent ?? '',
-            rozdzial: glowa?.querySelector('span')?.textContent ?? '',
-            blokPrzed: !!blok && !!glowa && !!(blok.compareDocumentPosition(glowa) & Node.DOCUMENT_POSITION_FOLLOWING),
-          };
-        });
-        if (uklad.pierwszy !== 'goals-okazja' || !uklad.blokPrzed)
-          throw new Error(`${name}: blok okazji nie stoi przed rozdziałem: ${JSON.stringify(uklad)}`);
-        if (uklad.tytul !== 'Teraz: handlarz pod bramą' || uklad.rozdzial !== 'Drugi dzień')
-          throw new Error(`${name}: tytuły „${uklad.tytul}” / „${uklad.rozdzial}”`);
+        await okazjaPrzedRozdzialem(page, name, 'Teraz: handlarz pod bramą', 'Drugi dzień');
         const ok = await wiersze(page, 'okazja');
         if (ok.length !== 1 || ok[0].key !== 'wymiana' || !ok[0].klasy.includes('now'))
           throw new Error(`${name}: cele okazji ${ok.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
@@ -1177,10 +1291,7 @@ export function celeShots(out: string): ShotCele[] {
         console.log(
           `  okazja: ${ok[0].tekst} | rozdział: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`,
         );
-        await ukladZPanelami(page, `${name} 1440×900`, false, {
-          zrzut: `${name}-karta-budowa`,
-          znane: ZNANE_NA_KOMPUTERZE,
-        });
+        await sprawdzUklad(page, `${name} 1440×900`, false, { zrzut: `${name}-karta-budowa` });
         // to, co mówi podpowiedź: osoba zaznaczona, prawy przycisk na handlarzu, w menu oferty „Dać … za …”
         await kliknij(page, '#lista .lp >> nth=0', false);
         await page.waitForSelector('#card:not([hidden])');
@@ -1201,32 +1312,33 @@ export function celeShots(out: string): ShotCele[] {
         if (!pozycje.some((p) => p.startsWith('Dać ')))
           throw new Error(`${name}: w menu handlarza nie ma „Dać … za …”`);
         await zrzut(page, `${name}-menu`);
-        // wymiana: pierwsza oferta, na którą starcza materiału; po jej zakończeniu okazja jest zrobiona i blok znika
+        // wymiana: pierwsza oferta, na którą starcza materiału; po jej zakończeniu okazja jest zrobiona i blok znika. Gdy
+        // handlarz nie ma żadnej dostępnej oferty, scenariusz pada: bez wymiany nie sprawdza, że okazja się zalicza
         const mozliwa = page.locator('#ctx .ctx-item:not(.off)', { hasText: /^Dać / });
-        if (await mozliwa.count()) {
-          await mozliwa.first().click();
-          // osoba idzie do handlarza i targuje się kilka minut gry; okna zarządu po drodze dostają odpowiedź
-          await przewin(page, async () => (await widok(page)).okazja?.tytul !== 'Teraz: handlarz pod bramą', {
-            dotyk: false,
-            krok: () => 4,
-            maks: 40,
-          });
-          await page.waitForTimeout(500);
-          const handel = await page.evaluate(() => window.zm!.sim!.st.obcy!.offers.some((o) => o.left < 2));
-          const v = await widok(page);
-          console.log(
-            `  po wymianie: oferta przyjęta ${handel}, okazja ${v.okazja ? `„${v.okazja.tytul}”` : 'zamknięta'}`,
+        if (!(await mozliwa.count()))
+          throw new Error(
+            `${name}: w menu handlarza nie ma oferty, na którą starcza materiału (${pozycje.join(' | ')})`,
           );
-          if (!handel) throw new Error(`${name}: okazja zamknięta bez wymiany`);
-          if (await page.$('#goals .goals-okazja'))
-            throw new Error(`${name}: po wymianie blok okazji dalej jest w okienku`);
-        } else {
-          console.log('  żadna oferta nie jest dostępna (brak materiału): wymiany nie próbuję');
-          await page.keyboard.press('Escape');
-        }
+        await mozliwa.first().click();
+        // osoba idzie do handlarza i targuje się kilka minut gry; okna zarządu po drodze dostają odpowiedź
+        await przewin(page, async () => (await widok(page)).okazja?.tytul !== 'Teraz: handlarz pod bramą', {
+          dotyk: false,
+          krok: () => 4,
+          maks: 40,
+        });
+        await poHudzie(page);
+        const handel = await page.evaluate(() => window.zm!.sim!.st.obcy!.offers.some((o) => o.left < 2));
+        const v = await widok(page);
+        console.log(
+          `  po wymianie: oferta przyjęta ${handel}, okazja ${v.okazja ? `„${v.okazja.tytul}”` : 'zamknięta'}`,
+        );
+        if (!handel) throw new Error(`${name}: okazja zamknięta bez wymiany`);
+        if (await page.$('#goals .goals-okazja'))
+          throw new Error(`${name}: po wymianie blok okazji dalej jest w okienku`);
         await przywrocKamere(page, cam);
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(300);
+        // zrzut końcowy scenariusza ma pokazywać układ bez karty osoby
+        await poHudzie(page);
       },
     });
 
@@ -1253,18 +1365,23 @@ export function celeShots(out: string): ShotCele[] {
         console.log(`  przed ugryzieniem: ${przed ? `„${przed.tytul}”` : 'bez okazji'}`);
         if (przed && przed.tytul !== 'Teraz: stado pod siatką')
           throw new Error(`${name}: okazja „${przed.tytul}” przed ugryzieniem`);
-        // pierwsza osoba ugryziona w kończynę pół godziny gry temu (jak w scenariuszu listy w trybie zombie); ktoś inny z zarządu
-        // jest na miejscu i zdrowy, więc jest komu amputować
-        const kto = await page.evaluate(() => {
+        // Pierwsza osoba ugryziona w kończynę `UGRYZIONA_PRZED` temu, ustawione wprost (`p.bite` i `p.limb`, jak w scenariuszu listy
+        // w trybie zombie), a nie przez `infect()` z src/sim/sim.ts: bez nastroju „Gorączka po ugryzieniu” (−15) na karcie.
+        // Okazja i karta czytają tylko `bite` i `limb`. Ktoś inny z zarządu jest na miejscu i zdrowy, więc jest komu amputować.
+        const kto = await page.evaluate((przed) => {
           const zm = window.zm!;
           const st = zm.sim!.st;
           const p = st.pawns.find((q) => q.kind === 'core')!;
-          p.bite = st.tick - 400;
+          p.bite = st.tick - przed;
           p.limb = true;
           return { pawn: p.id, imie: st.people[p.person].first };
-        });
-        await page.waitForSelector('#goals .goals-okazja');
-        await page.waitForTimeout(450);
+        }, UGRYZIONA_PRZED);
+        // okazja ugryzienia wypiera stado: okienko pokazuje ją w następnym odświeżeniu
+        await page.waitForFunction(
+          () => document.querySelector('#goals .goals-okazja .goals-head span')?.textContent === 'Teraz: ugryzienie',
+          null,
+          { timeout: 5000 },
+        );
         const v = await widok(page);
         console.log(`  okazja: ${v.okazja?.tytul} | ${v.okazja?.cele[0]?.text} | rozdział ${v.rozdzial?.k}`);
         if (v.okazja?.tytul !== 'Teraz: ugryzienie') throw new Error(`${name}: okazja „${v.okazja?.tytul}”`);
@@ -1276,16 +1393,11 @@ export function celeShots(out: string): ShotCele[] {
         zawiera(name, ok[0].jak ?? '', 'Amputować', 'pół godziny', 'Po dwóch godzinach jest za późno');
         // na telefonie okienko jest zwinięte do samej okazji: rozdział pod nią widać po rozwinięciu
         if (dotyk) await ustawOkienko(page, true, true);
-        const n = await naglowek(page);
-        if (n.tytul !== 'Pierwszy dzień') throw new Error(`${name}: pod okazją rozdział „${n.tytul}”`);
-        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, {
-          zrzut: `${name}-karta-budowa`,
-          ...(dotyk ? {} : { znane: ZNANE_NA_KOMPUTERZE }),
-        });
+        await okazjaPrzedRozdzialem(page, name, 'Teraz: ugryzienie', 'Pierwszy dzień');
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
         // karta ugryzionego (chip tej osoby na liście) ma przycisk „Amputować”
         await kliknij(page, `#lista .lp[data-pawn="${kto.pawn}"]`, dotyk);
-        await page.waitForSelector('#card:not([hidden])');
-        await page.waitForTimeout(450);
+        await page.waitForSelector('#card .bite');
         const karta = await page.evaluate(() => ({
           przycisk: document.querySelector('#card [data-card="amputate"]')?.textContent ?? '',
           ugryzienie: document.querySelector('#card .bite')?.textContent ?? '',
@@ -1312,6 +1424,7 @@ export function celeShots(out: string): ShotCele[] {
         const dotyk = dotykowy(w);
         await start(page, base, `demo=przymorze&${GRA}`);
         await rozdzial(page, 'koniec');
+        await poPodpowiedziStartowej(page);
         const v = await widok(page);
         if (v.rozdzial || !v.drogi?.length)
           throw new Error(`${name}: widok po ostatnim rozdziale ${JSON.stringify(v)}`);
@@ -1339,13 +1452,13 @@ export function celeShots(out: string): ShotCele[] {
         const ludnosc = wr.find((x) => x.tekst.startsWith('Nowe osiedle'));
         if (!ludnosc?.postep || !/^\d+ z \d+$/.test(ludnosc.postep))
           throw new Error(`${name}: postęp ludności „${ludnosc?.postep}”`);
-        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa`, rozwiniete: true });
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa`, rozwiniete: true });
         // nagłówek zwija okienko do pierwszego wiersza (także na komputerze) i rozwija z powrotem
         await ustawOkienko(page, false, dotyk);
         if ((await wiersze(page, 'drogi')).length !== 1)
           throw new Error(`${name}: zwinięte okienko dróg ma więcej niż jeden wiersz`);
         await zrzut(page, `${name}-zwiniete`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, zwinięte`, dotyk);
+        await sprawdzUklad(page, `${name} ${w}×${h}, zwinięte`, dotyk);
         await ustawOkienko(page, true, dotyk);
         if ((await wiersze(page, 'drogi')).length !== wr.length)
           throw new Error(`${name}: po rozwinięciu nie wróciły wszystkie wiersze`);
@@ -1379,20 +1492,20 @@ export function celeShots(out: string): ShotCele[] {
         const podpowiedz = await page.$eval('#goals .goals-head', (e) => e.getAttribute('title') ?? '');
         if (podpowiedz !== 'Stuknij, żeby rozwinąć listę')
           throw new Error(`${name}: podpowiedź nagłówka „${podpowiedz}”`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, rozdział zwinięty`, true, { zrzut: `${name}-r1-zwiniete` });
+        await sprawdzUklad(page, `${name} ${w}×${h}, rozdział zwinięty`, true, { zrzut: `${name}-r1-zwiniete` });
         // rozwinięte: wszystkie pięć celów, tylko bieżący z podpowiedzią
         await ustawOkienko(page, true, true);
         wr = await wiersze(page, 'rozdzial');
         if (wr.length !== 5 || wr.filter((x) => x.jak !== null).length !== 1)
           throw new Error(`${name}: rozwinięty rozdział ${wr.map((x) => x.key).join()}`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, rozdział rozwinięty`, true, {
+        await sprawdzUklad(page, `${name} ${w}×${h}, rozdział rozwinięty`, true, {
           zrzut: `${name}-r1-rozwiniete`,
           rozwiniete: true,
         });
         await ustawOkienko(page, false, true);
         // okazja: handlarz pod bramą
         await doHandlarza(page, true);
-        await page.waitForTimeout(450);
+        await poHudzie(page);
         const blok = await page.evaluate(() => ({
           rozdzial: !!document.querySelector('#goals ol[data-blok="rozdzial"]'),
           naglowekRozdzialu: !!document.querySelector('#goals > .goals-head'),
@@ -1410,16 +1523,16 @@ export function celeShots(out: string): ShotCele[] {
         if (ok.length !== 1 || ok[0].key !== 'wymiana' || !ok[0].klasy.includes('now') || !ok[0].jak)
           throw new Error(`${name}: zwinięta okazja ${ok.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
         zawiera(name, ok[0].jak, 'Stuknijcie kogoś i przytrzymajcie palec na handlarzu albo wózku');
-        await ukladZPanelami(page, `${name} ${w}×${h}, okazja zwinięta`, true, { zrzut: `${name}-okazja-zwinieta` });
+        await sprawdzUklad(page, `${name} ${w}×${h}, okazja zwinięta`, true, { zrzut: `${name}-okazja-zwinieta` });
         await ustawOkienko(page, true, true);
+        await okazjaPrzedRozdzialem(page, name, 'Teraz: handlarz pod bramą', 'Drugi dzień');
         const razem = await page.evaluate(() => ({
           okazja: !!document.querySelector('#goals .goals-okazja ol'),
           rozdzial: document.querySelectorAll('#goals ol[data-blok="rozdzial"] li').length,
-          kolejnosc: document.getElementById('goals')!.firstElementChild?.className ?? '',
         }));
-        if (!razem.okazja || razem.rozdzial !== 5 || razem.kolejnosc !== 'goals-okazja')
+        if (!razem.okazja || razem.rozdzial !== 5)
           throw new Error(`${name}: rozwinięte okienko z okazją: ${JSON.stringify(razem)}`);
-        await ukladZPanelami(page, `${name} ${w}×${h}, okazja rozwinięta`, true, {
+        await sprawdzUklad(page, `${name} ${w}×${h}, okazja rozwinięta`, true, {
           zrzut: `${name}-okazja-rozwinieta`,
           rozwiniete: true,
         });
@@ -1445,7 +1558,7 @@ export function celeShots(out: string): ShotCele[] {
         const tytul = await page.$eval('#goals .goals-head', (e) => e.getAttribute('title') ?? '');
         const oczekiwany = dotyk ? 'Tap to collapse the list' : 'Click to collapse the list';
         if (tytul !== oczekiwany) throw new Error(`${name}: podpowiedź nagłówka „${tytul}” zamiast „${oczekiwany}”`);
-        await ukladZPanelami(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk, { zrzut: `${name}-karta-budowa` });
         // karta nocy dnia 2: linia celu po angielsku
         const o = await przewin(page, () => false, { dotyk, stop: ['karta'] });
         if (o !== 'karta') throw new Error(`${name}: przed 20:00 nie otworzyła się karta nocy`);
@@ -1456,7 +1569,7 @@ export function celeShots(out: string): ShotCele[] {
         await zrzut(page, `${name}-karta`);
         await kliknij(page, '#sheet [data-act="night-go"]', dotyk);
         await zamknijOkna(page, dotyk);
-        await page.waitForTimeout(450);
+        await poHudzie(page);
         await ustawOkienko(page, true, dotyk);
         const po = await wiersze(page, 'rozdzial');
         const pl2 = polskieLitery(await tekstOkienka(page));
@@ -1497,10 +1610,10 @@ export function celeShots(out: string): ShotCele[] {
           (v ?? (await widok(page))).rozdzial!.cele.find((c) => c.key === 'drewno')!;
         if ((await drewno()).done)
           throw new Error(`${name}: drewno zaliczone przed zapasem (${await zapasDrewna(page)} szt.)`);
-        // trzy sztuki na składzie: zapas wystarczy na ogień do snu
-        await dolozDrewno(page, 3);
-        await page.waitForTimeout(450);
-        if (!(await drewno()).done) throw new Error(`${name}: trzy sztuki na składzie nie zaliczyły drewna`);
+        // NIGHT_WOOD sztuk na składzie: zapas wystarczy na ogień do snu
+        await dolozDrewno(page, NIGHT_WOOD);
+        await page.waitForSelector('#goals li.goal[data-key="drewno"].done');
+        if (!(await drewno()).done) throw new Error(`${name}: ${NIGHT_WOOD} sztuki na składzie nie zaliczyły drewna`);
         console.log(`  zaliczone przy zapasie ${await zapasDrewna(page)} szt.`);
         // zapis w chwili zaliczenia: zaliczenie jest już w stanie ścieżki, który idzie do zapisu
         if (!(await page.evaluate(() => window.zm!.save()))) throw new Error(`${name}: zapis się nie udał`);
@@ -1509,7 +1622,11 @@ export function celeShots(out: string): ShotCele[] {
         if (!pierwszy || pierwszy.zrobione['r0.drewno'] === undefined)
           throw new Error(`${name}: zapis bez zaliczonego drewna`);
         // koza zjada zapas (zarząd dokłada ze składu do kozy), zanim przyjdzie zebranie o 19:30
-        await przewin(page, async () => (await zapasDrewna(page)) < 3, { dotyk: false, krok: () => 5, maks: 60 });
+        await przewin(page, async () => (await zapasDrewna(page)) < NIGHT_WOOD, {
+          dotyk: false,
+          krok: () => 5,
+          maks: 60,
+        });
         const zapas = await zapasDrewna(page);
         const hm = await page.evaluate(() => document.getElementById('hTime')!.textContent);
         console.log(`  koza zjadła zapas: ${zapas} szt. o ${hm}`);
@@ -1532,10 +1649,10 @@ export function celeShots(out: string): ShotCele[] {
         await page.click('#btnResume');
         await waitIdle(page);
         await page.waitForSelector('#goals:not([hidden]) .goal');
-        // po wczytaniu świat ma tyle drewna co przy wyjściu (mniej niż trzy), a cel dalej jest zaliczony
+        // po wczytaniu świat ma tyle drewna co przy wyjściu (mniej niż NIGHT_WOOD), a cel dalej jest zaliczony
         const po = await zapasDrewna(page);
         console.log(`  po „Kontynuuj”: zapas ${po} szt.`);
-        if (po >= 3)
+        if (po >= NIGHT_WOOD)
           throw new Error(`${name}: po wczytaniu zapas wrócił do ${po} szt., więc scenariusz niczego nie dowodzi`);
         const v = await widok(page);
         if (v.rozdzial?.k !== 'r0') throw new Error(`${name}: po wczytaniu rozdział ${v.rozdzial?.k}`);
@@ -1545,7 +1662,98 @@ export function celeShots(out: string): ShotCele[] {
         if (!wiersz.klasy.includes('done')) throw new Error(`${name}: w okienku drewno ${wiersz.klasy.join('+')}`);
         zawiera(name, wiersz.tekst, 'Przygotujcie drewno na wieczór.');
         console.log(`  okienko po wczytaniu: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
-        await ukladZPanelami(page, `${name} po wczytaniu`, false);
+        await sprawdzUklad(page, `${name} po wczytaniu`, false);
+      },
+    });
+
+  /** Okienko celów ograniczone do miejsca nad kartą osoby przewija się w środku do bieżącego celu. Stan z długą listą zrobionych:
+      po samouczku i `NIGHT_WOOD` sztukach drewna R0 ma siedem zrobionych celów, a bieżący „Przetrwajcie pierwszą noc.” stoi na
+      samym dole (z podpowiedzią), więc przy otwartej karcie osoby nie mieści się nad nią bez przewijania. Sprawdza, że: okienko
+      jest ograniczone (`scrollHeight` większe od `clientHeight`) i nie nachodzi na kartę, bieżący cel z podpowiedzią jest
+      w całości widoczny (to sprawdza `naruszenia` i to ono pada, gdy `pokazBiezacyCel` w main.ts nie przewija), lista jest
+      przewinięta, ręczne przewinięcie w górę nie jest cofane przy odświeżeniach, a po zamknięciu karty okienko wraca do pełnej
+      wysokości i po ponownym otwarciu znowu pokazuje bieżący cel. */
+  const przewijanie = (name: string): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w: 1440,
+      // niższe okno niż zwykłe 900 px: przy 900 karta Maksyma zostawia nad sobą 297 px, a lista ma 284 i mieści się bez cięcia
+      h: 800,
+      run: async (page, base) => {
+        await start(page, base, `demo=przymorze&${GRA}`);
+        await chopDryTree(page);
+        await przewin(page, async () => (await page.evaluate(() => window.zm!.sim!.st.tut.step)) >= 6, {
+          dotyk: false,
+          krok: () => 10,
+        });
+        await dolozDrewno(page, NIGHT_WOOD);
+        await page.waitForSelector('#goals li.goal[data-key="drewno"].done');
+        const wr = await wiersze(page, 'rozdzial');
+        const bie = wr.find((x) => x.klasy.includes('now'));
+        console.log(`  ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        if (wr.filter((x) => x.klasy.includes('done')).length !== 7 || bie?.key !== 'noc' || !bie.jak)
+          throw new Error(`${name}: stan bez długiej listy zrobionych celów i bieżącego „noc”`);
+        const stan = () =>
+          page.$eval('#goals', (e) => ({
+            wysokosc: e.clientHeight,
+            tresc: e.scrollHeight,
+            przewiniecie: Math.round(e.scrollTop),
+            gora: Math.round(e.getBoundingClientRect().top),
+          }));
+        // bez karty osoby okienko mieści się w całości i nie przewija się
+        const bez = await stan();
+        console.log(`  bez karty: okienko ${bez.wysokosc} px, treść ${bez.tresc} px`);
+        if (bez.tresc > bez.wysokosc + 1)
+          throw new Error(`${name}: okienko bez karty osoby jest przycięte (${bez.tresc} > ${bez.wysokosc})`);
+        await bezNachodzenia(page, `${name}, bez karty osoby`);
+        const otworzKarte = async () => {
+          await page.click('#lista .lp >> nth=0');
+          await page.waitForSelector('#card:not([hidden])');
+          await poHudzie(page);
+        };
+        const zamknijKarte = async () => {
+          await page.keyboard.press('Escape');
+          await page.waitForFunction(() => document.getElementById('card')!.hidden, null, { timeout: 3000 });
+          await poHudzie(page);
+        };
+        // z kartą osoby okienko jest ograniczone, przewinięte do bieżącego celu i nie nachodzi na kartę
+        const cam = await kamera(page);
+        await otworzKarte();
+        const z = await stan();
+        console.log(`  z kartą: okienko ${z.wysokosc} px, treść ${z.tresc} px, przewinięcie ${z.przewiniecie} px`);
+        if (z.tresc <= z.wysokosc + 1)
+          throw new Error(
+            `${name}: z kartą okienko nie jest ograniczone (${z.tresc} <= ${z.wysokosc}), stan niczego nie dowodzi`,
+          );
+        // najpierw ogólne sprawdzenie układu (w nim pada przycięty bieżący cel), potem to, że lista faktycznie się przewinęła
+        await bezNachodzenia(page, `${name}, z kartą osoby`);
+        if (z.przewiniecie <= 0) throw new Error(`${name}: okienko ograniczone, ale nie przewinięte do bieżącego celu`);
+        await zrzut(page, `${name}-karta`);
+        // ręczne przewinięcie do początku listy nie jest cofane przez odświeżenia (`hud` co 200 ms): bieżący cel zostaje poza
+        // widokiem, bo tak zdecydował gracz
+        await page.mouse.move(150, 250);
+        await page.mouse.wheel(0, -2000);
+        await page.waitForFunction(() => document.getElementById('goals')!.scrollTop === 0, null, { timeout: 3000 });
+        await poHudzie(page, 3);
+        const reka = await stan();
+        console.log(`  po ręcznym przewinięciu: przewinięcie ${reka.przewiniecie} px`);
+        if (reka.przewiniecie !== 0)
+          throw new Error(`${name}: odświeżenie cofnęło ręczne przewinięcie (${reka.przewiniecie} px)`);
+        // karta znika: okienko odzyskuje wysokość i mieści się w całości
+        await zamknijKarte();
+        const po = await stan();
+        if (po.tresc > po.wysokosc + 1) throw new Error(`${name}: po zamknięciu karty okienko dalej jest przycięte`);
+        await bezNachodzenia(page, `${name}, po zamknięciu karty`);
+        // druga karta: okienko znowu się kurczy i znowu pokazuje bieżący cel, choć gracz przewinął je wcześniej do góry
+        await otworzKarte();
+        const drugi = await stan();
+        console.log(`  z kartą po raz drugi: przewinięcie ${drugi.przewiniecie} px`);
+        if (drugi.przewiniecie <= 0)
+          throw new Error(`${name}: po ponownym otwarciu karty okienko nie wróciło do bieżącego celu`);
+        await bezNachodzenia(page, `${name}, z kartą po raz drugi`);
+        await zamknijKarte();
+        await przywrocKamere(page, cam);
       },
     });
 
@@ -1576,6 +1784,7 @@ export function celeShots(out: string): ShotCele[] {
     telefon('cele-telefon-360', 360, 780),
     angielski('en-cele-r1'),
     angielski('en-cele-r1-telefon', 390, 844),
+    przewijanie('cele-przewijanie'),
     przeladowanie('cele-przeladowanie'),
   ];
 }
