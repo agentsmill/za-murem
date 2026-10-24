@@ -1,9 +1,9 @@
 /* Ścieżka celów (docs/superpowers/specs/2026-10-19-sciezka-celow-design.md): stan w zapisie interfejsu, silnik rozdziałów
-   oraz HTML okienka celów i linia celu w oknach. Treść rozdziałów (definicje celów R0, R1 i dalszych, lista `ROZDZIALY`)
-   leży w src/ui/sciezka-rozdzialy.ts, żeby ten plik nie rósł z każdym rozdziałem; okazje dochodzą w kolejnym zadaniu
-   planu.
+   i okazji oraz HTML okienka celów i linia celu w oknach. Treść rozdziałów (definicje celów R0, R1 i dalszych, lista
+   `ROZDZIALY`) leży w src/ui/sciezka-rozdzialy.ts, a okazji (lista `OKAZJE`) w src/ui/sciezka-okazje.ts, żeby ten plik nie
+   rósł z każdym rozdziałem.
 
-   Stan. Ścieżka prowadzi gracza przez rozdziały R0–R8 i okazje O1–O7. `StanSciezki` trzyma to, co nie wynika ze stanu gry:
+   Stan. Ścieżka prowadzi gracza przez rozdziały R0–R8 i okazje O1–O8. `StanSciezki` trzyma to, co nie wynika ze stanu gry:
    który rozdział jest otwarty i od kiedy, liczniki z chwili otwarcia, cele zaliczone i przepadłe, zdarzenia samego
    interfejsu (lista ludzi, karty, ekran dróg) i otwartą okazję. Stan to zwykły JSON i leży tylko w zapisie interfejsu
    (`Save.cele`, src/ui/zapis.ts), nigdy w symulacji ani w zarządzie: ścieżka je tylko czyta, więc zasady stałego kroku jej
@@ -31,15 +31,28 @@
    src/ui/sciezka-rozdzialy.ts), o ile gra ma włączone drogi. Odczyt jest migawką z jednej chwili: kto zmienia stan gry,
    buduje nowy.
 
+   Okazje. Okazja (`DefOkazji`) to krótki rozdział (1–3 cele) otwierany przez zdarzenie w grze: wędrowiec przy siatce,
+   handlarz pod bramą, napad, stado pod siatką, ugryzienie w kończynę, zwłoki, które wstaną, obca ekipa przy aucie i od
+   20.10.2026 „Zima idzie” (dni 8–13 każdego roku). Stoi nad rozdziałem w okienku, dopóki zdarzenie trwa, i zamyka się
+   sama, kiedy zdarzenie mija albo wszystkie jej cele są zrobione. Cele okazji nie mają terminu: niezrobiony czeka na
+   następne takie zdarzenie, zrobiony nie wraca, a okazja bez niezrobionych celów w ogóle się nie otwiera. Otwarta jest
+   najwyżej jedna, w kolejności z `OKAZJE` (życie przed gośćmi: O5, O6, O4, O3, O8, O2, O1, O7): ważniejsza wypiera
+   otwartą, a wyparta wraca ze świeżym stanem, gdy ważniejsza się skończy. Okazje ruszają dopiero po krokach samouczka.
+   `krokOkazji` robi to w każdym kroku ścieżki, po rozdziałach; zaliczenia liczy przed zamknięciem, na tym samym
+   odczycie, więc zdarzenie, które mija razem ze skutkiem celu (udana amputacja, dobite zwłoki), cel zalicza. Stan
+   okazji w `StanSciezki.okazja` niesie klucz, tick otwarcia, licznik zabitych z chwili otwarcia (do celu stada) i id
+   pionka albo rzeczy, której dotyczy (ugryziony, zwłoki, wędrowiec, handlarz). Tytuł okazji sam niesie
+   „Teraz: …” / “Now: …”.
+
    Kontrakt: wszystkie funkcje są czyste. Stan (i odczyt gry) na wejściu, nowy stan na wyjściu; wejście zostaje
    nietknięte, a wynik nie dzieli z nim żadnego obiektu (kopia, więc wynik wolno zmieniać bez skutku dla wejścia).
    Klucz zaliczonego celu to „rozdział.cel” albo „okazja.cel”: 'r0.drewno', 'r1.przeszukaj', 'o2.wymiana'. Zły kształt
    pola w zapisie to brak pola: `jestStanSciezki` sprawdza kształt (woła ją `readSave`, który takie pole zdejmuje,
    i `stanZZapisu`, który wtedy zaczyna od stanu na start).
 
-   Rozdziały. Co każdy cel mówi i kiedy się zalicza, opisuje src/ui/sciezka-rozdzialy.ts (R0 to `goalsOf` z
-   src/ui/cele.ts opakowany w rozdział, dalej R1 do R8). Silnik bierze stamtąd `ROZDZIALY`, liczniki „od otwarcia”
-   i wiersze dróg po ostatnim rozdziale.
+   Rozdziały i okazje. Co każdy cel mówi i kiedy się zalicza, opisują src/ui/sciezka-rozdzialy.ts (R0 to `goalsOf` z
+   src/ui/cele.ts opakowany w rozdział, dalej R1 do R8) i src/ui/sciezka-okazje.ts. Silnik bierze stamtąd `ROZDZIALY`,
+   `OKAZJE`, liczniki „od otwarcia” i wiersze dróg po ostatnim rozdziale.
 
    Okienko i okna. `celeHtml(widok, { otwarte, touch })` składa wnętrze okienka `#goals` z widoku ścieżki, bez DOM: blok
    okazji („Teraz: …”, jej cele, podpowiedź bieżącego) nad rozdziałem (nagłówek z licznikiem, lista, podpowiedź pod
@@ -48,14 +61,17 @@
    ma w HTML tylko bieżący cel okazji, a bez okazji bieżący cel rozdziału. `celWOknie(widok, okno)` daje tekst celu do
    linii „Cel: …” okna, które zasłania okienko (karta nocy, uchwała, tablica badań, spotkanie): bieżący cel, jeśli
    dotyczy okna, a inaczej pierwszy niezrobiony cel tego okna, który da się ruszyć (karta nocy z za małym zapasem
-   drewna pokazuje dyżur przy kozie, choć bieżącym celem jest drewno). */
+   drewna pokazuje dyżur przy kozie, choć bieżącym celem jest drewno; tablica badań w okazji zimy pokazuje cel kozy
+   z beczki przed celem rozdziału). */
 
 import { L } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
 import type { GovInput, GovState } from '../gov/typy.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
+import { TUT_STEPS } from '../sim/tutorial.ts';
 import type { World } from '../world/world.ts';
+import { OKAZJE } from './sciezka-okazje.ts';
 import { ludnoscPodZarzadem, lupZMiasta, ROZDZIALY, uchwalyPodpisane, wierszeDrog } from './sciezka-rozdzialy.ts';
 import { esc } from './tekst.ts';
 
@@ -64,8 +80,8 @@ export const KLUCZE_ROZDZIALOW = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7'
 export type KluczRozdzialu = (typeof KLUCZE_ROZDZIALOW)[number];
 
 /** okazje: krótkie rozdziały otwierane przez zdarzenie w grze (wędrowiec, handlarz, napad, stado, ugryzienie, zwłoki,
-    obcy przy aucie) */
-export const KLUCZE_OKAZJI = ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7'] as const;
+    obcy przy aucie, zima) */
+export const KLUCZE_OKAZJI = ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7', 'o8'] as const;
 export type KluczOkazji = (typeof KLUCZE_OKAZJI)[number];
 
 /** zdarzenia samego interfejsu, które nie zostawiają śladu w stanie gry: wybór z listy ludzi (klik albo Q i E), karta
@@ -276,6 +292,27 @@ export interface DefRozdzialu {
   cele: readonly DefCelu[];
 }
 
+/** Definicja okazji (sekcja „Okazje” projektu). `k` to klucz ze stanu, a kolejność w `OKAZJE` to ważność: widać najwyżej
+    jedną okazję, pierwszą z listy, której zdarzenie trwa (życie przed gośćmi), a niższe czekają; wyższa wypiera otwartą
+    niższą, a niższa wraca ze świeżym stanem otwarcia, gdy wyższa się skończy. `tytul` niesie „Teraz: …” / “Now: …” sam,
+    okienko niczego nie dopisuje. `trwa(o, s)`: zdarzenie trwa (stan `s` ma otwartą okazję z jej `cel`em i tickiem
+    otwarcia); gdy zgaśnie, okazja się zamyka, ale cele zalicza się przed zamknięciem, na tym samym odczycie (ugryziony po
+    udanej amputacji nie ma już ugryzienia, a jego cel jest zrobiony). `otwiera(o)`: wyzwalacz otwarcia, gdy ostrzejszy niż
+    `trwa` (stado otwiera się od trzech napierających, ale trwa do ostatniego, żeby topniejące pod dzidami nie zgasło w
+    połowie celu „zabijcie trzech”); bez niego okazja otwiera się, gdy `trwa` jest prawdziwe na stanie z kandydatem.
+    `cel(o)`: id pionka albo rzeczy, której dotyczy okazja (ugryziony, zwłoki, wędrowiec, handlarz), brane przy otwarciu
+    i trzymane w `StanSciezki.okazja.cel`; −1 znaczy: nie ma czego ratować, więc okazja się nie otwiera. `cele`: 1–3 cele;
+    zrobiony cel nie wraca, niezrobiony czeka na następne takie zdarzenie, okazja bez niezrobionych celów w ogóle się nie
+    otwiera, a żaden cel okazji nie przepada (nie mają terminu). */
+export interface DefOkazji {
+  k: KluczOkazji;
+  tytul(o: OdczytCelow): string;
+  otwiera?(o: OdczytCelow): boolean;
+  trwa(o: OdczytCelow, s: StanSciezki): boolean;
+  cel?(o: OdczytCelow): number;
+  cele: readonly DefCelu[];
+}
+
 /** Cel do narysowania. Przepadły cel to `done` i `missed` naraz (liczy się do licznika, ale jest skreślony bez ptaszka);
     `czeka` to dopisek celu, którego teraz nie da się ruszyć. */
 export interface Cel {
@@ -288,18 +325,19 @@ export interface Cel {
   okno?: OknoCelu;
 }
 
-/** Widok okienka celów (rysuje go `celeHtml`). `okazja` wypełni zadanie okazji; `rozdzial` jest pusty po ostatnim
-    rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis z „Teraz: …” / “Now: …” (nadaje go
-    definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg do zwycięstwa po ostatnim rozdziale
-    (`wierszeDrog`): `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep` to „{ile} z {cel}” albo null; pusta
-    lista albo null znaczy: nic do pokazania, okienko się chowa. */
+/** Widok okienka celów (rysuje go `celeHtml`). `okazja` to blok otwartej okazji (null, gdy żadna nie jest otwarta);
+    `rozdzial` jest pusty po ostatnim rozdziale. `biezacy` to jeden z elementów `cele`. Tytuł okazji to pełny napis
+    z „Teraz: …” / “Now: …” (nadaje go definicja okazji, okienko niczego nie dopisuje). `drogi` to wiersze dróg
+    do zwycięstwa po ostatnim rozdziale (`wierszeDrog`): `nazwa` i `dalej` składają się w „{nazwa}: {dalej}”, `postep`
+    to „{ile} z {cel}” albo null; pusta lista albo null znaczy: nic do pokazania, okienko się chowa. */
 export interface WidokSciezki {
   okazja: { tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
   rozdzial: { k: KluczRozdzialu; tytul: string; cele: Cel[]; biezacy: Cel | null } | null;
   drogi: { nazwa: string; dalej: string; postep: string | null }[] | null;
 }
 
-const kluczCelu = (r: KluczRozdzialu, c: Pick<DefCelu, 'key'>): string => `${r}.${c.key}`;
+/** klucz zaliczonego celu: „rozdział.cel” ('r1.przeszukaj') albo „okazja.cel” ('o2.wymiana') */
+const kluczCelu = (r: KluczRozdzialu | KluczOkazji, c: Pick<DefCelu, 'key'>): string => `${r}.${c.key}`;
 const przepadly = (s: StanSciezki, klucz: string): boolean => s.przepadle.includes(klucz);
 
 /** cele rozdziału, które istnieją w tej grze */
@@ -322,6 +360,69 @@ const ostatniRozstrzygniety = (s: StanSciezki, rozdzialy: readonly DefRozdzialu[
   return -1;
 };
 
+/** cele okazji, które istnieją w tej grze */
+const celeOkazji = (d: DefOkazji, o: OdczytCelow, s: StanSciezki): readonly DefCelu[] =>
+  d.cele.filter((c) => c.jest?.(o, s) !== false);
+
+/** Okazje ruszają dopiero po krokach samouczka (`st.tut.step` równe liczbie kroków, albo −1 w świecie bez wnętrza), żeby nie
+    przeszkadzały w pierwszych minutach gry. */
+const poSamouczku = (o: OdczytCelow): boolean => o.st.tut.step === TUT_STEPS.length || o.st.tut.step === -1;
+
+/** Wszystkie cele okazji są zrobione (okazja bez celów też): taka okazja się zamyka i nie wraca. */
+const okazjaZrobiona = (d: DefOkazji, o: OdczytCelow, s: StanSciezki): boolean =>
+  celeOkazji(d, o, s).every((c) => zaliczony(s, kluczCelu(d.k, c)));
+
+/** Stan otwarcia okazji `d`, jeśli może się ona teraz otworzyć na stanie `s` (bez otwartej okazji), a inaczej null. Warunki:
+    ma niezrobione cele, ma czego dotyczyć (`cel` ≥ 0), jej wyzwalacz jest prawdziwy i po otwarciu zdarzenie dalej by trwało
+    (`trwa` na stanie z kandydatem), więc okazja nie otwiera się i zamyka na zmianę w kolejnych krokach. Stan zapisuje tick
+    otwarcia, licznik zabitych (do celu „zabijcie trzech”) i, gdy okazja dotyczy pionka albo rzeczy, jej id. */
+function otwarcieOkazji(d: DefOkazji, s: StanSciezki, o: OdczytCelow): NonNullable<StanSciezki['okazja']> | null {
+  if (okazjaZrobiona(d, o, s)) return null;
+  let cel: number | undefined;
+  if (d.cel) {
+    cel = d.cel(o);
+    if (cel < 0) return null;
+  }
+  if (d.otwiera && !d.otwiera(o)) return null;
+  const otwarcie = { k: d.k, od: o.st.tick, zabici: o.st.tally?.killed ?? 0, ...(cel !== undefined ? { cel } : {}) };
+  return d.trwa(o, { ...s, okazja: otwarcie }) ? otwarcie : null;
+}
+
+/** Krok okazji (zmienia `t`): otwarta okazja zalicza swoje cele, których warunek jest prawdziwy, i zamyka się, gdy zdarzenie
+    mija albo wszystkie cele są zrobione (cele liczą się przed zamknięciem, na tym samym odczycie: ugryziony po udanej
+    amputacji nie ma już ugryzienia, a jego cel jest zrobiony). Potem do głosu dochodzi okazja ważniejsza od otwartej
+    (wcześniejsza na liście), a gdy żadna nie jest otwarta, pierwsza z listy, którą zdarzenie otwiera: widać jedną, niższe
+    czekają i wracają ze świeżym stanem, gdy wyższa się skończy. Okazja, która dopiero się otworzyła, zalicza od razu cele,
+    które gra już spełnia (może się wtedy od razu zamknąć). Przed końcem kroków samouczka niczego nie ma. */
+function krokOkazji(t: StanSciezki, o: OdczytCelow, okazje: readonly DefOkazji[]): void {
+  if (!poSamouczku(o)) {
+    delete t.okazja;
+    return;
+  }
+  const tick = o.st.tick;
+  // każdy obieg otwiera ważniejszą okazję niż poprzednia albo zamyka otwartą, więc kończy się po kilku obiegach
+  for (let obieg = 0; obieg <= 2 * okazje.length; obieg++) {
+    const otwarta = t.okazja ? okazje.findIndex((x) => x.k === t.okazja!.k) : okazje.length;
+    if (t.okazja) {
+      const d = okazje[otwarta];
+      if (d) {
+        for (const c of celeOkazji(d, o, t)) {
+          const klucz = kluczCelu(d.k, c);
+          if (!zaliczony(t, klucz) && c.zrobiony(o, t)) t.zrobione[klucz] = tick;
+        }
+      }
+      if (!d?.trwa(o, t) || okazjaZrobiona(d, o, t)) delete t.okazja;
+    }
+    let nowa: StanSciezki['okazja'] | null = null;
+    for (const d of okazje.slice(0, t.okazja ? otwarta : okazje.length)) {
+      nowa = otwarcieOkazji(d, t, o);
+      if (nowa) break;
+    }
+    if (!nowa) return;
+    t.okazja = nowa;
+  }
+}
+
 /** Krok ścieżki: nowy stan z odczytu gry (wejście i odczyt zostają nietknięte). Zalicza cele otwartego rozdziału, których
     warunek jest prawdziwy, i oznacza przepadłe (zaliczenie wygrywa z terminem, a rozstrzygnięty cel nie zmienia się już
     nigdy). Gdy rozdział jest skończony, otwiera następny: zapisuje tick otwarcia i liczniki `start` z tej chwili, a cele
@@ -329,12 +430,14 @@ const ostatniRozstrzygniety = (s: StanSciezki, rozdzialy: readonly DefRozdzialu[
     z `otwiera` otwiera się po swoim warunku, choćby poprzedni nie był skończony. Po ostatnim rozdziale stan to „koniec”;
     „koniec” zapisany przez wersję, która nie znała późniejszych rozdziałów (zapis po R1, zanim doszło R2), otwiera w tym
     kroku pierwszy rozdział po ostatnim rozstrzygniętym, od chwili kroku, i ścieżka rusza dalej jak zwykle (zob.
-    `ostatniRozstrzygniety`). Stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian. `rozdzialy` pozwala
-    podstawić inne definicje (testy zasad); w grze zawsze `ROZDZIALY`. */
+    `ostatniRozstrzygniety`). Stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian. Okazje idą osobno,
+    obok rozdziałów (`krokOkazji`). `rozdzialy` i `okazje` pozwalają podstawić inne definicje (testy zasad); w grze
+    zawsze `ROZDZIALY` i `OKAZJE`. */
 export function krokSciezki(
   s: StanSciezki,
   o: OdczytCelow,
   rozdzialy: readonly DefRozdzialu[] = ROZDZIALY,
+  okazje: readonly DefOkazji[] = OKAZJE,
 ): StanSciezki {
   const t = kopia(s);
   const tick = o.st.tick;
@@ -371,21 +474,20 @@ export function krokSciezki(
     t.od = tick;
     t.start = licznikiStartu(o.st, o.gov);
   }
+  krokOkazji(t, o, okazje);
   return t;
 }
 
-/** Widok okienka celów ze stanu ścieżki po kroku: tytuł rozdziału, jego cele (tekst, podpowiedź, ptaszek albo skreślenie,
-    dopisek „czeka”, okno) i bieżący cel, czyli pierwszy niezrobiony, który nie czeka. Niczego nie zalicza. */
-export function widokSciezki(
-  s: StanSciezki,
+/** Cele do narysowania: tekst, podpowiedź, ptaszek albo skreślenie (cel przepadły to `done` i `missed`), dopisek „czeka” i
+    okno, w kolejności definicji. `prefiks` to klucz rozdziału albo okazji, z którego powstaje klucz zaliczenia. */
+function celeWidoku(
+  prefiks: KluczRozdzialu | KluczOkazji,
+  cele: readonly DefCelu[],
   o: OdczytCelow,
-  rozdzialy: readonly DefRozdzialu[] = ROZDZIALY,
-): WidokSciezki {
-  const d = rozdzialy.find((r) => r.k === s.rozdzial);
-  // po ostatnim rozdziale okienko pokazuje drogi do zwycięstwa, na które gra ma następny krok (bez włączonych dróg nic)
-  if (!d) return { okazja: null, rozdzial: null, drogi: s.rozdzial === 'koniec' ? wierszeDrog(o) : null };
-  const cele: Cel[] = celeGry(d, o, s).map((c) => {
-    const klucz = kluczCelu(d.k, c);
+  s: StanSciezki,
+): Cel[] {
+  return cele.map((c) => {
+    const klucz = kluczCelu(prefiks, c);
     const zrobiony = zaliczony(s, klucz);
     const missed = !zrobiony && przepadly(s, klucz);
     const done = zrobiony || missed;
@@ -400,8 +502,32 @@ export function widokSciezki(
       ...(c.okno ? { okno: c.okno } : {}),
     };
   });
-  const biezacy = cele.find((c) => !c.done && !c.czeka) ?? null;
-  return { okazja: null, rozdzial: { k: d.k, tytul: d.tytul(o), cele, biezacy }, drogi: null };
+}
+
+/** bieżący cel: pierwszy niezrobiony, który nie czeka */
+const biezacyCel = (cele: readonly Cel[]): Cel | null => cele.find((c) => !c.done && !c.czeka) ?? null;
+
+/** Widok okienka celów ze stanu ścieżki po kroku: blok otwartej okazji (tytuł z „Teraz: …” i jej cele) oraz tytuł rozdziału,
+    jego cele (tekst, podpowiedź, ptaszek albo skreślenie, dopisek „czeka”, okno) i bieżący cel, czyli pierwszy niezrobiony,
+    który nie czeka. Niczego nie zalicza ani nie zamyka: okazję, która już nie trwa, zamknął krok. */
+export function widokSciezki(
+  s: StanSciezki,
+  o: OdczytCelow,
+  rozdzialy: readonly DefRozdzialu[] = ROZDZIALY,
+  okazje: readonly DefOkazji[] = OKAZJE,
+): WidokSciezki {
+  const otwarta = s.okazja ? okazje.find((x) => x.k === s.okazja!.k) : undefined;
+  const cele = otwarta ? celeWidoku(otwarta.k, celeOkazji(otwarta, o, s), o, s) : [];
+  const okazja = otwarta ? { tytul: otwarta.tytul(o), cele, biezacy: biezacyCel(cele) } : null;
+  const d = rozdzialy.find((r) => r.k === s.rozdzial);
+  // po ostatnim rozdziale okienko pokazuje drogi do zwycięstwa, na które gra ma następny krok (bez włączonych dróg nic)
+  if (!d) return { okazja, rozdzial: null, drogi: s.rozdzial === 'koniec' ? wierszeDrog(o) : null };
+  const celeRozdzialu = celeWidoku(d.k, celeGry(d, o, s), o, s);
+  return {
+    okazja,
+    rozdzial: { k: d.k, tytul: d.tytul(o), cele: celeRozdzialu, biezacy: biezacyCel(celeRozdzialu) },
+    drogi: null,
+  };
 }
 
 /* ---------------------------------------------------------------- okienko celów (HTML) i linia celu w oknach */

@@ -2,7 +2,9 @@
    i ich kolejność (`ROZDZIALY`). Silnik, stan i HTML okienka leżą w src/ui/sciezka.ts; tu jest to, co spec mówi o każdym
    celu: tekst, podpowiedź, warunek zaliczenia, a przy niektórych dopisek „czeka”, termin i okno, w którym cel dostaje
    linię „Cel: …”. Moduł bierze z silnika same typy (`import type`: `DefCelu`, `DefRozdzialu`, `OdczytCelow`,
-   `StanSciezki`), więc nie ma cyklu importów w czasie wykonania; silnik bierze stąd `ROZDZIALY`.
+   `StanSciezki`), więc nie ma cyklu importów w czasie wykonania; silnik bierze stąd `ROZDZIALY`, a okazje
+   (src/ui/sciezka-okazje.ts) jeszcze dwa pomocniki: `budowaZakladka` (nazwa przycisku Budowa, inna na dotyku)
+   i `bezWypraw` (stan bez osób na wyprawie, do liczenia wiedzy tak jak w celach badań).
 
    R0 to `goalsOf` (src/ui/cele.ts) opakowany w rozdział: te same teksty, te same zaliczenia, a drewno na wieczór trzyma
    stan ścieżki. R1 to cele drugiego dnia: przeszukać, postawić pierwszą budowlę, wzmocnić obwód (w trybie zombie zrobić
@@ -558,8 +560,8 @@ const R4: DefRozdzialu = {
     zapasowym bez położenia przycisku mapy nie ma, choć `gov.miasto` istnieje); bez flagi (testy) decyduje `gov.miasto`. */
 const zMapaMiasta = (o: OdczytCelow): boolean => o.mapaMiasta ?? !!o.gov?.miasto;
 
-/** „Budowa” albo, na dotyku, „Przycisk Budowa u góry” (jak w celu obwodu) */
-const budowaZakladka = (touch: boolean): string =>
+/** „Budowa” albo, na dotyku, „Przycisk Budowa u góry” (jak w celu obwodu); używa też okazja „Zima idzie” */
+export const budowaZakladka = (touch: boolean): string =>
   touch ? L('Przycisk Budowa u góry', 'The Build button at the top') : L('Budowa', 'Build');
 
 const R5: DefRozdzialu = {
@@ -614,15 +616,19 @@ const R5: DefRozdzialu = {
 
 /* ---------------------------------------------------------------- R6. Badania */
 
+/** Stan gry, w którym osoby na wyprawie są na miejscu: `wiedza` ich nie liczy, a wyprawa mija, więc cele badań (R6)
+    i okazja „Zima idzie” (kozę z beczki bada ktoś, kto zna się na cieple) liczą wiedzę tak, jakby wszyscy byli
+    w domu. Bez nikogo na wyprawie to ten sam stan. */
+export const bezWypraw = (st: SimState): SimState =>
+  st.pawns.some((p) => p.away) ? { ...st, pawns: st.pawns.map((p) => (p.away ? { ...p, away: false } : p)) } : st;
+
 /** Czy osada ma dość wiedzy, żeby wziąć którąkolwiek kartkę ery `era` w tym trybie gry (`TechNowa.lvl` w jej dziedzinie).
     Liczy `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie: `wiedza` ich nie liczy, a wyprawa mija, więc przez nią
     cele badań nie mogą znikać z listy ani zamykać rozdziału, gdy to ona zna dziedzinę. Cel nie istnieje tylko wtedy, gdy
     wiedzy naprawdę nie ma (zarząd z samych zawodów bez dziedzin ery 1, bez książek). */
 function mozeWziacKartke(st: SimState, era: number): boolean {
   const mode = modeOf(st);
-  const naMiejscu = st.pawns.some((p) => p.away)
-    ? { ...st, pawns: st.pawns.map((p) => (p.away ? { ...p, away: false } : p)) }
-    : st;
+  const naMiejscu = bezWypraw(st);
   return TECHS.some(
     (t) => t.era === era && t.dziala && (t.tryb === undefined || t.tryb === mode) && wiedza(naMiejscu, t.dom) >= t.lvl,
   );
