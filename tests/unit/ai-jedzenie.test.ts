@@ -18,8 +18,8 @@
      zdrowie zarządu w 12. dniu co najmniej 70, średnie najedzenie o 6:00 w dniach 15–18 co najmniej 8), okno godzin i jedna
      wyprawa naraz. Granice mają łapać brak warstwy: `ZM_JAK_BAZA=1 npx vitest run tests/unit/ai-jedzenie.test.ts` gra ten
      sam przebieg silnikiem bez wypraw po jedzenie i bez ogródka (jak silnik z zadania 3) i testy przebiegu mają wtedy padać.
-     Cel z planu „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25” zostaje jako `it.todo`: mierzy go bramka
-     etapu (zadanie 7, `npm run bot:osada`), a nie ten test;
+     Cel z planu „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25” jest tu sprawdzony na tym przebiegu
+     (zmierzone 56); na wszystkich demach i ziarnach mierzy go bramka etapu (`npm run bot:osada`);
    - determinizmu (zapis i wczytanie w trakcie wyprawy) i kosztu (warstwa najwyżej raz na 30 sekund przy ekranie). */
 
 import fs from 'node:fs';
@@ -560,13 +560,17 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     expect(srednia).toBeGreaterThanOrEqual(8);
   });
 
-  // Cel etapu z planu: „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”. Nie jest tu sprawdzany: cel mierzy
-  // bramka etapu na wszystkich demach i ziarnach (zadanie 7, `npm run bot:osada`, kolumny „głodni” i dzień końca), więc tu
-  // zostaje jako zapowiedź. W tym przebiegu (Przymorze 11, kocioł z pierwszego okna) jest spełniony: średnia 41 (od 22,8 w 17. dniu
-  // do 56,8 w 24.). W zadaniu 4, gdy silnik podpisywał `u_warty` pierwszego wieczoru (blokuje kocioł), ten sam przebieg kończył się
-  // odwołaniem w 20. dniu, a najedzenie o 6:00 w dniach 3–11 wynosiło 16–29 (zarząd je dopiero poniżej 35, a dwie osoby czuwają
-  // całą noc bez posiłku).
-  it.todo('cel etapu (bramka zadania 7): w dniach 15–25 średnie najedzenie zarządu o 6:00 co najmniej 25');
+  it('cel etapu: w dniach 15–25 średnie najedzenie zarządu o 6:00 wynosi co najmniej 25, a gra dożywa 25. dnia', () => {
+    // Cel z planu („średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”) w tym przebiegu: średnia 56 (najgorszy dzień
+    // 46,8; po nocnym posiłku przy wielkim głodzie zarząd nie nocuje już głodny). W zadaniu 4, gdy silnik podpisywał `u_warty`
+    // pierwszego wieczoru (blokuje kocioł), ten sam przebieg kończył się odwołaniem w 20. dniu, a najedzenie o 6:00 w dniach 3–11
+    // wynosiło 16–29 (zarząd je dopiero poniżej 35, a dwie osoby czuwają całą noc bez posiłku). Cel na wszystkich demach i ziarnach
+    // mierzy bramka etapu (`npm run bot:osada`, kolumny „głodni” i dzień końca); tu jest on sprawdzony na jednym przebiegu.
+    const dni15do25 = dni.filter((d) => d.dzien >= 15 && d.dzien <= 25);
+    expect(dni15do25.map((d) => d.dzien)).toEqual(Array.from({ length: 11 }, (_, k) => k + 15));
+    const srednia = dni15do25.reduce((a, d) => a + d.rano.najedzenie, 0) / dni15do25.length;
+    expect(srednia).toBeGreaterThanOrEqual(25);
+  });
 
   it('wyprawy wychodzą tylko między 8:00 a 15:00 i nigdy dwie naraz', () => {
     const wyjscia = g.dziennik!.filter((m) => m.t === 'wyprawa');

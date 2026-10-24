@@ -22,9 +22,12 @@
    - okno karty nocy: chorzy zdjęci z warty jak w silniku podstawowym, potem dyżur przy kozie (`dyzurNaKarcie`), dopiero
      potem wartownik przy siatce, wybierany spośród śpiących (kolejność odwrócona względem silnika podstawowego: przy mało
      zdrowych dyżur ma pierwszeństwo, a wyprawy nie tracą ludzi na wartę), na końcu zatwierdzenie;
-   - okno wydarzenia: wybór na kopii zarządu (`odpowiedzNaWydarzenie`, src/ai/okna.ts): każdy dozwolony wybór oceniony po
-     skutkach (zapasy, zaufanie, wkurzenie, rany, zgony, przyjęcia według zapasu jedzenia), najlepszy wygrywa; okno wieloetapowe
-     (wybór z „zostaje”) dostaje odpowiedź na każdy krok;
+   - okno wydarzenia: wybór na kopiach zarządu (`odpowiedzNaWydarzenie`, src/ai/okna.ts): każdy dozwolony wybór oceniony po
+     skutkach (zapasy, zaufanie, wkurzenie, rany, zgony, przyjęcia według zapasu jedzenia) jako średnia z `KOPII_OCENY` kopii,
+     każda z ziarnem pochodnym zamiast stanu prawdziwego generatora (silnik nie zna wyniku losowań) i z ukrytymi rzutami karty
+     (haczyk gościa, `halas.cat`, `krzyk.help`) rzuconymi od nowa (silnik nie zna tego, czego karta nie pokazuje), najlepsza
+     średnia wygrywa; okno wieloetapowe (wybór z „zostaje”) dostaje odpowiedź na każdy krok, z rzutem odsłoniętym przez
+     poprzedni krok;
    - okno uchwały: `wyborUchwaly` (src/ai/okna.ts): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku
      blokuje go do końca gry, a kocioł blokuje wartę i bramę na kłódkę), potem tylko według potrzeby (głód: kocioł, o ile jest
      jeszcze dozwolony), a bez potrzeby nic: ani racje głodowe, ani zebrania i meble na opał (każda uchwała kosztuje wkurzenie

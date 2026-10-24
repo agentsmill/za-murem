@@ -745,8 +745,15 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   it('wyborWydarzenia wybiera najlepszą ocenę i nie zmienia prawdziwego zarządu', () => {
     // w pierwszych dniach przychodzi kilka wydarzeń; każde sprawdzone na prawdziwym zarządzie i wejściu
     expect(okna.length).toBeGreaterThanOrEqual(3);
+    // pełny przegląd zna ukryte rzuty karty (haczyk gościa, kot za płotem, pomoc z sąsiedztwa), a silnik ich nie zna (reguła
+    // uczciwości, zadanie 7): przy takich kartach jego wybór może się różnić od wyboru z przeglądu, więc sprawdzamy tylko, że jest
+    // dozwolony; przy reszcie wybór jest dokładnie ten z przeglądu
+    const zUkrytymRzutem = new Set(['gosc', 'halas', 'krzyk', 'wedrowiec']);
+    expect(okna.filter((o) => !zUkrytymRzutem.has(o.id)).length).toBeGreaterThanOrEqual(2);
     for (const o of okna) {
-      expect(o.wybor, `dzień ${o.dzien}, ${o.id}: ${JSON.stringify(o.oceny)}`).toBe(o.oczekiwany);
+      if (zUkrytymRzutem.has(o.id))
+        expect(o.oceny[o.wybor], `dzień ${o.dzien}, ${o.id}: wybór dozwolony`).not.toBeNull();
+      else expect(o.wybor, `dzień ${o.dzien}, ${o.id}: ${JSON.stringify(o.oceny)}`).toBe(o.oczekiwany);
       expect(o.zarzadBezZmian, `dzień ${o.dzien}, ${o.id}: zarząd`).toBe(true);
       expect(o.wejscieBezZmian, `dzień ${o.dzien}, ${o.id}: wejście`).toBe(true);
     }
@@ -758,12 +765,14 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     for (const o of pozary) expect(o.ewakuacja, `dzień ${o.dzien}`).toBe(false);
   });
 
-  it('pracownia nie stoi bez zajęcia: sześć badań z kolejki i t_ambu są zbadane do rana 10. dnia', () => {
+  it('pracownia nie stoi bez zajęcia: sześć badań z kolejki i t_ambu są zbadane do rana 13. dnia', () => {
     // Bez t_ambu w kolejce stół pracowni stał pusty od 7. dnia (t_ambu było do wzięcia: Hanna ma medycynę 3), a zdrowie zarządu
-    // spadało od 14. dnia poniżej 45, czyli poniżej progu wyprawy dalekiej. Ten przebieg: t_ambu gotowe w 9. dniu.
-    const rano10 = poranki.find((p) => p.dzien === 10);
-    expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
-    expect(rano10!.badania).toEqual(
+    // spadało od 14. dnia poniżej 45, czyli poniżej progu wyprawy dalekiej. Ten przebieg: t_ambu gotowe w 10. dniu (w 9., zanim
+    // ocena wyboru przestała znać ukryte rzuty kart); granica 13. dnia zostawia trzy dni na przesunięcie trajektorii, a brak
+    // badania w kolejce i tak je przekracza (nie zbadane do końca przebiegu).
+    const rano13 = poranki.find((p) => p.dzien === 13);
+    expect(rano13, 'przebieg dożył 13. dnia').toBeDefined();
+    expect(rano13!.badania).toEqual(
       expect.arrayContaining(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo', 't_szklarnia', 't_ambu']),
     );
   });
