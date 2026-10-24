@@ -14,7 +14,7 @@ import { polskieSlowa } from './po-angielsku.ts';
 import { kontekst, type Przypadek, tekstArtykulu } from './wiki-pomoc.ts';
 
 /** słowa z bloku, których nie ma w domu jednorodzinnym (słownik miejsca: furtka, komitet, sąsiedzi) */
-export const BLOKOWE = /klatk|trzepak|spółdziel|zarząd|walne|\bbram|pawilon|mieszka[nń]/i;
+export const BLOKOWE = /klatk|trzepak|spółdziel|zarząd|walne|\bbram/i;
 /** słowa ze słownika domu, których nie ma w bloku */
 export const DOMOWE = /furtk|komitet/i;
 

@@ -7,7 +7,8 @@ import { definicjeDrogi } from './wiki-drogi.ts';
 import { definicjeStart } from './wiki-start.ts';
 import type { Def } from './wiki-typy.ts';
 import { definicjeZasoby } from './wiki-zasoby.ts';
+import { definicjeZombie } from './wiki-zombie.ts';
 
 export function definicjeTresc(): Def[] {
-  return [...definicjeStart(), ...definicjeZasoby(), ...definicjeBudowle(), ...definicjeDrogi()];
+  return [...definicjeStart(), ...definicjeZasoby(), ...definicjeBudowle(), ...definicjeDrogi(), ...definicjeZombie()];
 }
