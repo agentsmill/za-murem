@@ -17,7 +17,7 @@
    przelosowuje; tryb zombie jest poza etapem 1, a test pilnuje tylko tego, że tryb zwykły takich kroków nie ma. */
 
 import { describe, expect, it } from 'vitest';
-import { grajDo, nowaGraAi, wejscie as wejscieGry } from '../../src/ai/gra.ts';
+import { grajDo, wejscie as wejscieGry } from '../../src/ai/gra.ts';
 import { MAX_KROKOW_OKNA, odpowiedzNaWydarzenie, wyborWydarzenia } from '../../src/ai/okna.ts';
 import { silnik } from '../../src/ai/silnik.ts';
 import { haczykiMozliwe } from '../../src/gov/goscie.ts';
@@ -139,16 +139,9 @@ describe('wybór silnika na kartach łańcuchów nie zależy od tego, czego grac
   );
 
   it('w prawdziwej grze z łańcuchami (Przymorze 12, 12 dni, mieszkańcy z adresu) ukryte rzuty kart i haczyki gości nie zmieniają wyboru silnika', async () => {
-    const a = await przygotujGre('przymorze', 12, false);
-    const g = nowaGraAi(a.w, 12, {
-      core: 4,
-      obcy: true,
-      mieszkancy: a.opts.mieszkancy,
-      okolica: a.opts.okolica,
-      ludnosc2021: a.opts.ludnosc2021,
-      tempoPrzegladarki: true,
-      lancuchy: true,
-    });
+    // gra z uprzęży `npm run bot:osada`: jak w przeglądarce, czyli z łańcuchami kart (część B zadania 7)
+    const g = await przygotujGre('przymorze', 12, false);
+    expect(g.gov.lancuchy).toBe(true);
     const okien: Record<string, number> = {};
     const przerzucone: Record<string, number> = {};
     const zmiany: string[] = [];

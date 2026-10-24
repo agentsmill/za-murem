@@ -13,13 +13,15 @@
    - uchwały o wspólnym kotle: przy mniej niż 1 porcji na głowę `uchwalaNaGlod` wybiera ją (gdy ścieżka „wspólnota” jest jeszcze
      otwarta: po `u_warty` kocioł jest zablokowany), a `silnik` (od zadania 5, `wyborUchwaly` w src/ai/okna.ts) podpisuje kocioł
      już w pierwszym oknie, bo `u_warty` z drogi porządku blokuje go do końca gry, a pierwszego wieczoru głodu jeszcze nie ma;
-   - przebiegu w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce: obcy, mieszkańcy z adresu, okolica): wyprawa
-     w każdym dniu głodu, dolne granice zmierzone na tym przebiegu (zapas co najmniej 5 porcji o 6:00 w dniach 2–15, średnie
-     zdrowie zarządu w 12. dniu co najmniej 70, średnie najedzenie o 6:00 w dniach 15–18 co najmniej 8), okno godzin i jedna
-     wyprawa naraz. Granice mają łapać brak warstwy: `ZM_JAK_BAZA=1 npx vitest run tests/unit/ai-jedzenie.test.ts` gra ten
-     sam przebieg silnikiem bez wypraw po jedzenie i bez ogródka (jak silnik z zadania 3) i testy przebiegu mają wtedy padać.
+   - przebiegu w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce: obcy, mieszkańcy z adresu, okolica, łańcuchy kart):
+     wyprawa w każdym dniu głodu, dolne granice zmierzone na tym przebiegu (zapas co najmniej 5 porcji o 6:00 w dniach 2–15,
+     średnie zdrowie zarządu w 12. dniu co najmniej 70, średnie najedzenie o 6:00 w dniach 15–18 co najmniej 30), okno godzin
+     i jedna wyprawa naraz. Granice mają łapać brak warstwy: `ZM_JAK_BAZA=1 npx vitest run tests/unit/ai-jedzenie.test.ts` gra
+     ten sam przebieg silnikiem bez wypraw po jedzenie i bez ogródka (jak silnik z zadania 3) i testy przebiegu mają wtedy padać.
+     Uprząż (`przygotujGre`) gra od części B zadania 7 z łańcuchami kart, jak gra w przeglądarce; liczby w komentarzach tych
+     testów to pomiar z łańcuchami, a w nawiasie „bez łańcuchów” ten sam przebieg ze starą uprzęgą (`lancuchy` wyłączone).
      Cel z planu „średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25” jest tu sprawdzony na tym przebiegu
-     (zmierzone 57,3); na wszystkich demach i ziarnach mierzy go bramka etapu (`npm run bot:osada`);
+     (zmierzone 58,5); na wszystkich demach i ziarnach mierzy go bramka etapu (`npm run bot:osada`);
    - determinizmu (zapis i wczytanie w trakcie wyprawy) i kosztu (warstwa najwyżej raz na 30 sekund przy ekranie). */
 
 import fs from 'node:fs';
@@ -536,7 +538,9 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   it('przy jedzeniu poniżej 2 porcji na głowę za dnia wychodzi wyprawa po jedzenie', () => {
     // dni 3–20, w których o 9:00 jest głód zapasu, dwie osoby mają zdrowie co najmniej 60 i jest ktoś jeszcze (albo któraś z nich
     // zostaje) na dyżur przy kozie: wyprawa wychodzi także wtedy, gdy zdrowych jest tylko dwoje (jedna zostaje w domu, druga idzie
-    // z kimś słabszym albo sama). W tym przebiegu takich dni jest osiem (6, 8–14), w żadnym zdrowych nie jest dokładnie dwoje.
+    // z kimś słabszym albo sama). W tym przebiegu takich dni jest jedenaście (9–15 i 17–20; bez łańcuchów dziewięć: 8, 10–12, 14–16,
+    // 18, 19), w żadnym zdrowych (zdrowie co najmniej 60) nie jest mniej niż sześcioro (bez łańcuchów pięcioro), więc gałąź „tylko
+    // dwoje zdrowych” pinują testy jednostkowe o dyżurze przy kozie tej nocy, nie ten przebieg.
     const wymagajace = dni.filter(
       (d) => d.dzien >= 3 && d.dzien <= 20 && d.przed9.na_glowe < 2 && d.przed9.zdrowi60 >= 2 && d.przed9.dyzurni >= 2,
     );
@@ -547,32 +551,36 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   });
 
   it('zapas jedzenia o 6:00 wynosi co najmniej 5 porcji w dniach 2–15', () => {
-    // z warstwą najmniej 7 porcji (dzień 14; zarząd rośnie tu do 9–11 osób, więc zapas jest mniejszy niż w zadaniu 4, kiedy było
-    // to 17 w dniu 6, a najedzenie zarządu wyższe), bez niej (ten sam przebieg, `ZM_JAK_BAZA=1`) 3 od 9. dnia i 0 w 15.
+    // z warstwą najmniej 11 porcji (dzień 11; zarząd rośnie tu do 11 osób), bez łańcuchów najmniej 8 (dzień 8), bez warstwy
+    // (ten sam przebieg, `ZM_JAK_BAZA=1`) 0 od 9.–10. dnia i odwołanie w 22. dniu (bez łańcuchów w 19.). Granica 5 leży mniej więcej
+    // w środku między zapasem z warstwą a pustą spiżarnią.
     const dni2do15 = dni.filter((d) => d.dzien >= 2 && d.dzien <= 15);
     expect(dni2do15.map((d) => d.dzien)).toEqual(Array.from({ length: 14 }, (_, k) => k + 2));
     for (const d of dni2do15) expect(d.rano.porcje, `dzień ${d.dzien}`).toBeGreaterThanOrEqual(5);
   });
 
   it('średnie zdrowie zarządu o 6:00 w 12. dniu wynosi co najmniej 70', () => {
-    // z warstwą 79,9, bez niej 58,4
+    // z warstwą 92,9 (bez łańcuchów 84,8), bez warstwy (`ZM_JAK_BAZA=1`) 35,7 (bez łańcuchów 6,6); granica 70 leży między nimi
     const dwunasty = dni.find((d) => d.dzien === 12);
     expect(dwunasty, 'gra musi dożyć 12. dnia').toBeDefined();
     expect(dwunasty!.rano.zdrowie).toBeGreaterThanOrEqual(70);
   });
 
-  it('średnie najedzenie zarządu o 6:00 w dniach 15–18 wynosi co najmniej 8, a gra dożywa 18. dnia', () => {
-    // z warstwą 11,5, 10,3, 13,9 i 20,8 (średnio 14,1), bez niej 0 w każdym z tych dni (zapas zero od 15. dnia). Dolna granica
-    // zmierzona na tym przebiegu; cel etapu (25 w dniach 15–25) niżej. Gra krótsza niż 18 dni nie ma wszystkich czterech dni.
+  it('średnie najedzenie zarządu o 6:00 w dniach 15–18 wynosi co najmniej 30, a gra dożywa 18. dnia', () => {
+    // z warstwą 64,4, 62,5, 50,3 i 60,0 (średnio 59,3; bez łańcuchów 42,6, 51,9, 56,6, 50,6, średnio 50,4), bez warstwy
+    // (`ZM_JAK_BAZA=1`) 0 w każdym z tych dni (zapas zero od 9.–10. dnia, odwołanie w 22. dniu; bez łańcuchów w 19.). Dolna granica
+    // zmierzona na tym przebiegu: 30 leży w środku między warstwą a bazą. Dawna granica 8 stała przy 14,1 sprzed nocnego posiłku
+    // przy wielkim głodzie, po którym zarząd nie nocuje już głodny, i przy 59 nie łapałaby połowicznego cofnięcia warstwy; cel
+    // etapu (25 w dniach 15–25) niżej. Gra krótsza niż 18 dni nie ma wszystkich czterech dni.
     const dni15do18 = dni.filter((d) => d.dzien >= 15 && d.dzien <= 18);
     expect(dni15do18.map((d) => d.dzien)).toEqual([15, 16, 17, 18]);
     const srednia = dni15do18.reduce((a, d) => a + d.rano.najedzenie, 0) / dni15do18.length;
-    expect(srednia).toBeGreaterThanOrEqual(8);
+    expect(srednia).toBeGreaterThanOrEqual(30);
   });
 
   it('cel etapu: w dniach 15–25 średnie najedzenie zarządu o 6:00 wynosi co najmniej 25, a gra dożywa 25. dnia', () => {
-    // Cel z planu („średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”) w tym przebiegu: średnia 57,3 (najgorszy dzień
-    // 52,1; po nocnym posiłku przy wielkim głodzie zarząd nie nocuje już głodny). W zadaniu 4, gdy silnik podpisywał `u_warty`
+    // Cel z planu („średnie najedzenie zarządu o 6:00 w dniach 15–25 co najmniej 25”) w tym przebiegu: średnia 58,5 (najgorszy dzień
+    // 36,7; bez łańcuchów 57,7 i 42,6; po nocnym posiłku przy wielkim głodzie zarząd nie nocuje już głodny). W zadaniu 4, gdy silnik podpisywał `u_warty`
     // pierwszego wieczoru (blokuje kocioł), ten sam przebieg kończył się odwołaniem w 20. dniu, a najedzenie o 6:00 w dniach 3–11
     // wynosiło 16–29 (zarząd je dopiero poniżej 35, a dwie osoby czuwają całą noc bez posiłku). Cel na wszystkich demach i ziarnach
     // mierzy bramka etapu (`npm run bot:osada`, kolumny „głodni” i dzień końca); tu jest on sprawdzony na jednym przebiegu.

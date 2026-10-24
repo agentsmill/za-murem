@@ -616,16 +616,17 @@ describe('uprząż bot:osada: jedna gra', () => {
     }
   });
 
-  it('przygotujGre: domyślnie gra jak w przeglądarce (obcy, mieszkańcy z adresu, okolica, ludność 2021, tempo)', async () => {
+  it('przygotujGre: domyślnie gra jak w przeglądarce (obcy, mieszkańcy z adresu, okolica, ludność 2021, łańcuchy kart, tempo)', async () => {
     for (const demo of ['przymorze', 'lanciego', 'zielonki']) {
       const g = await przygotujGre(demo, 11, false);
       expect(g.seed, demo).toBe(11);
-      expect(g.opts, demo).toMatchObject({ core: 4, obcy: true, tempoPrzegladarki: true });
+      expect(g.opts, demo).toMatchObject({ core: 4, obcy: true, lancuchy: true, tempoPrzegladarki: true });
       expect(g.opts.mieszkancy, demo).toBeDefined();
       expect(g.opts.okolica!.length, demo).toBeGreaterThan(0);
       expect(g.opts.ludnosc2021, demo).toBeGreaterThan(0);
-      // opcje dochodzą do gry: obcy w symulacji, mapa miasta i drogi do zwycięstwa w zarządzie, zarząd z 4 osób
+      // opcje dochodzą do gry: obcy w symulacji, łańcuchy kart, mapa miasta i drogi do zwycięstwa w zarządzie, zarząd z 4 osób
       expect(g.sim.st.obcy, demo).toBeDefined();
+      expect(g.gov.lancuchy, demo).toBe(true);
       expect(g.gov.miasto, demo).toBeDefined();
       expect(g.gov.zwyciestwo, demo).toBeDefined();
       expect(
@@ -635,10 +636,11 @@ describe('uprząż bot:osada: jedna gra', () => {
     }
   }, 120_000);
 
-  it('przygotujGre prosto: bez obcych, mieszkańców z adresu, okolicy i ludności 2021, ale z tempem przeglądarki', async () => {
+  it('przygotujGre prosto: bez obcych, mieszkańców z adresu, okolicy, ludności 2021 i łańcuchów kart, ale z tempem przeglądarki', async () => {
     const g = await przygotujGre('lanciego', 12, true);
     expect(g.opts).toEqual({ core: 4, tempoPrzegladarki: true });
     expect(g.sim.st.obcy).toBeUndefined();
+    expect(g.gov.lancuchy).toBeUndefined();
     expect(g.gov.miasto).toBeUndefined();
     expect(g.gov.zwyciestwo).toBeUndefined();
   }, 120_000);

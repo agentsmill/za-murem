@@ -5,10 +5,12 @@
 
    Domyślnie gra jak w przeglądarce: obcy (`obcy: true`), mieszkańcy siedziby z generatora (`swiatMieszkancow`), okolica
    miasta z geo dema (`okolicaZGeo`) z mapą miasta i wyprawami dziennymi, ludność kwadratu domu z 2021 roku (drogi do
-   zwycięstwa) i tempo przeglądarki (`tempoPrzegladarki`: raport rano liczy się jako decyzja i po nim wydarzenie czeka okno
-   ciszy), cztery osoby zarządu. `--prosto` zostawia tylko tempo przeglądarki: bez obcych, mieszkańców z adresu, okolicy
-   i ludności 2021, na świecie z ziarnem bota, jak `npm run bot` bez flag. Ziarno świata to ziarno gry (jak w botach, nie z
-   adresu jak w przeglądarce), żeby przebiegi z `--prosto` i bez niego były porównywalne.
+   zwycięstwa), łańcuchy kart i wątki sezonu (`lancuchy: true`, jak `newGov(…, true)` w src/main.ts, gdzie nowa gra ma je
+   domyślnie; wyłącza je tam adres `?lancuchy=0`) i tempo przeglądarki (`tempoPrzegladarki`: raport rano liczy się jako
+   decyzja i po nim wydarzenie czeka okno ciszy), cztery osoby zarządu. `--prosto` zostawia tylko tempo przeglądarki: bez
+   obcych, mieszkańców z adresu, okolicy, ludności 2021 i łańcuchów kart (goła gra), na świecie z ziarnem bota, jak `npm run
+   bot` bez flag. Ziarno świata to ziarno gry (jak w botach, nie z adresu jak w przeglądarce), żeby przebiegi z `--prosto`
+   i bez niego były porównywalne.
 
    Jedna gra na proces (procesy równolegle, jak tools/bot-zombie-siatka.ts): ten sam skrypt z ukrytym argumentem
    `--jedna=demo:ziarno` gra jedną grę i drukuje jej wynik jako jedną linię JSON, a proces główny zbiera wyniki, rysuje
@@ -225,9 +227,9 @@ async function wczytajBotMieszkancy(): Promise<typeof import('./bot-mieszkancy.t
 }
 
 /** Gra tak, jak ją zakłada uprząż, na demie `demoKlucz` z ziarnem `ziarno`: jak w przeglądarce (obcy, mieszkańcy siedziby
-    z generatora, okolica miasta z geo dema, ludność kwadratu domu z 2021 roku, tempo przeglądarki) albo `prosto` (tylko tempo
-    przeglądarki, na świecie bez generatora mieszkańców). Eksportowana, żeby testy warstw silnika grały na tej samej
-    konfiguracji co pomiar. */
+    z generatora, okolica miasta z geo dema, ludność kwadratu domu z 2021 roku, łańcuchy kart i wątki sezonu, tempo
+    przeglądarki) albo `prosto` (tylko tempo przeglądarki, na świecie bez generatora mieszkańców i bez łańcuchów: goła gra).
+    Eksportowana, żeby testy warstw silnika grały na tej samej konfiguracji co pomiar. */
 export async function przygotujGre(demoKlucz: string, ziarno: number, prosto: boolean): Promise<GraAi> {
   const demo = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'demo', `${demoKlucz}.json`), 'utf8'));
   const opts: OpcjeGryAi = { core: CORE, tempoPrzegladarki: true };
@@ -239,6 +241,7 @@ export async function przygotujGre(demoKlucz: string, ziarno: number, prosto: bo
     const ludnosc = await bot.ludnoscDema(demo);
     world = osiedle.world;
     opts.obcy = true;
+    opts.lancuchy = true;
     opts.mieszkancy = osiedle.mieszkancy;
     opts.okolica = okolicaZGeo(demo.geo);
     if (ludnosc.ludnosc2021 !== undefined) opts.ludnosc2021 = ludnosc.ludnosc2021;
@@ -431,8 +434,8 @@ async function glowny(o: Opcje): Promise<number> {
   console.log(
     `Osada AI, etap 1: ${o.dema.join(', ')}; ziarna ${o.ziarna.join(',')}; ${o.dni} dni; gra ${
       o.prosto
-        ? 'prosto (bez obcych, mieszkańców z adresu, okolicy miasta i ludności 2021, tempo przeglądarki)'
-        : 'jak w przeglądarce (obcy, mieszkańcy z adresu, okolica miasta, ludność 2021, tempo przeglądarki)'
+        ? 'prosto (bez obcych, mieszkańców z adresu, okolicy miasta, ludności 2021 i łańcuchów kart, tempo przeglądarki)'
+        : 'jak w przeglądarce (obcy, mieszkańcy z adresu, okolica miasta, ludność 2021, łańcuchy kart, tempo przeglądarki)'
     }; procesów ${procesy}${o.bezProgu ? '; bez progu (sam pomiar)' : ''}`,
   );
   let nastepny = 0;

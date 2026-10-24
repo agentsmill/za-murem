@@ -802,9 +802,10 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
 
   it('pracownia nie stoi bez zajęcia: sześć badań z kolejki i t_ambu są zbadane do rana 13. dnia', () => {
     // Bez t_ambu w kolejce stół pracowni stał pusty od 7. dnia (t_ambu było do wzięcia: Hanna ma medycynę 3), a zdrowie zarządu
-    // spadało od 14. dnia poniżej 45, czyli poniżej progu wyprawy dalekiej. Ten przebieg: t_ambu gotowe w 10. dniu (w 9., zanim
-    // ocena wyboru przestała znać ukryte rzuty kart); granica 13. dnia zostawia trzy dni na przesunięcie trajektorii, a brak
-    // badania w kolejce i tak je przekracza (nie zbadane do końca przebiegu).
+    // spadało od 14. dnia poniżej 45, czyli poniżej progu wyprawy dalekiej. Ten przebieg (z łańcuchami kart, jak w przeglądarce):
+    // wszystkie siedem badań gotowe rano 9. dnia, tak samo jak bez łańcuchów (na starszej bazie gry t_ambu kończyło się w 10.
+    // dniu); granica 13. dnia zostawia cztery dni na przesunięcie trajektorii (było trzy), a brak badania w kolejce i tak ją
+    // przekracza (nie zbadane do końca przebiegu).
     const rano13 = poranki.find((p) => p.dzien === 13);
     expect(rano13, 'przebieg dożył 13. dnia').toBeDefined();
     expect(rano13!.badania).toEqual(
@@ -813,10 +814,12 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   });
 
   it('werbunek działa: do 10. dnia co najmniej dwa zaproszenia wędrowców, a zarząd rośnie z 4 do co najmniej 8 osób', () => {
-    // Zmierzone w tym przebiegu: 4 zaproszenia i 9 osób w zarządzie rano 10. dnia (przed zmianą werbunku 0 zaproszeń w 20 dni
-    // przy 15–23 rozmowach i 7 osobach w zarządzie): zwerbowani wędrowcy trafiają do zarządu. Większy zarząd to dłuższe przeżycie
-    // (średni dzień końca, żyje = 45): +2,4 ± 0,8 na ziarnach 11–50 (wariant wybrano na 11–20, więc to liczba zawyżona) i
-    // +1,7 ± 0,8 na ziarnach 31–65 spoza wyboru; Przymorze +3,9 ± 2,5, a Lanciego +0,1 ± 2,8 (około zera) na zbiorze 51–65.
+    // Zmierzone w tym przebiegu (z łańcuchami kart): 6 zaproszeń do 10. dnia (w dniach 2, 4, 6, 6, 8, 10) i 9 osób w zarządzie rano
+    // 10. dnia; bez łańcuchów 3 zaproszenia (2, 3, 5) i 8 osób; przed zmianą werbunku 0 zaproszeń w 20 dni przy 15–23 rozmowach
+    // i 7 osobach w zarządzie. Zwerbowani wędrowcy trafiają do zarządu. Większy zarząd to dłuższe przeżycie (średni dzień końca,
+    // żyje = 45; pomiary z uprzęży bez łańcuchów): +2,4 ± 0,8 na ziarnach 11–50 (wariant wybrano na 11–20, więc to liczba
+    // zawyżona) i +1,7 ± 0,8 na ziarnach 31–65 spoza wyboru; Przymorze +3,9 ± 2,5, a Lanciego +0,1 ± 2,8 (około zera) na
+    // zbiorze 51–65.
     const rano10 = poranki.find((p) => p.dzien === 10);
     expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
     expect(zaproszenia.filter((d) => d <= 10).length).toBeGreaterThanOrEqual(2);
@@ -824,9 +827,10 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   });
 
   it('pierwszy kamień ludności (10 osób) do 5. dnia', () => {
-    // Ten przebieg jest deterministyczny: pierwszy kamień w 3. dniu (przed zadaniem 5, na 40ef252, w 7.). Pasmo z planu to dzień 15,
-    // ale pilnuje go bramka etapu (zadanie 7, `npm run bot:osada`, kolumna „kamień”); tu pilnujemy pomiaru z marginesem dwóch dni,
-    // żeby cofnięcie wzrostu do poziomu bazy nie przeszło niezauważone (z granicą 15 przechodziło).
+    // Ten przebieg jest deterministyczny: pierwszy kamień w 4. dniu z łańcuchami kart (bez nich w 3.; przed zadaniem 5, na 40ef252,
+    // w 7.). Pasmo z planu to dzień 15, ale pilnuje go bramka etapu (zadanie 7, `npm run bot:osada`, kolumna „kamień”); tu
+    // pilnujemy pomiaru z marginesem jednego dnia (granica 5 zostaje jak była, a margines skurczył się z dwóch dni, bo kamień
+    // jest dzień później), żeby cofnięcie wzrostu do poziomu bazy nie przeszło niezauważone (z granicą 15 przechodziło).
     const pierwszy = poranki.find((p) => p.ludnosc >= 10);
     expect(pierwszy, 'w przebiegu był poranek z co najmniej 10 osobami').toBeDefined();
     expect(pierwszy!.dzien).toBeLessThanOrEqual(5);
@@ -863,10 +867,10 @@ describe('koszt i determinizm', () => {
 
 describe('cel etapu: wzrost osady', () => {
   // Cel z planu: co najmniej jedna budowla na trzy dni do 30. dnia (stojące budowle w dniu 30 co najmniej 10). Przymorze 11 dożywa
-  // 45. dnia z czterema budowlami. W 15 przebiegach uprzęży (trzy dema, ziarna 11–15) dziesięć kończy się odwołaniem przed 30.
-  // dniem, a w pozostałych pięciu stoi 2–5 budowli (cel w dniu 45 to 15): deski (13 od 4. dnia, po pieczarkarni 5) starczają na
-  // cztery budowle. Cel mierzy bramka etapu (zadanie 7, `npm run bot:osada`: budowle na koniec przebiegu), więc tu zostaje
-  // zapowiedzią.
+  // 45. dnia z czterema budowlami. W 15 przebiegach uprzęży (trzy dema, ziarna 11–15, z łańcuchami kart) na koniec stoi 4–5 budowli
+  // na Przymorzu, 1–2 na Lanciego i 2 na Zielonkach (cel w dniu 45 to 15); ze 300 deskami na starcie w składzie 10, 8 i 6 (na 60
+  // przebiegach), czyli deski (13 od 4. dnia, po pieczarkarni 5) starczają na cztery budowle i to one, nie silnik, są wąskim
+  // gardłem. Cel mierzy bramka etapu (zadanie 7, `npm run bot:osada`: budowle na koniec przebiegu), więc tu zostaje zapowiedzią.
   it.todo('cel etapu (bramka zadania 7): w dniu 30 stoi co najmniej 10 budowli');
 
   it('budowle: rozwój dokłada do trzech z bazy (pracownia, koza z beczki, ogródek) co najmniej jedną budowlę do 12. dnia', () => {
