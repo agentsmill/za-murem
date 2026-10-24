@@ -46,6 +46,8 @@ export interface OldEvent {
   tryby?: readonly GameMode[];
   /** dozwolone pierwszego dnia po ciszy i pierwszej nocy */
   first?: boolean;
+  /** ton karty dla narratora (`GEventDef.ton`): brak oznacza kartę zwykłą */
+  ton?: 'ostre' | 'lagodne';
   /** najmniej tyle godzin gry między powtórkami (brak: REPEAT_GAP) */
   gap?: number;
   /** waga w M1; base to waga z 0.3 na tym samym hoście */
@@ -300,6 +302,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'dzieci',
+    ton: 'lagodne',
     when: ['dzien'],
     w: (h, base) => (nikt(h) || !zGosciem(h) ? 0 : base),
     // dwoje albo troje dzieciaków (9–15 lat, rodzeństwo z jednym nazwiskiem), najstarsze mówi
@@ -323,6 +326,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'lodowka',
+    ton: 'lagodne',
     when: ['dzien'],
     // w domu lodówka stoi u sąsiadów: bez sąsiadów jej nie ma
     w: (h, base) => (dom(h) && nikt(h) ? 0 : base),
@@ -333,6 +337,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'dron',
+    ton: 'lagodne',
     when: ['dzien'],
     text: (h) =>
       dom(h)
@@ -350,6 +355,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'automat',
+    ton: 'lagodne',
     when: ['dzien'],
     // automat paczkowy stoi przy sklepie, więc tylko tam, gdzie sklep jest
     w: (h, base) => (h.place().shop === null ? 0 : base),
@@ -361,6 +367,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'auto',
+    ton: 'lagodne',
     when: ['dzien'],
     // w domu auto stoi na podjeździe u sąsiadów: bez sąsiadów go nie ma
     w: (h, base) => (dom(h) && nikt(h) ? 0 : base),
@@ -387,6 +394,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'krypto',
+    ton: 'lagodne',
     when: ['dzien'],
     // w trybie zombie sąsiad zza płotu nie handluje tokenami
     tryby: ['zwykly'],
@@ -404,6 +412,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'ksiazki',
+    ton: 'lagodne',
     when: ['dzien'],
     title: (h) => (dom(h) ? 'Karton na strychu' : null),
     text: (h, d) => (dom(h) ? `Na strychu znalazł się karton z książkami. Na wierzchu leży „${d.name}”.` : null),
@@ -412,6 +421,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'aktywisci',
+    ton: 'lagodne',
     when: ['dzien'],
     // protest przy stadzie nie ma sensu
     tryby: ['zwykly'],
@@ -453,6 +463,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'influencer',
+    ton: 'lagodne',
     when: ['dzien'],
     // vlog przy stadzie też nie
     tryby: ['zwykly'],
@@ -552,6 +563,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'fachowiec',
+    ton: 'lagodne',
     when: ['wieczor'],
     // w bloku z mieszkańcami z osobą to jeden z nich, z umiejętnością, której zarząd nie zna (bez takiego karty nie ma);
     // w bloku bez nich ktoś z mieszkańców, w domu sąsiad zza płotu; bez nich nie ma komu się przyznać
@@ -661,6 +673,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'pozar',
+    ton: 'ostre',
     when: ['wieczor', 'noc'],
     first: true,
     text: (h) => (dom(h) ? 'Od źle postawionej kozy zajęła się podłoga w kuchni. Dym idzie na cały dom.' : null),
@@ -680,6 +693,7 @@ export const OLD_EVENTS: OldEvent[] = [
   // mieszkańców w symulacji to osobna decyzja). Rzadziej niż w 0.3: co 48 godzin gry.
   {
     id: 'kradziez',
+    ton: 'ostre',
     when: ['noc'],
     first: true,
     gap: 48,
@@ -757,6 +771,7 @@ export const OLD_EVENTS: OldEvent[] = [
   },
   {
     id: 'obserwacja',
+    ton: 'ostre',
     when: ['dzien'],
     // zapowiada szabrowników, których w trybie zombie nie ma
     tryby: ['zwykly'],

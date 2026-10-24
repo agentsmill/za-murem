@@ -262,6 +262,7 @@ const SWIATLO: Lancuch = {
   tryby: OBA,
   kroki: [
     krok('swiatlo', 1, {
+      ton: 'lagodne',
       // zajmuje miejsce karty „Światło w oknie naprzeciwko” (sygnal w tresc.ts), więc też pierwszej nocy
       first: true,
       when: ['wieczor', 'noc'],
@@ -319,6 +320,7 @@ const SWIATLO: Lancuch = {
       ],
     }),
     krok('swiatlo', 2, {
+      ton: 'lagodne',
       po: 8,
       hak: 'swiatlo.znak',
       when: ['dzien'],
@@ -625,6 +627,7 @@ const SZCZEKANIE: Lancuch = {
       ],
     }),
     krok('szczekanie', 3, {
+      ton: 'lagodne',
       po: 12,
       hak: 'szczekanie.slady',
       when: ['dzien', 'wieczor'],
@@ -779,6 +782,7 @@ const PUSZKI: Lancuch = {
       },
     }),
     krok('puszki', 2, {
+      ton: 'lagodne',
       po: 16,
       hak: 'puszki.start',
       when: ['dzien', 'wieczor'],
@@ -825,6 +829,7 @@ const PUSZKI: Lancuch = {
       },
     }),
     krok('puszki', 3, {
+      ton: 'lagodne',
       po: 12,
       hak: 'puszki.radio',
       when: ['wieczor', 'noc'],
@@ -919,6 +924,7 @@ const WODA: Lancuch = {
   tryby: OBA,
   kroki: [
     krok('woda', 1, {
+      ton: 'lagodne',
       when: ['dzien'],
       w: () => 1,
       make: (h) => ({ osoby: [czlowiek(h, { f: true, wiek: [8, 12] })] }),
@@ -973,6 +979,7 @@ const WODA: Lancuch = {
       },
     }),
     krok('woda', 2, {
+      ton: 'lagodne',
       po: 10,
       hak: 'woda.pierwsza',
       when: ['dzien'],
@@ -1150,6 +1157,7 @@ const LIST: Lancuch = {
   tryby: OBA,
   kroki: [
     krok('list', 1, {
+      ton: 'lagodne',
       when: ['dzien', 'wieczor'],
       w: () => 1,
       make: () => ({}),
@@ -1201,6 +1209,7 @@ const LIST: Lancuch = {
       ],
     }),
     krok('list', 2, {
+      ton: 'lagodne',
       po: 6,
       hak: 'list.przeczytany',
       when: ['dzien', 'wieczor'],
@@ -1328,6 +1337,7 @@ const PLUCA: Lancuch = {
       },
     }),
     krok('pluca', 2, {
+      ton: 'ostre',
       po: 20,
       hak: 'pluca.pierwsze',
       when: ['dzien', 'wieczor', 'noc'],
@@ -1522,6 +1532,7 @@ const OSTRZEGA: Lancuch = {
   tryby: TYLKO_ZWYKLY,
   kroki: [
     krok('ostrzega', 1, {
+      ton: 'ostre',
       when: ['wieczor'],
       w: () => 1,
       make: (h) => ({
@@ -1794,6 +1805,7 @@ const DLUG: Lancuch = {
       ],
     }),
     krok('dlug', 2, {
+      ton: 'ostre',
       po: 24,
       hak: 'dlug.wziete',
       pilny: true,
@@ -1893,6 +1905,7 @@ const AKTYWISTKA: Lancuch = {
   tryby: TYLKO_ZWYKLY,
   kroki: [
     krok('aktywistka', 1, {
+      ton: 'lagodne',
       when: ['dzien'],
       w: () => 1,
       make: (h) => ({ osoby: [czlowiek(h, { f: true, wiek: [32, 48], prof: 'Nauczyciel fizyki' })] }),
@@ -1939,6 +1952,7 @@ const AKTYWISTKA: Lancuch = {
       },
     }),
     krok('aktywistka', 2, {
+      ton: 'lagodne',
       po: 20,
       hak: 'aktywistka.start',
       when: ['wieczor', 'noc'],
@@ -2022,6 +2036,7 @@ const AKTYWISTKA: Lancuch = {
       },
     }),
     krok('aktywistka', 3, {
+      ton: 'lagodne',
       po: 24,
       hak: 'aktywistka.przyjeta',
       when: ['dzien', 'wieczor'],
@@ -2130,6 +2145,7 @@ const DACH: Lancuch = {
   tryby: TYLKO_ZOMBIE,
   kroki: [
     krok('dach', 1, {
+      ton: 'ostre',
       // zajmuje miejsce karty „Światło w oknie naprzeciwko” (sygnal w tresc.ts), więc też pierwszej nocy
       first: true,
       when: ['wieczor', 'noc'],
@@ -2185,6 +2201,7 @@ const DACH: Lancuch = {
       ],
     }),
     krok('dach', 2, {
+      ton: 'ostre',
       po: 8,
       hak: 'dach.start',
       when: ['dzien'],
@@ -2299,6 +2316,7 @@ const DOBICIE: Lancuch = {
   tryby: TYLKO_ZOMBIE,
   kroki: [
     krok('dobicie', 1, {
+      ton: 'ostre',
       when: ['dzien', 'wieczor'],
       w: () => 1,
       make: (h) => {
@@ -2385,6 +2403,7 @@ const DOBICIE: Lancuch = {
       },
     }),
     krok('dobicie', 2, {
+      ton: 'ostre',
       po: 20,
       when: ['dzien', 'wieczor'],
       w: (h) => {
@@ -2470,6 +2489,7 @@ const GLOS: Lancuch = {
   tryby: TYLKO_ZOMBIE,
   kroki: [
     krok('glos', 1, {
+      ton: 'lagodne',
       when: ['wieczor', 'noc'],
       w: () => 1,
       make: () => ({}),

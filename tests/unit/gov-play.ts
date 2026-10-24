@@ -137,6 +137,9 @@ export interface PlayOpts {
   /** karta nocy nie wysyła nikogo na wyprawę (zostaje sen z propozycji); dla testów, które liczą tylko wyprawy dzienne:
       po wolniejszym zmęczeniu zarząd co noc proponuje wyprawę, bo ma siły na daleką drogę */
   bezWyprawNocnych?: boolean;
+  /** tylko do pomiarów (spis kart, goście, narrator): po każdym kroku zarządu (co sekundę przy ekranie) stan zarządu, wejście
+      i skutki kroku; niczego nie zmienia w grze */
+  obserwuj?: (gov: GovState, i: GovInput, fx: GovEffects) => void;
 }
 
 /** poranek wartownika po nocy na posterunku (6:00–14:00): najedzenie i siły o 6:00, godzina pierwszego posiłku
@@ -343,6 +346,7 @@ export function playWithGov(
     apply(st, w, fxu);
     miasto?.po?.(fxu, iu);
     zw?.po?.(gov, iu, fxu);
+    opts.obserwuj?.(gov, iu, fxu);
     // jawny wynik napadu: zgadza się z planem (ilu ich jest) i ze snem warty na ekranie?
     const res = fxu.raidResult;
     if (res && night) {

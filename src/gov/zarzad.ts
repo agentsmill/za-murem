@@ -19,6 +19,9 @@
    Pies i kot (src/gov/zwierzeta.ts): flaga `dog` albo `cat` bez wpisu symulacji o zwierzęciu (`GovInput.zwierzeta`) prosi o jego
    wystawienie (`GovEffects.zwierze`), a śmierć psa gasi flagę `dog`, dopisuje kronikę i obniża nastrój zarządu.
 
+   Narrator (src/gov/narrator.ts): `napiecie` co krok, tuż przed wydarzeniami, przesuwa `GovState.napiecie` (krzywą z napadów,
+   zgonów, ran, głodu i przerwań siatki), a `mnoznik` przestawia wagi kart z tagiem `ton` w losowaniu (wydarzenia.ts).
+
    Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
    (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
@@ -27,6 +30,7 @@ import { TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
+import { napiecie } from './narrator.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
 import { FIRST_LAWS, PRZYCZYNA } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
@@ -140,6 +144,8 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   znaleziska(st, i);
   wiesci(st, i, fx);
   przyjeciaZUlicy(st, i, fx);
+  // narrator: napięcie z tego, co zarząd już widzi (napad z raportu, zgony, rany, głód, siatka), tuż przed losowaniem kart
+  napiecie(st, i);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   // drogi do zwycięstwa (bez wlaczZwyciestwo nic); w przegranej grze nikt już nie wygrywa

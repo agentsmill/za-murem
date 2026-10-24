@@ -596,10 +596,13 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // wyboru zostają tylko „List z 2026” i „Pies ujada nocami”, który zajmuje miejsce karty „Pies przy siatce” (były f90d5ef8, 949f8cf5
     // i 76e72ff9; potem 668ba3fa, 4ce4129e i 65a73c2f). Dziewiąty raz w rundzie poprawek 1 zadania 15: „List z 2026” przestał
     // być krokiem pierwszej nocy (satyra i lore dopiero od drugiego dnia), czyli inna pula tej nocy, inne losowanie.
+    // Dziesiąty raz w zadaniu 16 wydarzeń (narrator, src/gov/narrator.ts): stan zarządu ma teraz `napiecie` (powstaje przy pierwszym
+    // kroku, więc jest w skrócie każdej gry), a wagi kart z tagiem `ton` mnożą się przez mnożnik napięcia, czyli inne losowanie
+    // (były ef7e6dca, a38f0d27 i a76369a8).
     const przebiegi = [
-      [1, 'propozycja', 'ef7e6dca'],
-      [3, 'zawsze-warta', 'a38f0d27'],
-      [5, 'losowo', 'a76369a8'],
+      [1, 'propozycja', '74657a83'],
+      [3, 'zawsze-warta', '39b814b2'],
+      [5, 'losowo', '16fcaf6f'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

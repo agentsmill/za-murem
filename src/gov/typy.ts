@@ -747,6 +747,25 @@ export interface GovState {
       ostatniego rozpoczętego kroku łańcucha (równy liczbie kroków: łańcuch skończony albo cicho zakończony). Pole od
       pierwszego wyboru wątków albo haka; gra bez łańcuchów i stary zapis go nie mają. */
   watki?: { wybrane: string[]; haki: Record<string, { t: number; d?: unknown }>; krok: Record<string, number> };
+  /** narrator (src/gov/narrator.ts): krzywa napięcia, która przestawia wagi kart; pole powstaje przy pierwszym kroku narratora,
+      w starym zapisie go nie ma (wtedy mnożniki wag to 1) */
+  napiecie?: Napiecie;
+}
+
+/** Napięcie narratora: `v` 0–100, `t` minuta gry ostatniej aktualizacji, `spokoj` minuty gry z `v` poniżej 20 (zerowane, gdy
+    `v` dojdzie do 20). Reszta to liczniki zdarzeń już policzonych, żeby każde liczyło się raz (także po zapisie i wczytaniu):
+    `zgony` (długość `GovInput.dead`), `raport` (dzień ostatniego policzonego raportu rano), `siatka` (`horde.breaches`), `zdrowie`
+    (zdrowie osób przy poprzednim kroku: nagły spadek to rana) i `ugryzieni` (id ugryzionych już policzonych). Brak liczników
+    (stan złożony ręcznie, zapis sprzed narratora) znaczy: pierwszy krok narratora ustawia je na stan teraźniejszy. */
+export interface Napiecie {
+  v: number;
+  t: number;
+  spokoj: number;
+  zgony?: number;
+  raport?: number;
+  siatka?: number;
+  zdrowie?: Record<string, number>;
+  ugryzieni?: string[];
 }
 
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy

@@ -57,7 +57,10 @@
    `activate`, okno, wybór, `GEventDef.gosc` przez `planujKarte`; krok z gościem, któremu `gosc` nikogo nie wystawiło, nie
    otwiera się bez gościa, tylko kończy łańcuch); wybór zamykający kartę kroku rozstrzyga go
    (`rozstrzygnijKrok`), a `GovHost.hak` ustawia hak, który zwalnia następny. Bez łańcuchów nic z tego niczego nie losuje
-   ani nie zapisuje. */
+   ani nie zapisuje.
+   Narrator (src/gov/narrator.ts, Task 16): karta z tagiem `GEventDef.ton` ma w losowaniu wagę razy `mnoznik(st, ton)` (powyżej
+   napięcia 60 ostre ×0,3 i łagodne ×2, po dobie spokoju ostre ×2), pierwszy krok łańcucha tak samo od wagi 1, a szansa dojrzałego
+   kroku (`SZANSA_KROKU`) mnoży się przez ten sam mnożnik (z góry 1); jedna liczba z ziarna na losowanie jak dotąd. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
@@ -65,6 +68,7 @@ import { makePerson, type Person } from '../content/people.ts';
 import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { hashString, rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
+import { mnoznik } from './narrator.ts';
 import { KOZA } from './noc.ts';
 import {
   type DanePogrzebu,
@@ -178,6 +182,7 @@ export const M1_EVENTS: GEventDef[] = [
       when: o.when,
       tryby: o.tryby,
       first: o.first,
+      ton: o.ton,
       gap: o.gap,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
@@ -550,17 +555,22 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
   const dostepny = (k: GEventDef) => krokDostepny(st, h, pora, first, k);
   const gotowe = krokiGotowe(st, h.t, st.mode ?? 'zwykly').filter(dostepny);
   const dojrzale = gotowe.filter((k) => k.nr > 1);
-  if (dojrzale.length && h.rng() < SZANSA_KROKU)
+  // jedna liczba z ziarna jak dotąd; narrator przestawia szansę kroku według jego tonu (ostry krok czeka przy wysokim napięciu)
+  if (dojrzale.length) {
+    const los = h.rng();
     for (const k of dojrzale) {
+      if (los >= Math.min(1, SZANSA_KROKU * mnoznik(st, k.ton))) continue;
       const ev = start(st, h, k);
       if (ev) return ev;
     }
+  }
+  // wagi z narratorem: ton karty mnoży jej wagę (mnoznik niczego nie losuje)
   const pool = [
     ...M1_EVENTS.filter(
       (e) =>
         e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
-    ).map((e) => [e, e.w(h)] as const),
-    ...gotowe.filter((k) => k.nr === 1).map((k) => [k, 1] as const),
+    ).map((e) => [e, e.w(h) * mnoznik(st, e.ton)] as const),
+    ...gotowe.filter((k) => k.nr === 1).map((k) => [k, mnoznik(st, k.ton)] as const),
   ].filter((x) => x[1] > 0);
   const tot = pool.reduce((a, x) => a + x[1], 0);
   if (!tot) return null;

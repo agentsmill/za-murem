@@ -88,6 +88,7 @@ import {
 } from './goscie.ts';
 import { KIERUNEK } from './goscie-teksty.ts';
 import { placeIn, type Words, type WordsEn, wordsEn, wordsOf } from './miejsce.ts';
+import { ostrzej } from './narrator.ts';
 import { poscigNocy } from './noc.ts';
 import {
   type GChoice,
@@ -555,6 +556,8 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
     znane: znaneDziedziny(i),
     napady: i.napady?.length ?? 0,
     dom: placeIn(i).kind === 'dom',
+    // narrator: po ponad dobie spokoju goście częściej z haczykiem (bez spokoju pole się nie pojawia)
+    ...(ostrzej(st) ? { ostrzej: true } : {}),
     ...bezPowtorek(st),
   };
   const zajete = new Set([...i.people.map((p) => p.first), ...(i.lokatorzy ?? []).map((l) => l.first)]);

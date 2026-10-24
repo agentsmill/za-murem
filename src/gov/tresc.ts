@@ -383,6 +383,9 @@ export interface GEventDef<D = any> {
   /** zwroty do podmiany w kronice z wyborów tego wydarzenia (według miejsca; tylko polskie wpisy z 0.3) */
   log?: (h: GovHost) => Record<string, string> | null;
   w: (h: GovHost) => number;
+  /** ton karty dla narratora (src/gov/narrator.ts): `ostre` (zagrożenie, strata) tracą wagę przy wysokim napięciu, a zyskują po dobie
+      spokoju; `lagodne` (drobiazgi, znaleziska, satyra) zyskują przy wysokim napięciu; bez pola karta jest zwykła (waga bez zmian) */
+  ton?: 'ostre' | 'lagodne';
   make: (h: GovHost) => D | null;
   /** miejsce wydarzenia na mapie w kafelkach (przycisk „Pokaż” w oknie); brak funkcji albo null: karta bez miejsca */
   gdzie?: (h: GovHost, d: D) => Punkt | null;
@@ -538,6 +541,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'slady',
+    ton: 'ostre',
     first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
@@ -584,6 +588,7 @@ export const NEW_EVENTS: GEventDef[] = [
     // „Ślady przy siatce” w trybie zombie: ścieżkę wydeptało stado, nie ludzie, więc „udawać” odpada (podbijało napad
     // szabrowników, a ich w tym trybie nie ma); zamiast niego warta z dzidą. Warunek, pora i odstęp jak w slady.
     id: 'slady_z',
+    ton: 'ostre',
     first: true,
     gap: 20,
     when: ['dzien', 'wieczor'],
@@ -628,6 +633,7 @@ export const NEW_EVENTS: GEventDef[] = [
     // prawdziwy szwendacz przy siatce (GovInput.horde.przy): karta ma jego miejsce na mapie („Pokaż”), a „Dobić dzidą”
     // wysyła na niego osobę z dzidą. Pora dzień, bo noc ma własne karty o stadzie.
     id: 'szwendacz',
+    ton: 'ostre',
     gap: 6,
     when: ['dzien'],
     tryby: ['zombie'],
@@ -678,6 +684,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'pies',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['wieczor', 'noc'],
@@ -718,6 +725,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'halas',
+    ton: 'ostre',
     first: true,
     gap: 4,
     when: ['noc'],
@@ -786,6 +794,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'krzyk',
+    ton: 'ostre',
     first: true,
     when: ['noc'],
     // krzyk niesie się od sąsiadów: bez nich w okolicy nie ma skąd
@@ -934,6 +943,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'sygnal',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['noc'],
@@ -985,6 +995,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'kot',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['noc'],
@@ -1109,6 +1120,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'latarka',
+    ton: 'lagodne',
     first: true,
     once: true,
     when: ['dzien', 'wieczor'],
@@ -1159,6 +1171,7 @@ export const NEW_EVENTS: GEventDef[] = [
   },
   {
     id: 'domofon',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: () => 0.8,
@@ -1209,6 +1222,7 @@ export const NEW_EVENTS: GEventDef[] = [
   {
     // z sytuacji, nie z losowania: koza pierwszy raz się pali, ktoś widzi dym i przychodzi (wydarzenia.ts, eventTick)
     id: 'dym',
+    ton: 'lagodne',
     once: true,
     when: ['dzien', 'wieczor', 'noc'],
     w: () => 0,
