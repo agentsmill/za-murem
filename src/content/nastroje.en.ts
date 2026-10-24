@@ -47,6 +47,19 @@ export const NASTROJE_EN: Readonly<Record<string, string>> = {
   // mieszkaniec nakarmiony z kotła po kradzieży z głodu (karta „Kradzież z piwnicy”, GovHost.moodOf)
   'Najadł się z kotła': 'Fed from the pot',
   'Najadła się z kotła': 'Fed from the pot',
+  // łańcuchy historii (src/gov/watki-tresc.ts)
+  'Dbają o nas': 'They look after us',
+  'Ktoś mi pomógł': 'Somebody helped me',
+  'Ktoś mnie słucha': 'Somebody listens to me',
+  'Mam swój projekt': 'I have a project of my own',
+  'Mamy nauczycielkę': 'We have a teacher',
+  'Nikt mnie nie rozumie': 'Nobody understands me',
+  'Nikt się mną nie przejął': 'Nobody cared about me',
+  'Posiedzieli ze mną': 'They sat up with me',
+  'Wiemy, jak się zaczęło': 'We know how it started',
+  'Wojsko nie przyszło': 'The army did not come',
+  'Wojsko po nas przyjdzie': 'The army is coming for us',
+  'Zabrali mi radio': 'They took my radio',
 };
 
 /** „Spalili moją wersalkę”: mebel w bierniku z zaimkiem (MINE w src/sim/sim.ts) */

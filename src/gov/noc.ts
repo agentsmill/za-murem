@@ -885,6 +885,8 @@ export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: C
   for (const [k, [a, b]] of Object.entries(cel.lup) as [LootKey, [number, number]][])
     got[k] = Math.round(rint(st, a, b) * m * wsk * (ppl.length > 1 ? 1.6 : 1));
   const risk = Math.max(...ppl.map((p) => expRisk(st, p, cel, ppl.length)));
+  // wskazówka o miejscu z bronią (łańcuch „Głos z radia”): zużywa się razem z wyprawą i daje pewne znalezisko
+  const zBronia = !!st.wskazowki?.[cel.klucz]?.bron;
   wskazowka(st, cel.klucz);
   const trouble = rnd(st) < risk;
   if (trouble) for (const k of Object.keys(got) as LootKey[]) got[k] = Math.floor(got[k] / 2);
@@ -937,7 +939,7 @@ export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: C
     }
   }
   for (const k of Object.keys(got) as LootKey[]) fx.stock[k] += got[k];
-  const found = finds(st, fx);
+  const found = [...finds(st, fx), ...(zBronia ? znalezionaBron(st, fx) : [])];
   if (found.length) {
     const all = txJoin(found, ', ');
     lines.push(
@@ -1005,6 +1007,22 @@ function finds(st: GovState, fx: GovEffects): Tx[] {
     if (w === 'kusza') ammo('belty', rint(st, 6, 10));
   }
   return out;
+}
+
+/** Pewne znalezisko z miejsca z bronią (wskazówka z `bron`): rewolwer z nabojami albo strzelba z loftkami, w tej kolejności
+    losowań: broń, amunicja. Losuje tylko wtedy, gdy wyprawa miała taką wskazówkę. */
+function znalezionaBron(st: GovState, fx: GovEffects): Tx[] {
+  const rewolwer = rnd(st) < 0.5;
+  const w = rewolwer ? 'rewolwer' : 'strzelba';
+  const k = rewolwer ? 'naboje' : 'loftki';
+  const n = rewolwer ? rint(st, 6, 12) : rint(st, 5, 9);
+  (fx.arms ??= []).push(w);
+  fx.ammo ??= {};
+  fx.ammo[k] = (fx.ammo[k] ?? 0) + n;
+  return [
+    tx(ARM_ACC[w], ARM_ACC_EN[w]),
+    tx(`${n} ${rewolwer ? 'naboi' : 'loftek'}`, `${n} ${rewolwer ? 'rounds' : 'buckshot shells'}`),
+  ];
 }
 
 /** Linia raportu o znajomym w napadzie (jeśli plan napadu go niósł), zaraz po opisie przebiegu napadu: „Wśród nich był…” albo,

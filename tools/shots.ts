@@ -1505,6 +1505,9 @@ const SHOTS: Shot[] = [
             if (ok) break;
             await page.evaluate(() => window.zm!.ff(2));
           }
+          // handlarz pod bramą otwiera krok łańcucha „Handlarz na kredyt” (pilny, gdy łańcuch „Dług” jest wątkiem sezonu): okno
+          // nad grą zasłania menu, więc scenariusz odpowiada na okna zarządu, jak gracz
+          await odpowiedzNaOkna(page);
           const at = await page.evaluate(() => {
             const zm = window.zm!;
             const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
@@ -1596,6 +1599,9 @@ const SHOTS: Shot[] = [
             if (ok) break;
             await page.evaluate(() => window.zm!.ff(2));
           }
+          // handlarz pod bramą otwiera krok łańcucha „Handlarz na kredyt” (pilny, gdy łańcuch „Dług” jest wątkiem sezonu): okno
+          // nad grą zasłania menu, więc scenariusz odpowiada na okna zarządu, jak gracz
+          await odpowiedzNaOkna(page);
           const at = await page.evaluate(() => {
             const zm = window.zm!;
             const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
@@ -2426,6 +2432,17 @@ const SHOTS: Shot[] = [
         run: async (page, base) => {
           await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
           await waitIdle(page);
+          // Warunek wstępny jawnie: karta z klatki przychodzi tylko wtedy, gdy któryś mieszkaniec z osobą ma nastrój poniżej progu
+          // (src/gov/warianty.ts, `sprawcaKradziezy`), a w grze z ziarna adresu jedzenie i ciepło mogą go utrzymać wyżej przez
+          // całe sto pięćdziesiąt godzin, które scenariusz czeka (bez tego zrzut zależał od przebiegu losowań: padał z łańcuchami
+          // i bez nich nie, a kradzież w zwykłych grach wypada około razu na grę). Każdy mieszkaniec dostaje chwilowy nastrój −40
+          // na dwieście godzin gry, jak „Choroba” w symulacji.
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            for (const p of st.pawns)
+              if (p.kind === 'resident' && p.person >= 0)
+                p.moods.push({ why: 'Głód w piwnicy', d: -40, until: st.tick + 200 * 800 });
+          });
           const krok = await doKarty(page, 'kradziez');
           await waitIdle(page);
           const przed = await page.evaluate(() => {
@@ -2752,6 +2769,42 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // karta gościa w trybie zombie (Task 16): szwendacze przy siatce (`stado=3`) już nie płoszą grupy z 6 m, tylko dopiero na
+        // zasięgu ugryzienia (`SPOOK_GOSC`), więc grupa dochodzi pod bramę i otwiera się karta; zrzut karty z „Pokaż” na grupie
+        // pod bramą (wyd-gosc-zombie.png) i liczba szwendaczy w 10 m od grupy w logu.
+        // `lancuchy=0`: scenariusz czeka na kartę `gosc` z puli, a ta ma przyjść, zanim stado zapełni podejście do bramy (po kilku
+        // dobach szwendaczy jest kilkadziesiąt i żadna grupa nie dochodzi). Łańcuchy kart (domyślnie włączone) zmieniają kolejność
+        // losowań i w tym ziarnie pierwszy gość z puli wypada dopiero po tym czasie (spłoszone: 18 wizyt w 11 dób, żadna karta
+        // `gosc`), więc bez nich scenariusz bada to, o co chodzi: grupa z puli przy szwendaczach pod siatką.
+        name: 'wyd-gosc-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3&lancuchy=0`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 600);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const a = zm.gov!.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const m = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            const zombie = st.pawns.filter((p) => p.kind === 'zombie');
+            const blisko = zombie.filter((z) => m.some((p) => Math.hypot(z.x - p.x, z.y - p.y) <= 10)).length;
+            return { faza: wpis.faza, pionki: m.length, osoby: a.gosc.osoby.length, szwendaczy: zombie.length, blisko };
+          });
+          console.log(
+            `  karta po ${krok} krokach: faza ${stan.faza}, ${stan.pionki} pionków, szwendaczy ${stan.szwendaczy}, w 10 m od grupy ${stan.blisko}`,
+          );
+          if (stan.faza !== 'brama') throw new Error(`karta gościa, ale faza ${stan.faza}`);
+          if (stan.pionki !== stan.osoby)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-zombie.png') });
+        },
+      },
+      {
         // karta gościa w prawdziwej grze (Przymorze, obcy włączeni): zarząd planuje gościa, ten idzie ulicą pod bramę i dopiero
         // wtedy otwiera się karta z „Pokaż”; „Pokaż” jedzie kamerą do gości (okno zostaje), „Wpuścić na noc” wpuszcza ich
         // bramą na podwórko. Zrzuty: karta (wyd-gosc-karta-okno.png), po „Pokaż” (wyd-gosc-karta-pokaz.png) i goście na
@@ -2885,6 +2938,125 @@ const SHOTS: Shot[] = [
           const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, []);
           if (pl.length) throw new Error(`Polish letters on the English guest card: ${pl.join(', ')}`);
           await page.screenshot({ path: path.join(OUT, 'en-wyd-gosc.png') });
+        },
+      },
+      {
+        // adres gry steruje łańcuchami kart: bez parametru nowa gra ma je włączone (pole `lancuchy` w stanie zarządu i wątki sezonu
+        // wybrane przy pierwszym kroku zarządu), z `?lancuchy=0` nie ma ich wcale (bez pola i bez wątków), jak zapis sprzed łańcuchów
+        name: 'wyd-lancuchy-adres',
+        query: '',
+        run: async (page, base) => {
+          const stan = () =>
+            page.evaluate(() => {
+              const g = window.zm!.gov!;
+              return { lancuchy: g.lancuchy ?? null, wybrane: g.watki?.wybrane ?? null };
+            });
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          const domyslnie = await stan();
+          console.log(`  bez parametru: ${JSON.stringify(domyslnie)}`);
+          if (domyslnie.lancuchy !== true || !domyslnie.wybrane?.length)
+            throw new Error(
+              `bez parametru łańcuchy mają być włączone z wybranymi wątkami: ${JSON.stringify(domyslnie)}`,
+            );
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=0`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          const wylaczone = await stan();
+          console.log(`  z ?lancuchy=0: ${JSON.stringify(wylaczone)}`);
+          if (wylaczone.lancuchy !== null || wylaczone.wybrane !== null)
+            throw new Error(`?lancuchy=0 ma wyłączyć łańcuchy: ${JSON.stringify(wylaczone)}`);
+        },
+      },
+      {
+        // krok łańcucha historii z gościem pod bramą (Przymorze, obcy włączeni): „Światło w oknie naprzeciwko”, krok drugi,
+        // „Chłopak z babcią”. Wątek sezonu ustawiony ręcznie z hakiem po kroku pierwszym; dwie osoby naprawdę stoją pod bramą
+        // (faza brama, dwa pionki o imionach z karty), karta ma „Pokaż”, który jedzie kamerą do nich, nie zamykając okna.
+        // Zrzuty: karta (wyd-watek-okno.png) i po „Pokaż” (końcowy wyd-watek.png)
+        name: 'wyd-watek',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await ustawWatekSwiatlo(page);
+          const krok = await doKarty(page, 'swiatlo_2', 400);
+          await waitIdle(page);
+          const stan = await watekGosci(page);
+          const tekst = await sheetText(page);
+          console.log(
+            `  krok łańcucha po ${krok} krokach: faza ${stan.faza}, ${stan.pionki} pionków: ${stan.imiona.join(', ')}`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          if (stan.faza !== 'brama') throw new Error(`krok łańcucha, ale faza ${stan.faza}`);
+          if (stan.pionki !== 2) throw new Error(`chłopak z babcią to dwie osoby, na mapie ${stan.pionki} pionków`);
+          for (const imie of stan.imiona)
+            if (!tekst.includes(imie)) throw new Error(`karta nie zna imienia ${imie} z mapy`);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-watek-okno.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          const po = await page.evaluate(() => {
+            const zm = window.zm!;
+            const a = zm.gov!.goscie!.aktywny!;
+            const p = zm.sim!.st.pawns.find(
+              (q) => q.kind === 'gosc' && q.id === zm.sim!.st.goscie!.find((g) => g.id === a.gosc.id)!.pawns[0],
+            )!;
+            const [sx, sy] = zm.screenOf(p.x, p.y);
+            const r = document.getElementById('sheet')!.getBoundingClientRect();
+            const bar = document.getElementById('top')!.getBoundingClientRect().bottom;
+            return {
+              open: !document.getElementById('modal')!.hidden,
+              ev: zm.gov!.ev.active?.id ?? null,
+              pod: sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom,
+              widac: sx > 0 && sx < zm.view.width && sy > bar && sy < zm.view.height,
+            };
+          });
+          if (!po.open || po.ev !== 'swiatlo_2') throw new Error('„Pokaż” zamknęło okno kroku łańcucha');
+          if (po.pod || !po.widac) throw new Error('po „Pokaż” gościa nie widać: jest pod oknem albo poza ekranem');
+          await waitIdle(page);
+          await frames(page, 3);
+          await gosciNarysowani(page, 'po „Pokaż”');
+        },
+      },
+      {
+        // ten sam krok łańcucha po angielsku: cała karta bez polskich liter poza imionami z mapy (en-wyd-watek.png)
+        name: 'en-wyd-watek',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await ustawWatekSwiatlo(page);
+          const krok = await doKarty(page, 'swiatlo_2', 400);
+          await waitIdle(page);
+          const stan = await watekGosci(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          console.log(`  buttons: ${foot.join(' | ')}`);
+          if (stan.faza !== 'brama' || stan.pionki !== 2)
+            throw new Error('English chain card without two people at the gate');
+          if (!foot.some((f) => f.startsWith('event-show:'))) throw new Error('card without a Show button');
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, stan.imiona);
+          if (pl.length) throw new Error(`Polish letters on the English chain card: ${pl.join(', ')}`);
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await frames(page, 3);
         },
       },
       {
@@ -8348,6 +8520,16 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
 }
 
+/** Odpowiada na okna zarządu, które czekają teraz (pierwszy dostępny wybór), najwyżej cztery po kolei: gra nad otwartym oknem
+    nie przyjmuje poleceń z menu. */
+async function odpowiedzNaOkna(page: Page) {
+  for (let k = 0; k < 4; k++) {
+    const p = await page.evaluate(() => window.zm!.govTick());
+    if (!p) return;
+    await answerFirst(page, p);
+  }
+}
+
 /** Przewija grę (po pół godziny gry), odpowiadając na okna zarządu, aż wypadnie karta wydarzenia o danym id (z `kto`:
     tylko taka, której dane mają ten napis, np. imię zmarłego); zwraca, po ilu krokach. Rzuca, gdy przez `ile` kroków jej
     nie było. */
@@ -8367,6 +8549,38 @@ async function doKarty(page: Page, id: string, ile = 300, kto = ''): Promise<num
     await answerFirst(page, p);
   }
   throw new Error(`przez ${ile / 2} godzin gry nie wypadła karta „${id}”${kto ? ` dla „${kto}”` : ''}`);
+}
+
+/** Wątek sezonu „Światło w oknie naprzeciwko” ustawiony ręcznie po kroku pierwszym (hak z odpowiedzią latarką, czas sprzed
+    gry): krok drugi, „Chłopak z babcią”, czeka tylko na porę dnia i na wizytę pod bramą. Zwykła pula zostaje, bo bez niej
+    gra nie ma okien do odpowiadania. */
+async function ustawWatekSwiatlo(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const g = window.zm!.gov!;
+    // nowa gra bez parametru ma łańcuchy włączone (src/main.ts); bez tego pola krok `swiatlo_2` by nie wypadł
+    if (g.lancuchy !== true) throw new Error('nowa gra bez ?lancuchy=0 ma mieć włączone łańcuchy kart');
+    g.watki = {
+      wybrane: ['swiatlo'],
+      haki: { swiatlo_1: { t: 0 }, 'swiatlo.znak': { t: 0, d: { odp: 'latarka' } } },
+      krok: { swiatlo: 1 },
+    };
+  });
+}
+
+/** Wizyta kroku łańcucha z gośćmi: faza w symulacji, pionki o imionach z mapy (kolejność jak w planie) */
+async function watekGosci(page: Page): Promise<{ faza: string; pionki: number; imiona: string[] }> {
+  return page.evaluate(() => {
+    const zm = window.zm!;
+    const st = zm.sim!.st;
+    const a = zm.gov!.goscie!.aktywny!;
+    const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+    const pionki = wpis.pawns.map((id) => st.pawns.find((p) => p.id === id)!).filter((p) => p.kind === 'gosc');
+    return {
+      faza: wpis.faza,
+      pionki: pionki.length,
+      imiona: pionki.map((p) => st.people[p.person].name),
+    };
+  });
 }
 
 /** Znajomi do zrzutów powrotu (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 4): Henryk Kowalski, który

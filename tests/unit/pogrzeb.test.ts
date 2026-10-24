@@ -388,7 +388,7 @@ describe('karta pogrzeb: kiedy przychodzi', () => {
       });
       return { opoznienie: w[0].min - kiedy, hour: w[0].hour };
     };
-    // w południe: odstęp między wydarzeniami to najwyżej kilka godzin gry (180 s przy ekranie to ok. 4,5 godziny)
+    // w południe: odstęp między wydarzeniami to najwyżej kilka godzin gry (200 s przy ekranie, górna granica odstępu, to 5 godzin)
     expect(wCzasie(12, 0).opoznienie).toBeLessThanOrEqual(5 * 60);
     // o 23:30 dopiero od 8:00
     const noc = wCzasie(23, 30);

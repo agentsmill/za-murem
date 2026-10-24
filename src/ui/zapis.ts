@@ -48,6 +48,22 @@ export interface Save {
 export const pietraWlaczone = (saved: Pick<Save, 'pietra'> | null, params: URLSearchParams): boolean =>
   saved ? saved.pietra === true : params.get('pietra') === '1';
 
+/** adres ekranu startowego po „od nowa”: ta sama strona, a z adresu przechodzą tylko parametry, które zmieniają samą grę albo
+    jej język, dopóki są w adresie: `siec=1`, `pietra=1`, `lancuchy=0` (łańcuchy są domyślnie włączone, więc przenosi się tylko
+    wyłączenie) i `lang=` (jak jest). Reszta (`demo`, `seed`, `godzina`, `cam`, `speed`...) służy zrzutom i próbom jednej gry
+    i nie wraca na ekran startowy. */
+export function adresStartowy(pathname: string, search: string): string {
+  const params = new URLSearchParams(search);
+  const q = new URLSearchParams();
+  if (params.get('siec') === '1') q.set('siec', '1');
+  if (params.get('pietra') === '1') q.set('pietra', '1');
+  if (params.get('lancuchy') === '0') q.set('lancuchy', '0');
+  const lang = params.get('lang');
+  if (lang) q.set('lang', lang);
+  const s = q.toString();
+  return pathname + (s ? `?${s}` : '');
+}
+
 /** odcisk świata z danych osiedla: inna wersja generatora daje inny odcisk */
 export function worldKey(
   w: Pick<World, 'size' | 'hq' | 'buildings' | 'trees' | 'dryTree'> & {

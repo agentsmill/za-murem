@@ -20,6 +20,10 @@ import { Atrapa, at, TPH, TPS } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
+
 const SZESC = ['uchodzcy', 'influencer', 'aktywisci', 'dzieci', 'krypto', 'fachowiec'] as const;
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const zielonki = placeOf(demoWorld('zielonki').w);

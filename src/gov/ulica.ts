@@ -15,6 +15,7 @@ const W = 0.8;
 export const STREET_EVENTS: GEventDef[] = [
   {
     id: 'jablka',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     // październik: antonówki; tylko jesienią
@@ -65,6 +66,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'kury',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) && h.holes() > 0 ? W : 0),
@@ -123,6 +125,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'kosiarka',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) ? W : 0),
@@ -164,6 +167,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'szopa',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) ? W : 0),
@@ -255,6 +259,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'panele',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) ? W : 0),

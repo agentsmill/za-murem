@@ -19,6 +19,9 @@
    Pies i kot (src/gov/zwierzeta.ts): flaga `dog` albo `cat` bez wpisu symulacji o zwierzęciu (`GovInput.zwierzeta`) prosi o jego
    wystawienie (`GovEffects.zwierze`), a śmierć psa gasi flagę `dog`, dopisuje kronikę i obniża nastrój zarządu.
 
+   Narrator (src/gov/narrator.ts): `napiecie` co krok, tuż przed wydarzeniami, przesuwa `GovState.napiecie` (krzywą z napadów,
+   zgonów, ran, głodu i przerwań siatki), a `mnoznik` przestawia wagi kart z tagiem `ton` w losowaniu (wydarzenia.ts).
+
    Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
    (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
@@ -27,6 +30,7 @@ import { TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
+import { napiecie } from './narrator.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
 import { FIRST_LAWS, PRZYCZYNA } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
@@ -43,7 +47,10 @@ export const GOV_VERSION = 1;
 export const LAW_HOUR = 19;
 export const LAW_MINUTE = 30;
 
-export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
+/** Nowy zarząd. `lancuchy`: łańcuchy kart i wątki sezonu włączone (pole `GovState.lancuchy`, zapis je zachowuje). Gra w przeglądarce
+    włącza je zawsze, chyba że adres ma `?lancuchy=0` (src/main.ts); sam `newGov` bez trzeciego argumentu daje zarząd bez łańcuchów
+    (testy samej puli kart), a wtedy stan i losowania są takie, jak z pustą listą łańcuchów. */
+export function newGov(seed: number, mode: GameMode = 'zwykly', lancuchy = false): GovState {
   const st: GovState = {
     v: 1,
     seed,
@@ -73,6 +80,7 @@ export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
     deadN: 0,
   };
   st.ev.next = FIRST_EVENT + Math.floor(rnd(st) * 11);
+  if (lancuchy) st.lancuchy = true;
   return st;
 }
 
@@ -140,6 +148,8 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   znaleziska(st, i);
   wiesci(st, i, fx);
   przyjeciaZUlicy(st, i, fx);
+  // narrator: napięcie z tego, co zarząd już widzi (napad z raportu, zgony, rany, głód, siatka), tuż przed losowaniem kart
+  napiecie(st, i);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   // drogi do zwycięstwa (bez wlaczZwyciestwo nic); w przegranej grze nikt już nie wygrywa
@@ -278,7 +288,9 @@ const optTxt = (t: unknown): Tx | undefined => (t === undefined || t === null ? 
 
 /** Zapis sprzed angielskiej wersji ma w kronice, raportach, karcie nocy i liniach na rano zwykłe polskie napisy.
     Zamienia je w miejscu na Tx z tym samym tekstem w obu językach (stare wpisy zostają po polsku także po
-    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. */
+    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. Dane haków łańcuchów (`watki.haki[].d`,
+    src/gov/watki.ts) są zwykłym JSON od początku, więc `Tx` w nich to obiekt `{ pl, en }`, który przechodzi zapis bez
+    normalizacji (pilnuje tego tests/unit/watki.test.ts). */
 export function normalizujTeksty(st: GovState): GovState {
   for (const l of st.log ?? []) l.txt = txt(l.txt);
   for (const l of st.later ?? []) l.line = txt(l.line);

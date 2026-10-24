@@ -591,11 +591,25 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); po scaleniu obu 20.10.2026
     // aaa8b716, d1a8e423 i 76e72ff9. Siódmy raz w zadaniu 12 wydarzeń (pies i kot jako pionki): „Kot w piwnicy”
     // z wyborem „Uwolnić i przygarnąć” ustawia flagę `cat` w stanie zarządu (na samych wydarzeniach cf77bec1, 0e44994c
-    // i f064e248); tu znów po scaleniu obu, 23.10.2026.
+    // i f064e248); tu znów po scaleniu obu, 23.10.2026. Ósmy raz w zadaniu 15 wydarzeń (dwanaście łańcuchów historii,
+    // src/gov/watki-tresc.ts): pierwszy tick zarządu wybiera wątki sezonu z ziarna zarządu (`wybierzWatki`), a pierwsze kroki
+    // wybranych łańcuchów wchodzą do puli, czyli inne losowanie; atrapa nie ma obcych ani mieszkańców z generatora, więc do
+    // wyboru zostają tylko „List z 2026” i „Pies ujada nocami”, który zajmuje miejsce karty „Pies przy siatce” (były f90d5ef8, 949f8cf5
+    // i 76e72ff9; potem 668ba3fa, 4ce4129e i 65a73c2f). Dziewiąty raz w rundzie poprawek 1 zadania 15: „List z 2026” przestał
+    // być krokiem pierwszej nocy (satyra i lore dopiero od drugiego dnia), czyli inna pula tej nocy, inne losowanie.
+    // Dziesiąty raz w zadaniu 16 wydarzeń (narrator, src/gov/narrator.ts): stan zarządu ma teraz `napiecie` (powstaje przy pierwszym
+    // kroku, więc jest w skrócie każdej gry), a wagi kart z tagiem `ton` mnożą się przez mnożnik napięcia, czyli inne losowanie
+    // (były ef7e6dca, a38f0d27 i a76369a8; z samym narratorem 74657a83, 39b814b2 i 16fcaf6f). Do tego w tym samym zadaniu odstęp
+    // między wydarzeniami po pierwszych 10 minutach przesunięty ze 100–180 s na 110–200 s (spis kart na grę: 40,6 przy celu 30–40).
+    // Jedenasty raz w rundzie poprawek 1 zadania 16: łańcuchy kart dostały przełącznik (`GovState.lancuchy`). Ten test gra przez
+    // `run(…)` z atrapy, które bez piątego argumentu zaczyna od `newGov(ziarno, 'zwykly', false)`, czyli bez łańcuchów: zarząd nie
+    // wybiera wątków i nie losuje z ziarna, więc skróty niżej są skrótami gry sprzed łańcuchów (były 10242b95, f01804b8 i 53bab003).
+    // Sama gra w przeglądarce ma łańcuchy domyślnie włączone (`?lancuchy=0` wyłącza), a jej przebieg pilnują boty i
+    // lancuchy-przelacznik.test.ts; tu zostaje przebieg bez łańcuchów, żeby skróty mierzyły tylko drogi do zwycięstwa.
     const przebiegi = [
-      [1, 'propozycja', 'f90d5ef8'],
-      [3, 'zawsze-warta', '949f8cf5'],
-      [5, 'losowo', '76e72ff9'],
+      [1, 'propozycja', '401232fa'],
+      [3, 'zawsze-warta', '563c8664'],
+      [5, 'losowo', 'dc7b63fc'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

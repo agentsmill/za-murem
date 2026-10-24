@@ -130,6 +130,7 @@ import {
   goscKoniec,
   najblizszaGodzina,
   ranoGoscia,
+  SPOOK_GOSC,
   startGoscia,
 } from './gosc.ts';
 import {
@@ -4316,8 +4317,14 @@ export class Sim {
       }
       case 'sleep':
         if (j.phase === 1) {
-          // głodny za dnia wstaje coś zjeść, kiedy jest co, a potem odsypia
-          if (p.kind === 'core' && !this.night() && tick % THINK_EVERY === 0 && this.wantsMeal(p) && this.mealFor(p)) {
+          // głodny za dnia wstaje coś zjeść, kiedy jest co, a potem odsypia; w nocy tylko z wielkiego głodu (STARVING)
+          if (
+            p.kind === 'core' &&
+            (!this.night() || p.needs!.food < STARVING) &&
+            tick % THINK_EVERY === 0 &&
+            this.wantsMeal(p) &&
+            this.mealFor(p)
+          ) {
             p.nap = true;
             return false;
           }
@@ -5031,6 +5038,9 @@ export class Sim {
     }
     // za dnia zmęczony albo odsypiający (po nocnej warcie, po pobudce na posiłek): głodny najpierw coś zje
     if (!this.night() && (p.nap || n.rest < TIRED) && this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
+    // w nocy z wielkiego głodu (STARVING, „zawsze” z wantsMeal) najpierw je, dopiero potem śpi: sen przed posiłkiem zostawiał
+    // ludzi przy racjach (limit dwóch posiłków) z najedzeniem 0–10 co noc, choć garnek i zapas były pod ręką
+    if (this.night() && n.food < STARVING && this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
     if (((this.night() && n.rest < 80) || n.rest < TIRED || p.nap) && this.startSleep(p)) {
       p.nap = false;
       return;
@@ -7952,11 +7962,11 @@ export class Sim {
     }
   }
 
-  /** Tryb zombie: szwendacz do SPOOK_R m od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
+  /** Tryb zombie: szwendacz do SPOOK_GOSC m (zasięg ugryzienia) od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
   private goscPlosz(g: GoscSim, m: Pawn[]): boolean {
     const st = this.st;
     if (modeOf(st) !== 'zombie' || (st.tick + g.pawns[0]) % THINK_EVERY !== 0) return false;
-    const r2 = SPOOK_R * SPOOK_R;
+    const r2 = SPOOK_GOSC * SPOOK_GOSC;
     for (const z of st.pawns) {
       if (z.kind !== 'zombie' || this.graveyard.has(z.id)) continue;
       for (const p of m) if ((z.x - p.x) ** 2 + (z.y - p.y) ** 2 <= r2) return true;
@@ -8222,12 +8232,14 @@ export class Sim {
     this.goscOdeslij(m, true);
   }
 
-  /** Śmierć członka wizyty: licznik zgonów, a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
+  /** Śmierć członka wizyty: licznik zgonów, jego indeks w planie (`GoscSim.zmarli`, dla pamięci zarządu o znajomych), a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
       `dropSack`), więc zapasów brakuje o tyle mniej (`ukradl` 0). */
   private goscZginal(p: Pawn): void {
     const g = this.st.goscie?.find((x) => x.pawns.includes(p.id));
     if (!g) return;
     g.zgin = (g.zgin ?? 0) + 1;
+    const k = g.pawns.indexOf(p.id);
+    if (k >= 0) (g.zmarli ??= []).push(k);
     if (g.zl === p.id) g.ukradl = 0;
   }
 
