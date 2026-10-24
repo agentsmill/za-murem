@@ -30,6 +30,7 @@ import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './k
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { tekstyShots } from './shots-teksty.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -751,6 +752,9 @@ const SHOTS: Shot[] = [
   ...celeShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
+  // Poprawki tekstów po przeglądzie spójności: pora roku na pasku w zimie, słowa domu (komitet, furtka) w drogach, epilogach, planie
+  // wyprawy, alarmie i Pracy, karta miejsca wybranego do cna, koniec gry w kronice, atrybucja w /v03/
+  ...tekstyShots(),
   {
     name: 'zombie-dzien',
     query: '',
