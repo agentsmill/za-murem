@@ -137,7 +137,8 @@ export interface PlayOpts {
   /** karta nocy nie wysyła nikogo na wyprawę (zostaje sen z propozycji); dla testów, które liczą tylko wyprawy dzienne:
       po wolniejszym zmęczeniu zarząd co noc proponuje wyprawę, bo ma siły na daleką drogę */
   bezWyprawNocnych?: boolean;
-  /** łańcuchy kart i wątki sezonu włączone (`newGov(seed, mode, true)`, jak adres `?lancuchy=1`); bez opcji wyłączone */
+  /** łańcuchy kart i wątki sezonu włączone (`newGov(seed, mode, true)`, jak gra w przeglądarce bez `?lancuchy=0`: boty z tools/ grają
+      tak, testy samej puli kart bez opcji, czyli bez łańcuchów) */
   lancuchy?: boolean;
   /** tylko do pomiarów (spis kart, goście, narrator): po każdym kroku zarządu (co sekundę przy ekranie) stan zarządu, wejście
       i skutki kroku; niczego nie zmienia w grze */

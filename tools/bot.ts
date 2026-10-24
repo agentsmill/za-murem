@@ -4,7 +4,7 @@
    Dopóki świat z OSM nie ma wnętrza siedziby (gałąź wnętrza), scenariusz biegnie na sztucznych światach
    z atrapą wnętrza z testów; kiedy wnętrze jest, bierze prawdziwą siedzibę. Po samouczku kronika pierwszego
    wieczoru: gotowanie, kolacja, koniec opału i decyzja bota (spala meblościankę), sen; potem trzy doby.
-   Na koniec gra z zarządem (src/gov) dwiema politykami karty nocy, zawsze warta i nigdy warty: decyzje na minutę
+   Na koniec gra z zarządem (src/gov, z łańcuchami kart włączonymi jak w grze: `zGra`) dwiema politykami karty nocy, zawsze warta i nigdy warty: decyzje na minutę
    przy ekranie w pierwszych 10 minutach (okna zarządu, zmiany na karcie, polecenia, których wymaga gra) i skutki
    napadów, a potem noce z dyżurem przy kozie i bez niego (temperatura w kuchni o 6:00, jak długo pali się koza)
    i trzy doby z uchwałami o jedzeniu (racje, wspólny kocioł) i bez nich: zapasy, najedzenie, nastrój, gotowanie.

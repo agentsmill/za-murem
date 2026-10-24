@@ -1505,6 +1505,9 @@ const SHOTS: Shot[] = [
             if (ok) break;
             await page.evaluate(() => window.zm!.ff(2));
           }
+          // handlarz pod bramą otwiera krok łańcucha „Handlarz na kredyt” (pilny, gdy łańcuch „Dług” jest wątkiem sezonu): okno
+          // nad grą zasłania menu, więc scenariusz odpowiada na okna zarządu, jak gracz
+          await odpowiedzNaOkna(page);
           const at = await page.evaluate(() => {
             const zm = window.zm!;
             const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
@@ -1596,6 +1599,9 @@ const SHOTS: Shot[] = [
             if (ok) break;
             await page.evaluate(() => window.zm!.ff(2));
           }
+          // handlarz pod bramą otwiera krok łańcucha „Handlarz na kredyt” (pilny, gdy łańcuch „Dług” jest wątkiem sezonu): okno
+          // nad grą zasłania menu, więc scenariusz odpowiada na okna zarządu, jak gracz
+          await odpowiedzNaOkna(page);
           const at = await page.evaluate(() => {
             const zm = window.zm!;
             const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
@@ -2765,11 +2771,15 @@ const SHOTS: Shot[] = [
       {
         // karta gościa w trybie zombie (Task 16): szwendacze przy siatce (`stado=3`) już nie płoszą grupy z 6 m, tylko dopiero na
         // zasięgu ugryzienia (`SPOOK_GOSC`), więc grupa dochodzi pod bramę i otwiera się karta; zrzut karty z „Pokaż” na grupie
-        // pod bramą (wyd-gosc-zombie.png) i liczba szwendaczy w 10 m od grupy w logu
+        // pod bramą (wyd-gosc-zombie.png) i liczba szwendaczy w 10 m od grupy w logu.
+        // `lancuchy=0`: scenariusz czeka na kartę `gosc` z puli, a ta ma przyjść, zanim stado zapełni podejście do bramy (po kilku
+        // dobach szwendaczy jest kilkadziesiąt i żadna grupa nie dochodzi). Łańcuchy kart (domyślnie włączone) zmieniają kolejność
+        // losowań i w tym ziarnie pierwszy gość z puli wypada dopiero po tym czasie (spłoszone: 18 wizyt w 11 dób, żadna karta
+        // `gosc`), więc bez nich scenariusz bada to, o co chodzi: grupa z puli przy szwendaczach pod siatką.
         name: 'wyd-gosc-zombie',
         query: '',
         run: async (page, base) => {
-          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3`);
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3&lancuchy=0`);
           await waitIdle(page);
           const krok = await doKarty(page, 'gosc', 600);
           await waitIdle(page);
@@ -2931,6 +2941,35 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // adres gry steruje łańcuchami kart: bez parametru nowa gra ma je włączone (pole `lancuchy` w stanie zarządu i wątki sezonu
+        // wybrane przy pierwszym kroku zarządu), z `?lancuchy=0` nie ma ich wcale (bez pola i bez wątków), jak zapis sprzed łańcuchów
+        name: 'wyd-lancuchy-adres',
+        query: '',
+        run: async (page, base) => {
+          const stan = () =>
+            page.evaluate(() => {
+              const g = window.zm!.gov!;
+              return { lancuchy: g.lancuchy ?? null, wybrane: g.watki?.wybrane ?? null };
+            });
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          const domyslnie = await stan();
+          console.log(`  bez parametru: ${JSON.stringify(domyslnie)}`);
+          if (domyslnie.lancuchy !== true || !domyslnie.wybrane?.length)
+            throw new Error(
+              `bez parametru łańcuchy mają być włączone z wybranymi wątkami: ${JSON.stringify(domyslnie)}`,
+            );
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=0`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          const wylaczone = await stan();
+          console.log(`  z ?lancuchy=0: ${JSON.stringify(wylaczone)}`);
+          if (wylaczone.lancuchy !== null || wylaczone.wybrane !== null)
+            throw new Error(`?lancuchy=0 ma wyłączyć łańcuchy: ${JSON.stringify(wylaczone)}`);
+        },
+      },
+      {
         // krok łańcucha historii z gościem pod bramą (Przymorze, obcy włączeni): „Światło w oknie naprzeciwko”, krok drugi,
         // „Chłopak z babcią”. Wątek sezonu ustawiony ręcznie z hakiem po kroku pierwszym; dwie osoby naprawdę stoją pod bramą
         // (faza brama, dwa pionki o imionach z karty), karta ma „Pokaż”, który jedzie kamerą do nich, nie zamykając okna.
@@ -2938,7 +2977,7 @@ const SHOTS: Shot[] = [
         name: 'wyd-watek',
         query: '',
         run: async (page, base) => {
-          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=1`);
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
           await waitIdle(page);
           await ustawWatekSwiatlo(page);
           const krok = await doKarty(page, 'swiatlo_2', 400);
@@ -2992,7 +3031,7 @@ const SHOTS: Shot[] = [
         query: '',
         lang: 'en',
         run: async (page, base) => {
-          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=1`);
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
           await waitIdle(page);
           await ustawWatekSwiatlo(page);
           const krok = await doKarty(page, 'swiatlo_2', 400);
@@ -8481,6 +8520,16 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
 }
 
+/** Odpowiada na okna zarządu, które czekają teraz (pierwszy dostępny wybór), najwyżej cztery po kolei: gra nad otwartym oknem
+    nie przyjmuje poleceń z menu. */
+async function odpowiedzNaOkna(page: Page) {
+  for (let k = 0; k < 4; k++) {
+    const p = await page.evaluate(() => window.zm!.govTick());
+    if (!p) return;
+    await answerFirst(page, p);
+  }
+}
+
 /** Przewija grę (po pół godziny gry), odpowiadając na okna zarządu, aż wypadnie karta wydarzenia o danym id (z `kto`:
     tylko taka, której dane mają ten napis, np. imię zmarłego); zwraca, po ilu krokach. Rzuca, gdy przez `ile` kroków jej
     nie było. */
@@ -8508,6 +8557,8 @@ async function doKarty(page: Page, id: string, ile = 300, kto = ''): Promise<num
 async function ustawWatekSwiatlo(page: Page): Promise<void> {
   await page.evaluate(() => {
     const g = window.zm!.gov!;
+    // nowa gra bez parametru ma łańcuchy włączone (src/main.ts); bez tego pola krok `swiatlo_2` by nie wypadł
+    if (g.lancuchy !== true) throw new Error('nowa gra bez ?lancuchy=0 ma mieć włączone łańcuchy kart');
     g.watki = {
       wybrane: ['swiatlo'],
       haki: { swiatlo_1: { t: 0 }, 'swiatlo.znak': { t: 0, d: { odp: 'latarka' } } },
