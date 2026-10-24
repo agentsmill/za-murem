@@ -28,6 +28,11 @@
    ciszy `QUIET` (20 s przy ekranie). Bez opcji raport potwierdza się jak w botach (`ackReport(gov)`, bez ciszy), co daje
    skróty zgodne z `playWithGov`; uprząż włącza opcję domyślnie, żeby liczby etapu odpowiadały tempu prawdziwej gry.
 
+   Łańcuchy kart (opcja `lancuchy`): zarząd z `GovState.lancuchy` wybiera przy pierwszym wydarzeniu do trzech wątków sezonu, a ich
+   kroki wypadają jak karty z puli (okno `wydarzenie` z własnym id; krok z gościem czeka pod bramą, aż grupa stanie przy
+   siatce), więc pętla i odpowiedź domyślna nie mają dla nich osobnej drogi. Opcję włącza wołający (nowa gra w przeglądarce ma
+   łańcuchy domyślnie); bez niej gra jest bez łańcuchów, jak `playWithGov` bez `lancuchy`.
+
    Koniec gry (`gov.over`): `krokGry` wraca od razu, bez ruszania czasu i bez wołania decydenta; jeśli koniec ustawi
    `govUpdate` albo odpowiedź na okno w bieżącej sekundzie, decydent nie dostaje już reszty tej sekundy (okien ani tury).
    `grajDo` kończy wtedy pętlę.
@@ -84,6 +89,11 @@ export interface OpcjeGryAi {
   /** tempo prawdziwej gry (src/main.ts): potwierdzenie raportu przekazuje wejście, więc liczy się jako decyzja i po nim
       wydarzenie czeka okno ciszy (`ackReport(gov, wejscie)`); bez opcji jak w botach (`ackReport(gov)`), równo z `playWithGov` */
   tempoPrzegladarki?: boolean;
+  /** łańcuchy kart i wątki sezonu (src/gov/watki.ts) włączone, jak w nowej grze w przeglądarce (`newGov(seed, mode, true)` w
+      src/main.ts; wyłącza je adres `?lancuchy=0`); bez opcji zarząd gry jest bez łańcuchów, z samą pulą kart, jak w
+      `playWithGov` bez `lancuchy` i w kodzie sprzed etapów 4–5 wydarzeń. Flaga jedzie w stanie zarządu (`GovState.lancuchy`),
+      więc zapis ją zachowuje */
+  lancuchy?: boolean;
 }
 
 /** Jeden ruch ręki. `s` to sekunda przy ekranie (tick / 20, zaokrąglone w dół), w której ruch wykonano; ruchy samouczka
@@ -169,7 +179,7 @@ function zloz(w: World, seed: number, opts: OpcjeGryAi, sim: Sim, gov: GovState,
 }
 
 /** Nowa gra od 15:00 pierwszego dnia: symulacja i zarząd jak w `playWithGov` (z `okolica` zarząd ma mapę miasta, z
-    `ludnosc2021` drogi do zwycięstwa, jak w main.ts), pamięć silnika pusta. */
+    `ludnosc2021` drogi do zwycięstwa, z `lancuchy` łańcuchy kart, jak w main.ts), pamięć silnika pusta. */
 export function nowaGraAi(w: World, seed: number, opts: OpcjeGryAi = {}): GraAi {
   const st = createSim(w, seed, {
     core: opts.core ?? 4,
@@ -177,7 +187,7 @@ export function nowaGraAi(w: World, seed: number, opts: OpcjeGryAi = {}): GraAi 
     ...(opts.mode ? { mode: opts.mode } : {}),
     ...(opts.obcy ? { obcy: true } : {}),
   });
-  const gov = newGov(seed, opts.mode);
+  const gov = newGov(seed, opts.mode, opts.lancuchy === true);
   if (opts.okolica) wlaczMiasto(gov);
   if (opts.ludnosc2021 !== undefined) wlaczZwyciestwo(gov);
   return zloz(w, seed, { ...opts }, new Sim(w, st), gov, nowaPamiec());

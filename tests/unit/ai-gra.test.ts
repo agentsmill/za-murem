@@ -1,10 +1,10 @@
 /* Gra prowadzona przez decydenta (src/ai/gra.ts) i silnik podstawowy (src/ai/silnik.ts), etap 1 osady AI
-   (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje siedmiu rzeczy:
+   (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje ośmiu rzeczy:
    - równoważności: silnik podstawowy w pętli gry daje te same skróty co `playWithGov(..., 'zawsze-warta', ...)`,
-     także z okolicą miasta, obcymi i drogami do zwycięstwa, a na Lanciego (ziarno 12) przez 10 dni oraz na Zielonkach
-     (ziarno 19, mieszkańcy z adresu jak w przeglądarce) przez 10 dni, czyli także po pierwszym przydziale warty na karcie
-     nocy (8.–10. dzień), którego krótkie przebiegi nie dosięgają (obie pętle muszą go mieć po 7 albo 8 dobach, w tej samej
-     sekundzie). Każda pętla, każda gra porównywana z inną i każda gra wczytana z zapisu dostaje własny, świeży świat
+     także z okolicą miasta, obcymi i drogami do zwycięstwa, z łańcuchami kart (opcja `lancuchy`), a na Lanciego (ziarno 18)
+     przez 10 dni oraz na Zielonkach (ziarno 14, mieszkańcy z adresu jak w przeglądarce) przez 10 dni, czyli także po
+     pierwszym przydziale warty na karcie nocy (10. dzień), którego krótkie przebiegi nie dosięgają (obie pętle muszą go mieć
+     po 7 albo 8 dobach, w tej samej sekundzie; ziarna trzeba wybierać od nowa po zmianie, która przesuwa kolejność kart). Każda pętla, każda gra porównywana z inną i każda gra wczytana z zapisu dostaje własny, świeży świat
      (`swiezySwiat`): gra zmienia siatkę świata w miejscu (`ustawSiatke`, `initFence`, `dociagnijSiatke`), więc druga gra
      na tym samym obiekcie startuje od innego stanu i skróty rozjeżdżają się bez żadnego błędu silnika;
    - determinizmu: dwie gry w jednym procesie przeplatane nierówno, zapis i wczytanie w połowie (także w środku
@@ -14,7 +14,9 @@
    - końca gry: po `gov.over` `krokGry` nie rusza czasu i nie woła decydenta;
    - okien zawieszonych: okno, którego nie zamknie nawet odpowiedź domyślna (nowy rodzaj z innej gałęzi), zapisuje się
      w `GraAi.zawieszone` i nie jest ponawiane w tej samej sekundzie;
-   - tempa przeglądarki: z opcją `tempoPrzegladarki` potwierdzenie raportu przekazuje wejście jak main.ts. */
+   - tempa przeglądarki: z opcją `tempoPrzegladarki` potwierdzenie raportu przekazuje wejście jak main.ts;
+   - łańcuchów kart: opcja `lancuchy` włącza je jak nowa gra w przeglądarce (bez niej zarząd nie wybiera wątków), a zapis
+     i wczytanie w połowie gry z łańcuchami (wątki, haki, rozpoczęte kroki) nie zmieniają przebiegu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -185,15 +187,17 @@ describe('równoważność z playWithGov', () => {
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   });
 
-  it('Lanciego, ziarno 12, 10 dni z obcymi i okolicą: ten sam skrót co playWithGov, także po przydziale warty na karcie', () => {
-    // tu pierwsza karta nocy bez warty z propozycji zarządu wypada 9. dnia (sekunda przy ekranie 7880): wtedy wchodzi
+  it('Lanciego, ziarno 18, 10 dni z obcymi i okolicą: ten sam skrót co playWithGov, także po przydziale warty na karcie', () => {
+    // tu pierwsza karta nocy bez warty z propozycji zarządu wypada 10. dnia (sekunda przy ekranie 8840): wtedy wchodzi
     // gałąź przydziału warty (zdjęcie chorego z warty, najbardziej wypoczęty na pierwszy posterunek), której 2–3-dniowe
-    // przebiegi nie dosięgają. Ziarno 14, które tu stało, po scaleniu nocnego posiłku nie dochodzi do przydziału warty przez
-    // 12 dni (na świeżym świecie skróty są równe, ale gałęzi w przebiegu nie ma); ziarna 11, 12 i 15 ją mają
+    // przebiegi nie dosięgają. Ziarna, które tu stały, wypadały z tej gałęzi po kolejnych scaleniach, które przesuwały
+    // kolejność kart: 14 po scaleniu nocnego posiłku (zadanie 7, część A; na świeżym świecie skróty były równe, ale gałęzi
+    // w przebiegu nie było), 12 po scaleniu wydarzeń etapów 4–5 (odstęp kart 110–200 s i narrator; część B). Przegląd ziaren
+    // 11–20 na tym scaleniu (12 dni): gałąź ma w 10 dniach tylko Lanciego 18 (sekunda 8840)
     const okolica = okolicaZGeo(demoLanciego.geo);
-    const g = nowaGraAi(swiezySwiat('lanciego'), 12, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
+    const g = nowaGraAi(swiezySwiat('lanciego'), 18, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
     grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
-    const wzor = playWithGov(swiezySwiat('lanciego'), 12, 'zawsze-warta', 10, 4, {
+    const wzor = playWithGov(swiezySwiat('lanciego'), 18, 'zawsze-warta', 10, 4, {
       obcy: true,
       miasto: { okolica },
       zwyciestwo: { ludnosc2021: 900 },
@@ -204,14 +208,15 @@ describe('równoważność z playWithGov', () => {
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   });
 
-  it('Zielonki, ziarno 19, 10 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
+  it('Zielonki, ziarno 14, 10 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
     // z mieszkańcami z generatora przebieg jest inny niż na świecie z `demoWorld`: pierwsza karta nocy bez warty z propozycji
-    // zarządu wypada tu w sekundzie 7880 (9. dzień). Każda pętla dostaje własny, świeży świat (`przygotujGre` buduje go od
-    // nowa): gra zmienia siatkę świata, więc druga gra na tym samym obiekcie startuje od innego stanu (Zielonki 11: skróty
-    // rozjeżdżają się już w dniu 2, choć na świeżych światach są równe)
-    const silnikGra = await przygotujGre('zielonki', 19, false);
-    const wzorGra = await przygotujGre('zielonki', 19, false);
-    const g = nowaGraAi(silnikGra.w, 19, {
+    // zarządu wypada tu w sekundzie 8840 (10. dzień; ziarno 19, które tu stało, miało 7880 przed scaleniem wydarzeń etapów 4–5
+    // i nie ma tej gałęzi po nim). Każda pętla dostaje własny, świeży świat (`przygotujGre` buduje go od nowa): gra zmienia
+    // siatkę świata, więc druga gra na tym samym obiekcie startuje od innego stanu (Zielonki 11: skróty rozjeżdżają się już
+    // w dniu 2, choć na świeżych światach są równe)
+    const silnikGra = await przygotujGre('zielonki', 14, false);
+    const wzorGra = await przygotujGre('zielonki', 14, false);
+    const g = nowaGraAi(silnikGra.w, 14, {
       core: 4,
       obcy: true,
       mieszkancy: silnikGra.opts.mieszkancy,
@@ -220,7 +225,7 @@ describe('równoważność z playWithGov', () => {
       dziennik: true,
     });
     grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
-    const wzor = playWithGov(wzorGra.w, 19, 'zawsze-warta', 10, 4, {
+    const wzor = playWithGov(wzorGra.w, 14, 'zawsze-warta', 10, 4, {
       obcy: true,
       mieszkancy: wzorGra.opts.mieszkancy,
       miasto: { okolica: wzorGra.opts.okolica! },
@@ -231,6 +236,28 @@ describe('równoważność z playWithGov', () => {
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   }, 120_000);
+
+  it('z łańcuchami kart (opcja lancuchy) ten sam skrót co playWithGov z lancuchy: true, a kroki łańcuchów naprawdę się zaczęły', () => {
+    // gra w przeglądarce ma łańcuchy domyślnie (`newGov(…, true)`): wybór wątków losuje z ziarna zarządu, kroki z gościem
+    // czekają pod bramą, a okna kroków to wydarzenia jak inne, więc odpowiedź domyślna (pierwszy dozwolony wybór) musi dawać
+    // to samo co wzorzec. Przymorze 12 w 6 dób: trzy wątki (Światło w oknie, List, Szczekanie), dwa skończone i trzeci rozpoczęty
+    const okolica = okolicaZGeo(demo.geo);
+    const g = nowaGraAi(swiezySwiat('przymorze'), 12, { obcy: true, okolica, ludnosc2021: 900, lancuchy: true });
+    grajDo(g, silnikPodstawowy, 6 * TICKS_PER_DAY);
+    const wzor = playWithGov(swiezySwiat('przymorze'), 12, 'zawsze-warta', 6, 4, {
+      obcy: true,
+      miasto: { okolica },
+      zwyciestwo: { ludnosc2021: 900 },
+      lancuchy: true,
+    });
+    // łańcuchy naprawdę grały: wątki wybrane i co najmniej trzy kroki rozpoczęte (nie przechodzi na pustym warunku)
+    expect(g.gov.lancuchy).toBe(true);
+    expect(g.gov.watki?.wybrane.length).toBe(3);
+    const kroki = Object.values(g.gov.watki?.krok ?? {}).reduce((a, n) => a + n, 0);
+    expect(kroki).toBeGreaterThanOrEqual(3);
+    expect(g.sim.hash()).toBe(wzor.hash);
+    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
+  });
 
   it('start woła się raz, przed pierwszym krokiem, a tura co sekundę przy ekranie', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
@@ -329,6 +356,49 @@ describe('determinizm', () => {
     grajDo(swieza, odtwarzacz(dziennik), 2 * TICKS_PER_DAY);
     expect(swieza.sim.hash()).toBe(g.sim.hash());
     expect(JSON.stringify(swieza.gov)).toBe(JSON.stringify(g.gov));
+  });
+});
+
+describe('łańcuchy kart (opcja lancuchy)', () => {
+  const opcje = () => ({ obcy: true, okolica: okolicaZGeo(demo.geo), ludnosc2021: 900, lancuchy: true });
+
+  it('bez opcji zarząd gry nie ma łańcuchów (jak w botach), z opcją ma je tak, jak nowa gra w przeglądarce', () => {
+    const bez = nowaGraAi(swiezySwiat('przymorze'), 12);
+    expect(bez.gov.lancuchy).toBeUndefined();
+    expect(bez.opts.lancuchy).toBeUndefined();
+    const z = nowaGraAi(swiezySwiat('przymorze'), 12, { lancuchy: true });
+    expect(z.gov.lancuchy).toBe(true);
+    expect(z.opts.lancuchy).toBe(true);
+    // wątki sezonu powstają dopiero przy pierwszym wydarzeniu, nie przy starcie
+    expect(z.gov.watki).toBeUndefined();
+  });
+
+  it('bez opcji gra nie wybiera wątków ani nie zakłada stanu łańcuchów nawet po kilku dobach (uprząż sprzed łańcuchów gra tak samo)', () => {
+    const bez = nowaGraAi(swiezySwiat('przymorze'), 12, { ...opcje(), lancuchy: false });
+    grajDo(bez, silnik, 4 * TICKS_PER_DAY);
+    expect(bez.gov.watki).toBeUndefined();
+    expect(bez.gov.lancuchy).toBeUndefined();
+    // a z opcją te same cztery doby mają wątki i rozpoczęte kroki
+    const z = nowaGraAi(swiezySwiat('przymorze'), 12, opcje());
+    grajDo(z, silnik, 4 * TICKS_PER_DAY);
+    expect(z.gov.watki?.wybrane.length).toBe(3);
+  });
+
+  it('z łańcuchami zapis i wczytanie w połowie nie zmieniają przebiegu: wątki, haki i kroki jadą w zapisie', () => {
+    const ciagla = nowaGraAi(swiezySwiat('przymorze'), 12, opcje());
+    grajDo(ciagla, silnik, 4 * TICKS_PER_DAY);
+    for (const przerwa of [2 * TICKS_PER_DAY + 7, 3 * TICKS_PER_DAY]) {
+      const a = nowaGraAi(swiezySwiat('przymorze'), 12, opcje());
+      grajDo(a, silnik, przerwa);
+      // do przerwy wątki są wybrane, a jakiś krok rozpoczęty: zapis musi to przenieść (nie przechodzi na pustym warunku)
+      expect(Object.values(a.gov.watki?.krok ?? {}).some((n) => n > 0)).toBe(true);
+      const b = wczytajGre(swiezySwiat('przymorze'), JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
+      expect(b.gov.lancuchy).toBe(true);
+      expect(b.gov.watki).toEqual(a.gov.watki);
+      expect(skrotGry(b)).toBe(skrotGry(a));
+      grajDo(b, silnik, 4 * TICKS_PER_DAY);
+      expect(skrotGry(b)).toBe(skrotGry(ciagla));
+    }
   });
 });
 
