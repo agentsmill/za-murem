@@ -336,7 +336,8 @@ export interface DefCelu {
       poprosił o miejsce), zalicza się sam. Sprawdza się po `zrobiony`, który wygrywa, i przed `przepadl`; silnik zapisuje
       takie zaliczenie w `StanSciezki.zapasem`, żeby `uwaga` wiedziała, czemu cel zaliczył się sam. */
   zapas?(o: OdczytCelow, s: StanSciezki): boolean;
-  /** dopisek celu już zaliczonego, który mówi, czemu zaliczył się bez czynności gracza (zapas celu „nowi” w trybie zombie), inaczej null */
+  /** dopisek celu już zaliczonego: czemu zaliczył się bez czynności gracza (zapas celu „nowi” w trybie zombie) albo czego uczy
+      zaliczona obserwacja (lekcja po porannym raporcie w R4 „wkurzenie”), inaczej null */
   uwaga?(o: OdczytCelow, s: StanSciezki): string | null;
   przepadl?(o: OdczytCelow, s: StanSciezki): boolean;
   okno?: OknoCelu;
@@ -383,7 +384,7 @@ export interface Cel {
   done: boolean;
   missed?: boolean;
   czeka?: string;
-  /** dopisek zaliczonego celu (czemu zaliczył się sam); okienko rysuje go pod celem, bez przekreślenia */
+  /** dopisek zaliczonego celu (czemu zaliczył się sam albo czego uczy); okienko rysuje go pod celem, bez przekreślenia */
   uwaga?: string;
   okno?: OknoCelu;
 }
@@ -619,9 +620,9 @@ const podpowiedzNaglowka = (o: OpcjeOkienka): string =>
 const naglowekHtml = (tytul: string, licznik: string, o: OpcjeOkienka): string =>
   `<button type="button" class="goals-head" aria-expanded="${o.otwarte}" title="${esc(podpowiedzNaglowka(o))}"><span>${esc(tytul)}</span>${licznik}</button>`;
 
-/** Jeden cel listy. Klasa mówi, czym jest: zrobiony (ptaszek, przekreślony, a gdy zaliczył się sam, z dopiskiem pod spodem),
-    przepadły (krzyżyk, przekreślony), bieżący (z podpowiedzią) albo czekający (przyciemniony, z dopiskiem „czeka do …”);
-    zwykły niezrobiony nie ma klasy. */
+/** Jeden cel listy. Klasa mówi, czym jest: zrobiony (ptaszek, przekreślony, a gdy cel ma co dopowiedzieć po zaliczeniu, z dopiskiem
+    pod spodem: czemu zaliczył się sam, czego uczy), przepadły (krzyżyk, przekreślony), bieżący (z podpowiedzią) albo czekający
+    (przyciemniony, z dopiskiem „czeka do …”); zwykły niezrobiony nie ma klasy. */
 function celHtml(c: Cel, n: number, biezacy: Cel | null): string {
   const bie = !!biezacy && c.key === biezacy.key;
   const klasa = c.missed ? ' missed' : c.done ? ' done' : bie ? ' now' : c.czeka ? ' czeka' : '';

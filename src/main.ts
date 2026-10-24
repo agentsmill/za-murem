@@ -194,6 +194,7 @@ import {
   type ZdarzenieUi,
   zdarzenieUi,
 } from './ui/sciezka.ts';
+import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
@@ -297,10 +298,11 @@ declare global {
       /** widok ścieżki celów (okazja, rozdział, drogi po ostatnim rozdziale) po kroku ścieżki na stanie z tej chwili; null
           bez gry */
       cele: () => WidokSciezki | null;
-      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick i liczniki „od otwarcia”);
-          zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten jest
-          skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, jakby rozdział otwarto wcześniej (zapas celu „nowi”
-          w trybie zombie po trzech dobach bez grania ich) */
+      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick, czas przy ekranie i liczniki
+          „od otwarcia”); zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten
+          jest skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, a czas przy ekranie o tyle, ile te doby zajmują graczowi
+          w tempie 1× (około 627 s na dobę, bo noc po karcie biegnie 6×), jakby rozdział otwarto wcześniej (zapas celu „nowi”
+          w trybie zombie po trzech dobach, czyli po `EKRAN_NOWI_ZAPAS`, bez grania ich) */
       rozdzial: (k: KluczRozdzialu, dobyTemu?: number) => void;
       /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
           nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
@@ -3784,12 +3786,12 @@ if (attrib) bars.observe(attrib);
     rozdzial: (k, dobyTemu = 0) => {
       if (!sim) return;
       // jak otwarcie rozdziału przez krok ścieżki: tick, czas przy ekranie i liczniki „od otwarcia” z tej chwili (tick cofnięty
-      // o `dobyTemu` dób, a czas przy ekranie o tyle, ile te doby zajmują przy tempie 1×)
+      // o `dobyTemu` dób, a czas przy ekranie o tyle, ile te doby zajmują graczowi w tempie 1×: próg zapasu dzielony na jego doby)
       sciezka = {
         ...sciezka,
         rozdzial: k,
         od: sim.st.tick - Math.round(dobyTemu * TICKS_PER_DAY),
-        odEkran: screen - (dobyTemu * TICKS_PER_DAY) / TICKS_PER_SECOND,
+        odEkran: screen - (dobyTemu * EKRAN_NOWI_ZAPAS) / DOBY_NOWI_ZAPAS,
         start: licznikiStartu(sim.st, gov),
       };
       const snap = snapNow();

@@ -58,9 +58,11 @@
      dwóch godzinach gry), rozmowy, pytania o rękę i zaproszenia wędrowców przy siatce, zmiany ludności i godzinę celu `nowi`
      (z `zapasem=1`, gdy zaliczył go zapas w zombie, a nie przyjęcie). Każdy przebieg kończy ta analiza jedną linią `R4LINIA
      klucz=wartość …` do zbiorczego parsowania skryptem; ma też długość okna w sekundach przy ekranie (`dlugosc`) i liczby kart
-     oraz próśb o przyjęcie w pierwszych 360, 480, 960 i 2880 s od otwarcia R4 (`kart360 prosb360 …`: trzy doby gry przy 8×, 6×,
-     3× i 1×; bot gra w tempie 1×, więc 2880 s to próg zapasu `EKRAN_NOWI_ZAPAS`), z których widać, co zobaczyłby gracz
-     szybszego tempa, gdyby zapas liczył doby gry;
+     oraz próśb o przyjęcie w pierwszych 360, 480, 760 i 1880 s od otwarcia R4 (`kart360 prosb360 …`: trzy doby gry przy 8×, 6×,
+     3× i 1× w prawdziwej grze, gdzie doba trwa przy ekranie 120, 160, 253 i 627 s, bo noc po karcie nocy biegnie 6×; 1880 s to
+     próg zapasu `EKRAN_NOWI_ZAPAS`). Bot gra stałe 1× bez przyspieszania nocy (sekunda przy ekranie to 20 ticków, doba gry
+     to 960 s), więc dla niego 1880 s to około dwóch dób gry; okna pokazują, co zobaczyłby gracz szybszego tempa, gdyby zapas
+     liczył doby gry;
    - `bezsmierci` i `przybysz` są wyłącznie do analizy, nie do tabeli: pierwszy nie pozwala zarządowi marnieć (zdrowie,
      jedzenie, siły i ciepło nie spadają poniżej połowy, ugryzienie znika), żeby było widać, jak daleko szłaby ścieżka w
      trybie zombie, gdyby kolonia przetrwała; drugi przyjmuje do zarządu jedną osobę w dobę po otwarciu R4, jakby ją
@@ -242,7 +244,7 @@ interface AnalizaR4 {
   otwarcie: number | null;
   /** tick zaliczenia celu `nowi`; null, gdy go nie zaliczono */
   nowi: number | null;
-  /** cel `nowi` zaliczył zapas (zombie, czas przy ekranie równy trzem dobom przy 1× bez przyjęcia), nie przyjęcie */
+  /** cel `nowi` zaliczył zapas (zombie, `EKRAN_NOWI_ZAPAS` sekund przy ekranie bez przyjęcia), nie przyjęcie */
   nowiZapasem: boolean;
   /** koniec okna: zaliczenie `nowi` albo koniec przebiegu (przegrana, limit dni) */
   koniec: number;
@@ -731,11 +733,12 @@ function analizaR4(
   };
 }
 
-/** Okna czasu przy ekranie od otwarcia R4 (sekundy), w których analiza liczy karty: trzy doby gry przy 8×, 6×, 3× i 1× (doba gry to
-    960 s przy ekranie przy 1×, a przy szybszym tempie tyle razy mniej). Zapas celu `nowi` w zombie (`EKRAN_NOWI_ZAPAS`) to
-    ostatnie z nich; okna 360, 480 i 960 pokazują, ile kart i próśb o przyjęcie zobaczyłby gracz szybszego tempa, gdyby zapas liczył
-    doby gry, jak przed tą zmianą. */
-const OKNA_EKRANU = [360, 480, 960, 2880] as const;
+/** Okna czasu przy ekranie od otwarcia R4 (sekundy), w których analiza liczy karty: trzy doby gry przy 8×, 6×, 3× i 1× w prawdziwej
+    grze. Doba trwa tam przy ekranie 120, 160, 253 i 627 s (14 godzin dnia w tempie gracza i 10 godzin nocy po karcie nocy 6×,
+    chyba że gracz gra już szybciej), a bot gra stałe 1× i widzi w tych oknach tyle samo kart co gracz, bo karty idą w sekundach
+    przy ekranie. Zapas celu `nowi` w zombie (`EKRAN_NOWI_ZAPAS`) to ostatnie okno; pozostałe pokazują, ile kart i próśb o
+    przyjęcie zobaczyłby gracz szybszego tempa, gdyby zapas liczył doby gry. */
+const OKNA_EKRANU = [360, 480, 760, EKRAN_NOWI_ZAPAS] as const;
 
 /** Ile kart i ile z nich z prośbą o przyjęcie padło w pierwszych `sekund` sekundach przy ekranie od otwarcia R4 (karty w oknie
     analizy, które kończy zaliczenie `nowi` albo koniec przebiegu: dla krótszego okna liczby są tylko dolnym ograniczeniem). */

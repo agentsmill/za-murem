@@ -1026,7 +1026,9 @@ export function celeShots(out: string): ShotCele[] {
     });
 
   /** Uchwała (R4) z linią „Cel: …”: zebranie o 19:30 pierwszego dnia, ścieżka ustawiona na R4. Przed zebraniem cel uchwały
-      i raportu czekają (przyciemnione, z dopiskiem), w oknie uchwały cel jest bieżący, a podpis go zalicza. */
+      i raportu czekają (przyciemnione, z dopiskiem „czeka do zebrania” i „czeka do rana”), w oknie uchwały cel jest bieżący,
+      a podpis go zalicza. Potem gra idzie przez noc do porannego raportu: cel „wkurzenie” zalicza się razem z nim i niesie
+      pod spodem lekcję („Wkurzenie spada, gdy ludzie są najedzeni i w cieple.”), czytelną w okienku na komputerze i na telefonie. */
   const uchwala = (name: string, w: number, h: number): ShotCele =>
     shot({
       name,
@@ -1057,12 +1059,13 @@ export function celeShots(out: string): ShotCele[] {
         const [u, k, nowi] = wr;
         if (!u.klasy.includes('czeka') || u.czeka !== 'czeka do zebrania')
           throw new Error(`${name}: uchwała przed zebraniem ${u.klasy.join('+')} / ${u.czeka}`);
-        if (!k.klasy.includes('czeka') || !k.czeka?.startsWith('Raport rano. Wkurzenie spada'))
-          throw new Error(`${name}: wkurzenie przed rankiem ${k.klasy.join('+')} / ${k.czeka}`);
+        if (!k.klasy.includes('czeka') || k.czeka !== 'czeka do rana' || k.uwaga)
+          throw new Error(`${name}: wkurzenie przed rankiem ${k.klasy.join('+')} / ${k.czeka} / ${k.uwaga}`);
         if (!nowi.klasy.includes('now') || !nowi.jak)
           throw new Error(`${name}: bieżący cel to nie „nowi” (${nowi.klasy.join('+')})`);
-        await sprawdzUklad(page, `${name} ${w}×${h}, przed zebraniem`, dotyk);
+        // zrzut przed sprawdzeniem układu (ono otwiera kartę osoby i panel budowy, a na telefonie okienko się wtedy zwija)
         await zrzut(page, `${name}-przed`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, przed zebraniem`, dotyk);
         const p = await page.evaluate(() => window.zm!.govTick());
         if (p !== 'uchwala') throw new Error(`${name}: o 19:30 zamiast uchwały ${p}`);
         await page.waitForSelector('#sheet [data-act="law-skip"]');
@@ -1077,6 +1080,26 @@ export function celeShots(out: string): ShotCele[] {
         if (!po[0].klasy.includes('done')) throw new Error(`${name}: uchwała po podpisie ${po[0].klasy.join('+')}`);
         console.log(`  po podpisie: ${po.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
         await sprawdzUklad(page, `${name} ${w}×${h}, po podpisie`, dotyk);
+        // noc i poranny raport: wkurzenie zalicza się razem z raportem i niesie lekcję pod spodem, a bieżącym celem zostaje „nowi”
+        const rano = await przewin(page, () => false, { dotyk, stop: ['raport'] });
+        if (rano !== 'raport') throw new Error(`${name}: do rana bez raportu (${rano})`);
+        await kliknij(page, '#sheet [data-act="report-ok"]', dotyk);
+        await zamknijOkna(page, dotyk);
+        await poHudzie(page);
+        await ustawOkienko(page, true, dotyk);
+        const raport = await wiersze(page, 'rozdzial');
+        const wk = raport.find((x) => x.key === 'wkurzenie');
+        if (
+          !wk?.klasy.includes('done') ||
+          wk.czeka ||
+          wk.uwaga !== 'Wkurzenie spada, gdy ludzie są najedzeni i w cieple.'
+        )
+          throw new Error(`${name}: wkurzenie po raporcie to ${JSON.stringify(wk)}`);
+        if (!raport.find((x) => x.key === 'nowi')?.klasy.includes('now'))
+          throw new Error(`${name}: po raporcie bieżący cel to nie „nowi”`);
+        console.log(`  po raporcie: ${raport.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        await zrzut(page, `${name}-rano`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po raporcie`, dotyk);
       },
     });
 
@@ -1277,7 +1300,8 @@ export function celeShots(out: string): ShotCele[] {
       },
     });
 
-  /** Zombie, R4 otwarty tyle czasu przy ekranie, ile trzy doby przy 1×, i nikt nie został przyjęty: cel „nowi” zalicza się sam
+  /** Zombie, R4 otwarty tyle czasu przy ekranie, ile trzy doby przy 1× w prawdziwej grze (1880 s: doba to około 627 s, bo noc po
+      karcie biegnie 6×), i nikt nie został przyjęty: cel „nowi” zalicza się sam
       (zapas) i mówi to linią „Nikt nie został przyjęty, więc cel zaliczył się sam. …” pod celem; bieżącym celem zostaje „ludzie”.
       Okienko z tą linią niczego nie zasłania (na telefonie nie nachodzi na panel budowy), po polsku i po angielsku. Przed tym
       czasem cel jest jeszcze do zrobienia i jest bieżący: jego podpowiedź mówi o ocalałych pod bramą, ich karcie z „Pokaż” i
@@ -1291,7 +1315,7 @@ export function celeShots(out: string): ShotCele[] {
       run: async (page, base) => {
         const dotyk = dotykowy(w);
         await start(page, base, `demo=${demo}&tryb=zombie&miasto=0&${GRA}&godzina=11`);
-        // dwie doby i dwadzieścia trzy godziny: zapasu jeszcze nie ma
+        // dwie doby i dwadzieścia trzy godziny (około pół minuty przed progiem): zapasu jeszcze nie ma
         await rozdzial(page, 'r4', 2.95);
         await poPodpowiedziStartowej(page);
         await ustawOkienko(page, true, dotyk);
@@ -1302,9 +1326,10 @@ export function celeShots(out: string): ShotCele[] {
         zawiera(
           `${name} przed zapasem`,
           przed.jak ?? '',
-          'Ocalali pod bramą mają kartę z „Pokaż”',
+          'Ocaleni pod bramą mają kartę z „Pokaż”',
           '„Przyjąć do spółdzielni”',
           '„Wciągnąć do roboty”',
+          'komunikat o ich drodze ma ten sam „Pokaż”',
         );
         nieZawiera(`${name} przed zapasem`, przed.jak ?? '', 'Przyjąć wszystkich');
         await zrzut(page, `${name}-przed-pl`);
@@ -1316,8 +1341,9 @@ export function celeShots(out: string): ShotCele[] {
           `${name} przed zapasem EN`,
           przedEn?.jak ?? '',
           'Survivors at the gate have a card with “Show”',
-          '“Take them into the co-op”',
-          '“Put him to work”',
+          '“Take him/her/them into the co-op”',
+          '“Put him/her to work”',
+          'the notice about them coming in has the same “Show”',
         );
         nieZawiera(`${name} przed zapasem EN`, przedEn?.jak ?? '', 'Take everyone in');
         await okienkoBezPolskich(page, `${name} przed zapasem EN`);
@@ -1366,7 +1392,7 @@ export function celeShots(out: string): ShotCele[] {
   /** Zombie, R4 otwarty od razu, a gra idzie ponad trzy doby gry przy 8× (`zm.ff(minuty, 8)`: sekunda przy ekranie to 160 ticków,
       więc to około 6 minut przy ekranie): zapas celu „nowi” liczy czas przy ekranie, a nie doby gry, więc cel jeszcze czeka
       (zapas liczony w dobach gry zaliczyłby go po trzech dobach), a gdy nikt nie jest przyjęty i czasu przy ekranie nie przybywa
-      od progu (2880 s), niczego nie zalicza. Dowód, że okienko celów dostaje z gry prawdziwy czas przy ekranie (`ekran` w
+      od progu (1880 s), niczego nie zalicza. Dowód, że okienko celów dostaje z gry prawdziwy czas przy ekranie (`ekran` w
       `odczytCelow`, src/main.ts), a nie tick podzielony przez 20, czego żaden test w Node nie widzi. */
   const zombieNowiTempo = (name: string, w: number, h: number): ShotCele =>
     shot({
@@ -1441,9 +1467,16 @@ export function celeShots(out: string): ShotCele[] {
         if (biezacy?.key !== 'nowi') throw new Error(`${name}: bieżący cel to ${biezacy?.key}, nie nowi`);
         const miejsce = dom ? 'pod furtką' : 'pod bramą';
         const jak = biezacy.jak ?? '';
-        zawiera(name, jak, '„Pokaż”', '„Wciągnąć do roboty”', `„Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”`);
+        zawiera(
+          name,
+          jak,
+          '„Pokaż”',
+          '„Wciągnąć do roboty”',
+          `„Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”`,
+          'komunikat o ich drodze ma ten sam „Pokaż”',
+        );
         if (zombie) {
-          zawiera(name, jak, `Ocalali ${miejsce} mają kartę z „Pokaż”`);
+          zawiera(name, jak, `Ocaleni ${miejsce} mają kartę z „Pokaż”`);
           nieZawiera(name, jak, 'Przyjąć wszystkich');
         } else {
           zawiera(name, jak, `Gość ${miejsce} ma kartę z „Pokaż”`, '„Przyjąć wszystkich”');
@@ -1460,7 +1493,14 @@ export function celeShots(out: string): ShotCele[] {
         if (biezacyEn?.key !== 'nowi') throw new Error(`${name} EN: bieżący cel to ${biezacyEn?.key}, nie nowi`);
         const jakEn = biezacyEn.jak ?? '';
         const brama = dom ? 'the garden gate' : 'the gate';
-        zawiera(name, jakEn, '“Show”', '“Put him to work”', `“Take them into ${dom ? 'the house' : 'the co-op'}”`);
+        zawiera(
+          name,
+          jakEn,
+          '“Show”',
+          '“Put him/her to work”',
+          `“Take him/her/them into ${dom ? 'the house' : 'the co-op'}”`,
+          'the notice about them coming in has the same “Show”',
+        );
         if (zombie) {
           zawiera(name, jakEn, `Survivors at ${brama} have a card with “Show”`);
           nieZawiera(name, jakEn, 'Take everyone in');
