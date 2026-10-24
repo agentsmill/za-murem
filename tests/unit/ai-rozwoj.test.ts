@@ -720,10 +720,13 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     for (const o of pozary) expect(o.ewakuacja, `dzień ${o.dzien}`).toBe(false);
   });
 
-  it('pierwszy kamień ludności (10 osób) do 15. dnia', () => {
+  it('pierwszy kamień ludności (10 osób) do 5. dnia', () => {
+    // Ten przebieg jest deterministyczny: pierwszy kamień w 3. dniu (przed zadaniem 5, na 40ef252, w 7.). Pasmo z planu to dzień 15,
+    // ale pilnuje go bramka etapu (zadanie 7, `npm run bot:osada`, kolumna „kamień”); tu pilnujemy pomiaru z marginesem dwóch dni,
+    // żeby cofnięcie wzrostu do poziomu bazy nie przeszło niezauważone (z granicą 15 przechodziło).
     const pierwszy = poranki.find((p) => p.ludnosc >= 10);
     expect(pierwszy, 'w przebiegu był poranek z co najmniej 10 osobami').toBeDefined();
-    expect(pierwszy!.dzien).toBeLessThanOrEqual(15);
+    expect(pierwszy!.dzien).toBeLessThanOrEqual(5);
   });
 });
 
@@ -756,9 +759,11 @@ describe('koszt i determinizm', () => {
 });
 
 describe('cel etapu: wzrost osady', () => {
-  // Cel z planu: co najmniej jedna budowla na trzy dni do 30. dnia (stojące budowle w dniu 30 co najmniej 10). Przebieg Przymorza 11
-  // kończy się odwołaniem przed 30. dniem, a materiału na deski (13 desek od 4. dnia) starcza na kilka budowli; cel mierzy bramka
-  // etapu (zadanie 7, `npm run bot:osada`: budowle na koniec przebiegu), więc tu zostaje zapowiedzią.
+  // Cel z planu: co najmniej jedna budowla na trzy dni do 30. dnia (stojące budowle w dniu 30 co najmniej 10). Przymorze 11 dożywa
+  // 45. dnia z czterema budowlami. W 15 przebiegach uprzęży (trzy dema, ziarna 11–15) dziesięć kończy się odwołaniem przed 30.
+  // dniem, a w pozostałych pięciu stoi 2–5 budowli (cel w dniu 45 to 15): deski (13 od 4. dnia, po pieczarkarni 5) starczają na
+  // cztery budowle. Cel mierzy bramka etapu (zadanie 7, `npm run bot:osada`: budowle na koniec przebiegu), więc tu zostaje
+  // zapowiedzią.
   it.todo('cel etapu (bramka zadania 7): w dniu 30 stoi co najmniej 10 budowli');
 
   it('budowle: rozwój dokłada do trzech z bazy (pracownia, koza z beczki, ogródek) co najmniej jedną budowlę do 12. dnia', () => {

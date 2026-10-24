@@ -1,7 +1,7 @@
 /* Warstwa zimy silnika osady AI (src/ai/zima.ts, src/ai/miejsca.ts, `silnik` w src/ai/silnik.ts), etap 1 osady AI
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 3). Powód warstwy: gry botów kończą się zimą w dniach
    15–18, bo zarząd śpi w pokoju, który koza z kuchni grzeje tylko przez drzwi (docs/ocena/2026-10-20-zima-w-grach-botow.md,
-   sekcje 3 i 7); ogrzany pokój zarządu daje 5–12 dni więcej. Pilnuje sześciu rzeczy:
+   sekcje 3 i 7); ogrzany pokój zarządu daje 5–12 dni więcej. Pilnuje siedmiu rzeczy:
    - miejsc (`pokojZarzadu`, `miejsceNa`): pokój, w którym śpi zarząd, i pierwsze miejsce dla budowli: także tam, gdzie
      koza z beczki nie ma gdzie stanąć (sypialnie Lanciego bez okna), z wolnym kafelkiem do stania przy obrysie (plan
      zastawiony ze wszystkich stron stałby w grze do końca: Zielonki, ziarno 14) i z pomijaniem miejsc, które ktoś jeszcze
@@ -13,6 +13,9 @@
    - drewna: `drewnoNaNoc` liczy jak karta nocy, a ścinanie na opał rusza już poniżej dwóch nocy (nie dopiero poniżej 6);
    - dyżuru przy kozie na karcie nocy: najbardziej wypoczęta osoba ze zdrowiem co najmniej 40, tylko gdy drewna starcza
      na noc i jest zimno, bez podwójnego przydziału i z poleceniem, gdy karta nie ma tej opcji;
+   - ścinania drewna, które nie odbiera polecenia z karty nocy (`bezPoleceniaZKarty` w src/ai/silnik.ts): w sekundzie po
+     zatwierdzeniu karty drzewo ścina tylko osoba ze snem na karcie, nikt, gdy wszyscy mają zadanie, a stara albo
+     niepotwierdzona karta nikomu ścinania nie odbiera;
    - determinizmu i kosztu: pamięć warstwy w JSON (zapis i wczytanie w połowie nie zmieniają przebiegu), warstwa najwyżej
      raz na 30 sekund przy ekranie. */
 
@@ -40,7 +43,7 @@ import type { Prompt } from '../../src/gov/typy.ts';
 import { canPlace } from '../../src/sim/budowle.ts';
 import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
-import type { Thing } from '../../src/sim/sim.ts';
+import type { Command, Pawn, Thing } from '../../src/sim/sim.ts';
 import { przygotujGre } from '../../tools/bot-osada.ts';
 import { rzecz, szpieg, tickDnia } from './ai-pomoc.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
@@ -757,6 +760,73 @@ describe('dyżur przy kozie na karcie nocy', () => {
     expect(probek).toBeGreaterThan(20);
     expect(zapalona / probek).toBeGreaterThan(0.9);
     expect(wejscie(g).people.some((p) => p.post === 'koza' || p.post === 'brama')).toBe(true);
+  });
+});
+
+describe('ścinanie drewna nie odbiera polecenia z karty nocy (bezPoleceniaZKarty w silniku)', () => {
+  // Polecenie z potwierdzonej karty (dyżur przy kozie, warta, wyprawa) rusza dopiero w następnym kroku, a ścinanie zlecone w tej
+  // samej sekundzie nadpisywało je: w nocy 8 w Przymorzu 11 dyżur przy kozie zamieniał się na ścinanie drzewa, bo drewna było 38
+  // z progu 40. Test woła turę silnika w sekundzie 20:00 dnia 6, tuż po zatwierdzeniu karty, z przydziałem nocy ustawionym ręcznie.
+
+  /** Gra silnikiem do 20:00 dnia 6 (silnik zatwierdził kartę w tej sekundzie); zapis do rozgałęziania przypadków. */
+  let zapis: ZapisGryAi | undefined;
+  function grajDoKarty(): ZapisGryAi {
+    if (zapis) return zapis;
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    grajDo(g, silnik, tickDnia(6, 20));
+    expect(hourOf(g.sim.st.tick)).toBe(20);
+    expect(g.gov.night?.confirmed).toBe(true);
+    expect(g.gov.night?.day).toBe(6);
+    zapis = zapiszGre(g);
+    return zapis;
+  }
+
+  /** Jedna tura silnika na ręce-szpiegu w sekundzie 20:00: przydział nocy dla osób zarządu w kolejności pionków (`przydzial`),
+      karta po zmianach `karta` (potwierdzenie, doba), drewno poniżej progu, nikt przy ścinaniu i żadnej pracy w toku. Oddaje
+      polecenia ścinania i pionki zarządu w tej samej kolejności co `przydzial`. */
+  function sciecia(
+    przydzial: readonly string[],
+    karta: { confirmed?: boolean; day?: number } = {},
+  ): { chop: Extract<Command, { t: 'chop' }>[]; pionki: Pawn[] } {
+    const g = wczytajGre(demoWorld('przymorze'), grajDoKarty());
+    const st = g.sim.st;
+    const pionki = st.pawns.filter((p) => p.kind === 'core');
+    expect(pionki).toHaveLength(przydzial.length);
+    pionki.forEach((p, k) => {
+      g.gov.night!.assign[st.people[p.person].id] = przydzial[k];
+      p.job = null;
+      p.carry = 0;
+    });
+    Object.assign(g.gov.night!, karta);
+    st.things = st.things.filter((t) => t.kind !== 'drewno');
+    st.cmds.length = 0;
+    g.pamiec.zlecone = -1;
+    expect(wejscie(g).stock.wood).toBeLessThan(progDrewna(wejscie(g)));
+    const s = szpieg();
+    silnik.tura(g, s.r);
+    return { chop: s.polecenia.filter((c): c is Extract<Command, { t: 'chop' }> => c.t === 'chop'), pionki };
+  }
+
+  it('z potwierdzoną kartą (dyżur przy kozie, wyprawa) drzewo ścina tylko osoba ze snem', () => {
+    const { chop, pionki } = sciecia([KOZA_KEY, 'wyprawa:blisko', 'sen', 'sen']);
+    expect(chop).toHaveLength(1);
+    // bez zabezpieczenia ścinałaby pierwsza osoba (dyżurna przy kozie) i polecenie z karty przepadłoby
+    expect(chop[0].ids).toEqual([pionki[2].id]);
+  });
+
+  it('gdy wszyscy mają na karcie zadanie (dyżur, wyprawa, warta), nikt nie ścina: drzewo poczeka do rana', () => {
+    const { chop } = sciecia([KOZA_KEY, 'wyprawa:blisko', 'warta:brama', 'warta:brama']);
+    expect(chop).toEqual([]);
+  });
+
+  it('karta niepotwierdzona albo z poprzedniej doby nikomu nie odbiera ścinania', () => {
+    const przydzial = [KOZA_KEY, 'wyprawa:blisko', 'sen', 'sen'];
+    const niepotwierdzona = sciecia(przydzial, { confirmed: false });
+    expect(niepotwierdzona.chop).toHaveLength(1);
+    expect(niepotwierdzona.chop[0].ids).toEqual([niepotwierdzona.pionki[0].id]);
+    const stara = sciecia(przydzial, { day: 5 });
+    expect(stara.chop).toHaveLength(1);
+    expect(stara.chop[0].ids).toEqual([stara.pionki[0].id]);
   });
 });
 
