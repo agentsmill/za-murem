@@ -68,6 +68,7 @@ npm run bot:zombie   # tryb zombie: noce z wartą z dzidami i bez warty [-- ziar
 npm run bot:zombie -- --mieszkancy  # tryb zombie z mieszkańcami z generatora (flaga w dowolnym miejscu argumentów)
 npm run bot:zombie:siatka  # miara siatki: bot zombie na trzech osiedlach, z mieszkańcami i bez, w której nocy siatka puszcza pierwszy raz [-- 1-6 [noce]] [--opal]
 npm run bot:v03      # wzorzec balansu na oryginale 0.3 [-- ziarno [dni]]
+npm run bot:cele     # bot ścieżki celów: gracz według podpowiedzi, trzy dema w obu trybach, 10 dni, tabela rozdziałów [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [gadaj] [lancuchy=0]
 npm run bot:osada    # osada AI: silnik decyzji gra 45 dni na trzech demach, werdykt bramki etapu [-- --bez-progu] [--prosto] [--ziarna=11-20]
 npm run bot:surowce  # raport gospodarki: wraki i warsztat z graczem fali 1 i bez nich, 5 dni [-- ziarno [dni]]
 npm run bot:praca     # praca ludzi: zarząd bez gracza (3 demka, oba tryby, 3 doby) [-- ziarno] [--werbunek] [--dni=N] [--przelacznik | --bez-przelacznika]
