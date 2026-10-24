@@ -1657,7 +1657,7 @@ a.btn {
     order: 5;
     width: 100%;
     justify-content: space-between;
-    gap: 3px;
+    gap: 2px;
   }
   #sBoards,
   #sScrap,
@@ -1667,14 +1667,22 @@ a.btn {
   #sMats {
     display: flex;
   }
+  /* Kafelki stanu dzielą wiersz po równo (flex: 1 z podstawą 0), ale żaden nie jest węższy od własnego tekstu
+     (min-content przy tekście bez zawijania): dawniej `min-width: 0` pozwalało najdłuższym etykietom („zaufanie”,
+     „wkurzenie”) wystawać z kafelka i zlewać się z sąsiadem. Gdy wartości z późnej gry (trzycyfrowe drewno, „−12°C”, „12,5 h”,
+     „60·40·20”) nie mieszczą się w jednym wierszu, kafelki zawijają się do drugiego, ale nic na nic nie nachodzi. */
   .stat {
-    min-width: 0;
-    flex: 1;
+    min-width: min-content;
+    flex: 1 1 0;
     padding: 1px 2px 2px;
+  }
+  .stat-k,
+  .stat-v {
+    white-space: nowrap;
   }
   .stat-k {
     font-size: 9px;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.02em;
   }
   .stat-v {
     font-size: 14px;
@@ -1788,6 +1796,16 @@ a.btn {
   }
   .sheet-foot .btn {
     flex: 1;
+  }
+}
+/* telefon 360 px z dziewięcioma kafelkami trybu zombie po polsku: przy tej szerokości nawet dziewięć pikseli etykiety bez
+   odstępu między literami i wartości o piksel mniejsze zostawiają odstęp 8 px między „zaufanie” a „wkurzenie” w jednym wierszu */
+@media (max-width: 380px) {
+  .stat-k {
+    letter-spacing: 0;
+  }
+  .stat-v {
+    font-size: 13px;
   }
 }
 
