@@ -2759,6 +2759,38 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // karta gościa w trybie zombie (Task 16): szwendacze przy siatce (`stado=3`) już nie płoszą grupy z 6 m, tylko dopiero na
+        // zasięgu ugryzienia (`SPOOK_GOSC`), więc grupa dochodzi pod bramę i otwiera się karta; zrzut karty z „Pokaż” na grupie
+        // pod bramą (wyd-gosc-zombie.png) i liczba szwendaczy w 10 m od grupy w logu
+        name: 'wyd-gosc-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 600);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const a = zm.gov!.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const m = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            const zombie = st.pawns.filter((p) => p.kind === 'zombie');
+            const blisko = zombie.filter((z) => m.some((p) => Math.hypot(z.x - p.x, z.y - p.y) <= 10)).length;
+            return { faza: wpis.faza, pionki: m.length, osoby: a.gosc.osoby.length, szwendaczy: zombie.length, blisko };
+          });
+          console.log(
+            `  karta po ${krok} krokach: faza ${stan.faza}, ${stan.pionki} pionków, szwendaczy ${stan.szwendaczy}, w 10 m od grupy ${stan.blisko}`,
+          );
+          if (stan.faza !== 'brama') throw new Error(`karta gościa, ale faza ${stan.faza}`);
+          if (stan.pionki !== stan.osoby)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-zombie.png') });
+        },
+      },
+      {
         // karta gościa w prawdziwej grze (Przymorze, obcy włączeni): zarząd planuje gościa, ten idzie ulicą pod bramę i dopiero
         // wtedy otwiera się karta z „Pokaż”; „Pokaż” jedzie kamerą do gości (okno zostaje), „Wpuścić na noc” wpuszcza ich
         // bramą na podwórko. Zrzuty: karta (wyd-gosc-karta-okno.png), po „Pokaż” (wyd-gosc-karta-pokaz.png) i goście na
