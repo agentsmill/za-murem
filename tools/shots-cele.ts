@@ -1301,8 +1301,10 @@ export function celeShots(out: string): ShotCele[] {
         const biezacy = wr.find((x) => x.klasy.includes('now'));
         if (biezacy?.key !== 'ludzie') throw new Error(`${name}: bieżący cel to ${biezacy?.key}, nie ludzie`);
         console.log(`  R4 po trzech dobach: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        // zrzut przed sprawdzeniem układu (ono otwiera kartę osoby i panel budowy, a na telefonie okienko się wtedy zwija) i pod
+        // osobną nazwą: plik `name` zapisuje po scenariuszu sam wykonawca, już ze zwiniętym okienkiem
+        await zrzut(page, `${name}-pl`);
         await sprawdzUklad(page, `${name} ${w}×${h}, zapas`, dotyk);
-        await zrzut(page, name);
         await ustawJezyk(page, 'en');
         // zmiana języka przerysowuje okienko, na telefonie zwinięte
         await ustawOkienko(page, true, dotyk);
@@ -1315,8 +1317,8 @@ export function celeShots(out: string): ShotCele[] {
         )
           throw new Error(`${name} EN: po trzech dobach „nowi” to ${JSON.stringify(nowiEn)}`);
         await okienkoBezPolskich(page, `${name} EN`);
-        await sprawdzUklad(page, `${name} ${w}×${h}, zapas, EN`, dotyk);
         await zrzut(page, `${name}-en`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, zapas, EN`, dotyk);
         await ustawJezyk(page, 'pl');
       },
     });
