@@ -143,9 +143,13 @@ export interface Wynik {
   tytul: string;
 }
 
-/** Artykuły pasujące do zapytania: każde słowo zapytania musi wystąpić w tytule, treści, faktach albo dodatkowych słowach;
-    tytuł waży więcej niż treść. Przy pierwszym zapytaniu w danym języku buduje treść wszystkich artykułów (kilka
-    milisekund), potem korzysta z pamięci. Puste zapytanie nie daje nic. */
+/** Rdzeń słowa do wyszukiwania: słowo z pięcioma literami i więcej traci ostatnią, żeby „uchwała” znajdowała „uchwały”,
+    a „kłódka” „kłódkę” (polska odmiana zmienia końcówki, nie początek wyrazu). Krótsze słowa zostają całe. */
+const rdzen = (t: string): string => (t.length >= 5 ? t.slice(0, -1) : t);
+
+/** Artykuły pasujące do zapytania: każde słowo zapytania (albo jego rdzeń, z mniejszą wagą) musi wystąpić w tytule, treści,
+    faktach albo dodatkowych słowach; tytuł waży więcej niż treść. Przy pierwszym zapytaniu w danym języku buduje treść
+    wszystkich artykułów (kilka milisekund), potem korzysta z pamięci. Puste zapytanie nic nie daje. */
 export function szukaj(q: string, c: WikiCtx, limit = 60): Wynik[] {
   const tokeny = normalizuj(q).split(' ').filter(Boolean);
   if (!tokeny.length) return [];
@@ -159,9 +163,12 @@ export function szukaj(q: string, c: WikiCtx, limit = 60): Wynik[] {
     );
     let punkty = 0;
     for (const t of tokeny) {
+      const r = rdzen(t);
       if (slowaTytulu.some((s) => s.startsWith(t))) punkty += 5;
+      else if (slowaTytulu.some((s) => s.startsWith(r))) punkty += 4;
       else if (tytul.includes(t)) punkty += 3;
-      else if (tekst.includes(t)) punkty += 1;
+      else if (tytul.includes(r)) punkty += 2;
+      else if (tekst.includes(r)) punkty += 1;
       else return;
     }
     trafione.push({ w: { id: d.id, kat: d.kat, tytul: a.tytul }, punkty, nr });

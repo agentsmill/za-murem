@@ -58,6 +58,7 @@ import { przyspiesza, rodzajNazwa, UMIEJETNOSCI } from './wiki-praca.ts';
 import { czasTickow, godz, listaI, polecenie, proc } from './wiki-slowa.ts';
 import {
   karaNastroju,
+  leniwie,
   odKtorej,
   progiKarty,
   progiZdrowia,
@@ -69,15 +70,6 @@ import {
 } from './wiki-sondy.ts';
 import { type Def, def, type Fakt, fakt, type Tresc, type WikiCtx } from './wiki-typy.ts';
 import { mebelNazwa } from './wiki-zasoby.ts';
-
-/** wartość liczona raz, przy pierwszym użyciu (sondy nie zależą od języka, a niektóre wołają funkcje gry kilkaset razy) */
-function leniwie<T>(f: () => T): () => T {
-  let v: { w: T } | undefined;
-  return () => {
-    v ??= { w: f() };
-    return v.w;
-  };
-}
 
 /** nazwa potrzeby, dziedziny i cechy w bieżącym języku */
 export const potrzebaNazwa = (k: keyof Needs): string => L(NEED_LABELS[k], NEED_LABELS_EN[k]);

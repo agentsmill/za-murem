@@ -95,6 +95,16 @@ describe('wyszukiwarka', () => {
     expect(oba).toContain('zasob:odzysk');
   });
 
+  it('odmiana: zapytanie w mianowniku znajduje tytuł w innym przypadku, a dokładne trafienie wygrywa z rdzeniem', () => {
+    const c = kontekst('blok');
+    expect(szukaj('uchwała', c)[0].id).toBe('zarzad:uchwaly');
+    expect(szukaj('kłódka', c)[0].id).toBe('uchwala:u_brama');
+    expect(szukaj('napady', c)[0].id).toBe('noc:napad');
+    // słowo krótsze niż pięć liter zostaje całe: „koza” nie zamienia się w „koz”
+    expect(szukaj('koza', c)[0].id).toBe('zasob:koza');
+    expect(szukaj('kozy', c).map((x) => x.id)).not.toContain('zasob:odzysk');
+  });
+
   it('działa po angielsku', () => {
     ustawJezyk('en');
     const c = kontekst('blok');

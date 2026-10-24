@@ -168,3 +168,12 @@ export function progiKarty(): {
     daleko: { rest: sily('wyprawa:daleko'), health: zdrowie('wyprawa:daleko') },
   };
 }
+
+/** Wartość liczona raz, przy pierwszym użyciu (sondy nie zależą od języka, a niektóre wołają funkcje gry kilkaset razy). */
+export function leniwie<T>(f: () => T): () => T {
+  let v: { w: T } | undefined;
+  return () => {
+    v ??= { w: f() };
+    return v.w;
+  };
+}

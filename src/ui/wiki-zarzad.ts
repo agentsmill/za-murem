@@ -24,7 +24,7 @@ import { num, signed } from './tekst.ts';
 import { cechaNazwa, SMIERC_MIESZKANIEC, SMIERC_ZARZAD } from './wiki-ludzie.ts';
 import { GODZIN_NOCY, NOC, warta, wstawGodz, zmianaSzansy } from './wiki-noc.ts';
 import { cyt, godz, proc, wCyt } from './wiki-slowa.ts';
-import { sondaOsoba, sondaStan, sondaStanZUchwalami, sondaWejscie } from './wiki-sondy.ts';
+import { leniwie, sondaOsoba, sondaStan, sondaStanZUchwalami, sondaWejscie } from './wiki-sondy.ts';
 import { type Def, def, type Fakt, fakt, type Tresc, type WikiCtx } from './wiki-typy.ts';
 
 /** Liczby, które zarząd ma na stałe w kodzie i które wiki podaje wprost; test przypina je do tekstu źródeł. */
@@ -41,14 +41,6 @@ export const ZARZAD = {
   /** godzina, o której uchwała zamyka bramę na kłódkę (`step` w src/sim/sim.ts; otwiera o `GUARD_UNTIL`) */
   bramaZamyka: 20,
 };
-
-function leniwie<T>(f: () => T): () => T {
-  let v: { w: T } | undefined;
-  return () => {
-    v ??= { w: f() };
-    return v.w;
-  };
-}
 
 // ---------------------------------------------------------------- dryf dzienny z funkcji gry
 

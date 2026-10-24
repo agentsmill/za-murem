@@ -30,7 +30,15 @@ import { REST_AWAKE } from '../sim/needs.ts';
 import { num, signed } from './tekst.ts';
 import { cechaNazwa, ryzykoMnoznik, wartaMnoznik, wartaNaPoziom } from './wiki-ludzie.ts';
 import { cyt, godz, polecenie, proc, wCyt } from './wiki-slowa.ts';
-import { granica, progiKarty, sondaOsoba, sondaStan, sondaStanZUchwalami, sondaWejscie } from './wiki-sondy.ts';
+import {
+  granica,
+  leniwie,
+  progiKarty,
+  sondaOsoba,
+  sondaStan,
+  sondaStanZUchwalami,
+  sondaWejscie,
+} from './wiki-sondy.ts';
 import { type Def, def, type Fakt, fakt, type Tresc, type WikiCtx } from './wiki-typy.ts';
 
 /** Liczby, które zarząd ma na stałe w kodzie karty nocy (src/gov/noc.ts) i w jego skutkach; test je przypina. */
@@ -66,14 +74,6 @@ export const NOC = {
   /** kuchnia rano: ciepło od, chłodno od (°C) */
   kuchnia: { cieplo: 18, chlodno: 15 },
 } as const;
-
-function leniwie<T>(f: () => T): () => T {
-  let v: { w: T } | undefined;
-  return () => {
-    v ??= { w: f() };
-    return v.w;
-  };
-}
 
 // ---------------------------------------------------------------- sondy zarządu
 
