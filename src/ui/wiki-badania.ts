@@ -121,7 +121,7 @@ const opisTech = (t: TechNowa, c: WikiCtx): string => (DZIALANIE[t.id] ? DZIALAN
 /** poziom wiedzy w tekście: „1” … „4” */
 const poziomy = (t: TechNowa): number => t.lvl;
 
-function faktyTech(t: TechNowa, c: WikiCtx): Fakt[] {
+function faktyTech(t: TechNowa): Fakt[] {
   const budowle = budowlyTech(t);
   return [
     fakt('era', L('Era', 'Era'), `${t.era}: ${tr(nazwaEry(t.era))}`),
@@ -165,7 +165,6 @@ function faktyTech(t: TechNowa, c: WikiCtx): Fakt[] {
         ]
       : []),
     ...(t.id === 't_okna' ? [fakt('liczba', L('Premia', 'Bonus'), `+${OKNA_PLUS}°C`)] : []),
-    ...(c.zombie && t.id === 't_siec' && t.dzialanieZombie ? [] : []),
   ];
 }
 
@@ -207,7 +206,7 @@ function technologia(t: TechNowa): Def {
       ];
       return {
         zdania,
-        fakty: faktyTech(t, c),
+        fakty: faktyTech(t),
         jak: t.dziala
           ? [
               L(

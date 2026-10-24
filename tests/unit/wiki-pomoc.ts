@@ -1,6 +1,7 @@
 /* Pomocnik testów wiki (src/ui/wiki.ts): konteksty dla bloku (Przymorze) i domu (Zielonki), obu języków i obu urządzeń,
    budowanie wszystkich artykułów w bieżącym języku i tekst artykułu do sprawdzeń słownych. */
 
+import { readFileSync } from 'node:fs';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { placeOf } from '../../src/gov/miejsce.ts';
 import { type Artykul, artykul, rejestr, type WikiCtx, wikiCtx } from '../../src/ui/wiki.ts';
@@ -66,3 +67,9 @@ export const UZGODNIONE: ReadonlySet<string> = new Set([
   'zombie:siatka',
   'zombie:szwendacze',
 ]);
+
+/** Tekst pliku źródłowego z białymi znakami zwiniętymi do pojedynczych spacji, żeby test „liczba stoi w kodzie” nie zależał
+    od łamania wierszy przez formatera. Ścieżka od korzenia repozytorium, np. `src/gov/noc.ts`. */
+export function zrodlo(sciezka: string): string {
+  return readFileSync(new URL(`../../${sciezka}`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
+}
