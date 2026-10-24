@@ -37,7 +37,7 @@
 
 import './miasto.css';
 import { L, type Lang, liczba, type Tx, tr, tx } from '../core/jezyk.ts';
-import { kiedyWraca, powodOdmowy } from '../gov/dzienne.ts';
+import { kiedyWraca, POWOD_WYBRANE, powodOdmowy } from '../gov/dzienne.ts';
 import type { GovInput, GovState, LootKey } from '../gov/typy.ts';
 import { celZMiejsca, czasWyprawyMin, MAX_DROGA_M, ryzykoSlowem, zostaloZMiejsca } from '../gov/wyprawy.ts';
 import { C, css, mix, shade, WALLS } from '../render/art/palette.ts';
@@ -305,7 +305,8 @@ export const czas = (min: number): string => {
 };
 
 /** Karta miejsca dla stanu zarządu `st` i wejścia `i`: kategoria i nazwa, odległość i czas drogi, ryzyko słowem, co tam
-    zwykle jest, ile zostało („nietknięte”, „ktoś tu był”, „wybrane do cna”), kiedy byliście ostatnio, wyprawa w drodze.
+    zwykle jest, ile zostało („nietknięte”, „ktoś tu był”, „wybrane do cna” albo „wybrane do cna, zanim tu dotarliście”: jedna
+    linia stanu, a powód odmowy z tym samym znaczeniem nie wraca pod listą), kiedy byliście ostatnio, wyprawa w drodze.
     Czy można i dlaczego nie, mówi `powodOdmowy` z src/gov/dzienne.ts (to samo co przy wysłaniu, bez sprawdzania osób,
     z miejscem na mapie osiedla włącznie: nie jest celem wyprawy). Nic nie zmienia. */
 export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsca {
@@ -339,11 +340,15 @@ export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsc
         )
       : tx('Nic, co dałoby się unieść.', 'Nothing worth carrying.'),
   );
+  // jedna linia stanu zapasu, zgodna z linią o wizytach niżej: miejsce puste od początku (zapas 0, nikt z nas nic nie zabrał) nie
+  // jest „wybrane do cna” po cichu obok „Jeszcze tu nie byliście”, tylko „zanim tu dotarliście”
   const zostalo = zostaloZMiejsca(st, cel);
   const zabrano = st.miasto?.zabrano[m.klucz] ?? 0;
   linie.push(
     zostalo <= 0
-      ? tx('Wybrane do cna.', 'Picked clean.')
+      ? zabrano > 0
+        ? tx('Wybrane do cna.', 'Picked clean.')
+        : tx('Wybrane do cna, zanim tu dotarliście.', 'Picked clean before you got here.')
       : zabrano > 0
         ? tx('Ktoś tu był: część już wyniesiono.', 'Somebody has been here: some of it is gone.')
         : tx('Nietknięte.', 'Untouched.'),
@@ -369,9 +374,11 @@ export function kartaMiejsca(m: Miejsce, st: GovState, i: GovInput): KartaMiejsc
     const kiedy = kiedyWraca(wDrodze.powrot, i.day);
     linie.push(tx(`Wyprawa jest w drodze, powrót ${kiedy.pl}.`, `A supply run is on its way, back ${kiedy.en}.`));
   }
-  // wszystkie zasady wysyłki (z mapą osiedla włącznie) są tylko w zarządzie, te same, co sprawdzi wysłanie
+  // wszystkie zasady wysyłki (z mapą osiedla włącznie) są tylko w zarządzie, te same, co sprawdzi wysłanie; powód „wybrane do
+  // cna” mówi to samo, co linia stanu wyżej, więc karta go nie powtarza (przycisk i tak jest wyszarzony: `mozna`)
   const powod = powodOdmowy(st, i, cel);
-  return { tytul: cel.nazwa, linie, mozna: !powod, ...(powod ? { powod } : {}) };
+  const dopisek = powod && powod !== POWOD_WYBRANE ? powod : null;
+  return { tytul: cel.nazwa, linie, mozna: !powod, ...(dopisek ? { powod: dopisek } : {}) };
 }
 
 /** HTML karty miejsca w bieżącym języku: tytuł, linie, powód i przycisk „Wyślij wyprawę” (`data-act="wyslij"`, w

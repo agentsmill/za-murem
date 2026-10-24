@@ -5,8 +5,8 @@
    „już tu bywała” (M18), „Ślady przy siatce” nie proponują łatania „przed nocą” po karcie nocy (M11), karta miejsca na
    mapie miasta ma jedną linię stanu (M13). Zdania zarządu są w stanie w obu językach, więc testy czytają `.pl` i `.en`. */
 
-import { describe, expect, it } from 'vitest';
-import { cudzyslowy, tx } from '../../src/core/jezyk.ts';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cudzyslowy, tx, ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { type Gosc, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts';
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
@@ -16,12 +16,13 @@ import type { GovGosc, GovInput } from '../../src/gov/typy.ts';
 import { planujGoscia } from '../../src/gov/wizyta.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { eventView, makeHost } from '../../src/gov/wydarzenia.ts';
-import { celZMiejsca } from '../../src/gov/wyprawy.ts';
+import { celZMiejsca, wlaczMiasto } from '../../src/gov/wyprawy.ts';
 import { chooseEvent, govUpdate, newGov } from '../../src/gov/zarzad.ts';
 import { imionaPostaci, tekstPowrotu, type Znajomy } from '../../src/gov/znajomi.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu } from '../../src/ui/budowa.ts';
+import { kartaHtml, kartaMiejsca } from '../../src/ui/miasto.ts';
 import { helpSheet, reportSheet } from '../../src/ui/okna.ts';
 import { statsOf } from '../../src/ui/pasek.ts';
 import { Atrapa, at, run, TPH } from './gov-atrapa.ts';
@@ -495,4 +496,68 @@ describe('M11: „Ślady przy siatce” po karcie nocy nie proponują łatania �
       }
     });
   }
+});
+
+describe('M13: karta miejsca na mapie miasta ma jedną linię stanu', () => {
+  afterEach(() => ustawJezyk('pl'));
+
+  /** miejsce puste od początku (zapas 0 z samego klucza) i miejsce z zapasem do wybrania */
+  const miejsce = (czyPuste: boolean) => {
+    for (let k = 0; k < 500; k++) {
+      const m = { klucz: `poi:${k}:9`, kat: 'bank', x: 900, y: 0, odl: 900, nazwa: '' };
+      const zapas = celZMiejsca(m).zapas;
+      if (czyPuste ? zapas === 0 : (zapas ?? 0) >= 4) return m;
+    }
+    throw new Error('brak klucza');
+  };
+  const gra = () => {
+    const st = newGov(7);
+    wlaczMiasto(st);
+    const i: GovInput = { ...new Atrapa(7).input(), day: 2, hour: 10, minute: 0 };
+    return { st, i };
+  };
+  const doCna = (html: string, lang: 'pl' | 'en') =>
+    (html.replace(/<[^>]*>/g, ' ').match(lang === 'pl' ? /do cna/g : /picked clean/gi) ?? []).length;
+
+  for (const lang of ['pl', 'en'] as const)
+    it(`${lang}: miejsce puste od początku mówi o tym raz („zanim tu dotarliście”), obok „jeszcze tu nie byliście”`, () => {
+      ustawJezyk(lang);
+      const { st, i } = gra();
+      const m = miejsce(true);
+      const k = kartaMiejsca(m, st, i);
+      const html = kartaHtml(m, k, true);
+      expect(doCna(html, lang), html).toBe(1);
+      expect(k.mozna).toBe(false);
+      expect(k.powod).toBeUndefined();
+      expect(html).toContain(lang === 'pl' ? 'zanim tu dotarliście' : 'before you got here');
+      expect(html).toContain(lang === 'pl' ? 'Jeszcze tu nie byliście.' : 'You have not been here yet.');
+      expect(html).toMatch(/data-act="wyslij"[^>]* disabled/);
+    });
+
+  for (const lang of ['pl', 'en'] as const)
+    it(`${lang}: miejsce wybrane przez nas mówi o tym raz („Wybrane do cna.”), z wizytą w linii niżej`, () => {
+      ustawJezyk(lang);
+      const { st, i } = gra();
+      const m = miejsce(false);
+      const cel = celZMiejsca(m);
+      st.miasto!.zabrano[m.klucz] = cel.zapas!;
+      st.miasto!.wizyty[m.klucz] = 1;
+      st.miasto!.ostatnia[m.klucz] = 1;
+      const k = kartaMiejsca(m, st, i);
+      const html = kartaHtml(m, k, true);
+      expect(doCna(html, lang), html).toBe(1);
+      expect(html).toContain(lang === 'pl' ? 'Wybrane do cna.' : 'Picked clean.');
+      expect(html).toContain(lang === 'pl' ? 'Byliście tu ostatnio wczoraj' : 'You were last here yesterday');
+      expect(html).not.toContain(lang === 'pl' ? 'Jeszcze tu nie byliście.' : 'You have not been here yet.');
+      expect(k.mozna).toBe(false);
+    });
+
+  it('miejsce z zapasem: „Nietknięte.”, bez powodu, przycisk aktywny', () => {
+    const { st, i } = gra();
+    const m = miejsce(false);
+    const k = kartaMiejsca(m, st, i);
+    expect(k.linie.map((t) => t.pl)).toContain('Nietknięte.');
+    expect(k.powod).toBeUndefined();
+    expect(k.mozna).toBe(true);
+  });
 });

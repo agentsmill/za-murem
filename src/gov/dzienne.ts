@@ -69,6 +69,10 @@ function osoby(i: GovInput, ids: readonly string[]): { ppl: GovPerson[] } | { br
   return { ppl };
 }
 
+/** Powód odmowy dla miejsca, w którym nic już nie zostało. Stała, żeby karta miejsca na mapie miasta poznała go po
+    referencji i nie powtarzała tego, co mówi jej linia stanu („Wybrane do cna.”). */
+export const POWOD_WYBRANE: Tx = tx('To miejsce jest wybrane do cna.', 'This place has been picked clean.');
+
 /** Dlaczego ta osoba nie pójdzie na tę wyprawę albo null, gdy może. Brama (w domu furtka) ze słownika miejsca. */
 function dlaczegoNie(st: GovState, p: GovPerson, cel: Cel, place: GovPlace): Tx | null {
   if (p.away || wDrodze(st, p.id))
@@ -93,7 +97,7 @@ export function powodOdmowy(st: GovState, i: GovInput, cel: Cel, ids?: readonly 
       `Nobody sets out after dark. Supply runs leave between ${MORNING}:00 and ${CARD_HOUR}:00.`,
     );
   if (cel.odl > MAX_DROGA_M) return tx('Za daleko na jeden dzień.', 'Too far for one day.');
-  if (zostaloZMiejsca(st, cel) <= 0) return tx('To miejsce jest wybrane do cna.', 'This place has been picked clean.');
+  if (zostaloZMiejsca(st, cel) <= 0) return POWOD_WYBRANE;
   if (ids) {
     // słowa zarządu według miejsca: w domu komitet ulicy zamiast zarządu
     const place = placeIn(i);
