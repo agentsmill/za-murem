@@ -12,10 +12,12 @@
    okna tego samego rodzaju dostają inne losowania (bez niego karta wracająca co dobę oceniałaby się zawsze na tych samych
    losowaniach i silnik wierzyłby w jedną przypadkową szansę). Prawdziwy zarząd losuje dalej swoim generatorem, którego ocena
    nie dotyka. Ocena wyboru, którego skutek nie zależy od losowania (wszystkie kopie równe), to ta jedna ocena bez dzielenia,
-   żeby remisy wyglądały co do bitu tak jak przy jednej kopii. Dziś żadne okno nie zmienia wyboru z losowaniem (jedyny losowy
-   skutek to odejście przegranego w kłótni, a „mediacja” wygrywa tam zawsze), więc reguła jest zabezpieczeniem na karty, które
-   dojdą z innych gałęzi. Przy remisie wygrywa niższy indeks (kolejność z okna). Okno bez dozwolonego wyboru daje 0: wybór się
-   nie uda, a okno dostanie odpowiedź domyślną albo zostanie zawieszone (src/ai/gra.ts).
+   żeby remisy wyglądały co do bitu tak jak przy jednej kopii. Losowania przy samym wyborze (generator zarządu) dziś nie zmieniają
+   wyboru żadnego okna (jedyny taki skutek to odejście przegranego w kłótni, a „mediacja” wygrywa tam zawsze), więc ta część reguły
+   jest zabezpieczeniem na karty, które dojdą z innych gałęzi; co innego ukryte rzuty kart z następnego akapitu, które bez
+   przelosowania zmieniałyby wybór w prawie wszystkich oknach gości (186 z 197 w sondzie przeglądu zadania 7). Przy remisie
+   wygrywa niższy indeks (kolejność z okna). Okno bez dozwolonego wyboru daje 0: wybór się nie uda, a okno dostanie odpowiedź
+   domyślną albo zostanie zawieszone (src/ai/gra.ts).
 
    Ukryte rzuty kart. Część kart losuje przy tworzeniu rzut, którego nie pokazuje ani tekstem, ani wyborami, a od którego
    zależą skutki wyboru: haczyk gościa pod bramą (`Gosc.haczyk`: chory wpuszczony na noc rozdaje chorobę rano, ugryziony dostaje
@@ -23,8 +25,10 @@
    z sąsiedztwa (`krzyk.help`). Kopia zarządu ma ten rzut w stanie, więc ocena na niej by go znała, choć gracz go nie zna
    (a w etapie 2 silnik gra obok gracza). Na każdej kopii oceny silnik losuje te rzuty od nowa (`przelosujUkryte`) z ziarna
    pochodnego (`ziarnoKopii` z dopiskiem „ukryte”, wspólnego dla wszystkich wyborów okna, jak los z poprzedniego akapitu):
-   pole karty z `UKRYTE_RZUTY` z szansą z jej `make`, a haczyk gościa z wag generatora gości (`WAGA_HACZYKA`), zawężonych do
-   tego, co widać na karcie: haczyki zgodne z tym, kim jest gość, czego chce i co ma (`zgodnyGosc`). Rzut, który karta
+   pole karty z `UKRYTE_RZUTY` z szansą z jej `make`, a haczyk gościa z wag generatora gości (`wagaHaczyka`), zawężonych do
+   tego, co widać na karcie: haczyki zgodne z tym, kim jest gość, czego chce i co ma (`zgodnyGosc`). Szanse i wagi są kopiami
+   stałych z src/gov (`halas`, `krzyk` w tresc.ts, `BAZA_HACZYK` i mnożniki w goscie.ts), więc tests/unit/ai-okna.test.ts
+   pilnuje ich dryfu: wywołuje `make` kart z atrapą generatora tuż pod i tuż nad progiem oraz próbkuje `skladGoscia`. Rzut, który karta
    pokazuje albo który odsłonił poprzedni krok okna, zostaje taki, jaki jest: ugryzienie odsłonięte przez „Obejrzeć ręce”
    (`AktywnyGosc.obejrzano`) zostaje, po „czysty” ugryzienia już nie losuje się wcale, a gość, który z natury jest ugryziony
    (ktoś z ugryzionym bliskim), nie ma czego ukrywać. Skutek uboczny: silnik w trybie zombie nie ma powodu sięgać po „Obejrzeć
@@ -178,20 +182,19 @@ export function ziarnoKopii(id: string, tick: number, n: number): number {
 }
 
 /** Ukryte rzuty kart wydarzeń: pola danych karty (`GovState.ev.active.d`), które karta losuje przy tworzeniu i nigdzie nie
-    pokazuje, i szansa na `true` z jej `make` (src/gov/tresc.ts): `halas.cat` 0,45 (kot, nie włamywacz), `krzyk.help` 0,5
-    (sąsiad naprawdę prosi o pomoc), `wedrowiec.thief` 0,3 (karta ma wagę 0 i nie wypada, ale gdyby wróciła, nie zdradza
-    złodzieja). To kopia stałych z kart: zmiana szansy w karcie wymaga zmiany także tutaj. Haczyk gościa ma osobną drogę
-    (`przelosujHaczyk`). */
+    pokazuje, i szansa na `true` z jej `make` (src/gov/tresc.ts): `halas.cat` 0,45 (kot, nie włamywacz) i `krzyk.help` 0,5
+    (sąsiad naprawdę prosi o pomoc). Karta `wedrowiec` ma w `make` jeszcze `thief` 0,3, ale jej waga to 0 w obu trybach (nie
+    wypada, wraca jako gość z klocków), więc wpisu nie ma. To kopia stałych z kart: zmiana szansy w karcie wymaga zmiany także
+    tutaj, a test dryfu w tests/unit/ai-okna.test.ts to wykryje. Haczyk gościa ma osobną drogę (`przelosujHaczyk`). */
 export const UKRYTE_RZUTY: Readonly<Record<string, readonly { pole: string; szansa: number }[]>> = {
   halas: [{ pole: 'cat', szansa: 0.45 }],
   krzyk: [{ pole: 'help', szansa: 0.5 }],
-  wedrowiec: [{ pole: 'thief', szansa: 0.3 }],
 };
 
 /** Wagi haczyka gościa, kopia prywatnego `BAZA_HACZYK` z src/gov/goscie.ts (mnożniki z `wagiHaczyka` są w `wagaHaczyka`):
     uczciwy gość jest najczęstszy, kłamca i ugryziony rzadsi, chory i ścigany najrzadsi. Zmiana wag w generatorze gości
-    wymaga zmiany także tutaj. */
-export const WAGA_HACZYKA: Readonly<Record<HaczykId, number>> = {
+    wymaga zmiany także tutaj, a test dryfu w tests/unit/ai-okna.test.ts to wykryje. */
+const WAGA_HACZYKA: Readonly<Record<HaczykId, number>> = {
   prawda: 4,
   klamie: 1.4,
   chory: 1,
@@ -204,8 +207,8 @@ const ZAPAS_KLAMCY = 20;
 
 /** Waga haczyka `h` gościa `g` przy tym wejściu: wagi bazowe, kłamca częściej przy zapasie, chory dwa razy częściej zimą
     i dwa razy częściej, gdy gość jest z natury chory (karta mówi, kim jest). Bez tego, czego gracz wiedzieć nie może
-    (narrator po długim spokoju, `ostrzej`). */
-function wagaHaczyka(h: HaczykId, g: Gosc, i: GovInput): number {
+    (narrator po długim spokoju, `ostrzej`). Eksportowana dla testu dryfu względem generatora gości. */
+export function wagaHaczyka(h: HaczykId, g: Gosc, i: GovInput): number {
   let w = WAGA_HACZYKA[h];
   if (h === 'klamie' && i.stock.supplies > ZAPAS_KLAMCY) w *= 1.5;
   if (h === 'chory') {

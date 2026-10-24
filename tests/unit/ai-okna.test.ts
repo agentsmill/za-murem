@@ -1,5 +1,5 @@
 /* Okna zarządu silnika osady AI (src/ai/okna.ts), etap 1 osady AI (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md,
-   zadania 5 i 6): wybór w wydarzeniu przez ocenę skutków na kopiach zarządu i uchwała według potrzeb. Pilnuje pięciu rzeczy:
+   zadania 5–7): wybór w wydarzeniu przez ocenę skutków na kopiach zarządu i uchwała według potrzeb. Pilnuje ośmiu rzeczy:
    - oceny skutków (`ocenSkutki`): zapasy (jedzenie ×3, drewno ×1, reszta ×0,5), zaufanie +2 i wkurzenie −2 za punkt, rany −10,
      zgony −50, przyjęcia ±4 na osobę według zapasu jedzenia, koniec gry −1000 i dwie wagi dodane po pomiarze: pożar −15
      (gaszenie wygrywa z ewakuacją klatki) i łata na dziurę +6 (zarząd łata złomem, a nie automat pracy deskami); ocena stanu
@@ -8,6 +8,15 @@
      indeks, prawdziwy zarząd i wejście bez zmian (JSON przed i po), okno bez dozwolonego wyboru daje 0;
    - oceny wyboru bez znajomości losu (zadanie 6): kopie mają ziarna pochodne, a nie stan prawdziwego generatora, i jest ich
      `KOPII_OCENY`, więc wybór silnika nie zależy od tego, czy hazard się uda, a losowania zmieniają się z oknem;
+   - oceny wyboru bez znajomości ukrytych rzutów kart (zadanie 7): haczyk gościa (tryb zwykły i zombie), `halas.cat` i
+     `krzyk.help` są rzucane od nowa na każdej kopii (`przelosujUkryte`) z drugiego ziarna pochodnego (`${id}|ukryte`, niezależnego
+     od generatora kopii: osobny test pilnuje okablowania), więc wybór silnika nie zależy od prawdziwej wartości rzutu, rzut
+     odsłonięty przez poprzedni krok okna zostaje, a przelosowany gość zgadza się z tabelą wykluczeń generatora gości;
+   - dryfu stałych skopiowanych z src/gov (zadanie 7): szanse `halas` i `krzyk` (`make` kart z atrapą generatora tuż pod i tuż
+     nad progiem) i wagi haczyka gościa (próbkowanie `skladGoscia` wobec `wagaHaczyka`), żeby zmiana w generatorze nie
+     rozjechała cicho kopii w silniku;
+   - funkcji oceny wprost (zadanie 7): `ziarnoKopii` (stałość, różnice, 32 bity) i `ocenaWyboru` (null dla niedozwolonego, jedna
+     ocena bez dzielenia, średnia z kopii o ziarnach pochodnych);
    - okna wieloetapowego (`odpowiedzNaWydarzenie`): wybór z `zostaje` (np. „Obejrzeć ręce” przy gościu w trybie zombie) nie
      zamyka okna, więc decydent czyta `pending` po każdym wyborze i odpowiada na kolejny krok;
    - uchwały (`wyborUchwaly`): w pierwszym oknie wspólny kocioł (droga wspólnoty; `u_warty` z drogi porządku blokuje go do końca
@@ -29,6 +38,7 @@ import {
   przelosujUkryte,
   UKRYTE_RZUTY,
   WAGI,
+  wagaHaczyka,
   wyborUchwaly,
   wyborWydarzenia,
   ziarnoKopii,
@@ -40,14 +50,17 @@ import { mulberry } from '../../src/core/rng.ts';
 import {
   type Gosc,
   type HaczykId,
+  haczykiMozliwe,
   type KontekstGoscia,
   KTO,
   type KtoId,
   osobyGrupy,
   skladGoscia,
+  ZIMA,
   zgodnyGosc,
 } from '../../src/gov/goscie.ts';
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
+import { NEW_EVENTS } from '../../src/gov/tresc.ts';
 import type { GovEffects, GovGosc, GovInput, GovState, LawOption, Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { eventView, M1_EVENTS } from '../../src/gov/wydarzenia.ts';
@@ -127,7 +140,7 @@ describe('ocenSkutki', () => {
   });
 
   it('przyjęcia: +4 na osobę, gdy po przyjęciu starcza 2 porcje na osobę zarządu, inaczej −4', () => {
-    // 4 osoby zarządu (i 4 mieszkańców, którzy jedzą własne porcje i się nie liczą); 40 porcji: po przyjęciu 3 osób 7 jedzących,
+    // 4 osoby zarządu (i 4 mieszkańców, którzy nie jedzą z zapasu zarządu i się nie liczą); 40 porcji: po przyjęciu 3 osób 7 jedzących,
     // 14 porcji potrzebnych
     expect(roznica(efekty({ residents: 3 }), i)).toBe(12);
     // ten sam skutek bez zapasu: −4 na osobę (stały składnik oceny zapasu jest taki sam w obu wejściach, więc różnica wprost)
@@ -577,6 +590,43 @@ describe('wyborWydarzenia bez znajomości ukrytych rzutów', () => {
     }
   });
 
+  it('ukryty rzut każdej kopii pochodzi z osobnego ziarna (id|ukryte), niezależnego od generatora kopii', () => {
+    // wybór 0 karty zapisuje, co widzi kopia: przelosowany rzut `cat` i pierwsze losowanie generatora kopii (`h.rng()`). Gdyby oba
+    // strumienie brały to samo ziarno (np. `mulberry(kopia.rng.s)`), rzut byłby funkcją tego losowania, a skutki wyboru, które
+    // losują z generatora, byłyby skorelowane z ukrytym rzutem
+    const def = M1_EVENTS.find((e) => e.id === 'halas')!;
+    const widziane: { cat: boolean; u: number }[] = [];
+    vi.spyOn(def, 'choices').mockImplementation((h, d) => [
+      {
+        label: tx('Zapis', 'Log'),
+        ok: true,
+        run: () => {
+          widziane.push({ cat: (d as { cat: boolean }).cat, u: h.rng() });
+        },
+      },
+      { label: tx('Nic', 'Nothing'), ok: true, run: () => {} },
+    ]);
+    const gov = newGov(3);
+    gov.ev.active = { id: 'halas', d: { cat: false } };
+    const i = atrapa(40).input();
+    const p = pending(gov, i);
+    if (p?.k !== 'wydarzenie') throw new Error('brak okna wydarzenia');
+    const okien = 40;
+    for (let w = 0; w < okien; w++) ocenaWyboru(gov, { ...i, tick: i.tick + w * 20 }, p, 0);
+    expect(widziane).toHaveLength(okien * KOPII_OCENY);
+    widziane.forEach((z, k) => {
+      const tick = i.tick + Math.floor(k / KOPII_OCENY) * 20;
+      const kopia = k % KOPII_OCENY;
+      // dokładnie rzut z ziarna `halas|ukryte|tick|kopia`, z szansą 0,45 karty
+      expect(z.cat, `okno ${Math.floor(k / KOPII_OCENY)}, kopia ${kopia}`).toBe(
+        mulberry(ziarnoKopii('halas|ukryte', tick, kopia))() < 0.45,
+      );
+    });
+    // i nie jest funkcją pierwszego losowania generatora kopii (przy wspólnym ziarnie zgadzałby się w każdym oknie)
+    expect(widziane.some((z) => z.cat !== z.u < 0.45)).toBe(true);
+    expect(widziane.some((z) => z.cat === z.u < 0.45)).toBe(true);
+  });
+
   it('prawdziwy zarząd zostaje bez zmian także w oknie gościa (ukryty haczyk przelosowują tylko kopie)', () => {
     const s = goscZHaczykiem('chory');
     const przed = JSON.stringify(s.gov);
@@ -596,18 +646,20 @@ describe('przelosujUkryte: co ocena losuje od nowa, a co zostawia', () => {
   const wejscie = atrapa(40).input();
   const ziarna = Array.from({ length: 600 }, (_, n) => n + 1);
 
-  it('tabela ukrytych rzutów: halas.cat 0,45, krzyk.help 0,5, wedrowiec.thief 0,3', () => {
+  it('tabela ukrytych rzutów: halas.cat 0,45 i krzyk.help 0,5 (wedrowiec.thief ma kartę o wadze 0, więc go nie ma)', () => {
     expect(UKRYTE_RZUTY).toEqual({
       halas: [{ pole: 'cat', szansa: 0.45 }],
       krzyk: [{ pole: 'help', szansa: 0.5 }],
-      wedrowiec: [{ pole: 'thief', szansa: 0.3 }],
     });
+    // karta `wedrowiec` ma w `make` rzut `thief`, ale jej waga to 0 (nie wypada z puli, wraca jako gość z klocków); gdyby ktoś
+    // jej tę wagę nadał, rzut stałby się żywy i trzeba go dopisać do `UKRYTE_RZUTY`
+    const wedrowiec = NEW_EVENTS.find((e) => e.id === 'wedrowiec')!;
+    expect(wedrowiec.w({} as never)).toBe(0);
   });
 
   it.each([
     ['halas', 'cat', 0.45],
     ['krzyk', 'help', 0.5],
-    ['wedrowiec', 'thief', 0.3],
   ])('karta %s: pole %s losuje się od nowa z szansą %f, a reszta danych zostaje', (id, pole, szansa) => {
     let prawda = 0;
     for (const n of ziarna) {
@@ -748,6 +800,68 @@ describe('przelosujUkryte: co ocena losuje od nowa, a co zostawia', () => {
   });
 });
 
+describe('dryf stałych skopiowanych z src/gov', () => {
+  /** atrapa gospodarza karty: `make` kart z ukrytym rzutem czyta tylko `h.rng` */
+  const hostZRng = (u: number) => ({ rng: () => u }) as never;
+
+  it.each(Object.entries(UKRYTE_RZUTY).flatMap(([id, rzuty]) => rzuty.map((r) => [id, r.pole, r.szansa] as const)))(
+    'karta %s: pole %s jest prawdziwe dokładnie poniżej progu %f z make karty',
+    (id, pole, szansa) => {
+      const def = M1_EVENTS.find((e) => e.id === id)!;
+      const pod = def.make(hostZRng(szansa - 0.001)) as Record<string, unknown>;
+      const nad = def.make(hostZRng(szansa + 0.001)) as Record<string, unknown>;
+      expect(pod[pole], 'tuż pod progiem').toBe(true);
+      expect(nad[pole], 'tuż nad progiem').toBe(false);
+    },
+  );
+
+  /** gość z generatora, aż uzbiera się `ile` gości danego rodzaju; zlicza ich haczyki */
+  function haczykiZGeneratora(kto: KtoId, ctx: KontekstGoscia, ile: number): Record<string, number> {
+    const licznik: Record<string, number> = {};
+    let zebrano = 0;
+    for (let n = 1; zebrano < ile && n < 400_000; n++) {
+      const g = skladGoscia(mulberry(n * 7919), 1, ctx, new Set<string>());
+      if (g.kto !== kto) continue;
+      licznik[g.haczyk] = (licznik[g.haczyk] ?? 0) + 1;
+      zebrano++;
+    }
+    expect(zebrano, `${kto}: za mało gości z generatora`).toBe(ile);
+    return licznik;
+  }
+
+  it.each([
+    ['wędrowiec, jesień, zapas 10', 'wedrowiec', 'zwykly', 0, 10],
+    ['wędrowiec, jesień, zapas 30 (kłamca ×1,5)', 'wedrowiec', 'zwykly', 0, 30],
+    ['wędrowiec, zima (chory ×2)', 'wedrowiec', 'zwykly', ZIMA, 10],
+    ['chory, zima (chory ×4)', 'chory', 'zwykly', ZIMA, 10],
+    ['ocaleni, tryb zombie (uczciwy, chory, ugryziony)', 'ocaleni', 'zombie', 0, 10],
+  ] as const)('wagi haczyka gościa zgadzają się z generatorem gości: %s', (_opis, kto, tryb, pora, zapas) => {
+    const ctx: KontekstGoscia = {
+      mode: tryb,
+      pora: 'wieczor',
+      season: pora,
+      zapasy: zapas,
+      okolica: [],
+      znane: new Set<Dom>(),
+      napady: 0,
+      dom: false,
+    };
+    const ile = 3000;
+    const licznik = haczykiZGeneratora(kto, ctx, ile);
+    const i = { ...atrapa(zapas).input(), season: pora };
+    const mozliwe = haczykiMozliwe(kto, tryb);
+    const wagi = mozliwe.map((h) => wagaHaczyka(h, { kto } as Gosc, i));
+    const suma = wagi.reduce((a, w) => a + w, 0);
+    // generator losuje haczyk po rodzaju gościa i przed resztą klocków, więc rozkład haczyka przy danym rodzaju to dokładnie
+    // znormalizowane wagi (błąd próbkowania przy 3000 gościach to najwyżej 0,01)
+    mozliwe.forEach((h, k) => {
+      expect((licznik[h] ?? 0) / ile, `${h}`).toBeGreaterThan(wagi[k] / suma - 0.035);
+      expect((licznik[h] ?? 0) / ile, `${h}`).toBeLessThan(wagi[k] / suma + 0.035);
+    });
+    expect(Object.keys(licznik).sort()).toEqual([...mozliwe].sort());
+  });
+});
+
 describe('ziarnoKopii i ocenaWyboru wprost', () => {
   it('ziarno pochodne: stałe dla tych samych argumentów, różne dla innego okna, chwili i kopii; 32-bitowe', () => {
     const z = ziarnoKopii('halas', 1000, 0);
@@ -762,7 +876,9 @@ describe('ziarnoKopii i ocenaWyboru wprost', () => {
     expect(ziarnoKopii('halas|ukryte', 1000, 0)).not.toBe(ziarnoKopii('halas', 1000, 0));
   });
 
-  it('ocena wyboru: wybór niedozwolony to null, wybór bez losowania to jedna ocena (bez dzielenia), z losowaniem średnia z kopii', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('ocena wyboru: wybór niedozwolony to null, a wybór bez losowania to jedna ocena równa ocenSkutki (bez dzielenia)', () => {
     const { gov, i, p } = oknoUchodzcow(0);
     expect(p.choices[1].ok).toBe(false);
     expect(ocenaWyboru(gov, i, p, 1)).toBeNull();
@@ -770,6 +886,27 @@ describe('ziarnoKopii i ocenaWyboru wprost', () => {
     // skutek bez losowania: dokładnie ocena skutków na jednej kopii
     const kopia = structuredClone(gov);
     expect(ocenaWyboru(gov, i, p, 3)).toBe(ocenSkutki(chooseEvent(kopia, i, 3), kopia, i));
+  });
+
+  it('ocena wyboru z losowaniem to średnia ocen z KOPII_OCENY kopii o ziarnach pochodnych', () => {
+    // hazard: z szansą 1/2 +15 punktów, inaczej nic; ocena każdej kopii to 0 albo 15 nad stałą częścią, a ocena wyboru ich średnia
+    const { gov, i, p } = oknoHazardu(0.5);
+    let mieszane = 0;
+    for (let n = 0; n < 30; n++) {
+      const ii = { ...i, tick: i.tick + n * 20 };
+      const oceny = Array.from({ length: KOPII_OCENY }, (_, nr) => {
+        const kopia = structuredClone(gov);
+        kopia.rng.s = ziarnoKopii(p.id, ii.tick, nr);
+        return ocenSkutki(chooseEvent(kopia, ii, 1), kopia, ii);
+      });
+      if (new Set(oceny).size > 1) mieszane++;
+      expect(ocenaWyboru(gov, ii, p, 1), `okno ${n}: ${oceny}`).toBeCloseTo(
+        oceny.reduce((a, o) => a + o, 0) / oceny.length,
+        10,
+      );
+    }
+    // test nie przechodzi na pustym warunku: w części okien kopie dają różne oceny (hazard raz się udaje, raz nie)
+    expect(mieszane).toBeGreaterThan(5);
   });
 });
 
