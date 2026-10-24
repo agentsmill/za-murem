@@ -555,7 +555,7 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   // Po pierwsze gra z wyprawą, ogródkiem i kotłem na głód kończy się odwołaniem przed 25. dniem (Przymorze 11: dzień 20,
   // wkurzenie z zimna i głodu rano, średnie zdrowie zarządu 6 w 19. dniu). Po drugie najedzenie o 6:00 jest zaniżone także
   // przy pełnej spiżarni: zarząd je dopiero poniżej 35 (HUNGRY), a dwie osoby czuwają całą noc bez posiłku, więc o 6:00 ma
-  // średnio 16–29 (dni 3–11, zapas jest). Wspólny kocioł (posiłki o 13:00 i 19:00) podniósłby tę średnią do 40–65, ale
+  // średnio 16–29 (dni 3–11, zapas jest). Wspólny kocioł (posiłki o 13:00 i 19:00) podniósłby tę średnią do 62–66 (dni 5–8) i 39–45 (dni 9–11), ale
   // `u_warty` z pierwszego wieczoru go blokuje. Test zacznie przechodzić, gdy kolejne zadania (okna z kotłem, zima)
   // doprowadzą grę do 25. dnia z syconym zarządem; wtedy trzeba zdjąć `it.fails`.
   it.fails('do 25. dnia zarząd rano nie głoduje (średnie najedzenie o 6:00 w dniach 15–25 co najmniej 25)', () => {
