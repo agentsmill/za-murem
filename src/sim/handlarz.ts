@@ -7,7 +7,7 @@
 import type { Person } from '../content/people.ts';
 import { nextRandom, type RngState } from '../core/rng.ts';
 import type { Mat } from './budowle.ts';
-import { START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
+import { START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR } from './clock.ts';
 
 /** oferta: co handlarz daje (give), co bierze od nas (take) i ile razy jeszcze ją przyjmie */
 export interface Offer {
@@ -87,6 +87,26 @@ export function priced(o: Offer, lvl: number): Offer {
   for (const [m, n] of Object.entries(o.take) as [Mat, number][]) take[m] = Math.ceil(n * (1 + 0.5 * lvl));
   return { ...o, take };
 }
+/** Lepsza oferta od zarządu (łańcuch „Dług”, src/gov/watki-tresc.ts): każda bieżąca oferta tańsza o jedną czwartą (to, co
+    handlarz bierze, nigdy poniżej 1) i o jedną wymianę dłuższa. Zmienia ofertę, która stoi pod bramą; następne wizyty losują
+    towar jak dotąd. */
+export function lepszeOferty(o: Pick<Obcy, 'offers'>): void {
+  o.offers = o.offers.map((x) => {
+    const take: Partial<Record<Mat, number>> = {};
+    for (const [m, n] of Object.entries(x.take) as [Mat, number][]) take[m] = Math.max(1, Math.floor(n * 0.75));
+    return { ...x, take, left: x.left + 1 };
+  });
+}
+
+/** Zła sława u handlarzy z woli zarządu (łańcuch „Dług”): poziom o jeden w górę (do `SLAWA_MAX`), licznik spadku od nowa,
+    jak po napaści, którą handlarz przeżył; bieżące oferty o połowę drożej, następne wizyty dostaną ceny i terminy ze sławy
+    (`priced`, `nextTraderVisit`). */
+export function zlaSlawa(o: Pick<Obcy, 'offers' | 'slawa'>, tick: number): void {
+  const lvl = Math.min(SLAWA_MAX, (o.slawa?.lvl ?? 0) + 1);
+  o.slawa = { lvl, until: tick + SLAWA_DAYS * TICKS_PER_DAY };
+  o.offers = o.offers.map((x) => priced(x, 1));
+}
+
 /** nastrój po napaści: napastnik i reszta zarządu, na dobę */
 export const ROB_MOOD = -6;
 export const ROB_MOOD_OTHERS = -3;

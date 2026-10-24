@@ -280,6 +280,10 @@ export interface GovInput {
       `cat`, wysyła wtedy `GovEffects.zwierze` (świeże przygarnięcie i stary zapis z flagą bez pionka to ten sam
       przypadek). Bez pola (gra bez zwierząt): żadnego. */
   zwierzeta?: ZwierzetaStan;
+  /** handlarz pod bramą (tylko w grze z obcymi, `SimOpts.obcy`): stoi z wózkiem i czeka (kroki łańcucha „Dług”,
+      src/gov/watki-tresc.ts); `tile` to kafelek handlarza, `gdzie` ten sam jako punkt mapy (przycisk „Pokaż”). Pola nie ma,
+      gdy handlarza nie ma pod bramą (idzie, odszedł, uciekł, nie żyje) i w grze bez obcych. */
+  handlarz?: { tile: number; gdzie: Punkt };
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
       lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
@@ -426,6 +430,10 @@ export interface GovEffects {
   /** zwierzęta, które symulacja ma wystawić jako pionki: pies (z flagi `dog`) i kot (z flagi `cat`), gdy symulacja nie
       ma o nich wpisu w `GovInput.zwierzeta`; wystawienie jest idempotentne. Tablica powstaje przy pierwszym zwierzęciu */
   zwierze?: ('pies' | 'kot')[];
+  /** skutki dla handlarza pod bramą, który stoi z wózkiem (`GovInput.handlarz`; bez niego symulacja nic nie robi):
+      `oferta` to lepsza oferta (każda jego oferta tańsza o jedną czwartą i o jedną wymianę dłuższa), `slawa` to zła sława u
+      handlarzy (poziom +1, jak po napaści: ceny następnych wizyt w górę, wizyty rzadziej, a bieżące oferty o połowę drożej) */
+  handlarz?: { oferta?: boolean; slawa?: boolean };
 }
 
 /** Stan zwierząt w symulacji (`SimState.zwierzeta`, odczyt `GovInput.zwierzeta`): pies żyje albo zginął, kot żyje i nie
@@ -726,8 +734,9 @@ export interface GovState {
   goscie?: { n: number; czytane: number; aktywny?: AktywnyGosc };
   /** Wskazówki na miejsca (wiadomość od gościa): klucz miejsca z okolicy (`Cel.klucz`) albo id celu z TARGETS → dzień
       gry, w którym je dostaliśmy. Następna wyprawa do tego miejsca ma ryzyko ×0,5 i łup ×1,5, po rozliczeniu wskazówka
-      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki */
-  wskazowki?: Record<string, { dzien: number }>;
+      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki. `bron`: wskazówka o miejscu z bronią (łańcuch „Głos z
+      radia”): rozliczenie tej wyprawy dokłada do łupu pewną broń i amunicję (`znalezionaBron` w src/gov/noc.ts) */
+  wskazowki?: Record<string, { dzien: number; bron?: true }>;
   /** pamięć o ludziach (src/gov/znajomi.ts): gość po decyzji zarządu o nim i mieszkaniec wyrzucony bramą, jeden wpis na
       człowieka; dodatni wraca jako gość, ujemny w zwykłym trybie idzie z szabrownikami. Pole od pierwszego wpisu, gra bez
       gości i stary zapis go nie mają. */

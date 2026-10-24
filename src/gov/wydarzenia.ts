@@ -115,6 +115,7 @@ import {
   logGov,
   mood,
   nightDay,
+  QUIET,
   rnd,
   stockNow,
 } from './wspolne.ts';
@@ -431,6 +432,12 @@ export function makeHost(
     moodOf: (id, why, d, hours) => {
       fx.moods.push({ id, why, d, hours });
     },
+    pies: () => !!st.flags.dog || i.zwierzeta?.pies !== undefined,
+    napadNocy: (dzien) => (st.reports ?? []).find((r) => r.day === dzien)?.raid ?? null,
+    handlarz: () => (i.handlarz ? { tile: i.handlarz.tile, gdzie: { ...i.handlarz.gdzie } } : null),
+    handlarzEfekt: (co) => {
+      fx.handlarz = { ...fx.handlarz, [co === 'oferta' ? 'oferta' : 'slawa']: true };
+    },
     flag: (k) => !!st.flags[k],
     setFlag: (k) => {
       st.flags[k] = true;
@@ -524,6 +531,14 @@ function start(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
   return ev;
 }
 
+/** krok łańcucha wypada, jeśli pasuje do pory, trybu i wagi, a krok z gościem ma gdzie go zaplanować (obcy w grze, wolna wizyta) */
+const krokDostepny = (st: GovState, h: GovHost, pora: Pora, first: boolean, k: GEventDef): boolean =>
+  k.when.includes(pora) &&
+  (!first || !!k.first) &&
+  fitsMode(st, k) &&
+  k.w(h) > 0 &&
+  (!k.gosc || (h.goscie() !== null && !h.goscAktywny()));
+
 /** Losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first. Kroki łańcuchów: krok
     z dojrzałym hakiem, który pasuje teraz (pora, tryb, waga, wolna wizyta dla kroku z gościem), wypada przed pulą z szansą
     `SZANSA_KROKU` (jedna liczba z ziarna zarządu, tylko gdy taki krok jest; z kilku ten, który dojrzał najwcześniej), a pierwsze
@@ -531,13 +546,7 @@ function start(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
 function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): ActiveEvent | null {
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
-  // krok łańcucha wypada, jeśli pasuje do pory, trybu i wagi, a krok z gościem ma gdzie go zaplanować (obcy w grze, wolna wizyta)
-  const dostepny = (k: GEventDef) =>
-    k.when.includes(pora) &&
-    (!first || k.first) &&
-    fitsMode(st, k) &&
-    k.w(h) > 0 &&
-    (!k.gosc || (h.goscie() !== null && !h.goscAktywny()));
+  const dostepny = (k: GEventDef) => krokDostepny(st, h, pora, first, k);
   const gotowe = krokiGotowe(st, h.t, st.mode ?? 'zwykly').filter(dostepny);
   const dojrzale = gotowe.filter((k) => k.nr > 1);
   if (dojrzale.length && h.rng() < SZANSA_KROKU)
@@ -654,6 +663,16 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     const pg = pogrzeb(st, i, fx, pora);
     if (pg) {
       show(st, i, fx, pg);
+      return;
+    }
+  }
+  // krok „pilny” (handlarz pod bramą stoi najwyżej kilka godzin): wypada, gdy tylko jest dojrzały i dostępny, bez czekania na
+  // odstęp i losowanie, ale nie szybciej niż `QUIET` sekund po ostatniej decyzji; niczego nie losuje
+  if (!firstNight(i) && i.screen >= ostatnia + QUIET) {
+    const krok = krokiGotowe(st, h.t, st.mode ?? 'zwykly').find((k) => k.pilny && krokDostepny(st, h, pora, false, k));
+    const ev = krok && start(st, h, krok);
+    if (ev) {
+      show(st, i, fx, ev);
       return;
     }
   }

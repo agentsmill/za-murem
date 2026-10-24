@@ -201,6 +201,11 @@ export interface GoscHost {
   poscig(): void;
   /** wiadomość gościa: wskazówka na miejsce (`GovState.wskazowki`); oddaje nazwę miejsca do zdania */
   wskazowka(g: Gosc): Tx;
+  /** Wskazówka na miejsce, które wybiera karta, nie gość (kroki łańcuchów): najbliższe miejsce z okolicy o jednej z kategorii
+      `kat` (klucze POICAT), do którego da się jeszcze pójść z karty nocy, a gdy takiego nie ma (bez mapy miasta albo bez takiego
+      miejsca), cel `target` z TARGETS. `bron`: miejsce z bronią (rozliczenie wyprawy dokłada wtedy pewną broń i amunicję).
+      Oddaje nazwę miejsca do zdania (mianownik: „apteka „Pod Różą””). */
+  wskazowkaMiejsca(kat: readonly string[], target: string, bron?: boolean): Tx;
   /** choroba rano (`GovState.later[].sick`), z linią do raportu */
   chorobaRano(line: Tx): void;
   /** zapamiętuje, co pokazało obejrzenie rąk */
@@ -225,6 +230,9 @@ export interface GoscHost {
 /** Grupa wizyty dla karty z gościem: żywi w kolejności symulacji (mówiący pierwszy) i czy stoją pod bramą. */
 export interface GrupaKarty {
   osoby: Person[];
+  /** wygląd pionka każdej osoby z `osoby` (4–15, w tej samej kolejności); kroki łańcuchów zapamiętują go, żeby ten sam człowiek
+      wrócił z tą samą twarzą (`GoscKarty.look`) */
+  looks: number[];
   pod: boolean;
 }
 
@@ -325,6 +333,12 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       (st.wskazowki ??= {})[c.klucz] = { dzien: i.day };
       return c.nazwa;
     },
+    wskazowkaMiejsca: (kat, target, bron) => {
+      const c = celKategorii(st, i, kat, target);
+      const jest = st.wskazowki?.[c.klucz];
+      (st.wskazowki ??= {})[c.klucz] = { dzien: i.day, ...(bron || jest?.bron ? { bron: true as const } : {}) };
+      return c.nazwa;
+    },
     chorobaRano: (line) => {
       st.later.push({ day: nd, stock: {}, line, sick: 1 });
     },
@@ -336,7 +350,16 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       const a = aktywny(id);
       if (!a) return null;
       const w = i.goscie?.find((x) => x.id === id) ?? null;
-      return { osoby: widoczny(a.gosc, w).osoby.map(kopiaOsoby), pod: w?.faza === 'brama' };
+      const widzi = widoczny(a.gosc, w);
+      // żywi w kolejności symulacji: wygląd każdej osoby z jej indeksu w planie (bez wpisu wszyscy)
+      const zywi = w?.zywi.length
+        ? w.zywi.filter((k) => k >= 0 && k < a.gosc.osoby.length)
+        : a.gosc.osoby.map((_, k) => k);
+      return {
+        osoby: widzi.osoby.map(kopiaOsoby),
+        looks: widzi.osoby.map((_, k) => lookOsoby(a, zywi[k] ?? k)),
+        pod: w?.faza === 'brama',
+      };
     },
     przyjmijGosci: () => rozkazWizyty('zostan'),
     przyjmijDoZarzadu: () => rozkazWizyty('zarzad'),
@@ -351,6 +374,9 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
 }
 
 // ---------------------------------------------------------------- wiadomość: dokąd wskazówka
+
+/** miejsca bliższe pierwsze, remis rozstrzyga klucz */
+const bliskie = (a: Miejsce, b: Miejsce): number => a.odl - b.odl || (a.klucz < b.klucz ? -1 : 1);
 
 /** Miejsce z okolicy, do którego karta nocy może wysłać wyprawę: poza mapą lokalną, do `MAX_OKOLICA_M`, z czymś jeszcze
     w zapasie (tyle samo wymagań co `wybierzCeleNocy` w wyprawy.ts). */
@@ -367,13 +393,30 @@ export function celWiadomosci(st: GovState, i: GovInput, g: Gosc): { klucz: stri
   const okolica = st.miasto ? (i.okolica ?? []) : [];
   const wlasne = g.skad.klucz ? okolica.find((x) => x.klucz === g.skad.klucz) : undefined;
   if (wlasne && dostepne(st, wlasne)) return { klucz: wlasne.klucz, nazwa: opisMiejsca(wlasne) };
-  const bliskie = (a: Miejsce, b: Miejsce) => a.odl - b.odl || (a.klucz < b.klucz ? -1 : 1);
   const mozliwe = okolica.filter((m) => dostepne(st, m)).sort(bliskie);
   const m = mozliwe.find((x) => stronaMiejsca(x.x, x.y) === g.skad.strona) ?? mozliwe[0];
   if (m) return { klucz: m.klucz, nazwa: opisMiejsca(m) };
   const t = TARGETS.filter((x) => x.range === 'daleko').sort(
     (a, b) => (st.visits[a.id] ?? 0) - (st.visits[b.id] ?? 0),
   )[0];
+  return { klucz: t.id, nazwa: targetNameTx(t, placeIn(i)) };
+}
+
+/** Miejsce do wskazówki z karty łańcucha (`GoscHost.wskazowkaMiejsca`): najbliższe miejsce z okolicy o jednej z kategorii
+    `kat`, do którego da się jeszcze pójść z karty nocy (`dostepne`: poza mapą lokalną, do `MAX_OKOLICA_M`, z czymś w zapasie);
+    bez mapy miasta albo bez takiego miejsca cel `target` z TARGETS (a gdyby go nie było, najmniej odwiedzany daleki). */
+export function celKategorii(
+  st: GovState,
+  i: GovInput,
+  kat: readonly string[],
+  target: string,
+): { klucz: string; nazwa: Tx } {
+  const okolica = st.miasto ? (i.okolica ?? []) : [];
+  const m = okolica.filter((x) => kat.includes(x.kat) && dostepne(st, x)).sort(bliskie)[0];
+  if (m) return { klucz: m.klucz, nazwa: opisMiejsca(m) };
+  const t =
+    TARGETS.find((x) => x.id === target) ??
+    TARGETS.filter((x) => x.range === 'daleko').sort((a, b) => (st.visits[a.id] ?? 0) - (st.visits[b.id] ?? 0))[0];
   return { klucz: t.id, nazwa: targetNameTx(t, placeIn(i)) };
 }
 
@@ -400,12 +443,21 @@ function wystaw(
   rng: Rng,
   g: Gosc,
   karta?: { id: string; dane: unknown },
-  look0?: number,
+  look0?: number | readonly number[],
 ): void {
   const s = (st.goscie ??= { n: 0, czytane: 0 });
-  // powrót znajomego: pierwsza osoba ma wygląd sprzed lat (bez losowania), reszta co 5 jak zawsze
-  const start = look0 !== undefined ? Math.min(15, Math.max(4, look0)) - 4 : Math.floor(rng() * 12);
-  const looks = g.osoby.map((_, k) => 4 + ((start + 5 * k) % 12));
+  // powrót znajomego: pierwsza osoba ma wygląd sprzed lat (bez losowania), reszta co 5 jak zawsze; krok łańcucha podaje
+  // wygląd każdej osoby (tych samych ludzi na tych samych twarzach)
+  const wszystkie = typeof look0 === 'object' && look0.length === g.osoby.length;
+  const start =
+    look0 === undefined || typeof look0 === 'object'
+      ? wszystkie
+        ? 0
+        : Math.floor(rng() * 12)
+      : Math.min(15, Math.max(4, look0)) - 4;
+  const looks = wszystkie
+    ? (look0 as readonly number[]).map((l) => Math.min(15, Math.max(4, l)))
+    : g.osoby.map((_, k) => 4 + ((start + 5 * k) % 12));
   s.aktywny = {
     gosc: g,
     od: i.screen,
@@ -456,16 +508,19 @@ export function planujKarte(
   const strona = k.strona ?? pick(STRONY, rng);
   const osoby = k.osoby.slice(0, 12).map((p, j): Person => ({ ...kopiaOsoby(p), id: `${id}p${j}`, home: -1 }));
   const kto: KtoId = Object.hasOwn(KTO_KARTY, k.kto) ? KTO_KARTY[k.kto as keyof typeof KTO_KARTY] : (k.kto as KtoId);
+  const ugryziony =
+    k.ugryziony !== undefined && k.ugryziony >= 0 && k.ugryziony < osoby.length ? k.ugryziony : undefined;
   const g: Gosc = {
     id,
     osoby,
     kto,
-    chce: 'nocleg',
+    chce: k.chce ?? 'nocleg',
     ma: 'nic',
-    haczyk: 'prawda',
+    haczyk: ugryziony !== undefined ? 'ugryziony' : 'prawda',
     skad: { strona, nazwa: KIERUNEK[strona] },
+    ...(ugryziony !== undefined ? { ugryziony } : {}),
   };
-  wystaw(st, i, fx, rng, g, { id: def.id, dane: structuredClone(d) });
+  wystaw(st, i, fx, rng, g, { id: def.id, dane: structuredClone(d) }, k.look);
   return true;
 }
 
@@ -686,7 +741,7 @@ const ludzieEn = (n: number): string => `${n} ${n === 1 ? 'person' : 'people'}`;
     nosiciela; gdy nosiciel nie żyje, gość jest dla karty zdrowy (ani oglądanie rąk, ani tekst nie mówią o zwłokach), a ktoś
     z ugryzionym bliskim jest zwykłym wędrowcem, który nie prosi już o dobicie. Wszyscy żywi albo wpis bez żywych (grupa
     skończona): bez zmian. */
-function widoczny(g: Gosc, w: GovGosc | null): Gosc {
+export function widoczny(g: Gosc, w: GovGosc | null): Gosc {
   if (!w || w.zywi.length === 0) return g;
   const idx = w.zywi.filter((k) => k >= 0 && k < g.osoby.length);
   if (idx.length === 0 || (idx.length === g.osoby.length && idx.every((k, j) => k === j))) return g;
@@ -822,7 +877,7 @@ const fachNowy = (h: GovHost, p: Person): boolean =>
   (Object.entries(p.skills) as [Dom, number][]).some(([d, v]) => v >= PROG_FACHU && h.know(d) < PROG_FACHU);
 
 /** wybory karty gościa: pierwsze to to, czego gość chce, potem wpuścić na noc, jedzenie, obejrzenie rąk (zombie), odprawa */
-function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
+export function wyboryGoscia(h: GovHost, d: DaneGoscia): GChoice[] {
   const k = h.gosc(d.id);
   if (!k) return [];
   const g0 = k.gosc;

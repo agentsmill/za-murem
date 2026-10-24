@@ -49,6 +49,10 @@ export interface Krok extends GEventDef {
   po: number;
   /** wymagany hak (id z konwencją `lancuch.nazwa`) */
   hak?: string;
+  /** Karta, która ma sens tylko chwilę (handlarz pod bramą stoi najwyżej kilka godzin gry): dojrzały i dostępny (`w(h) > 0`) krok
+      wypada od razu, bez czekania na odstęp między wydarzeniami i na losowanie, ale najwcześniej `QUIET` sekund po ostatniej decyzji
+      gracza i nie pierwszej nocy. Tego kroku nie obejmuje szansa `SZANSA_KROKU` ani kolejność dojrzewania, więc niczego nie losuje. */
+  pilny?: boolean;
 }
 
 export interface Lancuch {

@@ -34,7 +34,7 @@ import type { EventHost } from '../content/events.ts';
 import { g, type Person } from '../content/people.ts';
 import { type Tx, tx, txOf } from '../core/jezyk.ts';
 import { pick } from '../core/rng.ts';
-import type { KtoId, Strona } from './goscie.ts';
+import type { ChceId, KtoId, Strona } from './goscie.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
 import type { Cialo, GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
@@ -296,6 +296,16 @@ export interface GovHost extends EventHost, GoscHost {
   /** kafelek podwórka przy siatce od strony garaży (`garaze`) albo najbliższego budynku mieszkalnego (`blok`), z
       `GovInput.strony`; bez niej kafelek największej otwartej dziury, a gdy i jej kafelków nie ma, null */
   kafelekPrzySiatce(strona: 'garaze' | 'blok'): number | null;
+  /** czy gra ma psa albo go miała: flaga `dog` (przygarnięty) albo jakikolwiek wpis o psie w `GovInput.zwierzeta` (żyje albo
+      zginął). Łańcuch „Szczekanie” nie oferuje psa, gdy to prawda. */
+  pies(): boolean;
+  /** wynik napadu nocy `dzien` (dzień, w którym noc się zaczęła: `NightReport.day`) z raportu porannego, a null, gdy raportu tej
+      nocy jeszcze nie ma albo już go nie ma wśród ostatnich dziesięciu; raport rano to prawda o tej nocy, kroki łańcucha mówią to samo */
+  napadNocy(dzien: number): 'brak' | 'odparty' | 'wtargnięcie' | null;
+  /** handlarz stoi pod bramą z wózkiem (`GovInput.handlarz`): jego kafelek i punkt mapy; null: nikogo (gra bez obcych też) */
+  handlarz(): { tile: number; gdzie: Punkt } | null;
+  /** skutek dla handlarza pod bramą (`GovEffects.handlarz`): lepsza oferta albo zła sława; bez handlarza w symulacji nic nie robi */
+  handlarzEfekt(co: 'oferta' | 'slawa'): void;
   /** chwilowy nastrój jednej osoby (zarządu albo mieszkańca z osobą) na `hours` godzin gry; powód to polski napis
       z src/content/nastroje.en.ts, jak w `moodAll` */
   moodOf(id: string, why: string, d: number, hours: number): void;
@@ -387,6 +397,14 @@ export interface GoscKarty {
   osoby: Person[];
   kto: KtoId | 'sasiad' | 'aktywisci' | 'influencer' | 'dzieci';
   strona?: Strona;
+  /** Dla kroków łańcuchów (src/gov/watki-tresc.ts), które sprowadzają tych samych ludzi drugi raz albo gościa z ukrytym
+      ugryzieniem. `look`: wygląd pionka każdej osoby (4–15, w kolejności `osoby`), z poprzedniej wizyty (`GrupaKarty.looks`);
+      bez niego albo przy innej długości wygląd losuje zarząd. `chce`: czego chce gość (domyślnie nocleg). `ugryziony`: indeks
+      w `osoby` ukrytego ugryzienia (tryb zombie): gość ma haczyk `ugryziony`, a wpuszczony albo przyjęty dostaje ugryzienie
+      (`goscRozkaz(…, 'ugryziony')` robi karta). */
+  look?: readonly number[];
+  chce?: ChceId;
+  ugryziony?: number;
 }
 
 /** wybór wydarzenia w grze: jak EventChoice z 0.3, ale z napisem w obu językach */
@@ -653,7 +671,8 @@ export const NEW_EVENTS: GEventDef[] = [
     first: true,
     once: true,
     when: ['wieczor', 'noc'],
-    w: () => 0.7,
+    // pies z łańcucha „Szczekanie” (src/gov/watki-tresc.ts) ustawia tę samą flagę: drugiego już nie przygarniamy
+    w: (h) => (h.flag('dog') ? 0 : 0.7),
     make: () => ({}),
     title: () => tx('Pies przy siatce', 'A dog at the fence'),
     text: () =>
