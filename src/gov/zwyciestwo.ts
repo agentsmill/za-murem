@@ -13,8 +13,9 @@
 
    Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu tam, gdzie
    da się otoczyć sąsiada, dwa pierwsze kamienie technologii przy odczycie badań), mówi jednym zdaniem, co zrobić, żeby
-   zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy
-   ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
+   zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą; słowo
+   zarządu idzie ze słownika miejsca, `Words.zarzad.n` i `Words.zarzad.dk`: w domu „pod komitetem ulicy” i „nikt z komitetu”),
+   przy ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
    płotem pierwszy sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię w pokoju waszego mieszkania …” (słowo
    lokum idzie ze słownika miejsca przez `waszeLokum` z src/gov/miejsce.ts: w domu jednorodzinnym „waszego domu”), a
    przy jednym kamieniu „Posadźcie kogoś przy stole pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają
@@ -268,16 +269,21 @@ const ID_GENERATORA = 't_fuzja';
 /** era badań, od której liczy się trzeci kamień technologii („Era 3”) */
 const ERA_KAMIENIA = 3;
 
-/** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”) */
-const dalejOsoby = (n: number): Tx =>
-  tx(`Zbierzcie ${mnogaPl(n, 'osoba', 'osoby', 'osób')} pod zarządem.`, `Get ${n} people under the board.`);
+/** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”). Słowo
+    zarządu bierze ze słownika miejsca: w domu „pod komitetem ulicy”, po angielsku „under the street committee”. */
+const dalejOsoby = (n: number, place: GovPlace): Tx =>
+  tx(
+    `Zbierzcie ${mnogaPl(n, 'osoba', 'osoby', 'osób')} pod ${wordsOf(place).zarzad.n}.`,
+    `Get ${n} people under ${wordsEn(place).zarzad}.`,
+  );
 
 /** „Co dalej” dla ostatniego kamienia ludności: utrzymać cel siedem poranków, z licznikiem `dni` z 7. Warunki w zdaniu
-    to te same stałe, którymi liczy `krokZwyciestwa` (poranek, głód, zaufanie, liczba dni). */
-const dalejSeria = (dni: number): Tx =>
+    to te same stałe, którymi liczy `krokZwyciestwa` (poranek, głód, zaufanie, liczba dni); „nikt z zarządu” to w domu
+    „nikt z komitetu” (słownik miejsca). */
+const dalejSeria = (dni: number, place: GovPlace): Tx =>
   tx(
-    `Utrzymajcie cel ${DNI_CELU} poranków z rzędu: o ${PORANEK}:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej ${ZAUFANIE_OD} (${dni} z ${DNI_CELU}).`,
-    `Hold the target for ${DNI_CELU} mornings in a row: at ${PORANEK}:00 nobody on the board is hungry and trust is at least ${ZAUFANIE_OD} (${dni} of ${DNI_CELU}).`,
+    `Utrzymajcie cel ${DNI_CELU} poranków z rzędu: o ${PORANEK}:00 nikt z ${wordsOf(place).zarzad.dk} nie jest głodny, a zaufanie wynosi co najmniej ${ZAUFANIE_OD} (${dni} z ${DNI_CELU}).`,
+    `Hold the target for ${DNI_CELU} mornings in a row: at ${PORANEK}:00 nobody on ${wordsEn(place).krotko} is hungry and trust is at least ${ZAUFANIE_OD} (${dni} of ${DNI_CELU}).`,
   );
 
 /** Nazwa drogi w trybie gry: droga leku w zombie nazywa się „Lek”, reszta tak samo w obu trybach. */
@@ -397,7 +403,8 @@ function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: numbe
   if (droga === 'technologia') return DALEJ_TECHNOLOGIA[zaliczone]?.(placeIn(i)) ?? null;
   if (droga !== 'ludnosc') return null;
   const progi = progiLudnosci(cel);
-  return zaliczone < progi.length ? dalejOsoby(progi[zaliczone]) : dalejSeria(dniCelu);
+  const place = placeIn(i);
+  return zaliczone < progi.length ? dalejOsoby(progi[zaliczone], place) : dalejSeria(dniCelu, place);
 }
 
 /** Postęp pięciu dróg w kolejności ekranu (technologia, teren, lek, ludność, cuda) z odczytu i stanu zarządu. Czysta:

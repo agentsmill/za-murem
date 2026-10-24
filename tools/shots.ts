@@ -30,6 +30,7 @@ import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './k
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { tekstyShots } from './shots-teksty.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -751,6 +752,9 @@ const SHOTS: Shot[] = [
   ...celeShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
+  // Poprawki tekstów po przeglądzie spójności: pora roku na pasku w zimie, słowa domu (komitet, furtka) w drogach, epilogach, planie
+  // wyprawy, alarmie i Pracy, karta miejsca wybranego do cna, koniec gry w kronice, atrybucja w /v03/
+  ...tekstyShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -2442,6 +2446,16 @@ const SHOTS: Shot[] = [
             for (const p of st.pawns)
               if (p.kind === 'resident' && p.person >= 0)
                 p.moods.push({ why: 'Głód w piwnicy', d: -40, until: st.tick + 200 * 800 });
+          });
+          // Pula zarządu tylko z tą jedną kartą (jak w `wyd-przyjety`): „Kradzież z piwnicy” jest rzadką kartą nocy, więc
+          // czekanie na nią w całej puli zależy od przebiegu losowań. Raz już nie wypadła w 150 godzin, gdy zmiana imion
+          // gości (dwie różne osoby nie mają tego samego imienia) przesunęła losowania w tej grze, a scenariusz sprawdza
+          // samą kartę i jej wybory, nie szansę, że wypadnie.
+          await page.evaluate(async () => {
+            const url = '/src/gov/wydarzenia.ts';
+            const m = (await import(/* @vite-ignore */ url)) as { M1_EVENTS: { id: string }[] };
+            const gov = window.zm!.gov!;
+            for (const e of m.M1_EVENTS) if (e.id !== 'kradziez') gov.ev.last[e.id] = 1e9;
           });
           const krok = await doKarty(page, 'kradziez');
           await waitIdle(page);
@@ -13328,7 +13342,8 @@ function zwyciestwoShots(): Shot[] {
       pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
       en: 'Put a shared fence round the first building next door.',
     },
-    ludnosc: { pl: 'Zbierzcie 10 osób pod zarządem.', en: 'Get 10 people under the board.' },
+    // w domu słowo zarządu idzie ze słownika miejsca: komitet ulicy
+    ludnosc: { pl: 'Zbierzcie 10 osób pod komitetem ulicy.', en: 'Get 10 people under the street committee.' },
   };
   /** ostatni kamień ludności z licznikiem poranków `n`: zdanie o siedmiu porankach dosłownie */
   const dalejSeria = (n: number): Tx => ({

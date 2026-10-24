@@ -53,7 +53,7 @@ import { FURNITURE_EN } from '../sim/nazwy.en.ts';
 import { BURN_TICKS, BURNABLE, FURNITURE_ACC } from '../sim/sim.ts';
 import { NAPISY as WEDROWCY } from '../sim/wedrowcy.ts';
 import { FENCE_BEARS } from '../sim/zombie.ts';
-import { esc, manyEn, num, pct, signed } from './tekst.ts';
+import { deg, esc, manyEn, num, pct, signed } from './tekst.ts';
 
 export interface Sheet {
   /** mały napis nad tytułem, jak na tabliczce */
@@ -421,7 +421,7 @@ export function reportSheet(r: NightReport): Sheet {
   const warm = kit === null ? '' : kit >= 18 ? ' good' : kit < 15 ? ' bad' : '';
   const tally = [
     kit !== null
-      ? `<li class="tal${warm}"><small class="tal-k">${L('Kuchnia rano', 'Kitchen this morning')}</small><b>${Math.round(kit)}°C${
+      ? `<li class="tal${warm}"><small class="tal-k">${L('Kuchnia rano', 'Kitchen this morning')}</small><b>${deg(kit)}${
           r.koza?.length ? L(`, przy kozie ${esc(r.koza.join(', '))}`, `, stove watch: ${esc(r.koza.join(', '))}`) : ''
         }</b></li>`
       : '',
@@ -530,7 +530,7 @@ const ZOMBIE_HELP = tx(
 function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
   const s = words.szukanie;
   const fetch = tx(
-    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie ${s.d} i rozbiórka.`,
+    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części pochodzą z przeszukiwania ${s.d} i z rozbiórki.`,
     `${e.Zarzad} fetches the materials and does the building. Planks, scrap and parts come from searching ${e.szukanie.d} and taking things apart.`,
   );
   const items = touch

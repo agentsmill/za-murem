@@ -38,7 +38,7 @@ export const M1_LAWS_EN: Record<string, M1LawEn> = {
   },
   u_racje: {
     name: 'Starvation rations',
-    desc: 'Food runs down 25% more slowly, but people eat only when they are really hungry and at most twice a day, so they go to bed hungry. Anger +0.4 a day.',
+    desc: 'Portions are 25% smaller, so the food lasts a little longer. People eat only when they are really hungry and at most twice a day, so they go to bed hungry. Anger +0.4 a day.',
   },
   u_meble: {
     name: 'Furniture for fuel',

@@ -171,9 +171,13 @@ const nikt = (h: GovHost) => h.neighbours() === null;
 /** karta z gościem może wypaść: gra z obcymi (`GovInput.goscie`) i zarząd nie prowadzi już innej wizyty */
 const zGosciem = (h: GovHost): boolean => !!h.goscie() && !h.goscAktywny();
 
-/** imiona zajęte w osiedlu (zarząd, mieszkańcy z osobą i podane osoby): grupa z karty ich nie powtarza */
+/** imiona zajęte w osiedlu (zarząd, mieszkańcy z osobą i podane osoby) i imiona postaci znanych z kart (znajomi, gość, ludzie
+    z łańcuchów): grupa z karty ich nie powtarza */
 const imionaZajete = (h: GovHost, ...osoby: (Person | null | undefined)[]): Set<string> =>
-  new Set([...h.alive(), ...h.lokatorzy(), ...osoby.filter((p): p is Person => !!p)].map((p) => p.first));
+  new Set([
+    ...[...h.alive(), ...h.lokatorzy(), ...osoby.filter((p): p is Person => !!p)].map((p) => p.first),
+    ...h.imionaPostaci(),
+  ]);
 
 /** Grupa z karty: `ilu` osób archetypu `kto` (id z licznika, `planujKarte` nadaje właściwe), mówiący z karty, jeśli jest. */
 function grupaKarty(h: GovHost, kto: KtoId, ilu: number, mowiacy?: Person | null): Person[] {

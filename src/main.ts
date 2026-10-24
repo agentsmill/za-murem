@@ -136,7 +136,7 @@ import {
   zmianaZPol,
   zTejOsobyGeneratora,
 } from './ui/imiona.ts';
-import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
+import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
@@ -165,7 +165,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
-import { renderStats, statsOf } from './ui/pasek.ts';
+import { renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
   nastepnePietro,
@@ -1259,7 +1259,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
 function showEpilog(droga: Droga) {
   const g = gov;
   if (!g || !sim) return;
-  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input())), (act) => {
+  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input()), words, wordsE), (act) => {
     if (act === 'zw-dalej') {
       grajDalej(g);
       decided();
@@ -1957,6 +1957,8 @@ function hud(now: number) {
   const st = sim.st;
   $('hDay').textContent = L(`Dzień ${dayOf(st.tick)}`, `Day ${dayOf(st.tick)}`);
   $('hTime').textContent = clockOf(st.tick);
+  // pora roku z zegara gry (dotąd stały napis „jesień 2051” z index.html, także w zimie)
+  $('hSeason').textContent = tr(sezonPodpis(st.tick));
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   lastStock = snap.stock;
@@ -2390,9 +2392,12 @@ function alarmButton(st: SimState) {
   const b = $('btnAlarm');
   const on = alarmOn(st);
   const text = on ? L(ALARM_OFF, ALARM_OFF_EN) : tr(ALARM_IDLE.tekst);
-  if (b.textContent === text) return;
+  // podpowiedź bez alarmu ze słowami miejsca (w domu komitet): napis statyczny ma wersję z bloku, a nalozStatyczne()
+  // przywraca go po zmianie języka, więc porównanie obejmuje też podpowiedź
+  const title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(alarmTytul(words, wordsE));
+  if (b.textContent === text && b.title === title) return;
   b.textContent = text;
-  b.title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(ALARM_IDLE.title);
+  b.title = title;
   b.classList.toggle('on', on);
   b.setAttribute('aria-pressed', String(on));
 }
@@ -3118,6 +3123,7 @@ const pracaPanel = new PracaPanel($('pracaPanel'), $('app'), {
     return nalozPolecenia(widokPracy(snap, { kol, zlecen: kol ? sim.ileZlecen(kol) : 0, touch: touchUI }), sim.st.cmds);
   },
   en: () => jezyk() === 'en',
+  slowa: () => ({ w: words, e: wordsE }),
   touch: touchUI,
   onPrio: (osoba, rodzaj, prio) => sim?.push({ t: 'prio', ids: [], osoba, rodzaj, prio }),
   onProg: (co, n) => sim?.push({ t: 'prog', ids: [], co, n }),

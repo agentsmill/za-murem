@@ -127,8 +127,10 @@ const zawod = (p: { prof: string }): { pl: string; en: string; enA: string } => 
   return { pl: p.prof.toLowerCase(), en, enA: zPrzedimkiem(en) };
 };
 
-/** imiona zajęte w osiedlu (zarząd i mieszkańcy z osobą) */
-const imionaZajete = (h: GovHost): Set<string> => new Set([...h.alive(), ...h.lokatorzy()].map((p) => p.first));
+/** imiona zajęte w osiedlu (zarząd i mieszkańcy z osobą) i imiona postaci znanych z kart (znajomi, gość, ludzie z haków
+    łańcuchów): nowy człowiek z łańcucha nie ma imienia nikogo, kogo gracz już zna */
+const imionaZajete = (h: GovHost): Set<string> =>
+  new Set([...[...h.alive(), ...h.lokatorzy()].map((p) => p.first), ...h.imionaPostaci()]);
 
 const nazwiskoOsoby = (p: Pick<Person, 'name' | 'first'>): string => p.name.slice(p.first.length + 1);
 
