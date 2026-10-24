@@ -21,7 +21,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { wczytajDaneMieszkancow } from '../src/mieszkancy/wczytaj.ts';
+import { type DaneMieszkancow, wczytajDaneMieszkancow } from '../src/mieszkancy/wczytaj.ts';
 import { ludnoscSpisu2021, mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../src/sim/osiedle.ts';
 import type { SimOpts, SimState } from '../src/sim/sim.ts';
 import type { Geo } from '../src/world/geo.ts';
@@ -125,6 +125,11 @@ export interface SwiatMieszkancow {
   world: World;
   /** opcja `mieszkancy` dla `createSim` na tym świecie */
   mieszkancy: NonNullable<SimOpts['mieszkancy']>;
+  /** mapa z tagami generatora i tabele, z których powstał świat: gra podaje je symulacji jako źródło lokatorów
+      sąsiednich budynków (`zrodloLokatorow` w src/sim/lokatorzy.ts, jak `enter` w src/main.ts); boty, które tego nie
+      potrzebują, ich nie czytają */
+  geo: Geo;
+  dane: DaneMieszkancow;
 }
 
 /** Świat dema z mieszkańcami z generatora (zarząd do `core` osób). Rzuca, gdy brakuje tabel albo generator nie da
@@ -140,7 +145,7 @@ export async function swiatMieszkancow(
   const world = buildWorld(geo, { seed, street: demo.street });
   const l = mieszkancyNowejGry(world, geo, dane, core);
   if (!l) throw new Error('--mieszkancy: generator mieszkańców nie dał wyniku dla siedziby');
-  return { world, mieszkancy: opcjaMieszkancow(l) };
+  return { world, mieszkancy: opcjaMieszkancow(l), geo, dane };
 }
 
 /** Ludność kwadratu domu z 2021 roku dla dema, tą drogą co w grze (main.ts: `mapaMieszkancow` i `ludnoscSpisu2021` z tabel
