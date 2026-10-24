@@ -8,7 +8,10 @@
    raz: po `t_kozy` i bez kozy z beczki w pokoju zarządu plan `koza_beczka` w tym pokoju (pracownia nie jest do tego
    potrzebna); bez pracowni plan pracowni (`miejsceNa(..., 'pracownia')`, z dala od miejsc, na których stanie koza
    z beczki: w ciasnym pokoju stół zastawiłby jej okno); z pracownią i bez bieżącego badania wybór badania `t_kozy`, gdy
-   osada ma do niego wiedzę (do stołu siadają ludzie sami albo ich sadza warstwa rozwoju z zadania 5). Ręce do budowy i zbieranie
+   osada ma do niego wiedzę (do stołu siadają ludzie sami, a warstwa rozwoju z zadania 5, src/ai/rozwoj.ts, daje największemu
+   znawcy dziedziny badania priorytet 1 w tabeli Pracy). Dopóki zima ma swoje do zrobienia (`zimaWToku`: nie stoi pracownia,
+   badanie kozy trwa albo da się je zacząć, zbadana koza czeka na postawienie), warstwa rozwoju nie zaczyna budowy, żeby nie
+   zjeść materiału, którego ta droga potrzebuje. Ręce do budowy i zbieranie
    materiału dają automat pracy ludzi (plan w grze czeka, aż ktoś go zacznie, a szaber, warsztat i noszenie znoszą
    materiały), więc warstwa nie ponawia planów, które już stoją. Jedna rzecz automat nie załatwia: w domu jednorodzinnym
    (Zielonki) po przeszukaniu pomieszczeń zostaje o kilka desek za mało na pracownię (14), a deski leżą w gruzie na
@@ -173,6 +176,31 @@ function turaKozy(g: GraAi, r: Rece): boolean {
   if (!miejsce) return false;
   r.polecenie({ t: 'build', ids: [], kind: 'koza_beczka', ...miejsce });
   return true;
+}
+
+/** Czy koza z beczki czeka na postawienie w pokoju zarządu: jej plan już stoi, albo kozy w tym pokoju nie ma i jest dla niej
+    miejsce (te same warunki co w `turaKozy`). Bez miejsca (Lanciego: sypialnie bez okna) nie czeka na nic. */
+function kozaCzeka(g: GraAi): boolean {
+  const { sim, w } = g;
+  const st = sim.st;
+  const pokoj = pokojZarzadu(st, w);
+  const h = houseOf(w);
+  if (!h || pokoj < 0) return false;
+  if (st.builds.some((b) => b.kind === 'koza_beczka')) return true;
+  if (st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * w.size + t.x] === pokoj)) return false;
+  return miejsceNa(st, w, 'koza_beczka', pokoj) !== null;
+}
+
+/** Czy warstwa zimy ma jeszcze coś na drodze do kozy z beczki w pokoju zarządu: pracownia nie stoi, badanie kozy trwa albo da
+    się je zacząć, albo zbadana koza czeka na postawienie. Inne warstwy nie zaczynają wtedy budowy (`turaRozwoju`), żeby nie
+    zjadły materiału, którego ta droga potrzebuje: ogrzana sypialnia zarządu to 5–12 dni więcej gry. Badanie kozy bez wiedzy w osadzie
+    (nikt się nie zna na cieple) zimy nie wstrzymuje, bo nikt go nie zacznie. */
+export function zimaWToku(g: GraAi): boolean {
+  const st = g.sim.st;
+  if (!st.things.some((t) => t.kind === 'pracownia')) return true;
+  if (st.techDone?.includes(BADANIE_KOZY)) return kozaCzeka(g);
+  const stan = kartka(st, BADANIE_KOZY, modeOf(st)).stan;
+  return stan === 'do_wziecia' || stan === 'w_toku';
 }
 
 /** Jedna tura warstwy (co 30 s przy ekranie): koza z beczki po badaniu, pracownia, badanie kozy. Najwyżej jedno polecenie
