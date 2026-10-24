@@ -49,6 +49,10 @@ import { Atrapa, at, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
+
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>
   Math.round(((at(day, hour, minute) - 15 * 60) * TPH) / 60);

@@ -22,6 +22,10 @@
      (`ostrzej`) ×1,5 dla każdego haczyka poza prawdą, fach, który zarząd już ma, kusi mniej, pora i dom przesuwają
      „czego chce” i archetyp rodziny. Każda napaść na obcego odbiera 20% szansy na gościa: to nie waga klocka, tylko
      mnożnik wydarzenia (`wagaGoscia`).
+   - Wątki sezonu (`KontekstGoscia.bez`, w wizyta.ts `bezPowtorek`): gdy zarząd ma włączone łańcuchy (`GovState.lancuchy`), a `dobicie`
+     albo `dach` jest wybranym wątkiem, archetyp „ktoś z ugryzionym bliskim” (dobicie) i haczyk „ugryziony” u kogoś innego niż on
+     (ocaleni z ukrytym ugryzieniem, dach) mają wagę 0, bo tę opowieść prowadzi łańcuch. Bez łańcuchów pole `bez` nie powstaje
+     i losowania są takie jak dotąd. `nazwiskoDla` (forma nazwiska dla płci) jest stąd eksportowane też łańcuchom.
    - Osoby: `makePerson` z listy imion 0.3 (zarząd nie ma tabel generatora), fach z puli archetypu (dezerter tylko jako
      ochroniarz), wiek mówiącego z `KTO[kto].wiek`, reszta grupy z wiekiem rodziny (dzieci 4–15, dziadkowie 65–85); w rodzinie
      partner jest płci przeciwnej niż mówiący; rodzina, dzieci i ktoś z ugryzionym bliskim mają nazwisko mówiącego (forma
@@ -119,6 +123,10 @@ export interface KontekstGoscia {
   dom: boolean;
   /** narrator po długim spokoju (zadanie 16): haczyk inny niż 'prawda' ×1,5 */
   ostrzej?: boolean;
+  /** Czego goście z klocków nie powtarzają, bo to samo opowiada wybrany wątek sezonu (Task 15): archetypy i haczyki z wagą 0.
+      Prośba o dobicie ugryzionego dziecka to łańcuch „Prośba o dobicie” (`z_ugryzionym`), ocaleni z ukrytym ugryzieniem to
+      łańcuch „Ktoś woła z dachu” (haczyk `ugryziony` u kogoś innego niż `z_ugryzionym`, który go ma zawsze). */
+  bez?: { kto?: readonly KtoId[]; haczyk?: readonly HaczykId[] };
 }
 
 const TRYBY_OBA: readonly GameMode[] = ['zwykly', 'zombie'];
@@ -293,7 +301,7 @@ const BAZA_KTO: Record<KtoId, number> = {
 
 function wagiKto(ctx: KontekstGoscia): Opcje<KtoId> {
   return KTOS.filter((k) => KTO[k].tryby.includes(ctx.mode)).map((k) => {
-    let w = BAZA_KTO[k];
+    let w = ctx.bez?.kto?.includes(k) ? 0 : BAZA_KTO[k];
     if (k === 'chory' && ctx.season === ZIMA) w *= 2;
     // w domu mniej miejsca: duże rodziny przychodzą rzadziej
     if (k === 'rodzina' && ctx.dom) w *= 0.7;
@@ -305,7 +313,8 @@ const BAZA_HACZYK: Record<HaczykId, number> = { prawda: 4, klamie: 1.4, chory: 1
 
 function wagiHaczyka(ctx: KontekstGoscia, kto: KtoId): Opcje<HaczykId> {
   return haczykiMozliwe(kto, ctx.mode).map((h) => {
-    let w = BAZA_HACZYK[h];
+    // ktoś z ugryzionym bliskim ma ugryzienie zawsze (jedyny możliwy haczyk), więc jego nie wyłączamy
+    let w = ctx.bez?.haczyk?.includes(h) && kto !== 'z_ugryzionym' ? 0 : BAZA_HACZYK[h];
     if (h === 'klamie' && ctx.zapasy > 20) w *= 1.5;
     if (h === 'chory') {
       if (ctx.season === ZIMA) w *= 2;
@@ -470,7 +479,7 @@ const doroslyProf = (lo: number, hi: number): Prof => ['mieszkaniec', 'mieszkank
 const przytnij = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
 /** forma nazwiska dla płci: Kowalski ↔ Kowalska, Nowak ↔ Nowak */
-function nazwiskoDla(nazwisko: string, f: boolean): string {
+export function nazwiskoDla(nazwisko: string, f: boolean): string {
   const para = SURN.find((s) => s[0] === nazwisko || s[1] === nazwisko);
   return para ? para[f ? 1 : 0] : nazwisko;
 }

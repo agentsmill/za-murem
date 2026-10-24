@@ -12,6 +12,10 @@ import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { pl } from './po-angielsku.ts';
 
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
+
 const HORDE = { near: 3, pressing: 1, killed: 0, breaches: 0, bites: 0, tonight: 8 };
 
 /** gra na atrapie do minuty gry until: karta zatwierdzana z propozycją, uchwały pomijane, wydarzenia

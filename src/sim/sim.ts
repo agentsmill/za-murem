@@ -130,6 +130,7 @@ import {
   goscKoniec,
   najblizszaGodzina,
   ranoGoscia,
+  SPOOK_GOSC,
   startGoscia,
 } from './gosc.ts';
 import {
@@ -7961,11 +7962,11 @@ export class Sim {
     }
   }
 
-  /** Tryb zombie: szwendacz do SPOOK_R m od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
+  /** Tryb zombie: szwendacz do SPOOK_GOSC m (zasięg ugryzienia) od któregoś z grupy płoszy ją (sprawdzane co sekundę, jak u wędrowca) */
   private goscPlosz(g: GoscSim, m: Pawn[]): boolean {
     const st = this.st;
     if (modeOf(st) !== 'zombie' || (st.tick + g.pawns[0]) % THINK_EVERY !== 0) return false;
-    const r2 = SPOOK_R * SPOOK_R;
+    const r2 = SPOOK_GOSC * SPOOK_GOSC;
     for (const z of st.pawns) {
       if (z.kind !== 'zombie' || this.graveyard.has(z.id)) continue;
       for (const p of m) if ((z.x - p.x) ** 2 + (z.y - p.y) ** 2 <= r2) return true;
@@ -8231,12 +8232,14 @@ export class Sim {
     this.goscOdeslij(m, true);
   }
 
-  /** Śmierć członka wizyty: licznik zgonów, a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
+  /** Śmierć członka wizyty: licznik zgonów, jego indeks w planie (`GoscSim.zmarli`, dla pamięci zarządu o znajomych), a gdy zginął kradnący, łup z jego worka upada na ziemię (`die` woła
       `dropSack`), więc zapasów brakuje o tyle mniej (`ukradl` 0). */
   private goscZginal(p: Pawn): void {
     const g = this.st.goscie?.find((x) => x.pawns.includes(p.id));
     if (!g) return;
     g.zgin = (g.zgin ?? 0) + 1;
+    const k = g.pawns.indexOf(p.id);
+    if (k >= 0) (g.zmarli ??= []).push(k);
     if (g.zl === p.id) g.ukradl = 0;
   }
 

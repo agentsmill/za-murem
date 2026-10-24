@@ -58,7 +58,7 @@ export interface Gra {
 
 /** nowa gra: 4 osoby zarządu, godzina 15:00 pierwszego dnia, ścieżka na starcie (pierwszy dzień) */
 export function nowaGra(key: Demo, mode: GameMode = 'zwykly', seed = 5): Gra {
-  return { key, mode, seed, sim: newGame(key, mode, seed), gov: newGov(seed, mode), sciezka: nowyStanSciezki() };
+  return { key, mode, seed, sim: newGame(key, mode, seed), gov: newGov(seed, mode, true), sciezka: nowyStanSciezki() };
 }
 
 /** gra z gotową symulacją (mieszkańcy z generatora, jednoosobowy zarząd, spotkanie w drzwiach) i zarządem na starcie */

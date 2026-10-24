@@ -39,6 +39,7 @@ import {
   pending,
   saveGov,
 } from '../../src/gov/zarzad.ts';
+import { doPowrotu, obecniWOsiedlu } from '../../src/gov/znajomi.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { tickAt as tickSim } from '../../src/sim/handlarz.ts';
 import { createSim, NOISE_TICKS, Sim, type SimState } from '../../src/sim/sim.ts';
@@ -49,6 +50,10 @@ import { Atrapa, answer, at, TPH, TPS } from './gov-atrapa.ts';
 import { playWithGov } from './gov-play.ts';
 import { mockBlock, mockBlockM2 } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
+
+// Zarząd w tym pliku powstaje z `newGov(seed, tryb)` bez trzeciego argumentu, czyli bez łańcuchów kart i wątków sezonu (w grze są
+// domyślnie włączone: `newGov(seed, tryb, true)`). Plik sprawdza samą pulę kart; łańcuchy mają swoje testy (watki*.test.ts,
+// lancuchy-przelacznik.test.ts).
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>
@@ -282,6 +287,44 @@ describe('wydarzenie gosc: waga i plan', () => {
     // wygląd też z ziarna zarządu: pierwszy strój różni się między grami
     const stroje = new Set([1, 2, 3, 4, 5, 6, 7, 8].map((k) => plan(k).fx.gosc!.looks[0]));
     expect(stroje.size).toBeGreaterThan(3);
+  });
+
+  it('wybrany wątek zajmuje miejsce gości z klocków: dobicie bez ugryzionego bliskiego, dach bez ocalałych z ukrytym ugryzieniem', () => {
+    /** ilu gości z klocków w trybie zombie miało dany archetyp i haczyk przy wybranych wątkach */
+    const rodzaje = (wybrane: string[], lancuchy = true) => {
+      const kto: Record<string, number> = {};
+      const haczyk: Record<string, number> = {};
+      for (let seed = 1; seed <= 300; seed++) {
+        const s = stan(null, { seed, mode: 'zombie' });
+        if (wybrane.length) {
+          if (lancuchy) s.gov.lancuchy = true;
+          s.gov.watki = { wybrane, haki: {}, krok: {} };
+        }
+        const g = planujGoscia(s.gov, s.i, emptyEffects(), 'wieczor');
+        kto[g.kto] = (kto[g.kto] ?? 0) + 1;
+        haczyk[`${g.kto}/${g.haczyk}`] = (haczyk[`${g.kto}/${g.haczyk}`] ?? 0) + 1;
+      }
+      return { kto, haczyk };
+    };
+    // kontrola: bez wątków ten archetyp i ten haczyk wypadają
+    const zwykle = rodzaje([]);
+    expect(zwykle.kto.z_ugryzionym ?? 0).toBeGreaterThan(5);
+    expect(zwykle.haczyk['ocaleni/ugryziony'] ?? 0).toBeGreaterThan(0);
+    // dobicie: nikt z ugryzionym bliskim, ocaleni z ukrytym ugryzieniem zostają
+    const dobicie = rodzaje(['dobicie']);
+    expect(dobicie.kto.z_ugryzionym ?? 0).toBe(0);
+    expect(dobicie.haczyk['ocaleni/ugryziony'] ?? 0).toBeGreaterThan(0);
+    // dach: ocaleni (i nikt inny poza z_ugryzionym) bez ukrytego ugryzienia, a ugryziony bliski nadal prosi o dobicie
+    const dach = rodzaje(['dach']);
+    const ugryzieni = Object.keys(dach.haczyk).filter(
+      (k) => k.endsWith('/ugryziony') && k !== 'z_ugryzionym/ugryziony',
+    );
+    expect(ugryzieni).toEqual([]);
+    expect(dach.kto.z_ugryzionym ?? 0).toBeGreaterThan(5);
+    // wątki bez związku z gośćmi z klocków niczego nie zmieniają
+    expect(rodzaje(['swiatlo', 'list'])).toEqual(zwykle);
+    // wątki wpisane do stanu przy wyłączonych łańcuchach (`GovState.lancuchy` brak) nie zdejmują nikogo z puli gości
+    expect(rodzaje(['dobicie', 'dach'], false)).toEqual(zwykle);
   });
 
   it('najwyżej jeden gość naraz: dopóki wizyta trwa, nowy nie wypada; po jej końcu następny ma id g2', () => {
@@ -1841,35 +1884,45 @@ describe('spis gier z obcymi', () => {
     expect(razem.gosc).toBeLessThan(razem.karty / 2);
   }, 600_000);
 
-  it('tempo na początku gry z obcymi: decyzja w prawie każdej z pierwszych dziesięciu minut (prawdziwa symulacja, wylosowany gość nie zjada odstępu)', async () => {
-    // Tak samo jak test gęstości decyzji z zarzad.test.ts (≥ 8 z 9 minut od drugiej do dziesiątej), ale na prawdziwej
-    // symulacji z obcymi, jak w przeglądarce. Przed zmianą (wylosowany gość zjadał odstęp, a plan nie był kartą) 23 z 30
-    // gier miało co najmniej 8 pokrytych minut; bez gości (BASE 3c23992) wszystkie 10 pierwszych ziaren i 26 z 30 miało
-    // wszystkie 9. Próg to wynik BASE na tych 10 ziarnach (10 z 10 co najmniej 8 minut).
-    let osiem = 0;
-    let dziewiec = 0;
-    let wizyt = 0;
-    const wypisz: string[] = [];
-    for (let seed = 1; seed <= 10; seed++) {
-      const { world: w, mieszkancy } = await swiatMieszkancow(DEMO, seed, 4);
-      const r = playWithGov(w, seed, 'zawsze-warta', 1, 4, { obcy: true, mieszkancy });
-      const d = r.gov.decisions.map((x) => x.s).filter((x) => x <= 600);
-      const pokryte = Array.from({ length: 9 }, (_, m) => d.some((x) => x >= (m + 1) * 60 && x < (m + 2) * 60)).filter(
-        Boolean,
-      ).length;
-      if (pokryte >= 8) osiem++;
-      if (pokryte === 9) dziewiec++;
-      wizyt += r.gov.goscie?.n ?? 0;
-      wypisz.push(`${seed}:${pokryte}`);
-    }
-    console.info(
-      `tempo: minut z decyzją na ziarno ${wypisz.join(' ')}; >=8: ${osiem}/10, 9: ${dziewiec}/10, wizyt ${wizyt}`,
-    );
-    // goście naprawdę wchodzą do puli w tych grach
-    expect(wizyt).toBeGreaterThanOrEqual(5);
-    expect(osiem).toBe(10);
-    expect(dziewiec).toBeGreaterThanOrEqual(9);
-  }, 600_000);
+  // Tak samo jak test gęstości decyzji z zarzad.test.ts (≥ 8 z 9 minut od drugiej do dziesiątej), ale na prawdziwej symulacji
+  // z obcymi, jak w przeglądarce. Dwie konfiguracje: łańcuchy włączone (gra, jaka wychodzi do graczy: wątki sezonu z ziarna
+  // zarządu) i wyłączone (`?lancuchy=0`, stan sprzed łańcuchów). Przed zmianą (wylosowany gość zjadał odstęp, a plan nie był
+  // kartą) 23 z 30 gier miało co najmniej 8 pokrytych minut; bez gości (BASE 3c23992) wszystkie 10 pierwszych ziaren i 26 z 30 miało
+  // wszystkie 9. Na dwudziestu ziarnach każda gra ma co najmniej 8 minut w obu konfiguracjach, a wszystkie 9: z łańcuchami 17
+  // z 20, bez nich 20 z 20 (pula nocy pierwszej doby jest w ostatniej godzinie na styk: ulewa i przymrozek zależą od pogody, a wybór
+  // wątków przesuwa losowanie zarządu). Dziesięć ziaren przy progu 9 z 10 było za małą próbką na takie przesunięcie. Pierwsza noc nie
+  // dostaje satyry ani listu z 2026 tylko po to, żeby ta ostatnia minuta była pełna (decyzja Mateusza, 17.10.2026).
+  for (const { lancuchy, dziewiecMin } of [
+    { lancuchy: true, dziewiecMin: 16 },
+    { lancuchy: false, dziewiecMin: 20 },
+  ]) {
+    it(`tempo na początku gry z obcymi (łańcuchy ${lancuchy ? 'włączone' : 'wyłączone'}): decyzja w prawie każdej z pierwszych dziesięciu minut (prawdziwa symulacja, wylosowany gość nie zjada odstępu)`, async () => {
+      let osiem = 0;
+      let dziewiec = 0;
+      let wizyt = 0;
+      const wypisz: string[] = [];
+      const ziarna = 20;
+      for (let seed = 1; seed <= ziarna; seed++) {
+        const { world: w, mieszkancy } = await swiatMieszkancow(DEMO, seed, 4);
+        const r = playWithGov(w, seed, 'zawsze-warta', 1, 4, { obcy: true, mieszkancy, lancuchy });
+        const d = r.gov.decisions.map((x) => x.s).filter((x) => x <= 600);
+        const pokryte = Array.from({ length: 9 }, (_, m) =>
+          d.some((x) => x >= (m + 1) * 60 && x < (m + 2) * 60),
+        ).filter(Boolean).length;
+        if (pokryte >= 8) osiem++;
+        if (pokryte === 9) dziewiec++;
+        wizyt += r.gov.goscie?.n ?? 0;
+        wypisz.push(`${seed}:${pokryte}`);
+      }
+      console.info(
+        `tempo (łańcuchy ${lancuchy}): minut z decyzją na ziarno ${wypisz.join(' ')}; >=8: ${osiem}/${ziarna}, 9: ${dziewiec}/${ziarna}, wizyt ${wizyt}`,
+      );
+      // goście naprawdę wchodzą do puli w tych grach
+      expect(wizyt).toBeGreaterThanOrEqual(10);
+      expect(osiem).toBe(ziarna);
+      expect(dziewiec).toBeGreaterThanOrEqual(dziewiecMin);
+    }, 600_000);
+  }
 
   it('ten sam przebieg po drugim razie, a zapis i wczytanie w połowie wizyty nie zmieniają go: gość idzie, stoi pod bramą z otwartą kartą, śpi u nas', async () => {
     const przeladuj = (g: Gra): Gra => {
@@ -1920,4 +1973,113 @@ describe('spis gier z obcymi', () => {
       }
     }
   }, 600_000);
+});
+
+// ---------------------------------------------------------------- znajomy zmarły: zginął, choć reszta grupy żyje
+
+describe('znajomy, który zginął, choć reszta jego grupy przeżyła, nie wraca', () => {
+  // Kształty wejścia są takie, jakie wystawia symulacja (src/sim/gov.ts `goscieOdczyt`): za życia grupy `zywi` i `pawns` bez zmarłych,
+  // po `poszedl` i `zginal` oba puste, a indeksy zmarłych w planie zawsze w `zmarli` (tu dowód na prawdziwej symulacji:
+  // tests/unit/gosc-sim.test.ts „zmarli w odczycie” i watki-tresc-gra.test.ts).
+  /** Rodzina trzech osób wpuszczona na noc (wpis o mówiącym, indeks 0, albo o pierwszej żywej osobie, gdy `przedNoca` skraca grupę). */
+  function wpuszczona(przedNoca?: { zywi: number[]; zmarli: number[] }) {
+    const g = reczny({ kto: 'rodzina', ilu: 3 });
+    const s = stan(
+      g,
+      przedNoca
+        ? { wpis: { zywi: przedNoca.zywi, pawns: przedNoca.zywi.map((k) => 100 + k), zmarli: przedNoca.zmarli } }
+        : {},
+    );
+    wybierz(s, 'Wpuścić na noc');
+    expect(s.gov.znajomi).toHaveLength(1);
+    return s;
+  }
+  /** wizyta w danej chwili: faza, żywi (indeksy w planie) i zmarli */
+  const tik = (s: Stan, faza: FazaGoscia, zywi: number[], zmarli: number[], input: Partial<GovInput> = { hour: 8 }) =>
+    eventTick(
+      s.gov,
+      zFaza(s, faza, { zywi, pawns: zywi.map((k) => 100 + k), ...(zmarli.length ? { zmarli } : {}) }, input),
+      emptyEffects(),
+      false,
+    );
+
+  it('mówiący zginął w nocy, dwoje innych śpi dalej: wpis jest zmarły od razu, a powrót go pomija', () => {
+    const s = wpuszczona();
+    const z = s.gov.znajomi![0];
+    expect(z.idx).toBe(0);
+    tik(s, 'w_srodku', [1, 2], [0], { hour: 3 });
+    expect(z.zmarl).toBe(true);
+    // choćby nastawienie było dodatnie, a ostatnie spotkanie dawne, zmarły nie wraca
+    expect(z.nastawienie).toBeGreaterThan(0);
+    expect(doPowrotu(s.gov, 9, 'zwykly', obecniWOsiedlu(s.i))).toBeNull();
+  });
+
+  it('rano reszta grupy odchodzi (poszedl, zywi puste jak w symulacji): wpis nadal zmarły, wizyta zamknięta', () => {
+    const s = wpuszczona();
+    tik(s, 'w_srodku', [1, 2], [0], { hour: 3 });
+    tik(s, 'poszedl', [], [0]);
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+    expect(s.gov.goscie?.aktywny).toBeUndefined();
+    expect(doPowrotu(s.gov, 9, 'zwykly', obecniWOsiedlu(s.i))).toBeNull();
+  });
+
+  it('mówiący zginął dopiero po rozkazie, który zamyka wizytę (odprawa): marker na wpisie wizyty wystarcza', () => {
+    const s = stan(reczny({ kto: 'rodzina', ilu: 3 }));
+    wybierz(s, 'Odprawić');
+    expect(s.gov.goscie?.aktywny?.koniec).toBe(true);
+    // wizyta nie jest już prowadzona, ale grupa idzie ulicą i szwendacz zabija mówiącego
+    tik(s, 'odchodzi', [1, 2], [0], { hour: 17 });
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+    tik(s, 'poszedl', [], [0], { hour: 18 });
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+  });
+
+  it('wszyscy dożyli poranka albo zginął ktoś inny: znajomy żyje i może wrócić', () => {
+    const s = wpuszczona();
+    const z = s.gov.znajomi![0];
+    tik(s, 'poszedl', [], []);
+    expect(z.zmarl).toBeUndefined();
+    expect(doPowrotu(s.gov, 9, 'zwykly', obecniWOsiedlu(s.i))?.id).toBe(z.id);
+    // zginęła osoba 2, mówiący (0) żyje
+    const t = wpuszczona();
+    tik(t, 'poszedl', [], [2]);
+    expect(t.gov.znajomi![0].zmarl).toBeUndefined();
+  });
+
+  it('zginęła cała grupa: jak dotąd zmarły', () => {
+    const s = wpuszczona();
+    tik(s, 'zginal', [], [0, 1, 2]);
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+  });
+
+  it('mówiący zginął jeszcze przed decyzją: wpis dotyczy pierwszej żywej osoby (indeks 1), a zmarła nie jest znajomym', () => {
+    const s = wpuszczona({ zywi: [1, 2], zmarli: [0] });
+    const z = s.gov.znajomi![0];
+    expect(z.idx).toBe(1);
+    // zmarła 0 nie ma wpisu, więc jej marker niczego nie oznacza; wpis o osobie 1 żyje do końca wizyty
+    tik(s, 'poszedl', [], [0]);
+    expect(z.zmarl).toBeUndefined();
+  });
+
+  it('wpis o osobie 1 (osoba 0 zginęła przed decyzją): jej śmierć po decyzji oznacza zmarłego', () => {
+    const s = wpuszczona({ zywi: [1, 2], zmarli: [0] });
+    tik(s, 'poszedl', [], [0, 1]);
+    expect(s.gov.znajomi![0].zmarl).toBe(true);
+  });
+
+  it('marker innej wizyty nie oznacza znajomego z tej (wizyta g2 z zabitym indeksem 0, wpis z wizyty g1)', () => {
+    const s = wpuszczona();
+    const obca: GovGosc = {
+      id: 'g2',
+      faza: 'poszedl',
+      tile: 5,
+      gdzie: { x: 5, y: 0 },
+      pawns: [],
+      zywi: [],
+      ukradl: 0,
+      zmarli: [0],
+    };
+    eventTick(s.gov, { ...s.i, goscie: [...s.i.goscie!, obca] }, emptyEffects(), false);
+    expect(s.gov.znajomi![0].zmarl).toBeUndefined();
+  });
 });

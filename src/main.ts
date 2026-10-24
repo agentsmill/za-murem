@@ -19,7 +19,10 @@
    NOWE w menu budowy (pamięć przeglądarki, src/ui/nowe.ts) i „Tablica badań” z menu pracowni, zapis i sterowanie.
    ?kwadraty=3x3 (albo lista „1,0;0,-1”, src/world/kwadraty.ts) dokłada do widoku kwadraty miasta obok domu z danych
    dema (public/demo/<klucz>-kwadraty.json), z mgłą „brak danych” tam, gdzie danych nie ma: tylko do oglądania,
-   symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty). */
+   symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty).
+   ?lancuchy=0 wyłącza w nowej grze łańcuchy kart i wątki sezonu (src/gov/watki.ts): bez parametru nowa gra ma je włączone
+   (`newGov(…, true)`, pole `GovState.lancuchy`). Zapis trzyma to, z czym grę zaczęto (zapis sprzed łańcuchów, bez pola, gra
+   dalej bez nich), a parametr nie zmienia wczytanej gry. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -34,6 +37,7 @@ import { wyslijWyprawe } from './gov/dzienne.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
 import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
+import { lancuchyZAdresu } from './gov/watki.ts';
 import { celZMiejsca, wlaczMiasto } from './gov/wyprawy.ts';
 import {
   ackReport,
@@ -194,7 +198,16 @@ import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
-import { clearSave, pietraWlaczone, readSave, type Save, saveLabel, worldKey, writeSave } from './ui/zapis.ts';
+import {
+  adresStartowy,
+  clearSave,
+  pietraWlaczone,
+  readSave,
+  type Save,
+  saveLabel,
+  worldKey,
+  writeSave,
+} from './ui/zapis.ts';
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import type { Geo } from './world/geo.ts';
@@ -528,16 +541,8 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, jeśli gra z sąsiadami była włączona, z ?pietra=1 i z ?lang=, dopóki są w adresie) */
-const startUrl = () => {
-  const q = new URLSearchParams();
-  if (params.get('siec') === '1') q.set('siec', '1');
-  if (params.get('pietra') === '1') q.set('pietra', '1');
-  const lang = new URLSearchParams(location.search).get('lang');
-  if (lang) q.set('lang', lang);
-  const s = q.toString();
-  return location.pathname + (s ? `?${s}` : '');
-};
+/** ekran startowy od nowa (z ?siec=1, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
+const startUrl = () => adresStartowy(location.pathname, location.search);
 /** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
 const DEMO_LABEL_EN: Record<string, string> = {
   przymorze: 'Obrońców Wybrzeża, Gdańsk (a wave block, large concrete panels)',
@@ -845,7 +850,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   portrety.reset();
   // uchwały są w stanie symulacji (zapis je ma); do symulacji idą tylko po podpisaniu
   // zapis sprzed angielskiej wersji: polskie napisy zarządu zamienione na teksty w obu językach (stare zostają po polsku)
-  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st));
+  gov = saved ? normalizujTeksty(saved.gov) : newGov(seed, modeOf(st), lancuchyZAdresu(params));
   // ścieżka celów: z zapisu (zapis bez pola albo z polem o złym kształcie zaczyna od pierwszego dnia, a po pierwszym
   // raporcie od drugiego), nowa gra od początku
   sciezka = saved ? stanZZapisu(saved.cele, st, gov) : nowyStanSciezki();

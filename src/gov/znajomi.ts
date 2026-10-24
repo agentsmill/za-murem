@@ -33,7 +33,7 @@
    nie ma polskich słów (imiona zostają, bo są zmyślone). */
 
 import { type Person, g as plec, type Wyglad, wygladZnajomego } from '../content/people.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { type Tx, tx, wielka } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import { type Gosc, KTO, type KtoId } from './goscie.ts';
 import type { Words, WordsEn } from './miejsce.ts';
@@ -51,7 +51,8 @@ export type JakId = 'nakarmiony' | 'nocleg' | 'przyjety' | 'odprawiony' | 'okrad
     zapis go nie ma), `jak` ostatnie zdarzenie, `nastawienie` suma zdarzeń w −2..2. `dzien` to dzień pierwszego wpisu, `wizyty` ile
     razy o nim decydowano, `ostatnio` dzień ostatniego wpisu. Pola pomocnicze: `wizyta` i `przed` (poprawka w tej samej
     wizycie), `wrocil` (dzień ostatniego powrotu gościem), `napad` (dzień, w którym poszedł z szabrownikami; raz),
-    `zmarl` (zginął na oczach zarządu: nie wraca). */
+    `zmarl` (zginął na oczach zarządu: nie wraca), `idx` (indeks osoby w planie wizyty `wizyta`: po nim wizyta mówi, że ten człowiek
+    zginął, `GovGosc.zmarli`; bez `wizyta` nie ma sensu). */
 export interface Znajomy {
   id: string;
   osoba: Pick<Person, 'first' | 'name' | 'f' | 'age'>;
@@ -71,6 +72,7 @@ export interface Znajomy {
   wrocil?: number;
   napad?: number;
   zmarl?: boolean;
+  idx?: number;
 }
 
 /** zmiana nastawienia za zdarzenie */
@@ -150,6 +152,7 @@ export function zapamietaj(
       wizyty: 1,
       ostatnio: d,
       ...(opcje.wizyta !== undefined ? { wizyta: opcje.wizyta, przed: 0 } : {}),
+      ...(opcje.wizyta !== undefined && z.idx !== undefined ? { idx: z.idx } : {}),
     };
     lista.push(nowy);
     return nowy;
@@ -169,6 +172,9 @@ export function zapamietaj(
     if (opcje.wizyta !== undefined) x.wizyta = opcje.wizyta;
     else delete x.wizyta;
   }
+  // indeks w planie dotyczy wizyty z `x.wizyta`: nowa wizyta bez indeksu (zdarzenie bez planu) go zdejmuje
+  if (z.idx !== undefined && opcje.wizyta !== undefined) x.idx = z.idx;
+  else if (!poprawka) delete x.idx;
   return x;
 }
 
@@ -220,6 +226,28 @@ export function obecniWOsiedlu(i: Pick<GovInput, 'people' | 'lokatorzy' | 'dead'
 const niema = (z: Znajomy, o: Obecni): boolean =>
   !(z.pion !== undefined ? o.pionki.has(z.pion) : o.imiona.has(z.osoba.name)) && !o.zmarli.has(z.osoba.name);
 
+/** Znajomy, który może stanąć pod bramą jako gość: nie zginął na oczach zarządu (`Znajomy.zmarl`), nie ma go na liście zmarłych
+    i nie mieszka u nas ani nie jest w zarządzie (`Obecni`: po numerze pionka, a bez niego po imieniu i nazwisku). Ten sam
+    warunek mają powrót (`doPowrotu`) i kroki łańcuchów, które sprowadzają tego samego człowieka (`GovHost.znajomyWolny`). */
+export const znajomyWolny = (z: Znajomy, o: Obecni): boolean => !z.zmarl && niema(z, o);
+
+/** Wpis o człowieku z danego id (id osoby z pierwszej wizyty, jakie dostaje krok łańcucha w haku), a gdy go nie ma pod tym id,
+    wpis tej samej osoby (imię i nazwisko, płeć, wiek: `tenSam` łączy imienników z różnym id w jeden wpis); undefined: zarząd
+    o nim nie pamięta. */
+export function znajdzZnajomego(
+  st: Pick<GovState, 'znajomi'>,
+  zid: string,
+  osoba?: Pick<Person, 'name' | 'f' | 'age'>,
+): Znajomy | undefined {
+  const lista = st.znajomi ?? [];
+  return (
+    lista.find((x) => x.id === zid) ??
+    (osoba
+      ? lista.find((x) => x.osoba.name === osoba.name && x.osoba.f === osoba.f && x.osoba.age === osoba.age)
+      : undefined)
+  );
+}
+
 // ---------------------------------------------------------------- wybór
 
 const najpierwNajdawniejszy = (a: Znajomy, b: Znajomy): number =>
@@ -228,11 +256,19 @@ const najpierwNajdawniejszy = (a: Znajomy, b: Znajomy): number =>
 /**
  * Znajomy, który wraca gościem, albo null. Dodatnie nastawienie, niewrogie ostatnie zdarzenie, ostatnie spotkanie
  * co najmniej `POWROT_WIEK_DNI` dni przed `day`, najwyżej jeden powrót na `POWROT_ODSTEP_DNI` dni we wszystkich wpisach,
- * nie ktoś z `obecni` (mieszkaniec, zarząd, zmarły), nie zmarły na oczach zarządu i archetyp, który w tym trybie bywa.
+ * nie ktoś z `obecni` (mieszkaniec, zarząd, zmarły), nie zmarły na oczach zarządu, nie ktoś z `zajeci` (id znajomych, których
+ * prowadzi jeszcze nieskończony łańcuch kart, `zajeciLudzie` w watki.ts: ten sam człowiek nie wraca dwa razy naraz, raz jako
+ * powrót, raz jako krok łańcucha) i archetyp, który w tym trybie bywa.
  * Najlepiej nastawiony, remis: najdawniejszy, potem po id. Ujemny nie wraca w żadnym trybie; w zombie nie ma też napadu
  * (`wrogDoNapadu`).
  */
-export function doPowrotu(st: GovState, day: number, mode: GameMode, obecni: Obecni = NIKOGO): Znajomy | null {
+export function doPowrotu(
+  st: GovState,
+  day: number,
+  mode: GameMode,
+  obecni: Obecni = NIKOGO,
+  zajeci: ReadonlySet<string> = new Set(),
+): Znajomy | null {
   const lista = st.znajomi;
   if (!lista?.length) return null;
   const ostatniPowrot = lista.reduce(
@@ -244,9 +280,9 @@ export function doPowrotu(st: GovState, day: number, mode: GameMode, obecni: Obe
     (z) =>
       z.nastawienie > 0 &&
       !WROGIE.has(z.jak) &&
-      !z.zmarl &&
+      znajomyWolny(z, obecni) &&
+      !zajeci.has(z.id) &&
       day - z.ostatnio >= POWROT_WIEK_DNI &&
-      niema(z, obecni) &&
       (z.kto === 'lokator' || KTO[z.kto].tryby.includes(mode)),
   );
   mozliwi.sort((a, b) => b.nastawienie - a.nastawienie || najpierwNajdawniejszy(a, b));
@@ -396,8 +432,6 @@ export function wPlanieNapadu(z: Znajomy): { id: string; imie: Tx; epitet: Tx; l
 }
 
 // ---------------------------------------------------------------- karta powrotu
-
-const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Tytuł karty powrotu: „Henryk znowu pod bramą” / „Henryk is back at the gate”. */
 export function tytulPowrotu(g: Gosc, s: Words, e: WordsEn): Tx {

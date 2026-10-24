@@ -8,7 +8,15 @@ import { hashString } from '../../src/core/rng.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { nowyStanSciezki, stanZZapisu, zalicz } from '../../src/ui/sciezka.ts';
-import { pietraWlaczone, readSave, SAVE_KEY, type Save, worldKey, writeSave } from '../../src/ui/zapis.ts';
+import {
+  adresStartowy,
+  pietraWlaczone,
+  readSave,
+  SAVE_KEY,
+  type Save,
+  worldKey,
+  writeSave,
+} from '../../src/ui/zapis.ts';
 import type { Loaded } from '../../src/world/load.ts';
 import { listaPieter } from '../../src/world/pietra.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -112,6 +120,24 @@ describe('pietraWlaczone', () => {
   });
   it('zapis bez pola z ?pietra=1 daje false (zapis wygrywa)', () => {
     expect(pietraWlaczone(zapis(), adres('?pietra=1'))).toBe(false);
+  });
+});
+
+describe('adresStartowy: co przeżywa powrót na ekran startowy', () => {
+  it('przenosi siec=1, pietra=1, lancuchy=0 i lang, resztę gubi', () => {
+    expect(adresStartowy('/za-murem/', '')).toBe('/za-murem/');
+    expect(adresStartowy('/za-murem/', '?siec=1&pietra=1&lancuchy=0&lang=en')).toBe(
+      '/za-murem/?siec=1&pietra=1&lancuchy=0&lang=en',
+    );
+    expect(adresStartowy('/', '?demo=przymorze&seed=7&godzina=22&speed=0&cam=all')).toBe('/');
+  });
+  it('lancuchy=0 wraca (łańcuchy zostają wyłączone), a lancuchy=1 i brak parametru nie zostawiają śladu (to ustawienie domyślne)', () => {
+    expect(adresStartowy('/', '?demo=zielonki&lancuchy=0')).toBe('/?lancuchy=0');
+    expect(adresStartowy('/', '?lancuchy=1')).toBe('/');
+    expect(adresStartowy('/', '?lancuchy=0&siec=1')).toBe('/?siec=1&lancuchy=0');
+  });
+  it('siec i pietra tylko z wartością 1', () => {
+    expect(adresStartowy('/', '?siec=0&pietra=2')).toBe('/');
   });
 });
 

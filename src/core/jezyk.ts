@@ -20,6 +20,9 @@ export const tx = (pl: string, en: string): Tx => ({ pl, en });
 /** ten sam napis w obu językach (imiona, liczby, nazwy miejsc) */
 export const txSame = (s: string): Tx => ({ pl: s, en: s });
 
+/** pierwsza litera wielka, reszta bez zmian (początek zdania; pusty napis zostaje pusty) */
+export const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
 export const isTx = (v: unknown): v is Tx =>
   typeof v === 'object' && v !== null && typeof (v as Tx).pl === 'string' && typeof (v as Tx).en === 'string';
 
