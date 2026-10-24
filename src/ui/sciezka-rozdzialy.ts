@@ -684,7 +684,7 @@ function budowaPoDeskiUlica(o: OdczytCelow): { pl: string; en: string } {
     } na planie, „Budować …” (najlepiej bez szwendaczy blisko).`,
     en: ` For planks ${blok ? 'from other stairwells or ' : ''}across the street: ${
       o.touch ? 'press and hold on' : 'right-click'
-    } the plan, “Build …” (best with no shamblers near).`,
+    } the plan, “Build …” (best if no shamblers near).`,
   };
 }
 
@@ -705,7 +705,7 @@ function deskiSkadJeszcze(o: OdczytCelow): { pl: string; en: string } {
   if (o.words.szukanie.obok === null)
     return {
       pl: ` Deski i części dają też meble z przeszukanych pustych mieszkań: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na meblu, „Rozebrać …”.`,
-      en: ` Furniture from searched empty flats gives planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} a piece, “Take apart the …”.`,
+      en: ` Searched empty flats’ furniture gives planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} a piece, “Take apart the …”.`,
     };
   if (sasiedzi(placeOfWorld(o.w)) !== 'domy') return { pl: '', en: '' };
   const zombie = zombieMode(o.st, o.gov);
@@ -713,7 +713,7 @@ function deskiSkadJeszcze(o: OdczytCelow): { pl: string; en: string } {
     pl: ` Deski i części mają też sąsiednie domy: ${dotyk ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.${
       zombie ? ZA_SIATKA.pl : ''
     }`,
-    en: ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
+    en: ` Houses next door have planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
       zombie ? ZA_SIATKA.en : ''
     }`,
   };
@@ -731,9 +731,11 @@ const R6: DefRozdzialu = {
         const b = budowaZakladka(o.touch);
         const skad = deskiSkadJeszcze(o);
         const ulica = budowaPoDeskiUlica(o);
+        // angielski tekst jest krótki celowo (bez „from” przed „the workshop”, bez „too”, „Houses next door”): dłuższy w zombie
+        // wypycha na telefonie zwinięte okienko ponad 8 linii, na panel budowy (scenariusz `cele-zombie-budowa-telefon`, EN)
         return L(
           `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${skad.pl}${ulica.pl}`,
-          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${skad.en}${ulica.en}`,
+          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and the workshop (“Make a part from scrap”).${skad.en}${ulica.en}`,
         );
       },
       // postawiona wcześniej zalicza od razu przy otwarciu rozdziału; sam plan budowy nie wystarcza

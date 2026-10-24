@@ -1207,9 +1207,8 @@ export function celeShots(out: string): ShotCele[] {
   /** Zombie, R5 (z `miasto=0` ogródek jest jedynym celem, więc bieżącym) i R6 (bieżąca pracownia): dopisek o „Budować …”
       z menu planu (deski w innych klatkach albo za ulicą) stoi na końcu podpowiedzi bieżącego celu, w domu bez klatek, a okienko
       z nim niczego nie zasłania (na telefonie zwinięte okienko ma w sobie całą podpowiedź bieżącego celu, więc długie zdanie
-      wypycha je na panel budowy: pracownia mieści się w 8 liniach, każda dodatkowa to 17 px i nachodzenie). Sprawdza polski
-      tekst, jak reszta scenariuszy układu; po angielsku okienko pracowni w zombie jest na telefonie o linię za wysokie, bo
-      sama angielska podpowiedź ma 284 znaki bez tego zdania (do poprawienia skróceniem istniejącego tekstu, nie dopisku). */
+      wypycha je na panel budowy: pracownia mieści się w 8 liniach, każda dodatkowa to 17 px i nachodzenie). Sprawdza oba
+      języki, bo angielska podpowiedź pracowni jest dłuższa od polskiej i to ona pierwsza wypycha okienko na panel. */
   const zombieBudowa = (name: string, demo: string, dom: boolean, w: number, h: number): ShotCele =>
     shot({
       name,
@@ -1242,6 +1241,25 @@ export function celeShots(out: string): ShotCele[] {
           console.log(`  ${k}: ${biezacy.tekst} (${jak.length} znaków podpowiedzi)`);
           await sprawdzUklad(page, `${name} ${w}×${h}, ${k}`, dotyk);
           await zrzut(page, `${name}-${k}`);
+          // po angielsku to samo zdanie na końcu i ten sam układ (zwinięte okienko na telefonie bez nachodzenia na panel budowy)
+          await ustawJezyk(page, 'en');
+          const wrEn = await wiersze(page, 'rozdzial');
+          const biezacyEn = wrEn.find((x) => x.klasy.includes('now'));
+          if (biezacyEn?.key !== cel) throw new Error(`${name} ${k} EN: bieżący cel to ${biezacyEn?.key}, nie ${cel}`);
+          const jakEn = biezacyEn.jak ?? '';
+          zawiera(
+            `${name} ${k} EN`,
+            jakEn,
+            dotyk ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”',
+            dom ? 'For planks across the street:' : 'For planks from other stairwells or across the street:',
+          );
+          if (!jakEn.endsWith('(best if no shamblers near).'))
+            throw new Error(`${name} ${k} EN: dopisek nie jest na końcu podpowiedzi: …${jakEn.slice(-120)}`);
+          console.log(`  ${k} EN: ${biezacyEn.tekst} (${jakEn.length} znaków podpowiedzi)`);
+          await okienkoBezPolskich(page, `${name} ${k} EN`);
+          await sprawdzUklad(page, `${name} ${w}×${h}, ${k}, EN`, dotyk);
+          await zrzut(page, `${name}-${k}-en`);
+          await ustawJezyk(page, 'pl');
         }
       },
     });

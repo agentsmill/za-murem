@@ -1586,7 +1586,7 @@ describe('teksty R5', () => {
           : '';
       const ulicaEn =
         mode === 'zombie'
-          ? ' For planks from other stairwells or across the street: right-click the plan, “Build …” (best with no shamblers near).'
+          ? ' For planks from other stairwells or across the street: right-click the plan, “Build …” (best if no shamblers near).'
           : '';
       expect(CARD_HOUR).toBe(20);
       expect(MORNING).toBe(6);
@@ -1671,7 +1671,7 @@ describe.each(KOMBINACJE)('R5 ogrodek: dopisek o „Budować …” tylko w zomb
         expect(en).toContain(` For planks ${dom ? '' : 'from other stairwells or '}across the street: `);
         expect(en.includes('from other stairwells or across the street'), 'stairwells only in a block').toBe(!dom);
         expect(en).toContain(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”');
-        expect(en.endsWith('(best with no shamblers near).'), `en ${touch ? 'touch' : 'mouse'}`).toBe(true);
+        expect(en.endsWith('(best if no shamblers near).'), `en ${touch ? 'touch' : 'mouse'}`).toBe(true);
         expect(polskieSlowa(en), en).toEqual([]);
         if (dom) expect(en).not.toMatch(/\b(flat|stairwell|block)\b/i);
       }

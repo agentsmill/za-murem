@@ -1251,7 +1251,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
           zombie
             ? ` For planks ${dom ? '' : 'from other stairwells or '}across the street: ${
                 dotyk ? 'press and hold on' : 'right-click'
-              } the plan, “Build …” (best with no shamblers near).`
+              } the plan, “Build …” (best if no shamblers near).`
             : '';
         const koniecPl = (dotyk: boolean): string =>
           (dom
@@ -1263,14 +1263,14 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
               } na meblu, „Rozebrać …”.`) + ulicaPl(dotyk);
         const koniecEn = (dotyk: boolean): string =>
           (dom
-            ? ` The houses next door have planks and parts too: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
+            ? ` Houses next door have planks and parts: ${dotyk ? 'press and hold on' : 'right-click'} their door.${
                 zombie ? ZA_SIATKA_EN : ''
               }`
-            : ` Furniture from searched empty flats gives planks and parts too: ${
+            : ` Searched empty flats’ furniture gives planks and parts: ${
                 dotyk ? 'press and hold on' : 'right-click'
               } a piece, “Take apart the …”.`) + ulicaEn(dotyk);
         const srodekPl = `Pracownia (deski 14, części 4) w pokoju ${lokumPl}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`;
-        const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and from the workshop (“Make a part from scrap”).`;
+        const srodekEn = `Research room (planks 14, parts 4) in a room of ${lokumEn}. Parts come from searching and the workshop (“Make a part from scrap”).`;
         const opis = `${key} ${mode}`;
         expect(slowa(g, false, 'pracownia'), opis).toEqual({
           text: 'Postawcie pracownię.',
@@ -1295,7 +1295,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
 
   it('pracownia: dopisek o sąsiednich domach tylko tam, gdzie siedziba to dom, a obok stoją domy; meble tylko w bloku; szwendacze tylko przy wyjściu za siatkę w zombie', () => {
     const pracownia = ROZDZIALY.find((r) => r.k === 'r6')!.cele.find((c) => c.key === 'pracownia')!;
-    const SASIEDNIE = /sąsiednie domy|houses next door/;
+    const SASIEDNIE = /sąsiednie domy|[Hh]ouses next door/;
     const MEBLE = /„Rozebrać …”|“Take apart the …”/;
     // dopisek o wyjściu za siatkę (`ZA_SIATKA`); zdanie o „Budować …” (inny test) też wspomina szwendaczy, ale nie o wyjściu
     const SZWENDACZE = /Za siatką są szwendacze|There are shamblers out there/;
@@ -1377,7 +1377,7 @@ describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () =>
               en.includes(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”'),
               opis,
             ).toBe(true);
-            expect(en.endsWith('(best with no shamblers near).'), opis).toBe(true);
+            expect(en.endsWith('(best if no shamblers near).'), opis).toBe(true);
             expect(polskieSlowa(en), en).toEqual([]);
             if (dom) expect(en, opis).not.toMatch(/\b(flat|stairwell|block)\b/i);
           }
