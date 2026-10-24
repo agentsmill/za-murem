@@ -1573,18 +1573,31 @@ describe('O8 Zima idzie: wyzwalacz, zamknięcie i podpowiedzi', () => {
     expect(celWOknie(widok(h), 'tablica')).not.toBe('Zbadajcie kozę z beczki.');
   });
 
-  it('okazja trwa do końca zimy (dzień 20), potem się zamyka, a w następnym roku wraca od ósmego dnia jesieni', () => {
-    const g = zimaGra('przymorze', 'zwykly', 18, 12);
+  it('okazja trwa do trzeciego dnia zimy (dzień 13), potem się zamyka, a w następnym roku wraca od ósmego dnia jesieni', () => {
+    // rok to cztery pory po dziesięć dni: jesień 1–10, zima 11–20; okno to trzy dni przed zimą i jej pierwsze trzy (8–13)
+    const g = zimaGra('przymorze', 'zwykly', 12, 12);
     krok(g);
-    expect(klucz(g), 'zima, dzień 18').toBe('o8');
+    expect(klucz(g), 'zima, dzień 12').toBe('o8');
     const od1 = okazja(g)!.od;
-    g.sim.st.tick = tickAt(20, 22);
+    g.sim.st.tick = tickAt(13, 22);
     krok(g);
-    expect(klucz(g), 'ostatni dzień zimy').toBe('o8');
-    g.sim.st.tick = tickAt(21, 6);
+    expect(klucz(g), 'ostatni dzień okna: dzień 13').toBe('o8');
+    g.sim.st.tick = tickAt(14, 6);
     krok(g);
-    expect(okazja(g), 'wiosna').toBeUndefined();
-    expect(zaliczony(g.sciezka, 'o8.kozy')).toBe(false);
+    expect(okazja(g), 'dzień 14: okno minęło, choć zima trwa').toBeUndefined();
+    expect(zaliczony(g.sciezka, 'o8.kozy'), 'zamknięcie nie zalicza').toBe(false);
+    expect(zaliczony(g.sciezka, 'o8.beczka'), 'zamknięcie nie zalicza').toBe(false);
+    // reszta zimy i wiosna: nic
+    for (const [dzien, godz] of [
+      [15, 12],
+      [20, 22],
+      [21, 8],
+    ]) {
+      g.sim.st.tick = tickAt(dzien, godz);
+      krok(g);
+      expect(okazja(g), `dzień ${dzien}`).toBeUndefined();
+    }
+    // następny rok: okno wraca z niezrobionymi celami od dnia 48 (ósmy dzień jesieni) do dnia 53
     g.sim.st.tick = tickAt(47, 12);
     krok(g);
     expect(okazja(g), 'dzień 47 to siódmy dzień jesieni').toBeUndefined();
@@ -1592,11 +1605,50 @@ describe('O8 Zima idzie: wyzwalacz, zamknięcie i podpowiedzi', () => {
     krok(g);
     expect(klucz(g), 'dzień 48 to ósmy dzień jesieni następnego roku').toBe('o8');
     expect(okazja(g)!.od).toBeGreaterThan(od1);
+    g.sim.st.tick = tickAt(53, 22);
+    krok(g);
+    expect(klucz(g), 'dzień 53 to trzeci dzień zimy następnego roku').toBe('o8');
+    g.sim.st.tick = tickAt(54, 6);
+    krok(g);
+    expect(okazja(g), 'dzień 54: okno minęło').toBeUndefined();
+    // i w trzecim roku (dzień 88)
+    g.sim.st.tick = tickAt(88, 8);
+    krok(g);
+    expect(klucz(g), 'dzień 88 to ósmy dzień jesieni trzeciego roku').toBe('o8');
     // dni 1–7 jesieni: jeszcze nie
     const h = zimaGra('przymorze', 'zwykly', 7, 12);
     krok(h);
     expect(okazja(h)).toBeUndefined();
   });
+
+  it.each(['przymorze', 'zielonki'] as const)(
+    'po oknie zima zamyka się bez zaliczenia i nie przesłania rozdziału: zwinięte okienko (telefon) znów pokazuje jego bieżący cel (%s)',
+    (mapa) => {
+      const g = zimaGra(mapa, 'zwykly', 13, 12);
+      krok(g);
+      expect(klucz(g), 'ostatni dzień okna').toBe('o8');
+      // z otwartą zimą zwinięte okienko pokazuje samą okazję i chowa rozdział
+      const z = widok(g);
+      const biezacyRozdzialu = z.rozdzial!.biezacy!;
+      const zOkazja = celeHtml(z, { otwarte: false, touch: true });
+      expect(zOkazja).toContain('goals-okazja');
+      expect(zOkazja).toContain('Teraz: zima idzie');
+      expect(zOkazja, 'cel rozdziału schowany').not.toContain(biezacyRozdzialu.text);
+      // dzień 14: okno minęło, okazja zamyka się, nic nie zostaje zaliczone
+      g.sim.st.tick = tickAt(14, 8);
+      krok(g);
+      expect(okazja(g)).toBeUndefined();
+      expect(zaliczony(g.sciezka, 'o8.kozy')).toBe(false);
+      expect(zaliczony(g.sciezka, 'o8.beczka')).toBe(false);
+      const v = widok(g);
+      expect(v.okazja).toBeNull();
+      expect(v.rozdzial!.biezacy!.text, 'ten sam bieżący cel rozdziału co przed zimą').toBe(biezacyRozdzialu.text);
+      const zwiniete = celeHtml(v, { otwarte: false, touch: true });
+      expect(zwiniete, 'zwinięte okienko znów pokazuje bieżący cel rozdziału').toContain(biezacyRozdzialu.text);
+      expect(zwiniete).not.toContain('goals-okazja');
+      expect(zwiniete).not.toContain('Teraz: zima idzie');
+    },
+  );
 
   it('zrobione cele nie wracają: po koza zbadana i postawiona okazja nie otwiera się, choćby kozę potem rozebrano', () => {
     const g = zimaGra('przymorze', 'zwykly');

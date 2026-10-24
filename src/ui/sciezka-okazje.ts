@@ -5,7 +5,7 @@
    importów w czasie wykonania; silnik bierze stąd `OKAZJE`.
 
    Kolejność w `OKAZJE` to ważność: najpierw to, co zagraża życiu (O5 ugryzienie, O6 zmarły wstanie, O4 stado pod siatką, O3
-   napad), potem zima (O8, dodana 19.10.2026 po badaniu zimy), na końcu goście (O2 handlarz, O1 wędrowiec, O7 obca ekipa).
+   napad), potem zima (O8, dodana 20.10.2026 po badaniu zimy), na końcu goście (O2 handlarz, O1 wędrowiec, O7 obca ekipa).
    Widać najwyżej jedną: ważniejsza wypiera niższą, a niższa wraca, gdy ważniejsza się skończy.
 
    Wyzwalacze czytają odczyt gry z jednej chwili (`OdczytCelow`): pionki wędrowca, handlarza i obcej ekipy, napad z migawki
@@ -25,15 +25,17 @@
 
    O8 „Zima idzie” (spec: „Okazje”, O8): badanie zimy 20.10.2026 pokazało, że tylko ogrzana sypialnia daje zarządowi 5–12 dni
    zimy więcej, a gracz nie ma skąd tego wiedzieć (koza w kuchni grzeje pokój przez drzwi tylko o 4°C ponad pogodę). Okazja
-   otwiera się od ósmego dnia roku (trzy dni przed zimą) do końca zimy i od następnej jesieni, gdy w żadnym pokoju do spania
-   (rodzaj `pokoj` naszego mieszkania) nie stoi ogrzewanie (koza z beczki albo kocioł; koza zarządu stoi w kuchni) i gdy da się
-   ją zrobić: ktoś zna się na cieple (albo książka, albo koza z beczki zbadana) i któryś pokój do spania ma kafelek w zasięgu
-   okna, na którym koza z beczki może stanąć (reguły `canPlace` bez rzeczy na kafelku, które da się usunąć). Cele: zbadać
-   kozę z beczki (`t_kozy`), potem postawić ją w pokoju do spania; podpowiedź mówi, że koza w kuchni sypialni nie dogrzeje i że
-   koza z beczki potrzebuje okna (rura), a tam, gdzie któryś pokój do spania okna nie ma, że trzeba łóżek piętrowych w pokoju
-   z oknem i kozy tam. Na Lanciego żaden z czterech pokoi nie ma okna w zasięgu (okna mają tam tylko kuchnia i łazienka), więc
-   okazji tam nie ma: koza z beczki stanęłaby tylko w kuchni, a łóżka piętrowe wolno stawiać wyłącznie w pokojach. Dowód
-   w tests/unit/sciezka-okazje.test.ts. Okazja mija z końcem zimy (dzień 20), więc nie wisi bez końca. */
+   otwiera się od ósmego dnia roku (trzy dni przed zimą) do trzeciego dnia zimy (dzień 13) i od następnej jesieni (dzień 48,
+   88…), gdy w żadnym pokoju do spania (rodzaj `pokoj` naszego mieszkania) nie stoi ogrzewanie (koza z beczki albo kocioł;
+   koza zarządu stoi w kuchni) i gdy da się ją zrobić: ktoś zna się na cieple (albo książka, albo koza z beczki zbadana)
+   i któryś pokój do spania ma kafelek w zasięgu okna, na którym koza z beczki może stanąć (reguły `canPlace` bez rzeczy na
+   kafelku, które da się usunąć). Cele: zbadać kozę z beczki (`t_kozy`), potem postawić ją w pokoju do spania; podpowiedź
+   mówi, że koza w kuchni sypialni nie dogrzeje i że koza z beczki potrzebuje okna (rura), a tam, gdzie któryś pokój do
+   spania okna nie ma, że trzeba łóżek piętrowych w pokoju z oknem i kozy tam. Na Lanciego żaden z czterech pokoi nie ma
+   okna w zasięgu (okna mają tam tylko kuchnia i łazienka), więc okazji tam nie ma: koza z beczki stanęłaby tylko w kuchni,
+   a łóżka piętrowe wolno stawiać wyłącznie w pokojach. Dowód w tests/unit/sciezka-okazje.test.ts. Okno okazji to sześć dni
+   (8–13), nie cała zima: zima stoi nad gośćmi, a zwinięte okienko na telefonie pokazuje wtedy tylko okazję i chowa rozdział,
+   więc dłużej niż trzy dni zimy okazja zasłaniałaby ścieżkę. Po oknie mija bez zaliczenia i wraca z następną jesienią. */
 
 import { L } from '../core/jezyk.ts';
 import { waszeLokum } from '../gov/miejsce.ts';
@@ -324,10 +326,12 @@ const O7: DefOkazji = {
 const BADANIE_KOZY = 't_kozy';
 /** od którego dnia roku (z 40) okazja się otwiera: trzy dni przed zimą, która zaczyna się jedenastego */
 const OD_DNIA = 8;
-/** zima kończy się z dniem 20 roku (dwie pory po 10 dni) */
-const DO_DNIA = 2 * SEASON_DAYS;
+/** do którego dnia roku trwa: trzeci dzień zimy (8, 9, 10 to jesień, 11, 12, 13 to zima). Okno jest krótkie, bo zwinięte
+    okienko na telefonie pokazuje wtedy tylko okazję i chowa rozdział, a zima wyprzedza gości; cały sezon mrozów (do dnia 20)
+    wisiałaby tam nad rozdziałem do 13 dni. Po oknie okazja mija bez zaliczenia i wraca z następną jesienią. */
+const DO_DNIA = OD_DNIA + 5;
 
-/** czy dzień gry leży w oknie okazji: od ósmego dnia jesieni do końca zimy, w każdym roku (rok ma cztery pory po 10 dni) */
+/** czy dzień gry leży w oknie okazji: dni 8–13 każdego roku (rok ma cztery pory po 10 dni, więc też 48–53, 88–93…) */
 const wOknieZimy = (dzien: number): boolean => {
   const dnia = ((dzien - 1) % (4 * SEASON_DAYS)) + 1;
   return dnia >= OD_DNIA && dnia <= DO_DNIA;
