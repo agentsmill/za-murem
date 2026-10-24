@@ -850,6 +850,9 @@ const R7: DefRozdzialu = {
 /** zaliczone kamienie drogi w stanie zarządu; zero bez włączonych dróg */
 const kamienie = (gov: GovState | null, droga: 'ludnosc' | 'teren'): number => gov?.zwyciestwo?.kamienie[droga] ?? 0;
 
+/** liczba osób (albo celu) do tekstu: całkowita, nieujemna, z polskim zapisem liczby (`num`), jak na ekranie dróg */
+const osoby = (n: number): string => num(Math.max(0, Math.round(n)), 0);
+
 /** Droga ludnościowa z `ocenDrogi` taka, jaka była przy otwarciu rozdziału: z liczbą kamieni z `start.kamienLudnosci`, nie
     z bieżącą. Cel zalicza się, gdy kamieni przybywa, a wtedy bieżące „co dalej” mówiłoby już o następnym progu, więc
     zaliczony cel zmieniałby tekst. Z kopią stanu zarządu (płytką, tylko liczba kamieni), niczego nie zmienia. Bez
@@ -891,8 +894,8 @@ const R8: DefRozdzialu = {
       jak: (o, s) => {
         const d = drogaLudnosciPrzyOtwarciu(o, s);
         const nazwa = d ? tr(d.nazwa) : L('Nowe osiedle', 'A new estate');
-        const ile = num(Math.max(0, Math.round(d?.postep?.ile ?? 0)), 0);
-        const cel = num(Math.max(0, Math.round(d?.postep?.cel ?? 0)), 0);
+        const ile = osoby(d?.postep?.ile ?? 0);
+        const cel = osoby(d?.postep?.cel ?? 0);
         return L(
           `${nazwa}: ${ile} z ${cel}. Ludzie przychodzą z kart wydarzeń i od sąsiadów („Zaprosić do nas”).`,
           `${nazwa}: ${ile} of ${cel}. People come from event cards and from next door (“Invite them to join you”).`,
@@ -934,10 +937,7 @@ export function wierszeDrog(o: OdczytCelow): { nazwa: string; dalej: string; pos
             nazwa: tr(p.nazwa),
             dalej: tr(p.dalej),
             postep: p.postep
-              ? L(
-                  `${num(Math.max(0, Math.round(p.postep.ile)), 0)} z ${num(Math.max(0, Math.round(p.postep.cel)), 0)}`,
-                  `${num(Math.max(0, Math.round(p.postep.ile)), 0)} of ${num(Math.max(0, Math.round(p.postep.cel)), 0)}`,
-                )
+              ? L(`${osoby(p.postep.ile)} z ${osoby(p.postep.cel)}`, `${osoby(p.postep.ile)} of ${osoby(p.postep.cel)}`)
               : null,
           },
         ]
