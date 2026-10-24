@@ -882,6 +882,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   fenceIn = govFence(world, words, wordsE);
   savedHour = Math.floor(st.tick / TICKS_PER_HOUR);
   $('osName').textContent = data.name;
+  dopasujNazwe();
   document.title = `Za Murem · ${data.name}`;
   const hq = world.buildings[world.hq];
   // kamera na drzwi siedziby, przy których stoi zarząd (środek rdzenia)
@@ -3706,6 +3707,34 @@ bars.observe($('goals'));
 bars.observe($('card'));
 bars.observe($('placeBar'));
 if (attrib) bars.observe(attrib);
+
+/** Nazwa osiedla na szyldzie paska: na telefonie szyld ma 150 px (src/style.css, `.top .sign`), więc dłuższa nazwa („Przymorze
+    Wielkie”, „Ursynów Północny”) dostaje mniejszą czcionkę, co pół piksela do `NAZWA_MIN_PX`, zamiast urywać się wielokropkiem;
+    dopiero poniżej tego rozmiaru ucina jak dawniej. Szyld ani pasek nie rosną: rozmiar tylko maleje. Liczy się od nowa po zmianie
+    szerokości okna (obrót telefonu) i po wczytaniu czcionek, które zmieniają szerokość napisu. */
+const NAZWA_MIN_PX = 12;
+function dopasujNazwe() {
+  const nazwa = $('osName');
+  nazwa.style.removeProperty('font-size');
+  let px = Number.parseFloat(getComputedStyle(nazwa).fontSize);
+  // scrollWidth i clientWidth są całkowite, a nazwa dłuższa o ułamek piksela dostaje wielokropek: mierzy się napis zakresem
+  const zakres = document.createRange();
+  const szerokosc = () => {
+    zakres.selectNodeContents(nazwa);
+    return zakres.getBoundingClientRect().width - nazwa.getBoundingClientRect().width;
+  };
+  while (szerokosc() > 0.01 && px > NAZWA_MIN_PX) {
+    px -= 0.5;
+    nazwa.style.fontSize = `${px}px`;
+  }
+}
+let nazwaSzerokosc = 0;
+window.addEventListener('resize', () => {
+  if (window.innerWidth === nazwaSzerokosc) return;
+  nazwaSzerokosc = window.innerWidth;
+  requestAnimationFrame(dopasujNazwe);
+});
+document.fonts?.addEventListener('loadingdone', dopasujNazwe);
 
 /* ---------- start ---------- */
 (async () => {

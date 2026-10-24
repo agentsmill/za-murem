@@ -145,7 +145,8 @@ const pasekTelefonu = (page: Page): Promise<PasekPomiar> =>
       kafelki,
       nazwa: {
         tekst: nazwa.textContent ?? '',
-        ucieta: nazwa.scrollWidth > nazwa.clientWidth + 0.5,
+        // scrollWidth i clientWidth są całkowite: nazwa dłuższa o ułamek piksela dostaje wielokropek, a one się nie różnią
+        ucieta: tekst(nazwa).width > nazwa.getBoundingClientRect().width + 0.01,
         px: Number.parseFloat(getComputedStyle(nazwa).fontSize),
       },
       pierwszyWiersz: wTymSamym(szyld, mapa) && wTymSamym(szyld, zegar),

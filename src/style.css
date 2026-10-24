@@ -601,9 +601,12 @@ a.btn {
   .speed {
     gap: 2px;
   }
+  /* węższe dopełnienie boków (nitów jest tyle samo): nazwa osiedla dostaje 118 px zamiast 110, a main.ts zmniejsza jej czcionkę,
+     gdy i to za mało (`dopasujNazwe`) */
   .top .sign {
     order: -3;
     max-width: 150px;
+    padding-inline: 16px;
   }
   /* „Badania” na telefonie to sama ikona kolby (napis zostaje dla czytników ekranu, podpowiedź w title) w pierwszym
      wierszu za zegarem: w drugim, z napisem i obok „Menu”, wypychała „Menu” do trzeciego wiersza paska, a i sama ikona nie
