@@ -82,8 +82,10 @@ describe('uchwały o jedzeniu w symulacji', () => {
 
   it('racje: mniejsze porcje, zapasy starczają dłużej, najedzenie i nastrój niżej, ale nikt nie głoduje do zera', () => {
     const r = threeDays({ foodMult: 0.75 });
-    // zjedzone co najmniej o 15% mniej, najedzenie i nastrój niżej
-    expect(r.eaten).toBeLessThanOrEqual(base.eaten * 0.85);
+    // zjedzone co najmniej o 5% mniej (zmierzone około 7%: 13 porcji wobec 14 w trzy doby), najedzenie i nastrój niżej. Do
+    // 24.10.2026 było co najmniej 15%, ale tyle racje oszczędzały tylko dlatego, że śpiący nie jedli w nocy nawet z wielkiego
+    // głodu (glod-w-nocy.test.ts). Mateusz: „Liczby racji stroimy po graniu.”, więc ten próg pilnuje obecnych liczb, nie celu.
+    expect(r.eaten).toBeLessThanOrEqual(base.eaten * 0.95);
     expect(r.food).toBeLessThan(base.food - 5);
     expect(r.mood).toBeLessThan(base.mood - 2);
     expect(r.minFood).toBeGreaterThan(3);

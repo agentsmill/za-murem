@@ -103,7 +103,7 @@ export const M1_LAWS: Record<string, M1Law> = {
   u_racje: {
     name: LAW.u_racje.name,
     path: LAW.u_racje.path,
-    desc: 'Jedzenie schodzi o 25% wolniej. Wkurzenie +0,4 dziennie.',
+    desc: 'Jedzenie schodzi o 25% wolniej, ale ludzie jedzą dopiero przy wyraźnym głodzie i najwyżej dwa razy na dobę, więc na noc kładą się głodni. Wkurzenie +0,4 dziennie.',
     daily: [0, 0.4],
   },
   u_meble: {

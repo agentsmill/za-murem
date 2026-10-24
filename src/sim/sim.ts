@@ -4317,8 +4317,14 @@ export class Sim {
       }
       case 'sleep':
         if (j.phase === 1) {
-          // głodny za dnia wstaje coś zjeść, kiedy jest co, a potem odsypia
-          if (p.kind === 'core' && !this.night() && tick % THINK_EVERY === 0 && this.wantsMeal(p) && this.mealFor(p)) {
+          // głodny za dnia wstaje coś zjeść, kiedy jest co, a potem odsypia; w nocy tylko z wielkiego głodu (STARVING)
+          if (
+            p.kind === 'core' &&
+            (!this.night() || p.needs!.food < STARVING) &&
+            tick % THINK_EVERY === 0 &&
+            this.wantsMeal(p) &&
+            this.mealFor(p)
+          ) {
             p.nap = true;
             return false;
           }
@@ -5032,6 +5038,9 @@ export class Sim {
     }
     // za dnia zmęczony albo odsypiający (po nocnej warcie, po pobudce na posiłek): głodny najpierw coś zje
     if (!this.night() && (p.nap || n.rest < TIRED) && this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
+    // w nocy z wielkiego głodu (STARVING, „zawsze” z wantsMeal) najpierw je, dopiero potem śpi: sen przed posiłkiem zostawiał
+    // ludzi przy racjach (limit dwóch posiłków) z najedzeniem 0–10 co noc, choć garnek i zapas były pod ręką
+    if (this.night() && n.food < STARVING && this.wantsMeal(p) && this.startEat(p, this.mealDue(p))) return;
     if (((this.night() && n.rest < 80) || n.rest < TIRED || p.nap) && this.startSleep(p)) {
       p.nap = false;
       return;
