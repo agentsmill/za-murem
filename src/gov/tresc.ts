@@ -96,7 +96,7 @@ export const M1_LAWS: Record<string, M1Law> = {
   u_racje: {
     name: LAW.u_racje.name,
     path: LAW.u_racje.path,
-    desc: 'Jedzenie schodzi o 25% wolniej. Wkurzenie +0,4 dziennie.',
+    desc: 'Jedzenie schodzi o 25% wolniej, ale ludzie jedzą dopiero przy wyraźnym głodzie i najwyżej dwa razy na dobę, więc na noc kładą się głodni. Wkurzenie +0,4 dziennie.',
     daily: [0, 0.4],
   },
   u_meble: {
@@ -297,8 +297,8 @@ export interface GovHost extends EventHost, GoscHost {
   /** chwilowy nastrój jednej osoby (zarządu albo mieszkańca z osobą) na `hours` godzin gry; powód to polski napis
       z src/content/nastroje.en.ts, jak w `moodAll` */
   moodOf(id: string, why: string, d: number, hours: number): void;
-  flag(k: 'dog' | 'flashlight' | 'torch'): boolean;
-  setFlag(k: 'dog' | 'flashlight' | 'torch'): void;
+  flag(k: 'dog' | 'cat' | 'flashlight' | 'torch'): boolean;
+  setFlag(k: 'dog' | 'cat' | 'flashlight' | 'torch'): void;
   gateClosed(): boolean;
   /** czy ktoś trzyma dziś wartę */
   guarded(): boolean;
@@ -960,6 +960,7 @@ export const NEW_EVENTS: GEventDef[] = [
         label: tx('Uwolnić i przygarnąć', 'Free him and keep him'),
         ok: true,
         run: () => {
+          h.setFlag('cat');
           h.moodAll('Algorytm się znalazł', 3, 24);
           h.log(
             tx(

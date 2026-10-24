@@ -13,8 +13,8 @@ import { canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { applyGov } from '../../src/sim/gov.ts';
 import { createSim, infect, type Pawn, Sim, type SimState, spawnZombie } from '../../src/sim/sim.ts';
-import { goalsDay2 } from '../../src/ui/cele.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
 const world = (seed = 1): World => buildWorld(demo.geo, { seed, street: demo.street });
@@ -183,12 +183,11 @@ describe('styk M2 i trybu zombie', () => {
 
   it('cel drugiego dnia w trybie zombie to dzida dla warty, a w zwykłym obwód', () => {
     const w = world(1);
-    const o = { touch: false, wood: 0, woodReady: false, holes: 0 };
     const z = createSim(w, 1, { core: 4, mode: 'zombie' });
-    const keys = (st: SimState, mode: 'zombie' | 'zwykly') => goalsDay2(st, newGov(1, mode), o).map((g) => g.key);
+    const keys = (st: SimState, mode: 'zombie' | 'zwykly') => celeR1(st, w, newGov(1, mode)).map((g) => g.key);
     expect(keys(z, 'zombie')).toContain('dzida');
     expect(keys(z, 'zombie')).not.toContain('obwod');
-    const goal = () => goalsDay2(z, newGov(1, 'zombie'), o).find((g) => g.key === 'dzida')!;
+    const goal = () => celeR1(z, w, newGov(1, 'zombie')).find((g) => g.key === 'dzida')!;
     expect(goal().done).toBe(false);
     z.store.arms!.push('dzida');
     expect(goal().done).toBe(true);

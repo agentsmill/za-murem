@@ -6,8 +6,19 @@
    zestawienie z pamięcią podręczną. Leżenie i zwłoki (komórki z klatki stania przodem, art/lezenie.ts) mają tu własny
    wybór postaci i pamięć komórek. Przejścia między staniem a leżeniem (upadek przy śmierci, kładzenie się, wstawanie:
    art/animacjePozy.ts, PRZEJSCIA) wybierają klatkę z czasu od startu przejścia; start i kierunek zna widok
-   (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. */
+   (przejscia.ts), a ostatnia klatka upadku to leżenie zwłok. Pies i kot nie dostają tu postaci (null): mają własny atlas
+   rysowany kodem (art/zwierzeta.ts).
 
+   Człowiek z historią zarządu (gość, znajomy; `PionekLudzi.wyglad`, w grze `Pawn.wyglad`) ma postać i wersję kolorystyczną
+   z własnych danych: płci, wieku i ziarna z `wygladZnajomego` (content/people.ts), bez numeru osoby ani numeru pionka. Dzięki
+   temu gość pod bramą, ten sam człowiek po przyjęciu do osiedla albo do zarządu, powracający gość i szabrownik, który idzie
+   z napadem jako znajomy (pionek bez osoby), wyglądają tak samo. Postać wybiera się zawsze z obsady mieszkańców (zarząd ma
+   cztery własne), także po awansie do zarządu: awans nie zmienia twarzy. Pionki bez pola (zarząd, mieszkańcy z generatora,
+   zwykli szabrownicy) wybierają postać jak dotąd. */
+
+import type { Wyglad } from '../content/people.ts';
+import { skrotLiczby as skrot } from '../core/rng.ts';
+import { jestZwierzeciem } from '../sim/zwierzeta.ts';
 import {
   kluczAnimacji,
   numerKlatki,
@@ -36,6 +47,8 @@ export interface PionekLudzi {
   /** indeks w osobach gry albo −1 */
   person: number;
   look: number;
+  /** człowiek z historią zarządu: postać i wersja z tych danych, nie z osoby ani z numeru pionka (patrz nagłówek) */
+  wyglad?: Wyglad;
 }
 
 export interface OsobaLudzi {
@@ -59,13 +72,6 @@ export interface KlatkaPionka {
   wersja: number;
   zarzad: boolean;
   zastepcza: boolean;
-}
-
-/** liczba całkowita z indeksu osoby: ta sama osoba zawsze dostaje tę samą postać, bez losowania w widoku */
-function skrot(n: number): number {
-  let h = Math.imul(n | 0, 0x9e3779b1) ^ 0x85ebca6b;
-  h = Math.imul(h ^ (h >>> 15), 0xc2b2ae35);
-  return (h ^ (h >>> 13)) >>> 0;
 }
 
 export class LudziePixellab {
@@ -118,8 +124,16 @@ export class LudziePixellab {
   /** postać pionka: zarząd z czterech postaci zarządu, reszta z mieszkańców, po płci i wieku osoby; pionek bez osoby
       (przybysz, tłum) po numerze wyglądu z gry, tylko dorosły. Wybór zostaje na stałe, dopóki pionek jest w grze. */
   postacPionka(p: PionekLudzi, osoby: readonly OsobaLudzi[]): PostacLudzi | null {
+    // pies i kot mają własny atlas (art/zwierzeta.ts): pionek bez osoby dostałby tu człowieka z wyglądu
+    if (jestZwierzeciem(p.kind)) return null;
     const znana = this.postacie.get(p.id);
     if (znana !== undefined) return znana;
+    // gość i znajomy: postać z jego danych, z obsady mieszkańców (po awansie do zarządu ta sama)
+    if (p.wyglad) {
+      const z = this.postacZWygladu(p.wyglad);
+      this.postacie.set(p.id, z);
+      return z;
+    }
     const zarzad = p.kind === 'core';
     let postac = this.postacOsoby(p.person, osoby, zarzad);
     if (!postac && !zarzad && this.mieszkancy && !osoby[p.person]) postac = postacDlaWygladu(this.pula, p.look);
@@ -139,7 +153,8 @@ export class LudziePixellab {
     for (const p of pionki) {
       if (p.kind !== 'core') continue;
       const postac = this.postacPionka(p, osoby);
-      if (!postac) continue;
+      // gość awansowany do zarządu zostaje z postacią z mieszkańców: nie liczy się do wersji zarządu
+      if (!postac?.zarzad) continue;
       const g = grupy.get(postac.id);
       if (g) g.lista.push(p);
       else grupy.set(postac.id, { postac, lista: [p] });
@@ -166,7 +181,47 @@ export class LudziePixellab {
       mieszkańcy po osobie (pionek bez osoby po numerze pionka). */
   wersjaPionka(p: PionekLudzi, postac: PostacLudzi): number {
     if (postac.zarzad) return this.wersjeZarzadu.get(p.id) ?? 0;
+    // gość i znajomy: wersja z ziarna wyglądu, jak postać (ta sama u gościa, powracającego, przyjętego i szabrownika)
+    if (p.wyglad) return this.wersjaWygladu(p.wyglad);
     return skrot((p.person >= 0 ? p.person : p.id + 7919) ^ 0x2f6b) % (this.rampy.length + 1);
+  }
+
+  /** Postać człowieka z historii zarządu: z obsady mieszkańców po płci i wieku, rozstrzygnięta ziarnem `los` (u mieszkańca
+      wyrzuconego bramą to skrót jego numeru osoby, więc ta sama postać co za życia); null bez mieszkańców w obsadzie. */
+  postacZWygladu(w: Wyglad): PostacLudzi | null {
+    return this.mieszkancy ? postacDlaOsoby(this.pula, { f: w.f, age: w.age, zarzad: false }, w.los) : null;
+  }
+
+  /** Wersja kolorystyczna człowieka z historii zarządu: z `wer` (mieszkaniec wyrzucony bramą: ta, którą miał w osiedlu), a bez
+      niego z ziarna postaci. */
+  wersjaWygladu(w: Wyglad): number {
+    return (w.wer ?? skrot(w.los ^ 0x2f6b)) % (this.rampy.length + 1);
+  }
+
+  /**
+   * Postać, wersja i numer osoby (−1: brak) zwłok człowieka: jeśli zmarły miał wygląd z historii zarządu (`wyglad` na zwłokach:
+   * gość pod bramą, przyjęty do osiedla albo do zarządu, szabrownik ze znajomego), leży w tej samej postaci i wersji co żywy
+   * pionek, także po awansie do zarządu (żywy rysował się z obsady mieszkańców). Zmarły z zarządu to ta sama postać co za życia
+   * (wpis zmarłych zna id osoby), inni to dorosły mieszkaniec po wyglądzie z gry (rzecz zna tylko wygląd). null: obsada nie ma
+   * postaci (zwłoki rysuje kod).
+   */
+  zwlokiCzlowieka(
+    st: { people: readonly (OsobaLudzi & { id: string })[]; dead?: readonly { kind: string; id: string }[] },
+    t: { id: number; n: number; dead?: number; wyglad?: Wyglad },
+  ): { postac: PostacLudzi; wersja: number; osoba: number } | null {
+    const zmarly = t.dead !== undefined ? st.dead?.[t.dead] : undefined;
+    const osoba = zmarly?.kind === 'core' && zmarly.id ? st.people.findIndex((q) => q.id === zmarly.id) : -1;
+    if (t.wyglad) {
+      const postac = this.postacZWygladu(t.wyglad);
+      return postac ? { postac, wersja: this.wersjaWygladu(t.wyglad), osoba } : null;
+    }
+    const postac = (osoba >= 0 ? this.postacOsoby(osoba, st.people, true) : null) ?? this.postacZwlok(t.n);
+    if (!postac) return null;
+    const wersja = this.wersjaPionka(
+      { id: t.id, kind: osoba >= 0 ? 'core' : 'zwloki', person: osoba, look: t.n },
+      postac,
+    );
+    return { postac, wersja, osoba };
   }
 
   /** pionek zniknął z gry albo wrócił z wyprawy */

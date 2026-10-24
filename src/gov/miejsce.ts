@@ -4,7 +4,8 @@
    teksty spoza zarządu. Odległości w kwadratach liczb całkowitych, bez Math.hypot, żeby wynik był ten sam w każdej
    przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. `stronyOf` liczy ze świata,
    gdzie przy siatce jest strona garaży i strona najbliższego budynku mieszkalnego (kafelki dla „Sprawdzić” z krzyku
-   i hałasu); wołają ją `govInput` (src/sim/gov.ts) i testy. */
+   i hałasu); wołają ją `govInput` (src/sim/gov.ts) i testy. `waszeLokum` zamienia „naszego mieszkania” (domu) ze słownika
+   na „waszego …” w zdaniach, które mówią do zarządu na „wy”: drogi do zwycięstwa i cele ścieżki. */
 
 import type { EndingId } from '../content/data.ts';
 import type { World } from '../world/world.ts';
@@ -381,6 +382,11 @@ export const placeOfWorld = (w: PlaceWorld): GovPlace => (w.buildings[w.hq] ? pl
 
 /** słownik dla świata gry (teksty symulacji i interfejsu); świat bez siedziby (atrapy w testach) mówi jak blok */
 export const wordsOfWorld = (w: PlaceWorld): Words => wordsOf(placeOfWorld(w));
+
+/** Lokum zarządu w dopełniaczu, w drugiej osobie: „waszego mieszkania” w bloku, „waszego domu” w domu jednorodzinnym.
+    Słownik (`Words.lokal.d`) mówi „naszego …”, a zdania „co dalej” dróg do zwycięstwa (src/gov/zwyciestwo.ts) i cele
+    ścieżki (src/ui/sciezka-rozdzialy.ts) zwracają się do zarządu na „wy”; ta jedna funkcja robi tę zamianę dla obu. */
+export const waszeLokum = (w: Pick<Words, 'lokal'>): string => w.lokal.d.replace(/^naszego /, 'waszego ');
 
 /** Słowa wspólnoty po angielsku, jak Words (docs/SLOWNICZEK-EN.md), z tych samych warunków. Bez przypadków,
     z rodzajnikiem tam, gdzie zdanie go potrzebuje; wielka litera na początek zdania przez `Zarzad`. */

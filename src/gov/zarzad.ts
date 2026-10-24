@@ -16,6 +16,9 @@
    nic), a `pending` oddaje epilog zwycięstwa przed raportem (pierwszy z kolejki `epilogi`). `grajDalej` zdejmuje pierwszy
    epilog, następny z kolejki pokazuje się zaraz po nim; zapis i gra zostają.
 
+   Pies i kot (src/gov/zwierzeta.ts): flaga `dog` albo `cat` bez wpisu symulacji o zwierzęciu (`GovInput.zwierzeta`) prosi o jego
+   wystawienie (`GovEffects.zwierze`), a śmierć psa gasi flagę `dog`, dopisuje kronikę i obniża nastrój zarządu.
+
    Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
    (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
@@ -32,6 +35,7 @@ import { przyjeciaZUlicy, wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
 import { znaleziska } from './znaleziska.ts';
+import { zwierzeta } from './zwierzeta.ts';
 import { krokZwyciestwa } from './zwyciestwo.ts';
 
 export const GOV_VERSION = 1;
@@ -132,6 +136,7 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
   mourn(st, i, fx);
+  zwierzeta(st, i, fx);
   znaleziska(st, i);
   wiesci(st, i, fx);
   przyjeciaZUlicy(st, i, fx);

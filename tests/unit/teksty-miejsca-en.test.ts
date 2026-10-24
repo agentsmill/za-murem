@@ -16,7 +16,7 @@ import { gateTiles } from '../../src/sim/perimeter.ts';
 import { createSim, type Job, Sim, STAY_MEAL } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu, buildPanelHtml } from '../../src/ui/budowa.ts';
-import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
+import { goalsOf } from '../../src/ui/cele.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { aptCard, aptState, aptView } from '../../src/ui/mieszkania.ts';
 import {
@@ -33,6 +33,7 @@ import { statsOf } from '../../src/ui/pasek.ts';
 import { comingText } from '../../src/ui/przybycie.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 beforeEach(() => ustawJezyk('en'));
 afterEach(() => ustawJezyk('pl'));
@@ -120,17 +121,17 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
   it('samouczek i cele drugiego dnia', () => {
     const { sim } = game('zielonki');
     const gov = newGov(1);
-    const goals = [15, 21].flatMap((hour) =>
+    const goals: { key: string; text: string; how: string }[] = [15, 21].flatMap((hour) =>
       [false, true].flatMap((touch) => goalsOf(sim.st, gov, { touch, kitchen: 9, hour, words, wordsEn: e })),
     );
     expect(goals.find((g) => g.key === 'rozkaz')?.text).toBe('Send them to the dead tree in the garden.');
-    const day2 = goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words, wordsEn: e });
+    const day2 = celeR1(sim.st, sim.w, gov, { touch: false, words, wordsEn: e });
     expect(day2.find((g) => g.key === 'przeszukaj')?.text).toBe('Search the house.');
     // najpierw zaznaczyć kogoś, potem prawy przycisk w pokoju domu; karta domu tylko pokazuje, co już przeszukane
     expect(day2.find((g) => g.key === 'przeszukaj')?.how).toBe(
       'Select someone from the committee and right-click inside a room of the house: “Search the …”. To see what has been searched, click the house while nobody is selected and read its card.',
     );
-    const touchDay2 = goalsDay2(sim.st, gov, { touch: true, wood: 0, woodReady: false, holes: 2, words, wordsEn: e });
+    const touchDay2 = celeR1(sim.st, sim.w, gov, { touch: true, words, wordsEn: e });
     expect(touchDay2.find((g) => g.key === 'przeszukaj')?.how).toBe(
       'Tap someone from the committee and press and hold inside a room of the house: “Search the …”. To see what has been searched, tap the house while nobody is selected and read its card.',
     );
@@ -212,11 +213,9 @@ describe('po angielsku w bloku (Przymorze)', () => {
   });
 
   it('cel przeszukania: zaznaczyć osobę z zarządu, potem prawy przycisk w pustym mieszkaniu', () => {
-    const { sim } = game('przymorze');
+    const { sim, w } = game('przymorze');
     const day2 = (touch: boolean) =>
-      goalsDay2(sim.st, null, { touch, wood: 0, woodReady: false, holes: 2, words, wordsEn: e }).find(
-        (g) => g.key === 'przeszukaj',
-      )!;
+      celeR1(sim.st, w, null, { touch, words, wordsEn: e }).find((g) => g.key === 'przeszukaj')!;
     expect(day2(false).text).toBe('Search an empty flat.');
     expect(day2(false).how).toBe(
       'Select someone from the board and right-click inside an empty flat: “Search the …”. To see which flats are empty, click a flat while nobody is selected and read its card.',

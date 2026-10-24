@@ -24,6 +24,7 @@ import {
   ludnoscOf,
   nazwaDrogi,
   ocenDrogi,
+  terenMozliwy,
   wlaczZwyciestwo,
   wygrajDroge,
 } from '../../src/gov/zwyciestwo.ts';
@@ -587,10 +588,13 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // ca868e42 i 829d4a08) i z poprawkami trybu zombie w noc-integracja, 19.10.2026 wieczorem (14943f9b, 02636e00
     // i d2f68ad8). Szósty raz w zadaniu 11 wydarzeń (karty z 0.3 z gościem pod bramą: uchodźcy, influencerka, aktywiści,
     // dzieciaki, sąsiad od tokenów i fachowiec w domu mają wagę 0 bez GovInput.goscie, a atrapa nie ma obcych), czyli
-    // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); tu po scaleniu obu, 20.10.2026.
+    // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); po scaleniu obu 20.10.2026
+    // aaa8b716, d1a8e423 i 76e72ff9. Siódmy raz w zadaniu 12 wydarzeń (pies i kot jako pionki): „Kot w piwnicy”
+    // z wyborem „Uwolnić i przygarnąć” ustawia flagę `cat` w stanie zarządu (na samych wydarzeniach cf77bec1, 0e44994c
+    // i f064e248); tu znów po scaleniu obu, 23.10.2026.
     const przebiegi = [
-      [1, 'propozycja', 'aaa8b716'],
-      [3, 'zawsze-warta', 'd1a8e423'],
+      [1, 'propozycja', 'f90d5ef8'],
+      [3, 'zawsze-warta', '949f8cf5'],
       [5, 'losowo', '76e72ff9'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
@@ -849,6 +853,32 @@ describe('droga terenu na mapie, gdzie nie da się otoczyć żadnego sąsiada (G
     ocenDrogi(st, i);
     expect(JSON.stringify(st)).toBe(stPrzed);
     expect(JSON.stringify(i)).toBe(iPrzed);
+  });
+});
+
+describe('terenMozliwy: jeden predykat dla ekranu dróg i celu „otoczcie sąsiada” ścieżki celów', () => {
+  const teren = (st: GovState, i: GovInput) => ocenDrogi(st, i).find((x) => x.droga === 'teren')!;
+  const bezSasiada = (mozliwe?: number) => wej({ teren: { przylaczone: 0, mozliwe } });
+
+  it('brak pola `mozliwe` albo `teren` to „można” (atrapy i stare wejścia), zero i liczba ujemna to „nie można”', () => {
+    expect(terenMozliwy(wej())).toBe(true);
+    expect(terenMozliwy({ teren: undefined })).toBe(true);
+    expect(terenMozliwy(bezSasiada(undefined))).toBe(true);
+    expect(terenMozliwy(bezSasiada(1))).toBe(true);
+    expect(terenMozliwy(bezSasiada(5))).toBe(true);
+    expect(terenMozliwy(bezSasiada(0))).toBe(false);
+    expect(terenMozliwy(bezSasiada(-2))).toBe(false);
+    // liczba bez sensu (NaN) to jak brak pola, tak samo jak dotąd na ekranie dróg
+    expect(terenMozliwy(bezSasiada(Number.NaN))).toBe(true);
+  });
+
+  it('ekran dróg mówi „Wkrótce: wspólny płot przez jezdnię” dokładnie wtedy, gdy predykat mówi „nie można”', () => {
+    for (const mozliwe of [undefined, 0, 1, 4, -1, Number.NaN]) {
+      const i = bezSasiada(mozliwe);
+      const t = teren(wlaczony(), i);
+      expect(t.wkrotce !== null, `mozliwe ${mozliwe}`).toBe(!terenMozliwy(i));
+      expect(t.dalej !== null, `mozliwe ${mozliwe}`).toBe(terenMozliwy(i));
+    }
   });
 });
 

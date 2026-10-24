@@ -4,7 +4,7 @@
    (Przymorze) po staremu. */
 
 import { describe, expect, it } from 'vitest';
-import { BLOK, placeOf, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
+import { BLOK, placeOf, waszeLokum, wordsOf, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import type { Prompt } from '../../src/gov/typy.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
@@ -16,7 +16,7 @@ import { gateTiles } from '../../src/sim/perimeter.ts';
 import { createSim, type Job, Sim, STAY_MEAL } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import { buildMenu, buildPanelHtml } from '../../src/ui/budowa.ts';
-import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
+import { goalsOf } from '../../src/ui/cele.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { aptCard, aptState, aptView } from '../../src/ui/mieszkania.ts';
 import {
@@ -34,6 +34,7 @@ import { comingText } from '../../src/ui/przybycie.ts';
 import { govFence } from '../../src/ui/siatka.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { pl } from './po-angielsku.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 /** słowa z bloku, których w domu nie ma w tekstach interfejsu, także mieszkanie i mieszkańcy (w domu jednorodzinnym
     lokum komitetu to dom, a ludzie to sąsiedzi); łóżka piętrowe to nazwa łóżek, więc bez „piętr” */
@@ -125,6 +126,14 @@ describe('słownik miejsca dla tekstów spoza zarządu', () => {
   });
 });
 
+describe('waszeLokum: lokum zarządu w dopełniaczu i w drugiej osobie, jedna funkcja dla dróg i dla ścieżki celów', () => {
+  it('blok to „waszego mieszkania”, dom jednorodzinny „waszego domu”, świat bez siedziby jak blok', () => {
+    expect(waszeLokum(wordsOfWorld(demoWorld('przymorze').w))).toBe('waszego mieszkania');
+    expect(waszeLokum(wordsOfWorld(demoWorld('zielonki').w))).toBe('waszego domu');
+    expect(waszeLokum(wordsOf(BLOK))).toBe('waszego mieszkania');
+  });
+});
+
 describe('w domu bez słów z bloku (Zielonki)', () => {
   const { words } = game('zielonki');
 
@@ -156,11 +165,12 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
   it('samouczek i cele drugiego dnia', () => {
     const { sim } = game('zielonki');
     const gov = newGov(1);
-    const goals = [15, 21].flatMap((hour) =>
+    const goals: { key: string; text: string; how: string }[] = [15, 21].flatMap((hour) =>
       [false, true].flatMap((touch) => goalsOf(sim.st, gov, { touch, kitchen: 9, hour, words })),
     );
     expect(goals.find((g) => g.key === 'rozkaz')?.text).toBe('Wyślijcie go do suchego drzewa w ogrodzie.');
-    goals.push(...goalsDay2(sim.st, gov, { touch: false, wood: 0, woodReady: false, holes: 2, words }));
+    for (const touch of [false, true]) goals.push(...celeR1(sim.st, sim.w, gov, { touch, words }));
+    expect(goals.map((g) => g.key)).toContain('dyzur');
     for (const g of goals) expect(`${g.text} ${g.how}`).not.toMatch(BLOKOWE);
   });
 
@@ -214,10 +224,7 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
     const { sim, w } = game('zielonki');
     const core = sim.st.pawns.find((p) => p.kind === 'core')!;
     const gov = newGov(1);
-    const goal = (touch: boolean) =>
-      goalsDay2(sim.st, gov, { touch, wood: 0, woodReady: false, holes: 0, words }).find(
-        (g) => g.key === 'przeszukaj',
-      )!;
+    const goal = (touch: boolean) => celeR1(sim.st, w, gov, { touch, words }).find((g) => g.key === 'przeszukaj')!;
     expect([goal(false).text, goal(false).how]).toEqual([
       'Przeszukajcie dom.',
       'Zaznaczcie kogoś z komitetu i prawy przycisk w pokoju domu: „Przeszukać …”. Co już przeszukane, pokaże karta domu: klik w dom, kiedy nikt nie jest zaznaczony.',
@@ -347,10 +354,7 @@ describe('w bloku po staremu (Przymorze)', () => {
 
   it('cel drugiego dnia i pomoc: puste mieszkania, mieszkanie zarządu bez przeszukiwania', () => {
     const { sim, w } = game('przymorze');
-    const goal = (touch: boolean) =>
-      goalsDay2(sim.st, null, { touch, wood: 0, woodReady: false, holes: 0, words }).find(
-        (g) => g.key === 'przeszukaj',
-      )!;
+    const goal = (touch: boolean) => celeR1(sim.st, w, null, { touch, words }).find((g) => g.key === 'przeszukaj')!;
     expect([goal(false).text, goal(false).how, goal(true).how]).toEqual([
       'Przeszukajcie puste mieszkanie.',
       'Zaznaczcie kogoś z zarządu i prawy przycisk w pustym mieszkaniu: „Przeszukać …”. Które mieszkanie jest puste, pokaże jego karta: klik w mieszkanie, kiedy nikt nie jest zaznaczony.',

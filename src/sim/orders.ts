@@ -896,6 +896,13 @@ export function jobText(st: SimState, w: World, p: Pawn): string {
       if (j.what === 'stoi') return L('Stoi i czeka na decyzję.', 'Standing there, waiting for a decision.');
       return idzie ? L('Idzie do bramy.', 'Walking to the gate.') : L('Czeka pod bramą.', 'Waiting at the gate.');
     }
+    case 'zwierze':
+      // pies i kot nie biorą poleceń i nie da się ich zaznaczyć; opis na wszelki wypadek
+      if (j.what === 'lezy')
+        return p.kind === 'kot'
+          ? L('Śpi przy kozie.', 'Asleep by the stove.')
+          : L('Leży przy bramie.', 'Lying by the gate.');
+      return p.pi < p.path.length ? L('Idzie.', 'Walking.') : L('Stoi.', 'Standing around.');
     case 'wander':
       return tr(OBCY.wander[Math.min(3, j.phase)]);
     case 'scavenge':

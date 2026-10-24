@@ -35,7 +35,7 @@ import {
   placeText,
   workText,
 } from '../../src/ui/budowa.ts';
-import { goalsDay2, goalsOf } from '../../src/ui/cele.ts';
+import { goalsOf } from '../../src/ui/cele.ts';
 import { DAMAGE_EN, WHY_SHORT_EN, WHY_TEXT_EN } from '../../src/ui/mieszkania.en.ts';
 import { aptCard, aptState, aptView, DAMAGE_NAME, WHY_SHORT, WHY_TEXT } from '../../src/ui/mieszkania.ts';
 import {
@@ -66,6 +66,7 @@ import type { AptWhy, DamageKind } from '../../src/world/apts.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { mockBlock, mockBlockM2 } from './interior-mock.ts';
 import { POLSKIE, polskieSlowa } from './po-angielsku.ts';
+import { celeR1 } from './sciezka-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
 
@@ -455,7 +456,12 @@ describe('pasek, cele i przybysze po angielsku', () => {
       for (const touch of [false, true]) {
         const gv = newGov(seed, mode);
         gv.reports.push({} as NightReport);
-        const g2 = goalsDay2(st, gv, { touch, wood: 3, woodReady: false, holes: 2 });
+        const g2 = celeR1(st, sim.w, gv, { touch });
+        expect(g2.map((x) => x.key)).toEqual(
+          mode === 'zombie'
+            ? ['przeszukaj', 'budowla', 'dzida', 'drewno2', 'dyzur']
+            : ['przeszukaj', 'budowla', 'obwod', 'drewno2', 'dyzur'],
+        );
         for (const x of g2) texts.push(x.text, x.how);
         const b = g2.find((x) => x.key === 'budowla')!;
         // dwie najtańsze budowle do postawienia: te za badaniem (pieczarkarnia, koza z beczki) menu budowy ukrywa
@@ -470,7 +476,9 @@ describe('pasek, cele i przybysze po angielsku', () => {
         if (mode === 'zombie')
           expect(g2.find((x) => x.key === 'dzida')?.how).toContain('“Make a spear” (2 planks and 1 scrap)');
         else {
-          expect(g2.find((x) => x.key === 'obwod')?.how).toContain('Open holes: 2.');
+          expect(g2.find((x) => x.key === 'obwod')?.how).toContain(
+            `Open holes: ${snapshot(st, sim.w).fence.holes.length}.`,
+          );
           expect(g2.find((x) => x.key === 'obwod')?.how).toContain('a barricade in place of a stretch of fence');
         }
       }
