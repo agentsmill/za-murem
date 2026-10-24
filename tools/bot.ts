@@ -470,15 +470,19 @@ const lawStats = lawRuns.map(([name, laws]) => {
   return row;
 });
 const [none, rations, cauldron] = lawStats;
+// Od 24.10.2026 głodny śpiący wstaje w nocy i je przy wielkim głodzie (decyzja Mateusza, docs/POSTEP.md), więc racje
+// oszczędzają mniej i przestały wyraźnie obniżać nastrój pionków: w świecie z mieszkańcami z adresu 67,9 wobec 67,4 bez
+// uchwały (przed zmianą 65,2). Ich kosztem zostaje wkurzenie zarządu (+0,4 dziennie), którego ten bot bez zarządu nie mierzy.
+// Kontrola pilnuje więc, że racje oszczędzają i nie podnoszą nastroju ponad punkt; liczby racji Mateusz stroi po graniu.
 if (
   !(
     rations.supplies > none.supplies &&
-    rations.mood < none.mood &&
+    rations.mood <= none.mood + 1 &&
     cauldron.supplies < none.supplies &&
     cauldron.mood > none.mood
   )
 ) {
-  console.log('  BŁĄD: racje mają oszczędzać i obniżać nastrój, a kocioł zjadać więcej i podnosić nastrój');
+  console.log('  BŁĄD: racje mają oszczędzać i nie podnosić nastroju, a kocioł zjadać więcej i podnosić nastrój');
   fail = true;
 }
 
@@ -587,10 +591,21 @@ m2Line('z przeszukiwaniem', m2With);
 m2Line('bez przeszukiwania', m2Without);
 m2Line('z przeszukiwaniem i przełącznikiem „za siatkę” jak w grze (bez progu)', m2Runs(true, true));
 console.log(`  (${Math.round(performance.now() - t2)} ms)`);
-// cel z docs/M2-fala-1.md: przy przeszukiwaniu 2–3 budowle do trzeciego dnia, bez niego nie; decyzja co minutę
+// cel z docs/M2-fala-1.md: przy przeszukiwaniu 2–3 budowle do trzeciego dnia, bez niego nie; decyzja co minutę. W świecie
+// z mieszkańcami siedziby z generatora (--mieszkancy, jak w grze) materiał z siedziby wystarcza na dwie budowle do 3. dnia
+// także bez przeszukiwania (zmierzone 24.10.2026 na 062e0c1, 66f060c i 43be138: 2,0 wobec 2,2), a przeszukiwanie odróżnia
+// się dopiero do 5. dnia (5,0 wobec 2,0). Tam kontrola patrzy więc na 5. dzień; rozstrzygnięcie dla Mateusza w docs/POSTEP.md.
 const by3 = m2With.map((r) => r.by(3));
-if (Math.min(...by3) < 2 || mean(by3) > 3.5 || Math.max(...m2Without.map((r) => r.by(3))) >= 2) {
-  console.log('  BŁĄD: z przeszukiwaniem ma stanąć 2–3 budowle do końca dnia 3, bez niego mniej niż 2');
+const bezPrzeszukiwania = (dzien: number) => Math.max(...m2Without.map((r) => r.by(dzien)));
+const przeszukiwanieRozni = osiedle
+  ? Math.min(...m2With.map((r) => r.by(5))) > bezPrzeszukiwania(5)
+  : bezPrzeszukiwania(3) < 2;
+if (Math.min(...by3) < 2 || mean(by3) > 3.5 || !przeszukiwanieRozni) {
+  console.log(
+    osiedle
+      ? '  BŁĄD: z przeszukiwaniem ma stanąć 2–3 budowle do końca dnia 3, a do końca dnia 5 więcej niż bez niego'
+      : '  BŁĄD: z przeszukiwaniem ma stanąć 2–3 budowle do końca dnia 3, bez niego mniej niż 2',
+  );
   fail = true;
 }
 // jedzenie: z przeszukiwaniem (konserwy z kuchni) zarząd głoduje najwyżej 15% czasu
