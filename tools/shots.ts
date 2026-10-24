@@ -2422,6 +2422,17 @@ const SHOTS: Shot[] = [
         run: async (page, base) => {
           await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
           await waitIdle(page);
+          // Warunek wstępny jawnie: karta z klatki przychodzi tylko wtedy, gdy któryś mieszkaniec z osobą ma nastrój poniżej progu
+          // (src/gov/warianty.ts, `sprawcaKradziezy`), a w grze z ziarna adresu jedzenie i ciepło mogą go utrzymać wyżej przez
+          // całe sto pięćdziesiąt godzin, które scenariusz czeka (bez tego zrzut zależał od przebiegu losowań: padał z łańcuchami
+          // i bez nich nie, a kradzież w zwykłych grach wypada około razu na grę). Każdy mieszkaniec dostaje chwilowy nastrój −40
+          // na dwieście godzin gry, jak „Choroba” w symulacji.
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            for (const p of st.pawns)
+              if (p.kind === 'resident' && p.person >= 0)
+                p.moods.push({ why: 'Głód w piwnicy', d: -40, until: st.tick + 200 * 800 });
+          });
           const krok = await doKarty(page, 'kradziez');
           await waitIdle(page);
           const przed = await page.evaluate(() => {
