@@ -1837,8 +1837,10 @@ describe('teksty okazji z projektu (Przymorze, zwykły tryb, mysz)', () => {
     expect(widokOkazji(g, 'o6').tytul).toBe('Teraz: zmarły wstanie');
     expect(pl('o6')).toEqual({
       text: 'Dobijcie ciało, zanim wstanie.',
-      how: 'Prawy przycisk na ciele: „Dobić”. Każdy zmarły wstaje po godzinie; wolny z zarządu dobije też sam.',
+      how: 'Prawy przycisk na ciele: „Dobić”. Każdy zmarły wstaje po godzinie.',
     });
+    // podpowiedź nie obiecuje, że ktoś z zarządu dobije sam: automat pomija zwłoki za siatką i osoby bez broni
+    expect(pl('o6').how).not.toMatch(/dobije|wolny|sam/);
     expect(widokOkazji(g, 'o7').tytul).toBe('Teraz: obcy przy aucie');
     expect(pl('o7')).toEqual({
       text: 'Przeszukajcie wrak przy ulicy.',
@@ -1894,8 +1896,9 @@ describe('teksty okazji z projektu (Przymorze, zwykły tryb, mysz)', () => {
     expect(widokOkazji(g, 'o6').tytul).toBe('Now: the dead will rise');
     expect(en('o6')).toEqual({
       text: 'Finish off the body before it gets up.',
-      how: 'Right-click the body: “Finish off the body”. Everyone who dies gets back up an hour later; a free board member will also do it on their own.',
+      how: 'Right-click the body: “Finish off the body”. Everyone who dies gets back up an hour later.',
     });
+    expect(en('o6').how).not.toMatch(/free|on their own|member/);
     expect(widokOkazji(g, 'o7').tytul).toBe('Now: strangers at a car');
     expect(en('o7')).toEqual({
       text: 'Search a wreck by the road.',
@@ -1960,19 +1963,20 @@ describe.each(KOMBINACJE)('wszystkie teksty okazji: %s %s', (key, mode) => {
     }
   });
 
-  it('słowa miejsca: brama albo furtka, zarząd albo komitet; tryb zombie: ocalały zamiast wędrowca', () => {
+  it('słowa miejsca: brama albo furtka, mieszkanie albo dom; tryb zombie: ocalały zamiast wędrowca', () => {
     const o2 = widokOkazji(g, 'o2').tytul;
     expect(o2).toBe(dom ? 'Teraz: handlarz pod furtką' : 'Teraz: handlarz pod bramą');
     const o3 = widokOkazji(g, 'o3').cele[1].how;
     expect(o3).toContain(dom ? 'zamknąć furtkę' : 'zamknąć bramę');
     expect(o3).toContain(dom ? '„Zamknąć furtkę”' : '„Zamknąć bramę”');
     expect(widokOkazji(g, 'o3').cele[0].how).toContain(dom ? 'przy furtce' : 'przy bramie');
-    expect(widokOkazji(g, 'o6').cele[0].how).toContain(dom ? 'wolny z komitetu' : 'wolny z zarządu');
+    // żadna okazja nie niesie już słowa zarządu; słowo ze słownika, które zmienia się z domem, to lokum w podpowiedzi zimy
+    expect(widokOkazji(g, 'o8').cele[0].how).toContain(dom ? 'w pokoju waszego domu' : 'w pokoju waszego mieszkania');
     expect(widokOkazji(g, 'o1').tytul).toBe(zombie ? 'Teraz: ocalały przy siatce' : 'Teraz: wędrowiec przy siatce');
     ustawJezyk('en');
     expect(widokOkazji(g, 'o2').tytul).toBe(dom ? 'Now: the trader at the garden gate' : 'Now: the trader at the gate');
     expect(widokOkazji(g, 'o3').cele[1].how).toContain(dom ? 'Close the garden gate' : 'Close the gate');
-    expect(widokOkazji(g, 'o6').cele[0].how).toContain(dom ? 'a free committee member' : 'a free board member');
+    expect(widokOkazji(g, 'o8').cele[0].how).toContain(dom ? 'in a room of your house' : 'in a room of your flat');
     expect(widokOkazji(g, 'o1').tytul).toBe(zombie ? 'Now: a survivor at the fence' : 'Now: a wanderer at the fence');
   });
 });

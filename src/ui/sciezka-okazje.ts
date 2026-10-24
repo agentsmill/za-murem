@@ -20,8 +20,9 @@
 
    Tryb gry. O1 w zombie mówi „ocalały” (te same pionki, inni ludzie), O3 istnieje tylko w zwykłym (szabrowników w zombie nie
    ma), O4, O5 i O6 tylko w zombie (stado, ugryzienie, wstający zmarli); O2 przychodzi w zombie od czwartego dnia, rzadko
-   (czas wizyt ustawia symulacja, nie ta lista). Słowa miejsca ze słownika (`Words`, `WordsEn`): brama albo furtka, zarząd
-   albo komitet; mysz i dotyk różnią się zawsze tak samo.
+   (czas wizyt ustawia symulacja, nie ta lista). Słowa miejsca ze słownika (`Words`, `WordsEn`): brama albo furtka, a w
+   podpowiedzi zimy lokum (mieszkanie albo dom); słowa zarządu w okazjach nie ma, bo podpowiedź zwłok nie obiecuje już, że
+   wolny z zarządu dobije sam (automat dobija tylko uzbrojony i nie za siatką). Mysz i dotyk różnią się zawsze tak samo.
 
    O8 „Zima idzie” (spec: „Okazje”, O8): badanie zimy 20.10.2026 pokazało, że tylko ogrzana sypialnia daje zarządowi 5–12 dni
    zimy więcej, a gracz nie ma skąd tego wiedzieć (koza w kuchni grzeje pokój przez drzwi tylko o 4°C ponad pogodę). Okazja
@@ -281,10 +282,12 @@ const O6: DefOkazji = {
     {
       key: 'dobic',
       tekst: () => L('Dobijcie ciało, zanim wstanie.', 'Finish off the body before it gets up.'),
+      // bez obietnicy, że wolny z zarządu dobije sam: automat (`startFinish`) dobija tylko uzbrojony, w obrębie 12 m i nie za
+      // siatką, więc poza płotem i bez broni nikt tego nie zrobi
       jak: (o) =>
         L(
-          `${klik(o, true)} na ciele: „Dobić”. Każdy zmarły wstaje po godzinie; wolny z ${o.words.zarzad.dk} dobije też sam.`,
-          `${o.touch ? 'Press and hold on' : 'Right-click'} the body: “Finish off the body”. Everyone who dies gets back up an hour later; a free ${o.wordsEn.krotko.replace(/^the /, '')} member will also do it on their own.`,
+          `${klik(o, true)} na ciele: „Dobić”. Każdy zmarły wstaje po godzinie.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} the body: “Finish off the body”. Everyone who dies gets back up an hour later.`,
         ),
       // dobite zwłoki leżą dalej z `fuel` równym zero; zwłoki, które wstały, znikają z rzeczy
       zrobiony: (o, s) => {
