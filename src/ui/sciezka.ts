@@ -51,7 +51,7 @@ import type { GovInput, GovState } from '../gov/typy.ts';
 import type { SimState } from '../sim/sim.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import type { World } from '../world/world.ts';
-import { ludnoscPodZarzadem, lupZMiasta, ROZDZIALY, uchwalyPodpisane } from './sciezka-rozdzialy.ts';
+import { ludnoscPodZarzadem, lupZMiasta, ROZDZIALY, uchwalyPodpisane, wierszeDrog } from './sciezka-rozdzialy.ts';
 import { esc } from './tekst.ts';
 
 /** rozdziały głównej ścieżki po kolei (R3 istnieje dopiero po scaleniu pracy ludzi); „koniec”: po ostatnim rozdziale */
@@ -244,14 +244,16 @@ export type OknoCelu = 'karta' | 'uchwala' | 'tablica' | 'spotkanie';
 
 /** Definicja celu. `jest`: cel istnieje w tej grze (tryb, mapa, stan gry); bez niego (fałsz) nie wchodzi do listy i nie
     blokuje rozdziału. Dostaje też stan ścieżki, żeby cel już zaliczony mógł zostać na liście, choć warunek istnienia przestał
-    być prawdziwy (uchwała, gdy podpisano wszystkie, które da się podpisać). `zrobiony`: warunek zaliczenia (silnik zapisuje zaliczenie na stałe). `czeka`: dopisek, gdy celu teraz nie
-    da się ruszyć („czeka do 20:00”), inaczej null. `przepadl`: termin minął (tylko cele jednej nocy). Teksty w bieżącym
-    języku (`L()`), nigdy z modułu na poziomie importu. */
+    być prawdziwy (uchwała, gdy podpisano wszystkie, które da się podpisać). `zrobiony`: warunek zaliczenia (silnik zapisuje
+    zaliczenie na stałe). `czeka`: dopisek, gdy celu teraz nie da się ruszyć („czeka do 20:00”), inaczej null. `przepadl`:
+    termin minął (tylko cele jednej nocy). `tekst` i `jak` dostają też stan ścieżki, żeby cel, którego tekst zależy od gry
+    (następny kamień drogi ludnościowej), mógł trzymać ten z chwili otwarcia rozdziału (`start`) i nie zmieniać go po
+    zaliczeniu. Teksty w bieżącym języku (`L()`), nigdy z modułu na poziomie importu. */
 export interface DefCelu {
   key: string;
   jest?(o: OdczytCelow, s: StanSciezki): boolean;
-  tekst(o: OdczytCelow): string;
-  jak(o: OdczytCelow): string;
+  tekst(o: OdczytCelow, s: StanSciezki): string;
+  jak(o: OdczytCelow, s: StanSciezki): string;
   zrobiony(o: OdczytCelow, s: StanSciezki): boolean;
   czeka?(o: OdczytCelow, s: StanSciezki): string | null;
   przepadl?(o: OdczytCelow, s: StanSciezki): boolean;
@@ -375,7 +377,8 @@ export function widokSciezki(
   rozdzialy: readonly DefRozdzialu[] = ROZDZIALY,
 ): WidokSciezki {
   const d = rozdzialy.find((r) => r.k === s.rozdzial);
-  if (!d) return { okazja: null, rozdzial: null, drogi: null };
+  // po ostatnim rozdziale okienko pokazuje drogi do zwycięstwa, na które gra ma następny krok (bez włączonych dróg nic)
+  if (!d) return { okazja: null, rozdzial: null, drogi: s.rozdzial === 'koniec' ? wierszeDrog(o) : null };
   const cele: Cel[] = celeGry(d, o, s).map((c) => {
     const klucz = kluczCelu(d.k, c);
     const zrobiony = zaliczony(s, klucz);
@@ -384,8 +387,8 @@ export function widokSciezki(
     const czeka = done ? null : (c.czeka?.(o, s) ?? null);
     return {
       key: c.key,
-      text: c.tekst(o),
-      how: c.jak(o),
+      text: c.tekst(o, s),
+      how: c.jak(o, s),
       done,
       ...(missed ? { missed } : {}),
       ...(czeka ? { czeka } : {}),

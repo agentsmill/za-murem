@@ -36,19 +36,22 @@
    te same wyrażenia czyta `licznikiStartu` w chwili otwarcia rozdziału (src/ui/sciezka.ts) i warunki celów w chwili
    sprawdzenia, więc obie strony porównania nie rozjadą się. */
 
-import { L } from '../core/jezyk.ts';
-import type { Words, WordsEn } from '../gov/miejsce.ts';
+import { L, tr } from '../core/jezyk.ts';
+import { placeOfWorld, sasiedzi, type Words, type WordsEn } from '../gov/miejsce.ts';
 import { CARD_HOUR, KOZA_KEY, MORNING, WOOD_PER_HOUR } from '../gov/noc.ts';
 import type { GovInput, GovState, NightPlan, NightReport } from '../gov/typy.ts';
 import { lawOptions } from '../gov/uchwaly.ts';
 import { atHour } from '../gov/wspolne.ts';
 import { LAW_HOUR, LAW_MINUTE } from '../gov/zarzad.ts';
+import { DALEJ_TEREN, ocenDrogi, type PostepDrogi, terenMozliwy } from '../gov/zwyciestwo.ts';
+import { nazwaTech, TECH_BY, TECHS, wiedza } from '../sim/badania.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS } from '../sim/budowle.ts';
 import { minutesAt } from '../sim/clock.ts';
 import { CAMPFIRE_WOOD, PATCH_COST, type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
 import { populacja } from '../sim/snapshot.ts';
+import { modeOf } from '../sim/tryb.ts';
 import { TUT_STEPS } from '../sim/tutorial.ts';
 import { costText } from './budowa.ts';
 import { type Goal, goalsOf, NIGHT_WOOD, najtanszeBudowle, zombieMode } from './cele.ts';
@@ -596,7 +599,333 @@ const R5: DefRozdzialu = {
   ],
 };
 
-/** Rozdziały głównej ścieżki po kolei: pierwszy dzień, drugi dzień, ludzie i noc, zarząd, jedzenie. R3 (praca ludzi)
-    dochodzi po scaleniu `praca-ludzi`, R6–R8 w następnym zadaniu planu; do tego czasu po R2 otwiera się R4, a po R5 jest
-    „koniec”. */
-export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1, R2, R4, R5];
+/* ---------------------------------------------------------------- R6. Badania */
+
+/** Czy osada ma dość wiedzy, żeby wziąć którąkolwiek kartkę ery `era` w tym trybie gry (`TechNowa.lvl` w jej dziedzinie).
+    Liczy `wiedza` z src/sim/badania.ts, ale z osobami na wyprawie: `wiedza` ich nie liczy, a wyprawa mija, więc przez nią
+    cele badań nie mogą znikać z listy ani zamykać rozdziału, gdy to ona zna dziedzinę. Cel nie istnieje tylko wtedy, gdy
+    wiedzy naprawdę nie ma (zarząd z samych zawodów bez dziedzin ery 1, bez książek). */
+function mozeWziacKartke(st: SimState, era: number): boolean {
+  const mode = modeOf(st);
+  const naMiejscu = st.pawns.some((p) => p.away)
+    ? { ...st, pawns: st.pawns.map((p) => (p.away ? { ...p, away: false } : p)) }
+    : st;
+  return TECHS.some(
+    (t) => t.era === era && t.dziala && (t.tryb === undefined || t.tryb === mode) && wiedza(naMiejscu, t.dom) >= t.lvl,
+  );
+}
+
+/** coś jest już zbadane (technologia w `techDone` albo wpis w `research.at`) */
+const zbadanoCos = (st: SimState): boolean =>
+  (st.techDone?.length ?? 0) > 0 || Object.keys(st.research?.at ?? {}).length > 0;
+
+/** Postęp w jakimkolwiek badaniu: zapisany postęp większy od zera (zostaje po ukończeniu badania). */
+const jestPostepBadania = (st: SimState): boolean => Object.values(st.research?.prog ?? {}).some((v) => v > 0);
+
+/** Praca nad technologią z ery 2: postęp albo ukończenie (identyfikatory spoza drzewka się nie liczą). */
+function era2Ruszyla(st: SimState): boolean {
+  const era2 = (id: string): boolean => Object.hasOwn(TECH_BY, id) && TECH_BY[id].era === 2;
+  return Object.entries(st.research?.prog ?? {}).some(([id, v]) => v > 0 && era2(id)) || (st.techDone ?? []).some(era2);
+}
+
+/** `jest` celu badań: istnieje, gdy osada może wziąć kartkę ery `era`, a także wtedy, gdy cel jest już zaliczony albo jego
+    warunek już prawdziwy (cel nie znika, kiedy wiedza spadnie po tym, jak się spełnił). Gdy nikt nie zna żadnej dziedziny
+    ery 1 (własny zarząd z samych programistów i kurierów, bez książek i lokatorów z wiedzą), cele badań nie blokują
+    ścieżki, bo nie da się ich zrobić. */
+const jestGdyMoznaBadac =
+  (klucz: string, era: 1 | 2, warunek: (st: SimState) => boolean) =>
+  (o: OdczytCelow, s: StanSciezki): boolean =>
+    Object.hasOwn(s.zrobione, klucz) || warunek(o.st) || mozeWziacKartke(o.st, era);
+
+/** „naszego mieszkania” ze słownika (`Words.lokal.d`) jako „waszego mieszkania”: cele mówią do zarządu na „wy”, jak zdanie
+    „co dalej” drogi technologii (src/gov/zwyciestwo.ts); w domu „waszego domu” */
+const waszeLokum = (w: Words): string => w.lokal.d.replace(/^naszego /, 'waszego ');
+
+const R6: DefRozdzialu = {
+  k: 'r6',
+  tytul: () => L('Badania', 'Research'),
+  cele: [
+    {
+      key: 'pracownia',
+      tekst: () => L('Postawcie pracownię.', 'Build a research room.'),
+      jak: (o) => {
+        const koszt = costText(BUILDS.pracownia.cost);
+        const b = budowaZakladka(o.touch);
+        return L(
+          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`,
+          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).`,
+        );
+      },
+      // postawiona wcześniej zalicza od razu przy otwarciu rozdziału; sam plan budowy nie wystarcza
+      zrobiony: (o) => o.st.things.some((t) => t.kind === 'pracownia'),
+    },
+    {
+      key: 'badanie',
+      jest: jestGdyMoznaBadac('r6.badanie', 1, (st) => !!st.research?.cur || zbadanoCos(st)),
+      tekst: () => L('Wybierzcie pierwsze badanie.', 'Pick your first research.'),
+      jak: (o) =>
+        L(
+          `Tablica badań otwiera się sama, kiedy pracownia stanie, potem pod przyciskiem Badania${
+            o.touch ? '' : ' albo T'
+          }. ${o.touch ? 'Stuknięcie' : 'Klik'} w kartkę, potem „Badać”.`,
+          `The Research board opens by itself once the research room stands; later it’s under the Research button${
+            o.touch ? '' : ', or T'
+          }. ${o.touch ? 'Tap' : 'Click'} a card, then “Research”.`,
+        ),
+      okno: 'tablica',
+      // wybrane badanie albo już coś zbadane (stan gry, więc wybór sprzed otwarcia rozdziału zalicza od razu)
+      zrobiony: (o) => !!o.st.research?.cur || zbadanoCos(o.st),
+    },
+    {
+      key: 'stol',
+      jest: jestGdyMoznaBadac('r6.stol', 1, jestPostepBadania),
+      tekst: () => L('Posadźcie kogoś przy stole pracowni.', 'Sit someone at the research table.'),
+      jak: (o) => {
+        // nazwa bieżącego badania jak w menu pracowni („Badać: …”); bez wyboru (gracz go zdjął) wielokropek
+        const cur = o.st.research?.cur;
+        const nazwa = cur && Object.hasOwn(TECH_BY, cur) ? nazwaTech(cur) : null;
+        return L(
+          `${o.touch ? 'Stuknijcie osobę i przytrzymajcie palec' : 'Zaznaczcie osobę i prawy przycisk'} na pracowni: „Badać: ${
+            nazwa?.pl ?? '…'
+          }”. Najszybciej bada ktoś, kto zna dziedzinę kartki; przy stole są dwa miejsca, a ${o.words.mieszkancy.m} z wiedzą siadają sami.`,
+          `${o.touch ? 'Tap a person and press and hold on' : 'Select a person and right-click'} the research room: “Research: ${
+            nazwa?.en ?? '…'
+          }”. Someone who knows the card’s field is fastest; the table has two seats, and ${o.wordsEn.mieszkancy} who know the field sit down on their own.`,
+        );
+      },
+      // postęp jakiegokolwiek badania (siedzi przy stole co najmniej chwilę); zostaje w stanie po ukończeniu badania
+      zrobiony: (o) => jestPostepBadania(o.st),
+    },
+    {
+      key: 'odkrycie',
+      jest: jestGdyMoznaBadac('r6.odkrycie', 1, (st) => Object.keys(st.research?.at ?? {}).length > 0),
+      tekst: () => L('Zbadajcie pierwszą technologię.', 'Finish your first research.'),
+      jak: () =>
+        L(
+          'Karta „Odkrycie” powie, co daje; nowe budowle mają w Budowie znaczek NOWE. Książki znalezione przy przeszukiwaniu dokładają wiedzy.',
+          'The Discovery card tells you what it gives you; new structures are marked NEW in Build. Books found while searching add to what you know.',
+        ),
+      zrobiony: (o) => Object.keys(o.st.research?.at ?? {}).length > 0,
+    },
+    {
+      key: 'era2',
+      // kartka ery 2 wymaga w swojej dziedzinie wiedzy 2, a nie tylko zbadanej technologii z ery 1: bez takiej wiedzy cel
+      // nie istnieje (każda kartka ery 2 wymaga technologii z tej samej dziedziny, więc wiedza 2 wystarcza na całą drogę)
+      jest: jestGdyMoznaBadac('r6.era2', 2, era2Ruszyla),
+      tekst: () => L('Zacznijcie badanie z ery 2.', 'Start a research from era 2.'),
+      jak: () =>
+        L(
+          'Kolumny tablicy to ery. Kartka z ery 2 da się wziąć, kiedy zbadacie technologię, której wymaga (nitka na tablicy). Ery 3–6 czekają na prąd.',
+          'The board’s columns are eras. An era 2 card can be taken once you finish the technology it needs (the thread on the board). Eras 3–6 are waiting for power.',
+        ),
+      zrobiony: (o) => era2Ruszyla(o.st),
+    },
+  ],
+};
+
+/* ---------------------------------------------------------------- R7. Sąsiedzi */
+
+/** sąsiedzi stoją w domach, a nie w blokach: tak samo jak rozstrzyga o tym słownik (`Words.sasiad`), według sąsiadów, a w
+    samotnym miejscu według siedziby */
+function sasiedziWDomach(o: OdczytCelow): boolean {
+  const p = placeOfWorld(o.w);
+  const s = sasiedzi(p);
+  return s === 'domy' || (s === null && p.kind === 'dom');
+}
+
+const R7: DefRozdzialu = {
+  k: 'r7',
+  tytul: () => L('Sąsiedzi', 'Neighbours'),
+  // bez bloku ani domu w 120 m od siedziby (`GovPlace.near`) nie ma do kogo pukać: rozdziału nie ma, a ścieżka idzie dalej
+  jest: (o) => sasiedzi(placeOfWorld(o.w)) !== null,
+  cele: [
+    {
+      key: 'pukanie',
+      tekst: () => L('Zapukajcie do sąsiadów.', 'Knock on the neighbours’ door.'),
+      jak: (o) => {
+        const dom = sasiedziWDomach(o);
+        const zombie = zombieMode(o.st, o.gov);
+        return L(
+          `${o.touch ? 'Stuknijcie kogoś i przytrzymajcie palec' : 'Zaznaczcie kogoś i prawy przycisk'} na drzwiach sąsiedniego ${
+            dom ? 'domu' : 'bloku'
+          }: „Zapukać”. Za dnia ludzie bywają w domu, nocą otwierają niechętnie.${
+            zombie ? ' Za siatką są szwendacze: idźcie za dnia, z dzidą.' : ''
+          }`,
+          `${o.touch ? 'Tap someone and press and hold on' : 'Select someone and right-click'} the door of the ${
+            dom ? 'house' : 'block'
+          } next door: “Knock”. By day people tend to be in; at night they’re slow to open.${
+            zombie ? ' There are shamblers out there: go by day, with a spear.' : ''
+          }`,
+        );
+      },
+      // praca przy drzwiach z pukaniem trwa od polecenia do skutku (dojście, pukanie), więc okienko ją zobaczy; do tego
+      // spotkanie po pukaniu (stan trwały)
+      zrobiony: (o, s) =>
+        o.st.pawns.some((p) => p.kind === 'core' && p.job?.t === 'door' && p.job.what === 'knock') ||
+        (o.st.sasiedzi?.nr ?? 0) > s.start.spotkania,
+    },
+    {
+      key: 'spotkanie',
+      tekst: (o) =>
+        sasiedziWDomach(o)
+          ? L('Porozmawiajcie z sąsiadami.', 'Talk to the neighbours.')
+          : L('Porozmawiajcie z lokatorami.', 'Talk to the residents next door.'),
+      jak: () =>
+        L(
+          'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas (… szans)”. Kto was zna, chętniej pomoże.',
+          'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you (… chance)”. People who know you are more willing to help.',
+        ),
+      okno: 'spotkanie',
+      // Licznik spotkań rośnie z początkiem spotkania, a liczą się tylko te po otwarciu rozdziału. Cel zalicza się dopiero,
+      // gdy spotkanie się skończy (gracz wybrał, okno zniknęło): inaczej zaliczałby się w chwili, w której otwiera się okno
+      // spotkania, i linia „Cel: …” w tym oknie nigdy by się nie pokazała.
+      zrobiony: (o, s) => (o.st.sasiedzi?.nr ?? 0) > s.start.spotkania && !o.st.sasiedzi?.spotkanie,
+    },
+    {
+      key: 'wejscie',
+      tekst: () => L('Wejdźcie do zamkniętego budynku.', 'Get into a closed-up building.'),
+      jak: (o) => {
+        const dom = sasiedziWDomach(o);
+        const zombie = zombieMode(o.st, o.gov);
+        return L(
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach: „Otworzyć drzwi”, a zamknięte na klucz „Wyważyć drzwi” (głośno${
+            zombie ? ' i ściąga szwendaczy' : ''
+          }). ${dom ? 'Pusty dom to łup bez awantury.' : 'Pusty budynek albo mieszkanie bez lokatorów to łup bez awantury.'}`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} a door: “Open the door”, and if it’s locked, “Force the door” (loud${
+            zombie ? ', and it draws shamblers' : ''
+          }). ${dom ? 'An empty house means loot without a row.' : 'An empty building, or a flat with nobody home, means loot without a row.'}`,
+        );
+      },
+      // budynek, którego wnętrze jest dołączone do mapy (drzwi otwarte albo wyważone)
+      zrobiony: (o) => (o.st.sasiedzi?.budynki ?? []).some((b) => b.otwarty),
+    },
+    {
+      key: 'szaber',
+      tekst: () => L('Przeszukajcie pomieszczenie u sąsiadów.', 'Search a room next door.'),
+      jak: (o) => {
+        const dom = sasiedziWDomach(o);
+        // w domu bez zdania o piętrze: słowa z bloku (piętro) są zakazane w tekstach dla domu jednorodzinnego
+        return L(
+          `W otwartym ${dom ? 'domu' : 'budynku'} ${o.touch ? 'przytrzymajcie palec' : 'prawy przycisk'} w ${
+            dom ? 'pokoju' : 'pomieszczeniu'
+          }: „Przeszukać …”${
+            dom ? '' : ', a na schodach „Przeszukać piętro”'
+          }. Łup zanieście na podwórko („Zanieść na podwórko”), a drzwi od ulicy możecie potem zabić deskami.`,
+          `Inside an open ${dom ? 'house' : 'building'}, ${o.touch ? 'press and hold on' : 'right-click'} a room: “Search the …”${
+            dom ? '' : ', or on the stairs “Search a floor upstairs”'
+          }. Carry the loot home (“Carry into the yard”); you can nail planks over the street door afterwards.`,
+        );
+      },
+      // pomieszczenie bez mieszkania (klatka, sala), pomieszczenie mieszkania albo piętro, przeszukane u sąsiada
+      zrobiony: (o) =>
+        (o.st.sasiedzi?.budynki ?? []).some(
+          (b) => b.przeszukane.length > 0 || b.pietra > 0 || b.mieszkania.some((m) => m.przeszukane.length > 0),
+        ),
+    },
+  ],
+};
+
+/* ---------------------------------------------------------------- R8. Drogi do zwycięstwa */
+
+/** zaliczone kamienie drogi w stanie zarządu; zero bez włączonych dróg */
+const kamienie = (gov: GovState | null, droga: 'ludnosc' | 'teren'): number => gov?.zwyciestwo?.kamienie[droga] ?? 0;
+
+/** Droga ludnościowa z `ocenDrogi` taka, jaka była przy otwarciu rozdziału: z liczbą kamieni z `start.kamienLudnosci`, nie
+    z bieżącą. Cel zalicza się, gdy kamieni przybywa, a wtedy bieżące „co dalej” mówiłoby już o następnym progu, więc
+    zaliczony cel zmieniałby tekst. Z kopią stanu zarządu (płytką, tylko liczba kamieni), niczego nie zmienia. Bez
+    włączonych dróg i bez wejścia zarządu: undefined. */
+function drogaLudnosciPrzyOtwarciu(o: OdczytCelow, s: StanSciezki): PostepDrogi | undefined {
+  const z = o.gov?.zwyciestwo;
+  if (!o.gov || !z || !o.input) return undefined;
+  const przy: GovState = {
+    ...o.gov,
+    zwyciestwo: { ...z, kamienie: { ...z.kamienie, ludnosc: s.start.kamienLudnosci } },
+  };
+  return ocenDrogi(przy, o.input).find((p) => p.droga === 'ludnosc');
+}
+
+const R8: DefRozdzialu = {
+  k: 'r8',
+  tytul: () => L('Drogi do zwycięstwa', 'Roads to victory'),
+  cele: [
+    {
+      key: 'drogi',
+      tekst: () => L('Zajrzyjcie do dróg do zwycięstwa.', 'Have a look at the roads to victory.'),
+      jak: () =>
+        L(
+          'Menu, „Drogi do zwycięstwa”: pięć dróg z kamieniami milowymi; każda kończy się innym epilogiem.',
+          'Menu, “Roads to victory”: five roads with milestones; each ends in a different epilogue.',
+        ),
+      // zdarzenie samego interfejsu: ekran dróg otwarty od otwarcia rozdziału
+      zrobiony: (_o, s) => zdarzeniePoOtwarciu(s, 'drogi'),
+    },
+    {
+      key: 'ludnosc',
+      // nie istnieje bez dróg i wtedy, gdy droga ludnościowa jest przebyta do końca (nie ma następnego kamienia)
+      jest: (o, s) => Object.hasOwn(s.zrobione, 'r8.ludnosc') || !!drogaLudnosciPrzyOtwarciu(o, s)?.dalej,
+      // tekst to „co dalej” drogi ludnościowej z ekranu dróg, w tym samym brzmieniu
+      tekst: (o, s) => {
+        const dalej = drogaLudnosciPrzyOtwarciu(o, s)?.dalej;
+        return dalej ? tr(dalej) : L('Zbierzcie więcej osób pod zarządem.', 'Get more people under the board.');
+      },
+      jak: (o, s) => {
+        const d = drogaLudnosciPrzyOtwarciu(o, s);
+        const nazwa = d ? tr(d.nazwa) : L('Nowe osiedle', 'A new estate');
+        const ile = num(Math.max(0, Math.round(d?.postep?.ile ?? 0)), 0);
+        const cel = num(Math.max(0, Math.round(d?.postep?.cel ?? 0)), 0);
+        return L(
+          `${nazwa}: ${ile} z ${cel}. Ludzie przychodzą z kart wydarzeń i od sąsiadów („Zaprosić do nas”).`,
+          `${nazwa}: ${ile} of ${cel}. People come from event cards and from next door (“Invite them to join you”).`,
+        );
+      },
+      // kolejny kamień drogi ludnościowej niż przy otwarciu rozdziału; kamień liczy krok zarządu, nie to okienko
+      zrobiony: (o, s) => kamienie(o.gov, 'ludnosc') > s.start.kamienLudnosci,
+    },
+    {
+      key: 'teren',
+      // tylko tam, gdzie wspólny płot dosięga choć jednego sąsiada (ten sam predykat co ekran dróg) i gdzie są drogi
+      jest: (o, s) =>
+        Object.hasOwn(s.zrobione, 'r8.teren') ||
+        kamienie(o.gov, 'teren') >= 1 ||
+        (!!o.gov?.zwyciestwo && (!o.input || terenMozliwy(o.input))),
+      tekst: () => tr(DALEJ_TEREN),
+      jak: (o) =>
+        L(
+          `${o.touch ? 'Przytrzymajcie palec' : 'Prawy przycisk'} na drzwiach otwartego budynku obok: „Otoczyć wspólnym płotem (…)”, z kosztem i czasem w menu. Między wami nie może być jezdni.`,
+          `${o.touch ? 'Press and hold on' : 'Right-click'} the door of an open building next door: “Put up a shared fence (…)”, with the cost and time in the menu. There can’t be a road between you.`,
+        ),
+      zrobiony: (o) => kamienie(o.gov, 'teren') >= 1,
+    },
+  ],
+};
+
+/** Wiersze okienka po ostatnim rozdziale: drogi do zwycięstwa, na które gra ma dziś następny krok (`PostepDrogi.dalej` z
+    `ocenDrogi`), w kolejności ekranu dróg; pierwszy wiersz jest bieżący. Z samej oceny wynika, co odpada: teren tam, gdzie
+    płot nie dosięga sąsiada (`terenMozliwy`) albo po pierwszym kamieniu, technologia po dwóch pierwszych kamieniach
+    („Wkrótce”), lek i cuda, droga przebyta do końca. Wiersz to nazwa drogi, „co dalej” i, dla drogi ludnościowej, postęp
+    „{ile} z {cel}”. Pusta lista: żadna droga nie ma następnego kroku (okienko się chowa). null: nie ma jak ocenić dróg
+    (gra bez zarządu, bez włączonych dróg albo bez jego wejścia). Tylko czyta. */
+export function wierszeDrog(o: OdczytCelow): { nazwa: string; dalej: string; postep: string | null }[] | null {
+  if (!o.gov?.zwyciestwo || !o.input) return null;
+  return ocenDrogi(o.gov, o.input).flatMap((p) =>
+    p.dalej
+      ? [
+          {
+            nazwa: tr(p.nazwa),
+            dalej: tr(p.dalej),
+            postep: p.postep
+              ? L(
+                  `${num(Math.max(0, Math.round(p.postep.ile)), 0)} z ${num(Math.max(0, Math.round(p.postep.cel)), 0)}`,
+                  `${num(Math.max(0, Math.round(p.postep.ile)), 0)} of ${num(Math.max(0, Math.round(p.postep.cel)), 0)}`,
+                )
+              : null,
+          },
+        ]
+      : [],
+  );
+}
+
+/** Rozdziały głównej ścieżki po kolei: pierwszy dzień, drugi dzień, ludzie i noc, zarząd, jedzenie, badania, sąsiedzi, drogi
+    do zwycięstwa. R3 (praca ludzi) dochodzi po scaleniu `praca-ludzi`; do tego czasu po R2 otwiera się R4. Po R8 jest
+    „koniec”, a okienko pokazuje drogi do zwycięstwa (`wierszeDrog`). */
+export const ROZDZIALY: readonly DefRozdzialu[] = [R0, R1, R2, R4, R5, R6, R7, R8];

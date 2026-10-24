@@ -11,6 +11,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import type { NightReport } from '../../src/gov/typy.ts';
+import { wlaczZwyciestwo } from '../../src/gov/zwyciestwo.ts';
+import { populacja } from '../../src/sim/snapshot.ts';
 import { TUT_STEPS } from '../../src/sim/tutorial.ts';
 import { goalsOf, NIGHT_WOOD } from '../../src/ui/cele.ts';
 import {
@@ -438,6 +440,87 @@ describe('silnik ścieżki: rozdziały na atrapie', () => {
     const przed = structuredClone(g.sciezka);
     for (let k = 0; k < 5; k++) krokA();
     expect(g.sciezka).toEqual(przed);
+  });
+
+  it('tekst i podpowiedź celu dostają stan ścieżki, więc cel może nieść w tekście to, co było przy otwarciu rozdziału', () => {
+    const g = nowaGra('przymorze');
+    g.gov.laws.signed = { u_a: true };
+    const def: DefRozdzialu[] = [
+      {
+        k: 'r0',
+        tytul: () => 'Zero',
+        cele: [
+          cl('x', () => false, {
+            tekst: (_o, s) => `przy otwarciu ${s.start.uchwaly} uchwał`,
+            jak: (_o, s) => `zrobione: ${Object.keys(s.zrobione).join(',') || 'nic'}`,
+          }),
+        ],
+      },
+    ];
+    g.sciezka = { ...nowyStanSciezki(), start: { ...nowyStanSciezki().start, uchwaly: 7 }, zrobione: { 'r0.y': 3 } };
+    const c = widokSciezki(g.sciezka, odczyt(g), def).rozdzial!.cele[0];
+    expect(c.text).toBe('przy otwarciu 7 uchwał');
+    expect(c.how).toBe('zrobione: r0.y');
+    // bez drugiego argumentu w definicji nic się nie zmienia: stare definicje z jednym argumentem działają jak dotąd
+    const stara: DefRozdzialu[] = [{ k: 'r0', tytul: () => 'Zero', cele: [cl('x', () => false)] }];
+    expect(widokSciezki(g.sciezka, odczyt(g), stara).rozdzial!.cele[0]).toMatchObject({ text: 'cel x', how: 'jak x' });
+  });
+
+  it('po ostatnim rozdziale z włączonymi drogami widok ma wiersze dróg, na które gra ma następny krok', () => {
+    const g = nowaGra('przymorze');
+    wlaczZwyciestwo(g.gov);
+    const f = flagi();
+    f.a = true;
+    f.b = true;
+    f.c = true;
+    f.d = true;
+    f.e = true;
+    const { krokA, widokA } = silnik(g, atrapa(f));
+    expect(krokA().rozdzial).toBe('koniec');
+    const v = widokA();
+    expect(v.okazja).toBeNull();
+    expect(v.rozdzial).toBeNull();
+    // ludzie pod zarządem: zarząd i mieszkańcy siedziby (Przymorze ma ich od startu), poniżej pierwszego progu 10
+    const ludzie = populacja(g.sim.st).razem;
+    expect(ludzie).toBeLessThan(10);
+    // Przymorze: teren bez sąsiada do otoczenia, lek i cuda czekają, więc tylko technologia (zero kamieni) i ludność
+    expect(v.drogi).toEqual([
+      {
+        nazwa: 'Prąd bez miedzi',
+        dalej: 'Postawcie pracownię w pokoju waszego mieszkania (Budowa, zakładka Dom).',
+        postep: null,
+      },
+      { nazwa: 'Nowe osiedle', dalej: 'Zbierzcie 10 osób pod zarządem.', postep: `${ludzie} z 250` },
+    ]);
+    ustawJezyk('en');
+    expect(widokA().drogi).toEqual([
+      {
+        nazwa: 'Power without copper',
+        dalej: 'Build a research room in a room of your flat (Build, Home tab).',
+        postep: null,
+      },
+      { nazwa: 'A new estate', dalej: 'Get 10 people under the board.', postep: `${ludzie} of 250` },
+    ]);
+  });
+
+  it('widok dróg tylko czyta: wejście, stan ścieżki i stan zarządu zostają nietknięte', () => {
+    const g = nowaGra('przymorze');
+    wlaczZwyciestwo(g.gov);
+    const f = flagi();
+    f.a = f.b = f.c = f.d = f.e = true;
+    const { krokA } = silnik(g, atrapa(f));
+    krokA();
+    const o = odczyt(g);
+    const stGov = JSON.stringify(g.gov);
+    const stSim = JSON.stringify(g.sim.st);
+    const stScie = JSON.stringify(g.sciezka);
+    const input = JSON.stringify(o.input);
+    widokSciezki(g.sciezka, o, atrapa(f));
+    widokSciezki(zamroz(structuredClone(g.sciezka)), o, atrapa(f));
+    expect(JSON.stringify(g.gov)).toBe(stGov);
+    expect(JSON.stringify(g.sim.st)).toBe(stSim);
+    expect(JSON.stringify(g.sciezka)).toBe(stScie);
+    expect(JSON.stringify(o.input)).toBe(input);
   });
 
   it('stan z rozdziałem, którego nie ma wśród definicji, zostaje bez zmian, a widok nie ma rozdziału', () => {

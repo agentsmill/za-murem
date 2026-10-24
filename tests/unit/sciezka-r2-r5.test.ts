@@ -10,8 +10,9 @@
    większa niż przy otwarciu), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów bez R3, przejścia R2 → R4 → R5
-   → „koniec”, stary zapis w „koniec” po R1, który otwiera R2 (silnik: src/ui/sciezka.ts), zapis i wczytanie w środku
-   rozdziałów oraz teksty z projektu w obu językach, na myszy i na dotyku, w bloku i w domu. */
+   → R6 (dalej R6–R8 i „koniec” w sciezka-r6-r8.test.ts), stary zapis w „koniec” po R1, który otwiera R2 (silnik:
+   src/ui/sciezka.ts), zapis i wczytanie w środku rozdziałów oraz teksty z projektu w obu językach, na myszy i na dotyku,
+   w bloku i w domu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -157,9 +158,10 @@ function skutki(f: (e: GovEffects) => void): GovEffects {
 
 /* ---------------------------------------------------------------- kolejność rozdziałów */
 
-describe('kolejność rozdziałów: R0, R1, R2, R4, R5 (bez R3, którego jeszcze nie ma)', () => {
-  it('ROZDZIALY ma w tej kolejności pierwszy dzień, drugi dzień, ludzi i noc, zarząd i jedzenie', () => {
-    expect(ROZDZIALY.map((r) => r.k)).toEqual(['r0', 'r1', 'r2', 'r4', 'r5']);
+describe('kolejność rozdziałów: R0, R1, R2, R4, R5, R6, R7, R8 (bez R3, którego jeszcze nie ma)', () => {
+  it('ROZDZIALY ma w tej kolejności pierwszy dzień, drugi dzień, ludzi i noc, zarząd, jedzenie, badania, sąsiadów i drogi', () => {
+    // R6–R8 (badania, sąsiedzi, drogi do zwycięstwa) dopisało zadanie 8 planu; ich cele sprawdza sciezka-r6-r8.test.ts
+    expect(ROZDZIALY.map((r) => r.k)).toEqual(['r0', 'r1', 'r2', 'r4', 'r5', 'r6', 'r7', 'r8']);
   });
 
   it.each(KOMBINACJE)('%s %s: tytuły i cele rozdziałów R2, R4 i R5', (key, mode) => {
@@ -1164,7 +1166,8 @@ describe('R5 a okno mapy miasta w grze (flaga w odczycie)', () => {
       by: -1,
       owner: -1,
     });
-    expect(krok(g, bez).rozdzial).toBe('koniec');
+    // R5 jest skończony samym ogródkiem i otwiera R6 (przed zadaniem 8 planu był tu „koniec”)
+    expect(krok(g, bez).rozdzial).toBe('r6');
     expect(zrobione(g, 'r5')).toEqual(['r5.ogrodek']);
   });
 });
@@ -1214,8 +1217,8 @@ describe.each(KOMBINACJE)('R5 ogrodek: %s %s', (key, mode) => {
 
 /* ---------------------------------------------------------------- przejścia między rozdziałami */
 
-describe('przejścia: R2 → R4 → R5 → „koniec”', () => {
-  it('zwykły tryb: trzy cele R2 otwierają R4 z licznikami z tej chwili, R4 otwiera R5, po R5 „koniec”', () => {
+describe('przejścia: R2 → R4 → R5 → R6', () => {
+  it('zwykły tryb: trzy cele R2 otwierają R4 z licznikami z tej chwili, R4 otwiera R5, R5 otwiera R6', () => {
     const g = poPierwszymRaporcie('przymorze', 'zwykly');
     wlaczMiasto(g.gov);
     otworz(g, 'r2');
@@ -1269,7 +1272,10 @@ describe('przejścia: R2 → R4 → R5 → „koniec”', () => {
     expect(krok(g).rozdzial).toBe('r5');
     g.gov.wyprawy = [];
     g.gov.miasto!.zabrano['poi:3:4'] = 3;
-    expect(krok(g).rozdzial).toBe('koniec');
+    // po R5 otwiera się R6 (badania) z licznikami z tej chwili; dalsze przejścia R6 → R7 → R8 → „koniec” w sciezka-r6-r8.test.ts
+    expect(krok(g).rozdzial).toBe('r6');
+    expect(g.sciezka.od).toBe(g.sim.st.tick);
+    expect(g.sciezka.start).toEqual(licznikiStartu(g.sim.st, g.gov));
     expect(zrobione(g, 'r5')).toEqual(['r5.lup', 'r5.ogrodek', 'r5.wyprawa']);
   });
 });
