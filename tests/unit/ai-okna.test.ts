@@ -1,8 +1,9 @@
 /* Okna zarządu silnika osady AI (src/ai/okna.ts), etap 1 osady AI (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md,
    zadanie 5): wybór w wydarzeniu przez ocenę skutków na kopii zarządu i uchwała według potrzeb. Pilnuje czterech rzeczy:
    - oceny skutków (`ocenSkutki`): zapasy (jedzenie ×3, drewno ×1, reszta ×0,5), zaufanie +2 i wkurzenie −2 za punkt, rany −10,
-     zgony −50, przyjęcia ±4 na osobę według zapasu jedzenia, koniec gry −1000; ocena stanu po wyborze, więc porównuje wybory
-     z jednego okna (to, co było przed wyborem, się skraca);
+     zgony −50, przyjęcia ±4 na osobę według zapasu jedzenia, koniec gry −1000 i dwie wagi dodane po pomiarze: pożar −15
+     (gaszenie wygrywa z ewakuacją klatki) i łata na dziurę +6 (zarząd łata złomem, a nie automat pracy deskami); ocena stanu
+     po wyborze, więc porównuje wybory z jednego okna (to, co było przed wyborem, się skraca);
    - wyboru w wydarzeniu (`wyborWydarzenia`): każdy dozwolony wybór na kopii zarządu, najlepsza ocena, przy remisie niższy
      indeks, prawdziwy zarząd i wejście bez zmian (JSON przed i po), okno bez dozwolonego wyboru daje 0;
    - okna wieloetapowego (`odpowiedzNaWydarzenie`): wybór z `zostaje` (np. „Obejrzeć ręce” przy gościu w trybie zombie) nie

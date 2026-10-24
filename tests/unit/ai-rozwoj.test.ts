@@ -32,7 +32,7 @@ import { miejscaNa, miejsceNa, pokojZarzadu } from '../../src/ai/miejsca.ts';
 import { najlepszyIndeks, ocenSkutki, wyborWydarzenia } from '../../src/ai/okna.ts';
 import { KOLEJKA_BADAN, turaRozwoju } from '../../src/ai/rozwoj.ts';
 import { silnik } from '../../src/ai/silnik.ts';
-import { drewnoNaNoc } from '../../src/ai/zima.ts';
+import { drewnoNaNoc, zimaWToku } from '../../src/ai/zima.ts';
 import type { Prompt } from '../../src/gov/typy.ts';
 import { chooseEvent } from '../../src/gov/zarzad.ts';
 import { kartka } from '../../src/sim/badania.ts';
@@ -527,6 +527,27 @@ describe('turaRozwoju: przygotowanie warunków (Przymorze, ziarno 11, dzień 6, 
       turaRozwoju(g, t.r);
       expect(prog(t)).toEqual([]);
     });
+  });
+});
+
+describe('turaRozwoju: Lanciego (sypialnie bez okna, koza z beczki nie ma miejsca)', () => {
+  it('zimaWToku jest fałszem po badaniu kozy, którą nie ma gdzie postawić, więc rozwój buduje', () => {
+    const g = nowaGraAi(demoWorld('lanciego'), 11, { okolica });
+    grajDo(g, silnikBezRozwoju, tickDnia(7, 10));
+    const st = g.sim.st;
+    expect(st.techDone).toContain('t_kozy');
+    expect(st.things.some((t) => t.kind === 'pracownia')).toBe(true);
+    // koza zbadana, ale w pokoju zarządu nie ma dla niej miejsca: nic nie czeka na zimę
+    expect(st.things.some((t) => t.kind === 'koza_beczka')).toBe(false);
+    expect(miejsceNa(st, g.w, 'koza_beczka', pokojZarzadu(st, g.w))).toBeNull();
+    expect(zimaWToku(g)).toBe(false);
+    st.builds = [];
+    st.cmds = [];
+    ustawMaterialy(g, { deski: 40, zlom: 30, czesci: 8 });
+    ustawSklad(g, false);
+    const s = szpieg();
+    turaRozwoju(g, s.r);
+    expect(budowy(s)).toHaveLength(1);
   });
 });
 
