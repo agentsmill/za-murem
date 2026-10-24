@@ -2138,9 +2138,9 @@ function renderGoals(snap: SimSnapshot) {
 /** Okienko celów ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby), a wyższa lista przewija się
     w środku, więc bieżący cel z podpowiedzią trzeba pokazać, kiedy się zmienił albo kiedy zmieniła się wysokość okienka albo
     jego treści (karta osoby skraca okienko, nowy cel wydłuża listę zrobionych). Przewija najmniej, jak trzeba, czyli jak
-    `scrollIntoView({ block: 'nearest' })`, ale tylko tę listę: `scrollIntoView` przewija też przodków, a `.app` ma
-    `overflow: hidden`, więc cel poza ekranem przesunąłby cały interfejs. Poza tymi zmianami nie rusza listy wcale: kto
-    przewinął ją, żeby przeczytać zrobione cele, nie jest cofany przy każdym odświeżeniu (co 200 ms). */
+    `scrollIntoView({ block: 'nearest' })`, ale tylko tę listę (`scrollIntoView` przewija też przodków, w tym `.app`
+    z `overflow: hidden`, gdyby okienko wystawało poza ekran). Poza tymi zmianami nie rusza listy wcale: kto przewinął ją,
+    żeby przeczytać zrobione cele, nie jest cofany przy każdym odświeżeniu (co 200 ms). */
 function pokazBiezacyCel(el: HTMLElement) {
   const cel = el.querySelector<HTMLElement>('li.now');
   const znak = `${cel?.dataset.key ?? ''}|${el.clientHeight}|${el.scrollHeight}`;
