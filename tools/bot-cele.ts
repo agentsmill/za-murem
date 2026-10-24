@@ -16,7 +16,11 @@
    Wyjście: dla każdego przebiegu dzień i godzina otwarcia i końca każdego rozdziału, cele, które przepadły, okazje
    z godziną każdego zaliczonego celu i (od R8) kamienie drogi ludnościowej; na końcu tabela rozdziałów dla wszystkich
    przebiegów. Kod wyjścia 1, gdy w którymś przebiegu rozdział nie skończył się w limicie dni (gra przegrana też jest
-   niepowodzeniem, przyczyna stoi w wyjściu). Rozdział, którego nie da się skończyć na jakiejś mapie, poprawia się w celu
+   niepowodzeniem), w zwykłym trybie przepadł jakiś cel (gracz z podpowiedziami zdąży ze wszystkimi nocnymi celami) albo
+   napis z menu nie zgadzał się z podpowiedzią (gracz szuka w menu napisu z cudzysłowu; liczone w każdym przebiegu, nie
+   tylko z `gadaj`); przyczyny stoją w wyjściu. Przepadłe cele w zombie tylko się wypisuje, nie zmieniają kodu wyjścia:
+   rozdział na przepadły cel nie czeka, a tam przepadają wtedy, gdy drewna na wieczór nie ma skąd wziąć, czyli z tej samej
+   przyczyny co przegrana gra (zob. `powody`). Rozdział, którego nie da się skończyć na jakiejś mapie, poprawia się w celu
    albo w jego zapasowym warunku (projekt i kod ścieżki), nie w bocie.
 
    Uruchomienie: npm run bot:cele [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [cele] [gadaj] [rownolegle]
@@ -169,6 +173,8 @@ interface Wynik {
   rozdzialy: { k: string; tytul: string }[];
   /** droga ludnościowa w R8: kamienie, liczba osób i miejsca w siedzibie przy otwarciu rozdziału oraz przy zaliczeniu celu `ludnosc` */
   r8?: { kamien0: number; ludnosc0: number; miejsc: number; kamien1?: number; ludnosc1?: number };
+  /** napisy menu, które nie zgadzały się z podpowiedzią (gracz szuka w menu napisu z cudzysłowu): każda niezgodność raz */
+  uwagi: string[];
   /** okienko celów na koniec przebiegu: rozdział i jego cele (przy rozdziale niedokończonym widać, co go trzyma) */
   stan: {
     rozdzial: string | null;
@@ -277,6 +283,7 @@ async function przebieg(demo: string, tryb: GameMode, dni: number): Promise<Wyni
     ms: performance.now() - t0,
     r8,
     rozdzialy,
+    uwagi: gracz.niezgodnosci(),
     stan: {
       rozdzial: widok.rozdzial?.k ?? null,
       cele: (widok.rozdzial?.cele ?? []).map((c) => ({
@@ -418,6 +425,24 @@ function okazje(r: Wynik): string[] {
   );
 }
 
+/** cele przepadłe (termin minął) z godziną; to zwykle cele jednej nocy (drewno na pierwszy wieczór i na noc) */
+const przepadle = (r: Wynik): string[] =>
+  r.zdarzenia.filter((z) => z.co === 'przepadl').map((z) => `${z.klucz} (${hhmm(z.tick)})`);
+
+/** Powody niepowodzenia przebiegu (kod wyjścia 1): przegrana gra, rozdział nieskończony w limicie, w zwykłym trybie cel,
+    który przepadł, i napis menu niezgodny z podpowiedzią. Przepadłe cele w zombie tylko się wypisuje: rozdział na nie nie
+    czeka (przepadły cel jest rozstrzygnięty), a tam przepadają wtedy, gdy drewna na wieczór nie ma skąd wziąć (brak drzew
+    w obrębie siatki, meble w klatce, do której droga idzie ulicą), co jest tą samą przyczyną co przegrana gra. */
+function powody(r: Wynik): string[] {
+  const p: string[] = [];
+  if (r.koniec.przegrana) p.push(`przegrana (${r.koniec.przegrana})`);
+  const brak = nieskonczone(r);
+  if (brak.length) p.push(`nieskończone ${brak.join(', ')}`);
+  if (r.tryb === 'zwykly' && przepadle(r).length) p.push(`przepadłe cele ${przepadle(r).join(', ')}`);
+  if (r.uwagi.length) p.push(`menu niezgodne z podpowiedzią: ${r.uwagi.join('; ')}`);
+  return p;
+}
+
 function wypisz(r: Wynik): void {
   console.log(
     `\n${r.nazwa}, ${tryb(r.tryb)}${BEZ_SMIERCI ? ' (BEZ ŚMIERCI, tylko do analizy)' : ''}, ziarno ${r.seed.toString(16)} (${(r.ms / 1000).toFixed(1)} s)`,
@@ -437,8 +462,8 @@ function wypisz(r: Wynik): void {
     console.log(
       `  R8 droga ludnościowa: kamienie ${r.r8.kamien0} → ${r.r8.kamien1 ?? 'bez zmiany'}, osób ${r.r8.ludnosc0} → ${r.r8.ludnosc1 ?? 'bez zmiany'} (miejsc w siedzibie ${r.r8.miejsc})`,
     );
-  const przepadle = r.zdarzenia.filter((z) => z.co === 'przepadl').map((z) => `${z.klucz} (${hhmm(z.tick)})`);
-  console.log(`  cele przepadłe: ${przepadle.join(', ') || 'żadne'}`);
+  console.log(`  cele przepadłe: ${przepadle(r).join(', ') || 'żadne'}`);
+  for (const u of r.uwagi) console.log(`  UWAGA menu: ${u}`);
   const ok = okazje(r);
   console.log(`  okazje: ${ok.length ? '' : 'żadnej'}`);
   for (const o of ok) console.log(`    ${o}`);
@@ -489,14 +514,19 @@ for (const demo of DEMO ? [DEMO] : DEMA)
     wypisz(r);
   }
 tabela(wyniki);
-const nieudane = wyniki.filter((r) => r.koniec.przegrana || nieskonczone(r).length);
+const nazwaPrzebiegu = (r: Wynik): string => `${r.nazwa.split(' ')[0]} ${tryb(r.tryb)}`;
+const nieudane = wyniki.filter((r) => powody(r).length);
+const przepadleZombie = wyniki.filter((r) => r.tryb === 'zombie' && przepadle(r).length);
+if (przepadleZombie.length)
+  console.log(
+    `\nCele przepadłe w zombie (nie zmieniają kodu wyjścia, rozdział na nie nie czeka): ${przepadleZombie
+      .map((r) => `${nazwaPrzebiegu(r)}: ${przepadle(r).join(', ')}`)
+      .join('; ')}`,
+  );
 console.log(
   nieudane.length
     ? `\nNIEUDANE przebiegi: ${nieudane.length} z ${wyniki.length} (${nieudane
-        .map(
-          (r) =>
-            `${r.nazwa.split(' ')[0]} ${tryb(r.tryb)}: ${r.koniec.przegrana ? `przegrana (${r.koniec.przegrana})` : `nieskończone ${nieskonczone(r).join(', ')}`}`,
-        )
+        .map((r) => `${nazwaPrzebiegu(r)}: ${powody(r).join(' i ')}`)
         .join('; ')})`
     : `\nWszystkie rozdziały skończone w ${DNI} dniach we wszystkich ${wyniki.length} przebiegach`,
 );

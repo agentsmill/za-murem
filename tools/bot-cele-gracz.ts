@@ -165,6 +165,8 @@ export interface Gracz {
   start(): void;
   /** decyzje na tę sekundę po kroku ścieżki i odpowiedziach na okna */
   krok(v: WidokSciezki): void;
+  /** niezgodności napisu menu z podpowiedzią, które gracz napotkał (każda raz); puste, gdy podpowiedzi zgadzają się z menu */
+  niezgodnosci(): string[];
   /** odpowiedź na okno zarządu (skutki zastosuje wołający) */
   karta(card: NightCard, v: WidokSciezki): void;
   uchwala(p: Extract<Prompt, { k: 'uchwala' }>): string | null;
@@ -223,10 +225,20 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
     proby.set(klucz, s);
     return true;
   };
+  /** napisy menu, które nie zgadzają się z podpowiedzią (podpowiedź ujmuje napis w cudzysłów, gracz szuka go w menu); każda
+      niezgodność raz, niezależnie od `gadaj`: runner liczy je w każdym przebiegu i kończy kodem 1, gdy jakaś jest */
+  const niezgodnosci = new Set<string>();
+  const niezgodnosc = (pref: string, label: string): void => {
+    const tekst = `podpowiedź mówi „${pref}”, a menu „${label}”`;
+    if (!niezgodnosci.has(tekst)) {
+      niezgodnosci.add(tekst);
+      gadaj(`UWAGA menu: ${tekst}`);
+    }
+  };
   /** pozycja menu danego rodzaju na kafelku dla osoby (to, co zobaczy gracz po prawym przycisku) */
   const zMenu = (id: number, tile: number, t: Command['t'], pref?: string): MenuItem | undefined => {
     const m = commandsAt(st, w, [id], tile).find((x) => x.cmd.t === t && !x.off);
-    if (m && pref && !m.label.startsWith(pref)) gadaj(`UWAGA menu: podpowiedź mówi „${pref}”, a menu „${m.label}”`);
+    if (m && pref && !m.label.startsWith(pref)) niezgodnosc(pref, m.label);
     return m;
   };
 
@@ -716,7 +728,12 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
     if (!kto || !mozna('plot', c.s, 30)) return;
     for (const d of drzwiBudynku(w, bid).zewn) {
       const m = commandsAt(st, w, [kto.id], d.tile).find((x) => x.cmd.t === 'enclose' && !x.off);
-      if (!m || !(m.label.startsWith('Otoczyć') || m.label.startsWith('Budować'))) continue;
+      if (!m) continue;
+      // podpowiedź mówi „Otoczyć wspólnym płotem (…)”; „Budować wspólny płot dalej” to ten sam wpis przy planie w toku
+      if (!(m.label.startsWith('Otoczyć wspólnym płotem') || m.label.startsWith('Budować wspólny płot'))) {
+        niezgodnosc('Otoczyć wspólnym płotem', m.label);
+        continue;
+      }
       c.wolni.splice(c.wolni.indexOf(kto), 1);
       polecenie(m.cmd, m.label);
       return;
@@ -1115,9 +1132,15 @@ export function nowyGracz(g: Gra, gadaj: (tekst: string) => void, rownolegle = f
       const kto = rdzen(st)[0];
       sim.push({ t: 'select', ids: [kto.id] });
       g.zaznaczony = true;
-      const c = commandFor(st, w, [kto.id], pien(w, w.dryTree));
+      // świat bez suchego drzewa (`dryTree` < 0) nie ma kroku ścięcia: sam samouczek zaznaczenia
+      const c = w.dryTree >= 0 ? commandFor(st, w, [kto.id], pien(w, w.dryTree)) : null;
       if (c) sim.push(c);
-      gadaj('samouczek: zaznaczenie i ścięcie suchego drzewa');
+      gadaj(
+        c ? 'samouczek: zaznaczenie i ścięcie suchego drzewa' : 'samouczek: zaznaczenie (świat bez suchego drzewa)',
+      );
+    },
+    niezgodnosci() {
+      return [...niezgodnosci];
     },
     krok(v) {
       const o = odczyt(g);
