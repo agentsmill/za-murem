@@ -479,8 +479,8 @@ describe('M11: „Ślady przy siatce” po karcie nocy nie proponują łatania �
       ]) {
         const c = pierwszyWybor(id, h, m);
         expect(c.label, `${h}:${m}`).toEqual({
-          pl: 'Załatać przed nocą (Złom 2)',
-          en: 'Patch it up before dark (Scrap 2)',
+          pl: 'Załatać przed nocą (Złom 3)',
+          en: 'Patch it up before dark (Scrap 3)',
         });
       }
       for (const [h, m] of [
@@ -489,9 +489,9 @@ describe('M11: „Ślady przy siatce” po karcie nocy nie proponują łatania �
         [21, 59],
       ]) {
         const c = pierwszyWybor(id, h, m);
-        expect(c.label, `${h}:${m}`).toEqual({ pl: 'Załatać teraz (Złom 2)', en: 'Patch it up now (Scrap 2)' });
+        expect(c.label, `${h}:${m}`).toEqual({ pl: 'Załatać teraz (Złom 3)', en: 'Patch it up now (Scrap 3)' });
         expect(c.label.pl + c.label.en).not.toMatch(/przed nocą|before dark/);
-        // wybór nadal działa tak samo: koszt 2 złomu i dozwolony przy złomie
+        // wybór nadal działa tak samo: koszt 3 złomu (jak łata z menu) i dozwolony przy złomie
         expect(c.ok).toBe(true);
       }
     });

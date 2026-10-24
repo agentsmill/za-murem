@@ -12,8 +12,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { CARD_HOUR, KOZA_KEY, nightWood, WOOD_PER_HOUR } from '../../src/gov/noc.ts';
 import type { GovInput, NightCard } from '../../src/gov/typy.ts';
+import { emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
 import { setNight } from '../../src/gov/zarzad.ts';
 import { BUILDS } from '../../src/sim/budowle.ts';
+import { applyGov } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { nowyBudynek } from '../../src/sim/sasiedzi.ts';
 import type { Command } from '../../src/sim/sim.ts';
@@ -69,8 +71,10 @@ function postawZasieki(g: Gra): void {
   const { st, w } = sim;
   const koszt = BUILDS.zasieki.cost.zlom ?? 10;
   const sterta = st.things.find((t) => t.kind === 'zlom');
-  if (!sterta) throw new Error('na podwórku nie ma sterty złomu');
-  sterta.n = koszt + 2;
+  // karta „Ślady przy siatce” łata za 3 złomu jak menu: Zielonki startują z trzema sztukami, więc po niej (gdy gra odpowiedziała
+  // łatą) nie zostaje żadna sterta; wtedy złom dochodzi jak z wyprawy, na podwórko przy bramie
+  if (sterta) sterta.n = koszt + 2;
+  else applyGov(st, w, { ...emptyEffects(), stock: { ...zeroStock(), scrap: koszt + 2 } });
   const a = allowedAnchors(st, w, 'zasieki', 0)[0];
   sim.push({ t: 'build', ids: [rdzen(sim)[0].id], kind: 'zasieki', x: a % w.size, y: Math.floor(a / w.size), rot: 0 });
   graj(g, (x) => x.sim.st.things.some((t) => t.kind === 'zasieki'), {}, 1500);

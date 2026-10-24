@@ -362,8 +362,14 @@ describe('ogródek i deski pracowni', () => {
   it('Zielonki (mało desek), gra jak w przeglądarce: ogródek nie zabiera desek pracowni, więc stoją pracownia i koza z beczki', async () => {
     // gdy plan ogródka (14 desek) powstawał razem z planem pracowni, ogródek stawał pierwszy (pracowni brakowało części),
     // zjadał deski z gruzu i pracownia nie stanęła do końca gry: bez kozy z beczki w sypialni Zielonki (ziarna 11–15) kończyły
-    // się średnio w dniu 17,2 zamiast 20,0
-    const g = await przygotujGre('zielonki', 11, false);
+    // się średnio w dniu 17,2 zamiast 20,0.
+    // Ziarno 12, nie 11 (zadanie 14 ścieżki celów): karta „Ślady przy siatce” łata za 3 złomu jak menu, nie za 2. W ziarnie 11
+    // Zielonki startują z 3 złomu, po karcie zostaje 0, nad ranem 2, więc automat łata dwie dziury deskami (6), a nie deskami
+    // i złomem (3 + 3), i pracowni brakuje do końca tygodnia trzech desek (11 z 14): nie stoi ani pracownia, ani koza z beczki
+    // (ogródek też nie, bo czeka na pracownię). Zapas desek w Zielonkach jest cienki na trzy sztuki: ziarna 16 i 17 nie mają
+    // pracowni do dnia 6 od zawsze. Ziarna 12–15 i 18 przechodzą tak samo jak przed zmianą, a bez warunku „ogródek czeka na
+    // pracownię” (src/ai/jedzenie.ts) ziarno 12 pada tak jak wszystkie inne (plan ogródka już 2. dnia o 9:00, pracowni brak).
+    const g = await przygotujGre('zielonki', 12, false);
     grajDo(g, silnik, tickDnia(2, 9));
     const st = g.sim.st;
     expect(st.builds.some((b) => b.kind === 'pracownia')).toBe(true);
