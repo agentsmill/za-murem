@@ -82,6 +82,11 @@ export function liczba(v: number, cyfry: number, lang: Lang): string {
   return (r < 0 ? '−' : '') + (lang === 'pl' ? s.replace('.', ',') : s);
 }
 
+/** Stopnie Celsjusza do zdania zapisanego w obu językach (Tx), np. w stanie zarządu: całkowite, z prawdziwym minusem
+    („−1°C”, nie „-1°C”). Liczba całkowita brzmi tak samo po polsku i po angielsku, więc jeden napis na oba języki; w
+    interfejsie, który czyta bieżący język, jest `deg` z src/ui/tekst.ts. */
+export const stopnie = (t: number): string => `${liczba(Math.round(t), 0, 'pl')}°C`;
+
 /** polska liczba mnoga z liczbą: forma dla 1 („1 osoba”), dla 2–4 poza 12–14 („3 osoby”, „22 osoby”) i dla reszty
     („5 osób”, „12 osób”, „0 osób”); wołający podaje trzy formy, liczba jest zaokrąglona do całkowitej */
 export function mnogaPl(n: number, jedna: string, kilka: string, wiele: string): string {

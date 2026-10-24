@@ -26,7 +26,7 @@
    (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
-import { TECH_DOMS } from '../content/data.ts';
+import { ENDINGS, TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
@@ -192,9 +192,13 @@ function checkOver(st: GovState, i: GovInput, fx: GovEffects): void {
   else if (st.anger >= 100) st.over = 'odwolanie';
   else if (st.trust <= 0) st.over = 'exodus';
   if (!st.over) return;
-  // po angielsku tytuł zakończenia według miejsca („Game over: the street meeting recalled the committee.”)
-  const t = (wordsEn(placeIn(i)).koniec[st.over] ?? ENDINGS_EN[st.over]).title;
-  logGov(st, i, tx(`Koniec gry: ${st.over}.`, `Game over: ${t[0].toLowerCase()}${t.slice(1)}.`), true, fx);
+  // tytuł zakończenia według miejsca w obu językach („Koniec gry: zebranie ulicy odwołało komitet.”, „Game over: the street
+  // meeting recalled the committee.”); wcześniej po polsku stał tu surowy identyfikator („Koniec gry: odwolanie.”)
+  const place = placeIn(i);
+  const tPl = (wordsOf(place).koniec[st.over] ?? ENDINGS[st.over]).title;
+  const tEn = (wordsEn(place).koniec[st.over] ?? ENDINGS_EN[st.over]).title;
+  const malaLitera = (t: string): string => `${t[0].toLowerCase()}${t.slice(1)}`;
+  logGov(st, i, tx(`Koniec gry: ${malaLitera(tPl)}.`, `Game over: ${malaLitera(tEn)}.`), true, fx);
 }
 
 /** co czeka na decyzję gracza, w kolejności: epilog zwycięstwa (pierwszy z kolejki, kolejne po „Graj dalej”), raport rano,
