@@ -716,6 +716,9 @@ a.btn {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 10px 8px;
+  /* nie dalej niż karta osoby (--card-h mierzy main.ts): wyższa lista przewija się w środku */
+  max-height: calc(100% - var(--top-h, 56px) - 16px - var(--card-h, 0px) - 48px);
+  overflow-y: auto;
 }
 .goals-head {
   all: unset;

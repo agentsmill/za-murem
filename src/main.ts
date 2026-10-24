@@ -5,7 +5,8 @@
    z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału i okazji co odświeżenie
-   okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, stan w zapisie `Save.cele`;
+   okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, a okienko wyższe od ekranu
+   przewija się w środku do bieżącego celu (`pokazBiezacyCel`), stan w zapisie `Save.cele`;
    zdarzenia samego interfejsu (lista ludzi, karty mieszkańca i budynku, ekran dróg) idą do stanu ścieżki przez
    `zdarzenieUi`; linia „Cel: …” w oknach karty nocy, uchwały, spotkania i na tablicy badań z `celWOknie`;
    `window.zm.cele()` i `window.zm.rozdzial(k)` do zrzutów), okno mapy miasta (src/ui/miasto.ts: przycisk „Mapa
@@ -2054,6 +2055,9 @@ function hud(now: number) {
 }
 
 let goalsHtml = '';
+/** Co okienko celów pilnowało przy ostatnim przewinięciu do bieżącego celu: klucz bieżącego celu, wysokość okienka i wysokość
+    jego treści (`pokazBiezacyCel`). */
+let goalsPilnowane = '';
 /** Odczyt gry dla ścieżki celów z tej chwili (src/ui/sciezka.ts). Wejście zarządu liczy się dopiero wtedy, gdy któryś cel je
     czyta (drewno na noc bierze z niego liczbę palenisk), i najwyżej raz na odczyt. */
 function odczytCelow(snap: SimSnapshot): OdczytCelow {
@@ -2124,9 +2128,31 @@ function renderGoals(snap: SimSnapshot) {
   } else widok = widokCelow(snap);
   const html = celeHtml(widok, { otwarte: celeRozwiniete(), touch: touchUI });
   el.hidden = !html;
-  if (!html || html === goalsHtml) return;
-  goalsHtml = html;
-  el.innerHTML = html;
+  if (!html) return;
+  if (html !== goalsHtml) {
+    goalsHtml = html;
+    el.innerHTML = html;
+  }
+  pokazBiezacyCel(el);
+}
+/** Okienko celów ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby), a wyższa lista przewija się
+    w środku, więc bieżący cel z podpowiedzią trzeba pokazać, kiedy się zmienił albo kiedy zmieniła się wysokość okienka albo
+    jego treści (karta osoby skraca okienko, nowy cel wydłuża listę zrobionych). Przewija najmniej, jak trzeba, czyli jak
+    `scrollIntoView({ block: 'nearest' })`, ale tylko tę listę: `scrollIntoView` przewija też przodków, a `.app` ma
+    `overflow: hidden`, więc cel poza ekranem przesunąłby cały interfejs. Poza tymi zmianami nie rusza listy wcale: kto
+    przewinął ją, żeby przeczytać zrobione cele, nie jest cofany przy każdym odświeżeniu (co 200 ms). */
+function pokazBiezacyCel(el: HTMLElement) {
+  const cel = el.querySelector<HTMLElement>('li.now');
+  const znak = `${cel?.dataset.key ?? ''}|${el.clientHeight}|${el.scrollHeight}`;
+  if (znak === goalsPilnowane) return;
+  goalsPilnowane = znak;
+  if (!cel) return;
+  // widoczna część okienka: pole z dopełnieniem, bez ramki
+  const gora = el.getBoundingClientRect().top + el.clientTop;
+  const dol = gora + el.clientHeight;
+  const r = cel.getBoundingClientRect();
+  if (r.top < gora || r.height > el.clientHeight) el.scrollTop += r.top - gora;
+  else if (r.bottom > dol) el.scrollTop += r.bottom - dol;
 }
 // nagłówek zwija i rozwija okienko (domyślnie na telefonie zwinięte do bieżącego celu, na komputerze rozwinięte)
 $('goals').addEventListener('click', (e) => {
