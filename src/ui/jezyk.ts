@@ -3,7 +3,9 @@
    a bez obu angielski, niezależnie od języka przeglądarki. Napisy statyczne z index.html są tu w jednej tablicy
    (STATYCZNE): index.html ma wersję angielską, a nalozStatyczne() wpisuje teksty w bieżącym języku przy starcie
    i po każdej zmianie. Przełącznik EN/PL (karta startowa i Menu) woła zmienJezyk(): zapis w pamięci, `<html lang>`,
-   napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. */
+   napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. Dwa napisy z tablicy to
+   tylko stan początkowy, który gra nadpisuje, gdy zna zegar i świat: podpis pory roku `#hSeason` (`sezonPodpis`
+   w src/ui/pasek.ts, przy każdym odświeżeniu paska) i podpowiedź `#btnAlarm` (`alarmTytul`: w domu „z komitetu”, nie „z zarządu”). */
 
 import { type Lang, poZmianieJezyka, type Tx, tr, tx, ustawJezyk } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';

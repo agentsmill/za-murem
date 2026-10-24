@@ -39,6 +39,12 @@
      miasta albo bez miejsc cel z TARGETS (najmniej odwiedzany daleki). Wpis w kronice nazywa miejsce.
    - RODO: nazwy miejsc w tekstach gościa pochodzą z `GovInput.okolica`, czyli z odfiltrowanych przez hosta nazw
      (`nazwaDoOkolicy`); ten moduł niczego nie filtruje i niczego nie omija.
+   - Imiona i zaimki. Gość z klocków, powrót, grupa z karty i człowiek z łańcucha nie dostają imienia nikogo, kogo
+     zarząd już zna: do imion mieszkańców, zarządu i podanych osób dochodzi `imionaPostaci` (znajomi.ts: znajomi,
+     prowadzony gość, ludzie zapisani w hakach łańcuchów), więc dwie różne osoby nie mają tego samego imienia i nazwiska.
+     Losowanie zmienia się tylko wtedy, gdy wylosowane imię naprawdę się zderzyło (bez zbiegu przebieg gry jest ten sam).
+     Angielskie zdania o grupie (karta, etykiety wyborów, wpisy w kronice i porannym raporcie) biorą zaimki z mówiącego
+     i liczby osób, jak widzi je karta (`jegoEn`, `maEn`, `onEn`: his/her/their, has/have, he/she/they).
 
    Karty z 0.3 z gościem (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 3, „Karty z gościem”:
    `uchodzcy`, `influencer`, `aktywisci`, `dzieci`, `krypto`, w domu `fachowiec`; nakładki w warianty.ts). Karta z

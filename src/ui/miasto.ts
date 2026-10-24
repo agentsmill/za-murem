@@ -31,7 +31,10 @@
      Trafić można tylko w to, co narysowane.
    - Okno nie zmienia stanu gry ani zarządu: karta i przygaszanie tylko czytają `GovState` i `GovInput` (pauzę i powrót
      do gry robi main.ts). Czy można wysłać wyprawę i dlaczego nie, rozstrzyga `powodOdmowy` z src/gov/dzienne.ts, ta
-     sama co w `wyslijWyprawe`, także dla miejsca z mapy osiedla (karta od siebie nic nie dokłada). Atrybucja map jest w stopce okna zawsze.
+     sama co w `wyslijWyprawe`, także dla miejsca z mapy osiedla (karta od siebie nic nie dokłada). Stan zapasu karta mówi
+     jedną linią („nietknięte”, „ktoś tu był”, „wybrane do cna”, a miejsce puste od początku „wybrane do cna, zanim tu
+     dotarliście”), więc powód odmowy o tym samym (`POWOD_WYBRANE`) nie wraca pod listą; przycisk jest wtedy wyszarzony.
+     Atrybucja map jest w stopce okna zawsze.
    Liczby w napisach po polsku z przecinkiem, po angielsku z kropką (`liczba`), z twardą spacją przed jednostką. Bez
    hypot, sin i cos (odległość palców przez Math.sqrt); nic stąd nie trafia do stanu. */
 

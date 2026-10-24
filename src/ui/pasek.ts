@@ -1,7 +1,9 @@
 /* Górny pasek: temperatura na dworze i w kuchni, ogień w kozie (godziny), drewno na zapas, deski, złom
    i części, jedzenie, zaufanie i wkurzenie. Wartości
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. Wartości i podpowiedzi
-   (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. */
+   (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. Skąd biorą się deski, złom i części,
+   mówią słowa miejsca (`szukanie.zrodla`, zdania „Pochodzą z …”). Podpis pory roku nad paskiem (`sezonPodpis`) idzie
+   z zegara gry, nie ze stałego napisu: main.ts wpisuje go przy każdym odświeżeniu paska. */
 
 import { SEASONS_EN } from '../content/data.en.ts';
 import { L, type Tx, tx } from '../core/jezyk.ts';

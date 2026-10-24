@@ -23,6 +23,10 @@
    najlepiej nastawiony, potem najdawniejszy, potem po id. Powrót to prawdziwa wizyta gościa (`planujPowrot` w wizyta.ts,
    `Gosc.wraca`), więc nie ma tu żadnej karty: wydarzenie `powrot` tylko ją planuje, jak `gosc`.
 
+   Imiona w grze (`imionaPostaci`): pierwsze imiona postaci, które zarząd zna z kart, poza zarządem i mieszkańcami z osobą
+   (tych pilnują wizyta i karty): znajomi, prowadzony gość i ludzie z danych haków łańcuchów. Nowa postać nie dostaje takiego
+   imienia (wizyta.ts, warianty.ts, watki-tresc.ts), więc chłopiec z łańcucha i gość nie czytają się jak jedna osoba. Tylko czyta.
+
    Napad (`wrogDoNapadu`): w zwykłym trybie najbliższy napad bierze jednego ujemnego znajomego (najbardziej ujemny, potem
    najdawniejszy, potem po id), raz na znajomego (`Znajomy.napad`); jeden szabrownik dostaje jego wygląd, raport rano mówi,
    kto to był (`liniaWsrod`). W trybie zombie ujemny nie wraca ani nie dołącza do niczego.
