@@ -1619,13 +1619,15 @@ describe('O8 Zima idzie: wyzwalacz, zamknięcie i podpowiedzi', () => {
     krok(g);
     const [kozy, beczka] = widok(g).okazja!.cele;
     expect(kozy.text).toBe('Zbadajcie kozę z beczki.');
-    expect(kozy.how).toContain('koza w kuchni nie dogrzeje sypialni');
+    expect(kozy.how).toContain(
+      'Zima idzie, a koza w kuchni nie dogrzeje sypialni: w mrozie ludzie wstają zmarznięci i rośnie wkurzenie. Koza z beczki grzeje pokój, w którym stoi.',
+    );
     expect(kozy.how).toContain(
       'Najpierw pracownia: Budowa, zakładka Dom: Pracownia (deski 14, części 4) w pokoju waszego mieszkania.',
     );
     expect(kozy.how).not.toContain('Kozy w mieszkaniach');
     expect(beczka.text).toBe('Postawcie kozę z beczki w pokoju, w którym śpicie.');
-    expect(beczka.how).toContain('koza w kuchni sypialni zimą nie dogrzeje');
+    expect(beczka.how).toMatch(/^Koza w kuchni sypialni zimą nie dogrzeje\. Budowa, zakładka Dom: Koza z beczki/);
     expect(beczka.how).toContain('Koza z beczki (złom 8, części 1)');
     expect(beczka.how).toContain('najwyżej 2 m od okna, bo rura idzie przez okno');
     expect(beczka.how, 'miejsce przy oknie jest wolne: o paleniu mebli ani słowa').not.toContain('brak miejsca');

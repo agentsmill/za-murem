@@ -425,8 +425,8 @@ function kozyJak(o: OdczytCelow): string {
         `First a research room: ${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Then the Research board: the card with the stoves, “Research”.`,
       );
   return L(
-    `Zima idzie, a koza w kuchni nie dogrzeje sypialni: ciepło dochodzi do niej tylko przez drzwi, więc w mrozie ludzie wstają zmarznięci i rośnie wkurzenie. Koza z beczki grzeje pokój, w którym stoi. ${dalej}`,
-    `Winter is coming, and the stove in the kitchen won’t warm the bedroom: the heat only reaches it through the door, so in a hard frost people wake up frozen and tempers rise. A barrel stove heats the room it stands in. ${dalej}`,
+    `Zima idzie, a koza w kuchni nie dogrzeje sypialni: w mrozie ludzie wstają zmarznięci i rośnie wkurzenie. Koza z beczki grzeje pokój, w którym stoi. ${dalej}`,
+    `Winter is coming, and the stove in the kitchen won’t warm the bedroom: in a hard frost people wake up frozen and tempers rise. A barrel stove heats the room it stands in. ${dalej}`,
   );
 }
 
@@ -452,8 +452,8 @@ function beczkaJak(o: OdczytCelow): string {
         )
       : '';
   return L(
-    `Koza z beczki grzeje pokój, w którym stoi; koza w kuchni sypialni zimą nie dogrzeje. ${b}, zakładka Dom: ${BUILDS.koza_beczka.name} (${koza}) w pokoju, w którym śpicie, najwyżej ${zasieg} m od okna, bo rura idzie przez okno.${lozka}${spalic}`,
-    `A barrel stove heats the room it stands in; the stove in the kitchen won’t warm the bedroom in winter. ${b}, Home tab: ${BUILDS_EN.koza_beczka.name} (${koza}) in the room where you sleep, within ${zasieg} m of a window, because the flue goes out through the window.${lozka}${spalic}`,
+    `Koza w kuchni sypialni zimą nie dogrzeje. ${b}, zakładka Dom: ${BUILDS.koza_beczka.name} (${koza}) w pokoju, w którym śpicie, najwyżej ${zasieg} m od okna, bo rura idzie przez okno.${lozka}${spalic}`,
+    `The stove in the kitchen won’t warm the bedroom in winter. ${b}, Home tab: ${BUILDS_EN.koza_beczka.name} (${koza}) in the room where you sleep, within ${zasieg} m of a window, because the flue goes out through the window.${lozka}${spalic}`,
   );
 }
 
