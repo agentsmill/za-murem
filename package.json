@@ -1,6 +1,6 @@
 {
   "name": "za-murem",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Za Murem: spółdzielnia po upadku. Pikselowa gra na prawdziwym osiedlu z OpenStreetMap.",

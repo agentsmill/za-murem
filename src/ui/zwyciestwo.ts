@@ -116,7 +116,7 @@ function drogaHtml(d: PostepDrogi): string {
 export function drogiSheet(p: PostepDrogi[]): Sheet {
   return {
     tone: 'drogi',
-    kicker: 'Za Murem 0.4',
+    kicker: 'Za Murem 1.0',
     title: L('Drogi do zwycięstwa', 'Roads to victory'),
     body: `<p class="lead">${L(
       'Każda droga ma kamienie milowe, a zwycięstwo nie kończy gry: możecie grać dalej.',

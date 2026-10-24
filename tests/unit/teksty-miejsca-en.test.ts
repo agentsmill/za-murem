@@ -184,7 +184,7 @@ describe('po angielsku w domu bez słów z bloku (Zielonki)', () => {
     expect(aptCard(v, false, words, e)).toContain('<h2>The house</h2>');
     expect(helpSheet(false, false, words, e).body).toContain('Building and searching the house');
     expect(helpSheet(false, false, words, e).body).toContain(
-      'Version 0.4 has nights behind the fence, building, a house to search, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.',
+      'Version 1.0 has nights behind the fence, building, a house to search, neighbours, the city map, work, research, events with story chains, goals that walk you through the game, roads to victory, the wiki and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.',
     );
     const sheet = buildPanelHtml(
       buildMenu({}, (kind) => kind !== 'magazyn', words, e),
@@ -344,7 +344,7 @@ describe('po angielsku w bloku (Przymorze)', () => {
     expect(lawSheet(law(3), words, e).title).toBe('Board resolution');
     expect(helpSheet(false, false, words, e).body).toContain('You are the board of a housing co-op in 2051.');
     expect(helpSheet(false, false, words, e).body).toContain(
-      'Version 0.4 has nights behind the fence, building, empty flats to search and repair, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.',
+      'Version 1.0 has nights behind the fence, building, empty flats to search and repair, neighbours, the city map, work, research, events with story chains, goals that walk you through the game, roads to victory, the wiki and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.',
     );
     expect(comingText(1, words, e)).toBe('1 person is coming in from the gate');
     const { sim, w } = game('przymorze');

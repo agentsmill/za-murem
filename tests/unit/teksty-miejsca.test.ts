@@ -233,7 +233,7 @@ describe('w domu bez słów z bloku (Zielonki)', () => {
       'Klik w dom pokazuje jego kartę: co w nim już przeszukane. Prawy przycisk w domu: Przeszukać.',
     );
     expect(help).toContain(
-      'W wersji 0.4 są noce za siatką, budowa, dom do przeszukania, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
+      'W wersji 1.0 są noce za siatką, budowa, dom do przeszukania, sąsiedzi, mapa miasta, praca ludzi, badania w pracowni, wydarzenia z łańcuchami historii, cele prowadzące po grze, drogi do zwycięstwa, wiki i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
     );
   });
 
@@ -566,7 +566,7 @@ describe('w bloku po staremu (Przymorze)', () => {
     );
     expect(help).toContain('Deski, złom i części pochodzą z przeszukiwania pustych mieszkań i z rozbiórki.');
     expect(help).toContain(
-      'W wersji 0.4 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
+      'W wersji 1.0 są noce za siatką, budowa, puste mieszkania do przeszukania i naprawy, sąsiedzi, mapa miasta, praca ludzi, badania w pracowni, wydarzenia z łańcuchami historii, cele prowadzące po grze, drogi do zwycięstwa, wiki i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.',
     );
     expect(helpSheet(true, false, words).body).toContain(
       'Stuknięcie w mieszkanie siedziby pokazuje jego kartę: czy jest puste, dlaczego, co do naprawy i co już przeszukane. Przytrzymanie palca w mieszkaniu: Przeszukać, Rozebrać, Naprawić, Zająć mieszkanie.',

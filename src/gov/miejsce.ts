@@ -244,7 +244,7 @@ export interface Words {
       (najpierw zaznaczyć osobę, potem polecenie „Przeszukać …” w pomieszczeniu, karta jako sposób na znalezienie pustego),
       obok: dopisek do podpowiedzi pierwszej budowli o sąsiednich domach jako drugim źródle desek i złomu (w bloku null),
       karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
-      w wersji 0.4, zrodla: skąd deski, złom i części, w dopełniaczu po „pochodzą z” („Deski pochodzą z przeszukiwania pustych
+      w wersji 1.0, zrodla: skąd deski, złom i części, w dopełniaczu po „pochodzą z” („Deski pochodzą z przeszukiwania pustych
       mieszkań i rozbiórki mebli.”; rzeczownik w mianowniku z czasownikiem „daje” czytał się jak „deski dają przeszukiwanie”). */
   szukanie: {
     b: string;

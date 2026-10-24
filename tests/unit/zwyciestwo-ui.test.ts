@@ -99,7 +99,7 @@ describe('ekran dróg (drogiSheet)', () => {
   it('okno z tytułem „Drogi do zwycięstwa”, przyciskiem powrotu i zamykane bez decyzji', () => {
     const s = drogi(stan(), wej());
     expect(s.title).toBe('Drogi do zwycięstwa');
-    expect(s.kicker).toBe('Za Murem 0.4');
+    expect(s.kicker).toBe('Za Murem 1.0');
     expect(s.tone).toBe('drogi');
     expect(s.closable).toBe(true);
     expect(s.foot).toContain('data-act="zw-wroc"');

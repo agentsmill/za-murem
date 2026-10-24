@@ -1,4 +1,4 @@
-/* Za Murem 0.4: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
+/* Za Murem 1.0: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
    po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
    wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
