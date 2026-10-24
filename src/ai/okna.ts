@@ -35,6 +35,15 @@
    ręce” (ocena jest jednokrokowa i nie wycenia wiedzy), więc okno wieloetapowe zdarza się tam tylko, gdy wybór silnika trafi
    w taki krok; tryb zombie jest poza etapem 1.
 
+   Karty łańcuchów (src/gov/watki-tresc.ts, część B zadania 7). Dwanaście łańcuchów historii to zwykłe okna `wydarzenie`
+   z własnym id (`swiatlo_1`, `szczekanie_2`…), więc idą tą samą drogą i niczego nie trzeba dla nich dopisywać. Nie mają
+   ukrytych rzutów: ich losowania to wygląd i płeć osób, a gość z karty (`GEventDef.gosc`) ma haczyk „prawda” albo ugryzienie
+   zapisane w skrypcie kroku (`GoscKarty.ugryziony`, łańcuchy `dach` i `dobicie`, tylko zombie), więc `przelosujHaczyk`
+   dotyczy wyłącznie gościa z klocków (karta `gosc`). W grze z łańcuchami audyt (tests/unit/ai-lancuchy.test.ts) przerzuca
+   pola danych karty i podstawia każdy haczyk gościa: wybór silnika się nie zmienia (60 gier po 25 dni, 13 tysięcy okien: żadne
+   okno nie zostało otwarte po odpowiedzi silnika). Granica zostaje w trybie zombie: kopia zna zapisane ugryzienie kroku
+   łańcucha, którego karta nie pokazuje; to skrypt, nie rzut, ale gracz, który nie zna łańcucha, też go nie zna.
+
    Ocena (`ocenSkutki`) liczy stan zarządu po wyborze i skutki, które z niego wyszły; stała część (zaufanie i wkurzenie
    sprzed wyboru) skraca się przy porównaniu wyborów z jednego okna:
    - zapasy: jedzenie ×3, drewno ×1, złom, części i leki ×0,5 (skutki od razu i odłożone na rano w `GovState.later`);
