@@ -6,8 +6,8 @@
    R2: `sily` (zdarzenie interfejsu `lista`), `ognisko` (zwykły: ognisko płonie po 18:00) albo `dzgnij` (zombie: polecenie
    ataku na szwendaczu przez siatkę), `uzbrojeni` (zwykły: broń u `min(2, osób)` osób) albo `dzidy` (zombie: karta nocy
    zatwierdzona po otwarciu rozdziału z `min(2, osób)` przydziałami `warta:siatka` u osób z dzidą). R4: `uchwala` (podpis
-   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (ludność
-   większa niż przy otwarciu), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
+   po otwarciu, czeka do zebrania), `wkurzenie` (obserwacja: poranny raport po otwarciu, czeka do rana z dopiskiem o tym, co obniża wkurzenie), `nowi` (przyjęcie
+   od otwarcia, w zombie zapas po trzech dobach; reguły A i B w sciezka-nowi.test.ts), `ludzie` (karta mieszkańca albo budynku; wariant bloku z mieszkańcami z generatora i wariant
    domu). R5: `wyprawa` (wyprawa dzienna w drodze), `lup` (łup z miejsc z mapy większy niż przy otwarciu), `ogrodek`
    (gotowy ogródek); wyprawa i łup tylko z mapą miasta w grze. Do tego kolejność rozdziałów bez R3, przejścia R2 → R4 → R5
    → R6 (dalej R6–R8 i „koniec” w sciezka-r6-r8.test.ts), stary zapis w „koniec” po R1, który otwiera R2 (silnik:
@@ -800,7 +800,7 @@ describe('R4 wkurzenie: raport po otwarciu rozdziału jest rozpoznawany po dniu 
 describe.each(KOMBINACJE)('R4 nowi: %s %s', (key, mode) => {
   const nowaOsoba = (n: number) => makePerson(mulberry(n), new Set(), () => 100 + n);
 
-  it('ludność większa niż przy otwarciu rozdziału: przyjęta osoba do zarządu (fx.join), w bloku też mieszkaniec (fx.residents)', () => {
+  it('przyjęta osoba do zarządu (fx.join), w bloku też mieszkaniec (fx.residents), zalicza cel; liczba w liczniku to ludność z wejścia zarządu', () => {
     const g = poPierwszymRaporcie(key, mode);
     otworz(g, 'r4');
     const { st, w } = g.sim;
@@ -838,32 +838,6 @@ describe.each(KOMBINACJE)('R4 nowi: %s %s', (key, mode) => {
     );
     expect(populacja(h.sim.st).razem).toBe(g.sciezka.start.ludnosc + 1);
     expect(cel(h, 'nowi').done).toBe(true);
-  });
-
-  it('ktoś odchodzi, ktoś przychodzi: bilans bez zmiany jeszcze nie zalicza, dopiero kolejna osoba', () => {
-    const g = poPierwszymRaporcie(key, mode);
-    otworz(g, 'r4');
-    const { st, w } = g.sim;
-    applyGov(
-      st,
-      w,
-      skutki((e) => e.leave.push(idOsoby(g, rdzen(g.sim)[3]))),
-    );
-    expect(populacja(st).razem).toBe(g.sciezka.start.ludnosc - 1);
-    expect(cel(g, 'nowi').done).toBe(false);
-    applyGov(
-      st,
-      w,
-      skutki((e) => e.join.push(nowaOsoba(4))),
-    );
-    expect(populacja(st).razem).toBe(g.sciezka.start.ludnosc);
-    expect(cel(g, 'nowi').done, 'ludność taka sama jak przy otwarciu').toBe(false);
-    applyGov(
-      st,
-      w,
-      skutki((e) => e.join.push(nowaOsoba(5))),
-    );
-    expect(cel(g, 'nowi').done).toBe(true);
   });
 
   it('przybysz sprzed otwarcia rozdziału się nie liczy', () => {

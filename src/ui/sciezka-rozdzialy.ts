@@ -68,7 +68,7 @@ import { nazwaTech, TECH_BY, TECHS, wiedza } from '../sim/badania.ts';
 import { START_KIT } from '../sim/bron.ts';
 import { BUILDS_EN } from '../sim/budowle.en.ts';
 import { BUILDS } from '../sim/budowle.ts';
-import { minutesAt } from '../sim/clock.ts';
+import { minutesAt, TICKS_PER_DAY } from '../sim/clock.ts';
 import { CAMPFIRE_WOOD, PATCH_COST, type SimState, SPEAR_BOARDS, SPEAR_SCRAP } from '../sim/sim.ts';
 import { populacja } from '../sim/snapshot.ts';
 import { modeOf } from '../sim/tryb.ts';
@@ -328,6 +328,52 @@ export const uchwalyPodpisane = (gov: GovState | null): number =>
     z dróg do zwycięstwa). Zmiany po otwarciu rozdziału widać tylko jako różnicę z liczbą z chwili otwarcia. */
 export const ludnoscPodZarzadem = (st: SimState): number => populacja(st).razem;
 
+/** Numery pionków zarządu i mieszkańców siedziby w tej chwili: `osoby` to jedni i drudzy, `zarzad` sami z zarządu. Pionek
+    ma numer na stałe (gość z karty, wędrowiec i awansowany mieszkaniec zostają tymi samymi pionkami, zmieniają tylko rodzaj),
+    więc różnica z listą z chwili otwarcia rozdziału (`StanSciezki.start`) mówi, kto doszedł albo awansował, choćby ktoś
+    w międzyczasie zginął. Zapis w `licznikiStartu` (src/ui/sciezka.ts). */
+export function pionkiLudzi(st: SimState): { osoby: number[]; zarzad: number[] } {
+  const osoby: number[] = [];
+  const zarzad: number[] = [];
+  for (const p of st.pawns) {
+    if (p.kind === 'core') {
+      osoby.push(p.id);
+      zarzad.push(p.id);
+    } else if (p.kind === 'resident') osoby.push(p.id);
+  }
+  return { osoby, zarzad };
+}
+
+/** Czy od otwarcia rozdziału ktoś został przyjęty: do zarządu doszedł pionek, którego tam nie było (nowa osoba, gość z karty,
+    zaproszony wędrowiec albo mieszkaniec awansowany kartą „Wciągnąć do roboty”) albo między mieszkańców pionek spoza listy
+    z chwili otwarcia (przyjęta grupa, zaproszeni sąsiedzi). Liczą się przyjęcia, nie ludność netto: zgon po drodze ich
+    nie cofa, a przyjęcie po zgonie liczy się tak samo. Zapis sprzed list z chwili otwarcia (bez `osoby` i `zarzad`) liczy
+    jak dawniej ludność netto. */
+export function przyjetoKogos(st: SimState, s: StanSciezki): boolean {
+  const { osoby, zarzad } = s.start;
+  if (!osoby || !zarzad) return ludnoscPodZarzadem(st) > s.start.ludnosc;
+  const byli = new Set(osoby);
+  const bylWZarzadzie = new Set(zarzad);
+  return st.pawns.some(
+    (p) => (p.kind === 'core' && !bylWZarzadzie.has(p.id)) || (p.kind === 'resident' && !byli.has(p.id)),
+  );
+}
+
+/** Ile dób przy otwartym R4 czeka cel „Przyjmijcie kogoś nowego” w trybie zombie, zanim zaliczy się sam. */
+export const DOBY_NOWI_ZAPAS = 3;
+
+/** Zapas celu `nowi` (tylko zombie): od otwarcia R4 minęły trzy doby gry, a nikt nie został przyjęty. W trybie zombie karta,
+    która prosi o miejsce, bywa rzadka (średnio jedna na 8 do 12 dób), więc cel nie może czekać na nią w nieskończoność. */
+export const nowiZapas = (o: OdczytCelow, s: StanSciezki): boolean =>
+  zombieMode(o.st, o.gov) && o.st.tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
+
+/** Czy zaliczony cel `nowi` zaliczył zapas, a nie przyjęcie: zaliczony nie wcześniej niż po trzech dobach od otwarcia R4 w
+    trybie zombie (przyjęcie zaliczyłoby go w tym samym kroku, w którym je zobaczyło, więc wcześniej). */
+export const nowiZaliczoneZapasem = (o: OdczytCelow, s: StanSciezki): boolean => {
+  const tick = s.zrobione['r4.nowi'];
+  return zombieMode(o.st, o.gov) && tick !== undefined && tick - s.od >= DOBY_NOWI_ZAPAS * TICKS_PER_DAY;
+};
+
 /** Łup zabrany z miejsc z mapy miasta (suma `gov.miasto.zabrano`, dzienne i nocne wyprawy); zero bez mapy miasta. */
 export const lupZMiasta = (gov: GovState | null): number =>
   Object.values(gov?.miasto?.zabrano ?? {}).reduce((suma, n) => suma + n, 0);
@@ -529,13 +575,22 @@ const R4: DefRozdzialu = {
     {
       key: 'nowi',
       tekst: () => L('Przyjmijcie kogoś nowego.', 'Take someone new in.'),
+      // zaliczony zapasem (zombie, trzy doby bez przyjęcia) mówi pod celem, czemu: nikt nie poprosił, a karta zapyta, gdy ktoś poprosi
+      uwaga: (o, s) =>
+        nowiZaliczoneZapasem(o, s)
+          ? L(
+              'Nikt nie zapukał: gdy ktoś poprosi o miejsce, karta zapyta.',
+              'Nobody knocked: when someone asks for a place, a card will ask you.',
+            )
+          : null,
       jak: (o) =>
         L(
           `Ludzi przyprowadzają karty wydarzeń: „Przyjąć wszystkich”, „Wciągnąć do roboty”. Przyjęci idą od ${o.words.brama.d}, a „Pokaż” w komunikacie pokaże ich na mapie. Każdy nowy to ręce do pracy i usta do wykarmienia.`,
           `Event cards bring people to you: “Take everyone in”, “Put him to work”. Newcomers walk in from ${o.wordsEn.brama}, and “Show” on the notice points them out on the map. Every newcomer is a pair of hands and another mouth to feed.`,
         ),
-      // zgon w międzyczasie tylko opóźnia cel: liczy się ludność większa niż przy otwarciu
-      zrobiony: (o, s) => ludnoscPodZarzadem(o.st) > s.start.ludnosc,
+      // liczą się przyjęcia od otwarcia rozdziału, nie ludność netto (zgon ich nie cofa, a awans mieszkańca kartą „Wciągnąć do
+      // roboty” w bloku też jest przyjęciem do zarządu); w zombie po trzech dobach bez przyjęcia cel zalicza się sam
+      zrobiony: (o, s) => przyjetoKogos(o.st, s) || nowiZapas(o, s),
     },
     {
       key: 'ludzie',

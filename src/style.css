@@ -854,6 +854,18 @@ a.btn {
   font-style: italic;
   color: var(--ink-dim);
 }
+/* dopisek celu, który zaliczył się sam („Nikt nie zapukał: …”): jak „czeka”, ale pod przekreślonym celem, więc sam nie
+   może być przekreślony; przekreślenie rodzica dziedziczy każdy blok w środku, a nie dziedziczy go element inline-block */
+.goal-uwaga {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 1px;
+  font-weight: 400;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-dim);
+}
 /* postęp drogi do zwycięstwa po ostatnim rozdziale („12 z 25”) */
 .goal-postep {
   display: block;
