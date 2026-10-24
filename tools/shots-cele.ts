@@ -13,9 +13,11 @@
 
    Okienko ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby) i przewija się w środku, więc
    `naruszenia` sprawdza też, że pierwszy bieżący cel z podpowiedzią mieści się w całości w widocznej części okienka (bez
-   tego przycięta lista przechodziłaby, bo prostokąt okienka się mieści), a nachodzenie okienka na kartę osoby, pasek, listę
-   ludzi i panel budowy jest po prostu usterką, także na komputerze. Przewijanie do bieżącego celu robi `pokazBiezacyCel`
-   w src/main.ts, a `cele-przewijanie` pilnuje go na długiej liście zrobionych.
+   tego przycięta lista przechodziłaby, bo prostokąt okienka się mieści), a w przewiniętym okienku, że nagłówek rozdziału
+   (przykleja się u góry, `.goals > .goals-head`) jest w jego widocznej części i że cel pod nim leży poniżej nagłówka;
+   nachodzenie okienka na kartę osoby, pasek, listę ludzi i panel budowy jest po prostu usterką, także na komputerze.
+   Przewijanie do bieżącego celu robi `pokazBiezacyCel` w src/main.ts, a `cele-przewijanie` pilnuje go na długiej liście
+   zrobionych i po zmianie rozdziału, a także tego, że spod nagłówka nie wystaje przecięty wiersz.
 
    Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu; rozwiniętą listę
    (stuknięcie w nagłówek) tylko tak, że karta osoby, arkusz budowy od dołu i podpowiedź u dołu, które rysuje się nad nią, są
@@ -355,6 +357,14 @@ async function naruszenia(page: Page): Promise<Naruszenia> {
       // widoczna część okienka: pole z dopełnieniem, bez ramki (i bez paska przewijania)
       const widocznaGora = a.top + cele.clientTop;
       const widocznyDol = widocznaGora + cele.clientHeight;
+      // nagłówek rozdziału (bezpośrednie dziecko okienka; nagłówek okazji siedzi w jej bloku) przykleja się do góry
+      // przewiniętego okienka, więc przewinięte okienko ma go w widocznej części, a cel pod nim leży poniżej jego dołu
+      const glowa = cele.querySelector<HTMLElement>(':scope > .goals-head');
+      const g = glowa?.getBoundingClientRect() ?? null;
+      if (g && cele.scrollTop > 0 && (g.top < widocznaGora - 1 || g.bottom > widocznyDol + 1))
+        inne.push(
+          `nagłówek rozdziału poza widoczną częścią przewiniętego okienka (nagłówek ${Math.round(g.top)}–${Math.round(g.bottom)} px, widoczna część okienka ${Math.round(widocznaGora)}–${Math.round(widocznyDol)} px, przewinięcie ${Math.round(cele.scrollTop)} px)`,
+        );
       let cel: { gora: number; dol: number } | null = null;
       const biezacy = cele.querySelector<HTMLElement>('ol.goal-list li.now');
       if (biezacy) {
@@ -362,13 +372,17 @@ async function naruszenia(page: Page): Promise<Naruszenia> {
         const jak = biezacy.querySelector('.goal-how')?.getBoundingClientRect();
         const dol = Math.max(r.bottom, jak?.bottom ?? r.bottom);
         cel = { gora: r.top, dol };
+        // od góry widoczna część zaczyna się pod nagłówkiem rozdziału, ale tylko dla celu pod nim (cel w bloku okazji leży nad nim)
+        const podNaglowkiem =
+          !!glowa && (glowa.compareDocumentPosition(biezacy) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        const gora = g && podNaglowkiem ? Math.max(widocznaGora, g.bottom) : widocznaGora;
         if (dol > widocznyDol + 1)
           inne.push(
             `bieżący cel albo jego podpowiedź przycięte u dołu okienka (kończą się na ${Math.round(dol)} px, widoczna część okienka na ${Math.round(widocznyDol)} px, przewinięcie ${Math.round(cele.scrollTop)} px z ${Math.round(cele.scrollHeight - cele.clientHeight)})`,
           );
-        if (r.top < widocznaGora - 1)
+        if (r.top < gora - 1)
           inne.push(
-            `bieżący cel przycięty u góry okienka (zaczyna się na ${Math.round(r.top)} px, widoczna część okienka od ${Math.round(widocznaGora)} px, przewinięcie ${Math.round(cele.scrollTop)} px)`,
+            `bieżący cel przycięty u góry okienka (zaczyna się na ${Math.round(r.top)} px, widoczna część okienka od ${Math.round(gora)} px${gora > widocznaGora ? ', pod nagłówkiem rozdziału' : ''}, przewinięcie ${Math.round(cele.scrollTop)} px)`,
           );
       }
       const przeszkody: [string, string][] = [
@@ -1671,8 +1685,11 @@ export function celeShots(out: string): ShotCele[] {
       samym dole (z podpowiedzią), więc przy otwartej karcie osoby nie mieści się nad nią bez przewijania. Sprawdza, że: okienko
       jest ograniczone (`scrollHeight` większe od `clientHeight`) i nie nachodzi na kartę, bieżący cel z podpowiedzią jest
       w całości widoczny (to sprawdza `naruszenia` i to ono pada, gdy `pokazBiezacyCel` w main.ts nie przewija), lista jest
-      przewinięta, ręczne przewinięcie w górę nie jest cofane przy odświeżeniach, a po zamknięciu karty okienko wraca do pełnej
-      wysokości i po ponownym otwarciu znowu pokazuje bieżący cel. */
+      przewinięta, nagłówek rozdziału stoi przyklejony u góry (to sprawdza `naruszenia`, pada bez reguły `position: sticky`
+      w style.css), a spod niego nie wystaje przecięty wiersz, ręczne przewinięcie w górę nie jest cofane przy odświeżeniach,
+      po zamknięciu karty okienko wraca do pełnej wysokości, a po ponownym otwarciu znowu pokazuje bieżący cel. Na końcu
+      zmiana rozdziału na R1 przy przewiniętym okienku (zrzut `-r1`): pierwszy cel nowego rozdziału ma stanąć pod nagłówkiem,
+      a nie za nim, i powrót do R0 z bieżącym celem na dole. */
   const przewijanie = (name: string): ShotCele =>
     shot({
       name,
@@ -1729,6 +1746,19 @@ export function celeShots(out: string): ShotCele[] {
         // najpierw ogólne sprawdzenie układu (w nim pada przycięty bieżący cel), potem to, że lista faktycznie się przewinęła
         await bezNachodzenia(page, `${name}, z kartą osoby`);
         if (z.przewiniecie <= 0) throw new Error(`${name}: okienko ograniczone, ale nie przewinięte do bieżącego celu`);
+        // nagłówek rozdziału jest przyklejony u góry (inaczej `naruszenia` by padło), a żaden wiersz nie jest przecięty jego
+        // dolną krawędzią: spod nagłówka nie wystaje sam dół wiersza (`pokazBiezacyCel` chowa taki wiersz pod nagłówkiem)
+        const przeciete = await page.evaluate(() => {
+          const dol = document.querySelector('#goals > .goals-head')!.getBoundingClientRect().bottom;
+          return [...document.querySelectorAll<HTMLElement>('#goals > ol.goal-list > li')]
+            .filter((li) => {
+              const b = li.getBoundingClientRect();
+              return b.top < dol - 1 && b.bottom > dol + 1;
+            })
+            .map((li) => li.dataset.key ?? '?');
+        });
+        if (przeciete.length)
+          throw new Error(`${name}: wiersz przecięty dolną krawędzią nagłówka rozdziału: ${przeciete.join(', ')}`);
         await zrzut(page, `${name}-karta`);
         // ręczne przewinięcie do początku listy nie jest cofane przez odświeżenia (`hud` co 200 ms): bieżący cel zostaje poza
         // widokiem, bo tak zdecydował gracz
@@ -1752,6 +1782,24 @@ export function celeShots(out: string): ShotCele[] {
         if (drugi.przewiniecie <= 0)
           throw new Error(`${name}: po ponownym otwarciu karty okienko nie wróciło do bieżącego celu`);
         await bezNachodzenia(page, `${name}, z kartą po raz drugi`);
+        // nowy rozdział wymienia listę pod przewiniętym okienkiem (hak `zm.rozdzial` robi to, co gra po pierwszej nocy):
+        // przeglądarka przycina przewinięcie do zakresu listy R1, więc jej pierwszy, bieżący cel leży wtedy w polu okienka, ale pod
+        // przyklejonym nagłówkiem, a `pokazBiezacyCel` ma go stamtąd wyciągnąć (bez wysokości nagłówka w obliczeniu uznałby go za
+        // widoczny)
+        await rozdzial(page, 'r1');
+        const r1 = await stan();
+        console.log(
+          `  po zmianie rozdziału na R1: okienko ${r1.wysokosc} px, treść ${r1.tresc} px, przewinięcie ${r1.przewiniecie} px`,
+        );
+        if (r1.tresc <= r1.wysokosc + 1)
+          throw new Error(
+            `${name}: lista R1 mieści się w okienku (${r1.tresc} <= ${r1.wysokosc}), stan niczego nie dowodzi`,
+          );
+        await bezNachodzenia(page, `${name}, po zmianie rozdziału na R1`);
+        await zrzut(page, `${name}-r1`);
+        // z powrotem R0 (bieżący „noc” znowu na dole listy), żeby końcowy zrzut scenariusza pokazywał to, co dawniej
+        await rozdzial(page, 'r0');
+        await bezNachodzenia(page, `${name}, po powrocie do R0`);
         await zamknijKarte();
         await przywrocKamere(page, cam);
       },
