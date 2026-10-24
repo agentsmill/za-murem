@@ -61,6 +61,13 @@
    i zapowiada dar; dar przychodzi z wyborem, który nie jest odprawą (worek jedzenia rano przez `later`, wskazówka na
    miejsce jak wiadomość, rodzeństwo do przyjęcia jako druga osoba grupy).
 
+   Tryb zombie i spokój przy siatce (Task 16, część 3). Szwendacz do 6 m od któregoś z grupy płoszy ją po drodze do bramy, więc
+   wizytę wylosowaną przy stadzie przy siatce (`GovInput.horde.near` powyżej `PROG_ULICY`) zarząd nie planuje od razu: `odlozWizyte`
+   zapisuje ją w `GovState.goscie.czeka`, a `wizytaPoSpokoju` (wydarzenia.ts, co sekundę z `eventTick`) planuje ją, gdy przy siatce
+   się przerzedzi, albo porzuca po `CZEKA_MAX` minutach gry. Tak czeka karta `gosc`, `powrot` i krok łańcucha z gościem; karty
+   z 0.3 z `gosc` w ogóle nie wypadają przy dużym stadzie. Czekanie liczy się jak trwająca wizyta (`goscAktywny`). W trybie
+   zwykłym ulica jest zawsze wolna (`ulicaWolna`).
+
    Zależności: zarząd nie importuje symulacji, host (`makeHost` w wydarzenia.ts) dostaje metody z `goscHost`. */
 
 import type { Dom } from '../content/data.ts';
@@ -99,9 +106,19 @@ import {
   TARGETS,
   targetNameTx,
 } from './tresc.ts';
-import type { AktywnyGosc, FazaGoscia, GameMode, GoscRozkaz, GovEffects, GovGosc, GovInput, GovState } from './typy.ts';
+import type {
+  AktywnyGosc,
+  CzekajacaWizyta,
+  FazaGoscia,
+  GameMode,
+  GoscRozkaz,
+  GovEffects,
+  GovGosc,
+  GovInput,
+  GovState,
+} from './typy.ts';
 import { osob, osobyNaPodlodze } from './warianty.ts';
-import { addStock, logGov, nightDay, porcje, portions, stockNow } from './wspolne.ts';
+import { addStock, gameMin, logGov, nightDay, porcje, portions, stockNow } from './wspolne.ts';
 import { celZMiejsca, MAX_OKOLICA_M, zostaloZMiejsca } from './wyprawy.ts';
 import {
   doPowrotu,
@@ -123,6 +140,17 @@ export const WAGA_GOSCIA = 1.2;
 export const MIN_WAGA_GOSCIA = 0.2;
 /** odstęp między wizytami w godzinach gry */
 export const GOSC_GAP = 6;
+/** Tryb zombie: wizytę planuje się dopiero wtedy, gdy przy siatce nie kręci się więcej niż tylu szwendaczy (`GovInput.horde.near`).
+    Goście idą do bramy ulicą, a szwendacz do 6 m od któregoś z nich płoszy całą grupę (src/sim/sim.ts, `goscPlosz`), zanim stanie
+    pod bramą; zarząd ulicy nie widzi, widzi tylko stado przy siatce. Spis z zadania 16 (tryb zombie, 120 ziaren po 5 dób, polityka
+    zawsze-warta, `tools/spis-kart.ts`): bez tej zasady kartę pod bramą widziało 15% wizyt (136 z 881), z zasadą i czekaniem 62% (60
+    z 97), ale gości z kartą jest wtedy pół na grę zamiast jednego; przy `near` równym zero sukces jest niemal pewny, od jednego szwendacza w górę to około 20% niezależnie od ich liczby. */
+export const PROG_ULICY = 1;
+/** Wizyta wylosowana w trybie zombie, której plan czeka na spokój przy siatce, przepada po tylu minutach gry (doba) */
+export const CZEKA_MAX = 24 * 60;
+/** czy zarząd planuje teraz wizytę: w trybie zombie tylko przy małym stadzie przy siatce (`PROG_ULICY`) */
+export const ulicaWolna = (mode: GameMode, i: Pick<GovInput, 'horde'>): boolean =>
+  mode !== 'zombie' || (i.horde?.near ?? 0) <= PROG_ULICY;
 /** promień hałasu przy bramie (m), gdy w trybie zombie ktoś szedł za wpuszczonym gościem */
 export const HALAS_PROMIEN = 15;
 /** tyle sekund przy ekranie symulacja ma na pokazanie wpisu wizyty w odczycie; potem plan przepada */
@@ -180,8 +208,10 @@ export interface GoscHost {
   goscie(): readonly GovGosc[] | null;
   /** napaści zarządu na obcych (handlarza, wędrowca) od początku gry: odbierają szansę na gościa */
   napady(): number;
-  /** zarząd prowadzi wizytę gościa (jeden naraz) */
+  /** zarząd prowadzi wizytę gościa (jeden naraz) albo jedna czeka na spokój przy siatce (`GovState.goscie.czeka`) */
   goscAktywny(): boolean;
+  /** czy teraz wolno planować wizytę (w trybie zombie tylko przy małym stadzie przy siatce, `ulicaWolna`) */
+  ulicaWolna(): boolean;
   /** wizyta o tym id; null: nie ma takiej (skończona albo nigdy jej nie było) */
   gosc(id: string): WidokGoscia | null;
   /** rozkaz dla całej grupy (`GovEffects.goscRozkaz`); odejście, jedzenie, przyjęcie i `puscic` kończą wizytę. Zapisuje też
@@ -304,7 +334,8 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
     tryb: () => st.mode ?? 'zwykly',
     goscie: () => i.goscie ?? null,
     napady: () => i.napady?.length ?? 0,
-    goscAktywny: () => !!st.goscie?.aktywny && !st.goscie.aktywny.koniec,
+    goscAktywny: () => !!st.goscie?.czeka || (!!st.goscie?.aktywny && !st.goscie.aktywny.koniec),
+    ulicaWolna: () => ulicaWolna(st.mode ?? 'zwykly', i),
     gosc: (id) => {
       const a = aktywny(id);
       if (!a) return null;
@@ -564,6 +595,14 @@ export function planujGoscia(st: GovState, i: GovInput, fx: GovEffects, pora: Po
   const g = skladGoscia(rng, s.n, ctx, zajete);
   wystaw(st, i, fx, rng, g);
   return g;
+}
+
+/** Odkłada wizytę wylosowaną w trybie zombie, gdy przy siatce kręci się za dużo szwendaczy (`ulicaWolna`): zarząd zapamiętuje, że ktoś
+    ma przyjść, a `wizytaPoSpokoju` (wydarzenia.ts) zaplanuje go w pierwszej chwili spokoju. Do tego czasu `goscAktywny` jest prawdą,
+    więc żadna inna wizyta się nie planuje. */
+export function odlozWizyte(st: GovState, i: GovInput, w: Omit<CzekajacaWizyta, 'od'>): void {
+  const s = (st.goscie ??= { n: 0, czytane: 0 });
+  s.czeka = { ...w, od: gameMin(i) };
 }
 
 /** Planuje powrót znajomego (`doPowrotu`): gość z klocków powrotu (`skladPowrotu`: ten sam człowiek, wygląd i archetyp, dar

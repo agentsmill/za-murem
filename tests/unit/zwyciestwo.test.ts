@@ -598,11 +598,12 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // być krokiem pierwszej nocy (satyra i lore dopiero od drugiego dnia), czyli inna pula tej nocy, inne losowanie.
     // Dziesiąty raz w zadaniu 16 wydarzeń (narrator, src/gov/narrator.ts): stan zarządu ma teraz `napiecie` (powstaje przy pierwszym
     // kroku, więc jest w skrócie każdej gry), a wagi kart z tagiem `ton` mnożą się przez mnożnik napięcia, czyli inne losowanie
-    // (były ef7e6dca, a38f0d27 i a76369a8).
+    // (były ef7e6dca, a38f0d27 i a76369a8; z samym narratorem 74657a83, 39b814b2 i 16fcaf6f). Do tego w tym samym zadaniu odstęp
+    // między wydarzeniami po pierwszych 10 minutach przesunięty ze 100–180 s na 110–200 s (spis kart na grę: 40,6 przy celu 30–40).
     const przebiegi = [
-      [1, 'propozycja', '74657a83'],
-      [3, 'zawsze-warta', '39b814b2'],
-      [5, 'losowo', '16fcaf6f'],
+      [1, 'propozycja', '10242b95'],
+      [3, 'zawsze-warta', 'f01804b8'],
+      [5, 'losowo', '53bab003'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

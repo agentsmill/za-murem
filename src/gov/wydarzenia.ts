@@ -58,6 +58,9 @@
    otwiera się bez gościa, tylko kończy łańcuch); wybór zamykający kartę kroku rozstrzyga go
    (`rozstrzygnijKrok`), a `GovHost.hak` ustawia hak, który zwalnia następny. Bez łańcuchów nic z tego niczego nie losuje
    ani nie zapisuje.
+   Tryb zombie (Task 16): gość z klocków i powrót wylosowane przy stadzie przy siatce nie planują się od razu, tylko czekają na
+   spokój (`odlozWizyte`, `wizytaPoSpokoju` w wizyta.ts, `GovHost.ulicaWolna`), a karty z `gosc` (z 0.3 i kroki łańcuchów) w ogóle
+   nie wypadają przy dużym stadzie (szwendacz płoszy grupę po drodze do bramy).
    Narrator (src/gov/narrator.ts, Task 16): karta z tagiem `GEventDef.ton` ma w losowaniu wagę razy `mnoznik(st, ton)` (powyżej
    napięcia 60 ostre ×0,3 i łagodne ×2, po dobie spokoju ostre ×2), pierwszy krok łańcucha tak samo od wagi 1, a szansa dojrzałego
    kroku (`SZANSA_KROKU`) mnoży się przez ten sam mnożnik (z góry 1); jedna liczba z ziarna na losowanie jak dotąd. */
@@ -96,7 +99,17 @@ import {
   hak as ustawHak,
   wybierzWatki,
 } from './watki.ts';
-import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte, planujPowrot } from './wizyta.ts';
+import {
+  CZEKA_MAX,
+  GOSC_EVENTS,
+  goscHost,
+  goscTick,
+  odlozWizyte,
+  planujGoscia,
+  planujKarte,
+  planujPowrot,
+  ulicaWolna,
+} from './wizyta.ts';
 import { POWROT_EVENT, zapamietaj } from './znajomi.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
@@ -568,7 +581,12 @@ function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): Act
   const pool = [
     ...M1_EVENTS.filter(
       (e) =>
-        e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
+        e.when.includes(pora) &&
+        (!first || e.first) &&
+        !(e.once && st.ev.done[e.id]) &&
+        fresh(e) &&
+        fitsMode(st, e) &&
+        (!e.gosc || h.ulicaWolna()),
     ).map((e) => [e, e.w(h) * mnoznik(st, e.ton)] as const),
     ...gotowe.filter((k) => k.nr === 1).map((k) => [k, mnoznik(st, k.ton)] as const),
   ].filter((x) => x[1] > 0);
@@ -589,7 +607,7 @@ const dymWaits = (st: GovState, h: GovHost): boolean =>
 /** zgon starszy niż tyle minut gry (dwie doby) nie dostaje już pogrzebu: karta o dawnej śmierci nie ma sensu */
 export const POGRZEB_DO = 2 * 1440;
 /** Czekający pogrzeb przychodzi najpóźniej tyle sekund przy ekranie po ostatniej decyzji gracza, nie dopiero po pełnym
-    odstępie między wydarzeniami (100–180 s przy ekranie to przy tempie 8× nawet 36 godzin gry, a karta ma przyjść w ciągu
+    odstępie między wydarzeniami (110–200 s przy ekranie to przy tempie 8× nawet 40 godzin gry, a karta ma przyjść w ciągu
     doby). Kilka zgonów naraz to kilka kart co tyle sekund. */
 export const POGRZEB_ODSTEP = 15;
 
@@ -634,9 +652,39 @@ function pogrzeb(st: GovState, i: GovInput, fx: GovEffects, pora: Pora): ActiveE
   return { id: 'pogrzeb', d };
 }
 
+/** Odstęp po pierwszych 10 minutach: od `GAP_PO` do `GAP_PO + GAP_ROZRZUT − 1` sekund przy ekranie (przez pierwsze 10 minut 38–56 s).
+    Było 100–180 s; zadanie 16 (`tools/spis-kart.ts`: 20 ziaren po 5 dób, gracz odpowiada od razu) przesunęło na 110–200 s, bo
+    w zwykłym trybie wychodziło 40,6 kart na grę przy celu 30–40 (po zmianie 38,4; w trybie zombie 33,8 → 30,9, a w grach, które
+    nie skończyły się pustką, 34,5; do spadku w zombie dokłada się mniej kart gości, patrz `PROG_ULICY` w wizyta.ts). */
+export const GAP_PO = 110;
+export const GAP_ROZRZUT = 91;
+
 /** odstęp do następnego wydarzenia w sekundach przy ekranie */
 export const nextGap = (st: GovState, screen: number): number =>
-  screen < EARLY ? 38 + Math.floor(rnd(st) * 19) : 100 + Math.floor(rnd(st) * 81);
+  screen < EARLY ? 38 + Math.floor(rnd(st) * 19) : GAP_PO + Math.floor(rnd(st) * GAP_ROZRZUT);
+
+/** Co sekundę przy ekranie: wizyta odłożona do spokoju przy siatce (`odlozWizyte`, tryb zombie) idzie do planu, gdy przy siatce jest
+    spokojnie (`ulicaWolna`), jest pora dnia z pulą i wciąż gramy z obcymi; po `CZEKA_MAX` minutach gry bez spokoju przepada. Plan
+    nie jest kartą, więc wolno go zrobić także wtedy, gdy czeka okno decyzji. Krok łańcucha, któremu `gosc` nikogo nie wystawiło,
+    kończy łańcuch po cichu (`porzadkuj`), jak przy planie bez czekania. */
+export function wizytaPoSpokoju(st: GovState, i: GovInput, fx: GovEffects): void {
+  const s = st.goscie;
+  const c = s?.czeka;
+  if (!s || !c) return;
+  if (!i.goscie || gameMin(i) - c.od > CZEKA_MAX) {
+    delete s.czeka;
+    return;
+  }
+  const pora = poraOf(i.hour);
+  if (!pora || !ulicaWolna(st.mode ?? 'zwykly', i)) return;
+  delete s.czeka;
+  if (c.co === 'gosc') planujGoscia(st, i, fx, pora);
+  else if (c.co === 'powrot') planujPowrot(st, i, fx);
+  else {
+    const def = c.id ? defOf(c.id) : undefined;
+    if (def?.gosc) planujKarte(st, i, fx, def, makeHost(st, i, fx), c.d);
+  }
+}
 
 /** harmonogram: nowe wydarzenie, gdy minął odstęp, jest pora dnia z pulą i nic nie czeka na decyzję; pierwszego
     dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
@@ -653,6 +701,8 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   const gosc = goscTick(st, i, fx, busy);
   // łańcuch, którego krok przepadł razem z gościem, kończy się po cichu (po `goscTick`, który zwalnia przepadłą wizytę)
   porzadkuj(st, i);
+  // wizyta odłożona do spokoju przy siatce (tryb zombie): plan, gdy stado przy siatce się przerzedzi; to nie karta, więc bez `busy`
+  wizytaPoSpokoju(st, i, fx);
   if (st.ev.active || busy) return;
   if (gosc) {
     show(st, i, fx, gosc);
@@ -694,11 +744,14 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   // kartą, więc nie zjada odstępu: losujemy jeszcze raz wśród reszty (gosc ma już odstęp i wagę 0), a gdy nic nie pasuje,
   // następna próba za RETRY sekund, jak po pustym losowaniu
   if (ev?.id === 'gosc') {
-    planujGoscia(st, i, fx, pora);
+    // w trybie zombie przy stadzie przy siatce wizyta czeka na spokój (`wizytaPoSpokoju`), bo szwendacz spłoszyłby grupę po drodze
+    if (h.ulicaWolna()) planujGoscia(st, i, fx, pora);
+    else odlozWizyte(st, i, { co: 'gosc' });
     ev = pickGovEvent(st, h, pora, firstNight(i));
   } else if (ev?.id === 'powrot') {
     // powrót znajomego: tak samo plan wizyty tego samego człowieka (src/gov/znajomi.ts), karta przychodzi pod bramą
-    planujPowrot(st, i, fx);
+    if (h.ulicaWolna()) planujPowrot(st, i, fx);
+    else odlozWizyte(st, i, { co: 'powrot' });
     ev = pickGovEvent(st, h, pora, firstNight(i));
   } else if (ev) {
     // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
@@ -706,6 +759,11 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
     const def = defOf(ev.id);
     if (def?.gosc) {
+      // krok łańcucha z gościem przy stadzie przy siatce (zombie): wizyta czeka na spokój, krok zostaje rozpoczęty
+      if (jestKrok(def) && !h.ulicaWolna()) {
+        odlozWizyte(st, i, { co: 'krok', id: def.id, d: ev.d });
+        return;
+      }
       if (planujKarte(st, i, fx, def, h, ev.d)) return;
       // krok łańcucha z gościem nigdy nie otwiera się bez gościa (`gosc` nie wystawiło nikogo): krok jest rozpoczęty, a że nie
       // ma karty ani wizyty, `porzadkuj` zakończy łańcuch po cichu w następnym kroku
