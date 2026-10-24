@@ -34,9 +34,9 @@ import { minutesAt } from '../../src/sim/clock.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { createSim, type Pawn, Sim } from '../../src/sim/sim.ts';
-import { populacja } from '../../src/sim/snapshot.ts';
+import { populacja, snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
-import { allowedAnchors } from '../../src/ui/budowa.ts';
+import { allowedAnchors, buildItems } from '../../src/ui/budowa.ts';
 import {
   celeHtml,
   celWOknie,
@@ -53,6 +53,7 @@ import { okolicaZGeo } from './miasto-play.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { knockHouse, meet, core as rdzen } from './sasiedzi-pomoc.ts';
+import { dajMaterial } from './sciezka-mapy.ts';
 import {
   cel,
   cele,
@@ -1614,11 +1615,11 @@ describe('teksty R5', () => {
       // dopisek o „Budować …” (deski w innych klatkach albo za ulicą) jest tylko w zombie; Przymorze to blok
       const ulica =
         mode === 'zombie'
-          ? ' Po deski z innych klatek i zza ulicy: prawy przycisk na planie, „Budować …” (najlepiej bez szwendaczy blisko).'
+          ? ' Po deski z innych klatek i zza ulicy: zaznaczcie osobę i prawy przycisk na planie, „Budować …” (uwaga na szwendacze).'
           : '';
       const ulicaEn =
         mode === 'zombie'
-          ? ' For planks from other stairwells or across the street: right-click the plan, “Build …” (best if no shamblers near).'
+          ? ' For planks from other stairwells or across the street: select a person and right-click the plan, “Build …” (best if no shamblers near).'
           : '';
       expect(CARD_HOUR).toBe(20);
       expect(MORNING).toBe(6);
@@ -1688,11 +1689,14 @@ describe.each(KOMBINACJE)('R5 ogrodek: dopisek o „Budować …” tylko w zomb
       if (zombie) {
         expect(pl).toContain(` Po deski ${dom ? '' : 'z innych klatek i '}zza ulicy: `);
         expect(pl.includes('z innych klatek i zza ulicy'), 'klatki tylko w bloku').toBe(!dom);
+        // menu planu jest tylko dla zaznaczonej osoby, więc najpierw zaznaczenie kogoś, potem plan
         expect(pl).toContain(
-          touch ? 'przytrzymajcie palec na planie, „Budować …”' : 'prawy przycisk na planie, „Budować …”',
+          touch
+            ? 'stuknijcie osobę i przytrzymajcie plan, „Budować …”'
+            : 'zaznaczcie osobę i prawy przycisk na planie, „Budować …”',
         );
         // zdanie jest na samym końcu podpowiedzi i mówi, kiedy polecenie jest najlepsze
-        expect(pl.endsWith('(najlepiej bez szwendaczy blisko).'), `pl ${touch ? 'dotyk' : 'mysz'}`).toBe(true);
+        expect(pl.endsWith('(uwaga na szwendacze).'), `pl ${touch ? 'dotyk' : 'mysz'}`).toBe(true);
         if (dom) expect(pl).not.toMatch(FORBIDDEN_DOM);
       }
       ustawJezyk('en');
@@ -1702,7 +1706,11 @@ describe.each(KOMBINACJE)('R5 ogrodek: dopisek o „Budować …” tylko w zomb
       if (zombie) {
         expect(en).toContain(` For planks ${dom ? '' : 'from other stairwells or '}across the street: `);
         expect(en.includes('from other stairwells or across the street'), 'stairwells only in a block').toBe(!dom);
-        expect(en).toContain(touch ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”');
+        expect(en).toContain(
+          touch
+            ? 'tap a person and press and hold on the plan, “Build …”'
+            : 'select a person and right-click the plan, “Build …”',
+        );
         expect(en.endsWith('(best if no shamblers near).'), `en ${touch ? 'touch' : 'mouse'}`).toBe(true);
         expect(polskieSlowa(en), en).toEqual([]);
         if (dom) expect(en).not.toMatch(/\b(flat|stairwell|block)\b/i);
@@ -1710,6 +1718,45 @@ describe.each(KOMBINACJE)('R5 ogrodek: dopisek o „Budować …” tylko w zomb
     }
   });
 });
+
+/* Polecenie „Budować …” z menu planu istnieje tylko dla zaznaczonej osoby (`buildItems` bez osoby z zarządu daje pustą listę),
+   więc zdanie w podpowiedzi zaczyna od zaznaczenia kogoś. Test bierze prawdziwy plan ogródka i prawdziwe menu. */
+describe.each(KOMBINACJE_ZOMBIE)(
+  'R5 ogrodek: „Budować …” z menu planu tylko dla zaznaczonej osoby (%s %s)',
+  (key, mode) => {
+    it('bez zaznaczenia menu planu jest puste, z zaznaczoną osobą jest „Budować ogródek”, a podpowiedź mówi o zaznaczeniu najpierw', () => {
+      const g = poPierwszymRaporcie(key, mode);
+      wlaczMiasto(g.gov);
+      otworz(g, 'r5');
+      const { st, w } = g.sim;
+      const a = allowedAnchors(st, w, 'ogrodek', 0)[0];
+      g.sim.push({ t: 'build', ids: [], kind: 'ogrodek', x: a % w.size, y: Math.floor(a / w.size), rot: 0 });
+      g.sim.step();
+      expect(st.builds.some((b) => b.kind === 'ogrodek')).toBe(true);
+      // deski na podwórku na cały ogródek (14) i zapas: menu proponuje „Budować”, gdy starcza materiału na całość
+      dajMaterial(g, { deski: 30 });
+      const stock = snapshot(st, w).stock;
+      const kto = rdzen(g.sim)[0];
+      expect(buildItems(st, w, [], a, stock), 'bez zaznaczonej osoby').toEqual([]);
+      expect(buildItems(st, w, [kto.id], a, stock).map((i) => i.label)).toContain('Budować ogródek');
+      for (const touch of [false, true]) {
+        const pl = cel(g, 'ogrodek', { touch }).how;
+        const zaznacz = touch
+          ? 'stuknijcie osobę i przytrzymajcie plan'
+          : 'zaznaczcie osobę i prawy przycisk na planie';
+        // zaznaczenie osoby stoi przed planem i przed poleceniem
+        expect(pl, `pl ${touch ? 'dotyk' : 'mysz'}`).toContain(`${zaznacz}, „Budować …”`);
+        expect(pl.indexOf('osob')).toBeLessThan(pl.indexOf('plan'));
+        ustawJezyk('en');
+        const en = cel(g, 'ogrodek', { touch }).how;
+        ustawJezyk('pl');
+        const select = touch ? 'tap a person and press and hold on' : 'select a person and right-click';
+        expect(en, `en ${touch ? 'touch' : 'mouse'}`).toContain(`${select} the plan, “Build …”`);
+        expect(en.indexOf('a person')).toBeLessThan(en.indexOf('the plan'));
+      }
+    });
+  },
+);
 
 describe.each(KOMBINACJE)('wszystkie teksty R2, R4 i R5: %s %s', (key, mode) => {
   it('po angielsku bez polskich liter i słówek, bez myślników, w domu bez słów z bloku; mysz i dotyk', () => {

@@ -1268,11 +1268,11 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(
             `${name} ${k}`,
             jak,
-            dotyk ? 'przytrzymajcie palec na planie' : 'prawy przycisk na planie',
+            dotyk ? 'stuknijcie osobę i przytrzymajcie plan' : 'zaznaczcie osobę i prawy przycisk na planie',
             dom ? 'Po deski zza ulicy:' : 'Po deski z innych klatek i zza ulicy:',
             '„Budować …”',
           );
-          if (!jak.endsWith('(najlepiej bez szwendaczy blisko).'))
+          if (!jak.endsWith('(uwaga na szwendacze).'))
             throw new Error(`${name} ${k}: dopisek nie jest na końcu podpowiedzi: …${jak.slice(-120)}`);
           console.log(`  ${k}: ${biezacy.tekst} (${jak.length} znaków podpowiedzi)`);
           await sprawdzUklad(page, `${name} ${w}×${h}, ${k}`, dotyk);
@@ -1286,7 +1286,9 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(
             `${name} ${k} EN`,
             jakEn,
-            dotyk ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”',
+            dotyk
+              ? 'tap a person and press and hold on the plan, “Build …”'
+              : 'select a person and right-click the plan, “Build …”',
             dom ? 'For planks across the street:' : 'For planks from other stairwells or across the street:',
           );
           if (!jakEn.endsWith('(best if no shamblers near).'))
@@ -1505,6 +1507,93 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(name, jakEn, `Survivors at ${brama} have a card with “Show”`);
           nieZawiera(name, jakEn, 'Take everyone in');
         } else zawiera(name, jakEn, `A guest at ${brama} has a card with “Show”`, '“Take everyone in”');
+        console.log(`  EN ${jakEn.length} znaków podpowiedzi: ${jakEn}`);
+        await okienkoBezPolskich(page, `${name} EN`);
+        await zrzut(page, `${name}-en`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, EN`, dotyk);
+        await ustawJezyk(page, 'pl');
+      },
+    });
+
+  /** R8 z celem „teren” (wspólny płot) jako bieżącym, na osiedlu, gdzie płot dosięga sąsiada (Lanciego, Zielonki). Dwa pierwsze cele
+      zalicza gra, a nie hak: „drogi” prawdziwymi kliknięciami (Menu, „Drogi do zwycięstwa”, zamknięcie ekranu), „ludnosc”
+      kamieniem drogi ludnościowej wpisanym w stan zarządu (prawdziwy kosztuje kilkanaście osób więcej, niż mieści zrzut).
+      Podpowiedź mówi, że płot zabiera deski i złom, że zleconego nie da się odwołać i że drugi można zlecić dopiero, gdy
+      pierwszy stanie. Okienko ma w sobie całą podpowiedź bieżącego celu, więc na telefonie po angielsku najdłuższa
+      podpowiedź R8 jest tym, co wypchnęłoby je na panel budowy: układ sprawdza się z kartą osoby i panelem budowy, w obu
+      językach, w trybie zwykłym i zombie (w zombie górny pasek ma więcej pól, więc okienko zaczyna się niżej). */
+  const r8Teren = (name: string, demo: string, zombie: boolean, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        await start(page, base, `demo=${demo}${zombie ? '&tryb=zombie' : ''}&miasto=0&${GRA}&godzina=11`);
+        await rozdzial(page, 'r8');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        const przed = await wiersze(page, 'rozdzial');
+        if (przed.map((x) => x.key).join() !== 'drogi,ludnosc,teren' || przed[0].klasy.includes('done'))
+          throw new Error(`${name}: R8 na starcie ${przed.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        // „drogi”: ekran dróg z Menu, tak jak otwiera go gracz, i zamknięcie go
+        await kliknij(page, '#btnMenu', dotyk);
+        await page.waitForSelector('#sheet [data-act="menu-zwyciestwo"]');
+        await kliknij(page, '#sheet [data-act="menu-zwyciestwo"]', dotyk);
+        await page.waitForSelector('#sheet .zw-drogi .zw-droga');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden, null, { timeout: 5000 });
+        // „ludnosc”: kolejny kamień drogi ludnościowej niż przy otwarciu rozdziału (krok zarządu liczy go z tego pola)
+        await page.evaluate(() => {
+          const k = window.zm!.gov!.zwyciestwo!.kamienie;
+          k.ludnosc = (k.ludnosc ?? 0) + 1;
+        });
+        await poHudzie(page, 3);
+        await ustawOkienko(page, true, dotyk);
+        const wr = await wiersze(page, 'rozdzial');
+        console.log(`  R8: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        const biezacy = wr.find((x) => x.klasy.includes('now'));
+        if (biezacy?.key !== 'teren' || wr.slice(0, 2).some((x) => !x.klasy.includes('done')))
+          throw new Error(`${name}: bieżący cel to ${biezacy?.key}, a nie teren po dwóch zrobionych`);
+        if (biezacy.tekst !== 'Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.')
+          throw new Error(`${name}: tekst celu „${biezacy.tekst}”`);
+        const jak = biezacy.jak ?? '';
+        zawiera(
+          name,
+          jak,
+          dotyk
+            ? 'Przytrzymajcie palec na drzwiach otwartego budynku obok'
+            : 'Prawy przycisk na drzwiach otwartego budynku obok',
+          '„Otoczyć wspólnym płotem (…)”',
+          'desek i złomu',
+          'a zlecenia nie da się odwołać',
+          'drugi zlecicie, gdy ten stanie',
+          'pierwszą sztukę materiału',
+        );
+        const blokowe = demo === 'zielonki' ? BLOKOWE_UI.exec(jak) : null;
+        if (blokowe) throw new Error(`${name}: w domu podpowiedź ma słowo z bloku „${blokowe[0]}”: ${jak}`);
+        console.log(`  ${jak.length} znaków podpowiedzi: ${jak}`);
+        // zrzut przed sprawdzeniem układu (ono otwiera kartę osoby i panel budowy, a na telefonie okienko się wtedy zwija)
+        await zrzut(page, `${name}-pl`);
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
+        await ustawJezyk(page, 'en');
+        await ustawOkienko(page, true, dotyk);
+        const biezacyEn = (await wiersze(page, 'rozdzial')).find((x) => x.klasy.includes('now'));
+        if (biezacyEn?.key !== 'teren') throw new Error(`${name} EN: bieżący cel to ${biezacyEn?.key}, nie teren`);
+        const jakEn = biezacyEn.jak ?? '';
+        zawiera(
+          name,
+          jakEn,
+          dotyk
+            ? 'Press and hold on the door of an open building next door'
+            : 'Right-click the door of an open building next door',
+          '“Put up a shared fence (…)”',
+          'planks and scrap',
+          'and can’t be cancelled',
+          'a second one waits until it stands',
+          'first piece of material',
+        );
         console.log(`  EN ${jakEn.length} znaków podpowiedzi: ${jakEn}`);
         await okienkoBezPolskich(page, `${name} EN`);
         await zrzut(page, `${name}-en`);
@@ -2598,6 +2687,10 @@ export function celeShots(out: string): ShotCele[] {
     nowiPodpowiedz('cele-nowi-gosc-zombie', 'przymorze', true, 1440, 900),
     nowiPodpowiedz('cele-nowi-gosc-zombie-telefon', 'przymorze', true, 390, 844),
     nowiPodpowiedz('cele-nowi-gosc-zombie-dom-telefon', 'zielonki', true, 390, 844),
+    r8Teren('cele-r8-teren', 'lanciego', false, 1440, 900),
+    r8Teren('cele-r8-teren-telefon', 'lanciego', false, 390, 844),
+    r8Teren('cele-r8-teren-zombie-telefon', 'lanciego', true, 390, 844),
+    r8Teren('cele-r8-teren-dom-telefon', 'zielonki', false, 390, 844),
     czeka('cele-czeka'),
     handlarz('cele-okazja-handlarz'),
     wedrowiec('cele-okazja-wedrowiec'),
