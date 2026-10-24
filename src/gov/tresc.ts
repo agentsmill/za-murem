@@ -476,6 +476,18 @@ const DEST_EN = [
   'south',
 ];
 
+/** Godzina karty nocy (`CARD_HOUR` w noc.ts, którego tresc.ts nie może importować: noc.ts importuje tresc.ts; zgodność
+    pilnuje tests/unit/spojnosc-teksty.test.ts). */
+const GODZINA_KARTY = 20;
+
+/** Pierwszy wybór kart „Ślady przy siatce”: do 20:00 „przed nocą”, a od 20:00 „teraz”. Karta wypada też wieczorem po karcie
+    nocy (okno karty wstrzymuje wydarzenia, więc po 20:00 jest ona już zatwierdzona i noc się zaczęła), a „załatać przed
+    nocą” o 20:33 było nieprawdą. Waga karty i jej losowanie bez zmian, więc skróty botów też. */
+const latanieSladow = (h: GovHost): Tx =>
+  h.hour() >= GODZINA_KARTY
+    ? tx('Załatać teraz (Złom 2)', 'Patch it up now (Scrap 2)')
+    : tx('Załatać przed nocą (Złom 2)', 'Patch it up before dark (Scrap 2)');
+
 /** nowe wydarzenia M1: obcy jako wydarzenie, siatka, noc; teksty według miejsca (w domu ulica i komitet ulicy) */
 export const NEW_EVENTS: GEventDef[] = [
   {
@@ -559,7 +571,7 @@ export const NEW_EVENTS: GEventDef[] = [
     },
     choices: (h) => [
       {
-        label: tx('Załatać przed nocą (Złom 2)', 'Patch it up before dark (Scrap 2)'),
+        label: latanieSladow(h),
         ok: h.res.zlom >= 2,
         run: () => {
           h.pay({ zlom: 2 });
@@ -605,7 +617,7 @@ export const NEW_EVENTS: GEventDef[] = [
     },
     choices: (h) => [
       {
-        label: tx('Załatać przed nocą (Złom 2)', 'Patch it up before dark (Scrap 2)'),
+        label: latanieSladow(h),
         ok: h.res.zlom >= 2,
         run: () => {
           h.pay({ zlom: 2 });

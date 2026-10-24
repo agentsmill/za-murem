@@ -6,12 +6,12 @@
    mapie miasta ma jedną linię stanu (M13). Zdania zarządu są w stanie w obu językach, więc testy czytają `.pl` i `.en`. */
 
 import { describe, expect, it } from 'vitest';
-import { cudzyslowy } from '../../src/core/jezyk.ts';
+import { cudzyslowy, tx } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { type Gosc, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts';
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import { placeOf, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
-import { makeCard } from '../../src/gov/noc.ts';
+import { CARD_HOUR, makeCard } from '../../src/gov/noc.ts';
 import type { GovGosc, GovInput } from '../../src/gov/typy.ts';
 import { planujGoscia } from '../../src/gov/wizyta.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
@@ -451,4 +451,48 @@ describe('M17: nowy gość nie dostaje imienia postaci, którą gracz już zna',
     expect(gov.goscie?.aktywny?.gosc.osoby.map((p) => p.first)).toEqual(g.osoby.map((p) => p.first));
     for (const p of g.osoby) expect(imionaPostaci(gov).has(p.first)).toBe(true);
   });
+});
+
+describe('M11: „Ślady przy siatce” po karcie nocy nie proponują łatania „przed nocą”', () => {
+  /** pierwszy wybór karty o danej godzinie (karta aktywna wprost, jak w wydarzenia-tryby.test.ts) */
+  function pierwszyWybor(id: 'slady' | 'slady_z', hour: number, minute: number) {
+    const gov = newGov(3, id === 'slady_z' ? 'zombie' : 'zwykly');
+    const atr = new Atrapa(3);
+    atr.scrap = 10;
+    const i: GovInput = { ...atr.input(), day: 3, hour, minute };
+    gov.ev.active = { id, d: { where: tx('przy garażach', 'by the garages') } };
+    const v = eventView(gov, i)!;
+    return v.choices[0];
+  }
+
+  it('godzina przełączenia to godzina karty nocy', () => {
+    expect(CARD_HOUR).toBe(20);
+  });
+
+  for (const id of ['slady', 'slady_z'] as const) {
+    it(`${id}: do 19:59 „przed nocą”, od 20:00 (po zatwierdzeniu karty nocy) „teraz”, po polsku i po angielsku`, () => {
+      for (const [h, m] of [
+        [15, 0],
+        [18, 30],
+        [19, 59],
+      ]) {
+        const c = pierwszyWybor(id, h, m);
+        expect(c.label, `${h}:${m}`).toEqual({
+          pl: 'Załatać przed nocą (Złom 2)',
+          en: 'Patch it up before dark (Scrap 2)',
+        });
+      }
+      for (const [h, m] of [
+        [20, 0],
+        [20, 33],
+        [21, 59],
+      ]) {
+        const c = pierwszyWybor(id, h, m);
+        expect(c.label, `${h}:${m}`).toEqual({ pl: 'Załatać teraz (Złom 2)', en: 'Patch it up now (Scrap 2)' });
+        expect(c.label.pl + c.label.en).not.toMatch(/przed nocą|before dark/);
+        // wybór nadal działa tak samo: koszt 2 złomu i dozwolony przy złomie
+        expect(c.ok).toBe(true);
+      }
+    });
+  }
 });
