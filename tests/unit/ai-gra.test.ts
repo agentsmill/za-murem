@@ -1,8 +1,9 @@
 /* Gra prowadzona przez decydenta (src/ai/gra.ts) i silnik podstawowy (src/ai/silnik.ts), etap 1 osady AI
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje siedmiu rzeczy:
    - równoważności: silnik podstawowy w pętli gry daje te same skróty co `playWithGov(..., 'zawsze-warta', ...)`,
-     także z okolicą miasta, obcymi i drogami do zwycięstwa, a na Lanciego (ziarno 14) przez 10 dni, czyli także po
-     pierwszym przydziale warty na karcie nocy (8. dzień), którego krótkie przebiegi nie dosięgają;
+     także z okolicą miasta, obcymi i drogami do zwycięstwa, a na Lanciego (ziarno 14) przez 10 dni oraz na Zielonkach
+     (ziarno 19, mieszkańcy z adresu jak w przeglądarce) przez 10 dni, czyli także po pierwszym przydziale warty na karcie
+     nocy (8. i 9. dzień), którego krótkie przebiegi nie dosięgają; test z mieszkańcami z adresu daje każdej pętli świeży świat;
    - determinizmu: dwie gry w jednym procesie przeplatane nierówno, zapis i wczytanie w połowie (także w środku
      sekundy) i odtworzenie ruchów rąk z dziennika na świeżej grze dają ten sam przebieg;
    - rąk gry: każde działanie decydenta idzie przez `Rece` i do dziennika, wyprawa dzienna wychodzi przez `wyslij`;
@@ -193,28 +194,36 @@ describe('równoważność z playWithGov', () => {
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   });
 
-  it('Lanciego, ziarno 14, 11 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
-    // z mieszkańcami z generatora świat i przebieg są inne: pierwszy przydział warty wypada w sekundzie 9800 (11. dzień)
-    const base = await przygotujGre('lanciego', 14, false);
-    const { w, opts } = base;
-    const g = nowaGraAi(w, 14, {
+  it('Zielonki, ziarno 19, 10 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
+    // z mieszkańcami z generatora przebieg jest inny niż na świecie z `demoWorld`: pierwsza karta nocy bez warty z propozycji
+    // zarządu wypada tu w sekundzie 7880 (9. dzień; Lanciego 14 miało ją w sekundzie 9800, ale po wydarzeniach ze znajomymi
+    // i zwierzętami nie dochodzi do niej przez 11 dni). Każda pętla dostaje własny, świeży świat: gra zmienia siatkę świata
+    // (wspólny płot, `fenceBaza`), więc druga gra na tym samym świecie startuje od innego stanu (Zielonki 11: skróty
+    // rozjeżdżają się już w dniu 2, choć na świeżych światach są równe)
+    const silnikGra = await przygotujGre('zielonki', 19, false);
+    const wzorGra = await przygotujGre('zielonki', 19, false);
+    const g = nowaGraAi(silnikGra.w, 19, {
       core: 4,
       obcy: true,
-      mieszkancy: opts.mieszkancy,
-      okolica: opts.okolica,
-      ludnosc2021: opts.ludnosc2021,
+      mieszkancy: silnikGra.opts.mieszkancy,
+      okolica: silnikGra.opts.okolica,
+      ludnosc2021: silnikGra.opts.ludnosc2021,
       dziennik: true,
     });
-    grajDo(g, silnikPodstawowy, 11 * TICKS_PER_DAY);
-    const wzor = playWithGov(w, 14, 'zawsze-warta', 11, 4, {
+    grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
+    const wzor = playWithGov(wzorGra.w, 19, 'zawsze-warta', 10, 4, {
       obcy: true,
-      mieszkancy: opts.mieszkancy,
-      miasto: { okolica: opts.okolica! },
-      zwyciestwo: { ludnosc2021: opts.ludnosc2021 },
+      mieszkancy: wzorGra.opts.mieszkancy,
+      miasto: { okolica: wzorGra.opts.okolica! },
+      zwyciestwo: { ludnosc2021: wzorGra.opts.ludnosc2021 },
     });
-    expect(g.dziennik!.some((m) => m.t === 'noc' && m.klucz.startsWith('warta:'))).toBe(true);
+    // gałąź jest naprawdę w przebiegu: obie pętle przydzieliły wartę na karcie nocy (po 8. dniu, czyli po tym, co krótkie
+    // przebiegi widzą); gdy zmiana w grze przesunie trajektorię i gałąź zniknie, test pada tu, a nie na pustym warunku
+    const wartaZKarty = g.dziennik!.find((m) => m.t === 'noc' && m.klucz.startsWith('warta:'));
+    expect(wartaZKarty).toBeDefined();
+    expect(wartaZKarty!.s * TICKS_PER_SECOND).toBeGreaterThan(8 * TICKS_PER_DAY);
     expect(wzor.decisions.some((d) => d.kind === 'przydział' && d.text.includes(': warta '))).toBe(true);
-    expect(g.sim.st.tick).toBe(11 * TICKS_PER_DAY);
+    expect(g.sim.st.tick).toBe(10 * TICKS_PER_DAY);
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
   }, 120_000);
