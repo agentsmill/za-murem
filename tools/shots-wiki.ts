@@ -25,8 +25,9 @@ export interface ShotWiki {
 const GRA = 'demo=przymorze&speed=0&cam=hq,1.3';
 const GRA_DOM = 'demo=zielonki&speed=0&cam=hq,1.3';
 
-/** słowa z bloku, których w domu nie ma w artykułach wiki (po polsku) */
-const BLOKOWE_PL = /klatk|piętr|spółdziel|pawilon|szlaban|świetlic|czynsz|blok|mieszkani|trzepak|bram/i;
+/** słowa z bloku, których w domu nie ma w artykułach wiki (po polsku): początek wyrazu, bez „piętrowych” łóżek i „blokuje” */
+const BLOKOWE_PL =
+  /(?<!\p{L})(klatk|piętr(?!ow)|spółdziel|pawilon|szlaban|świetlic|czynsz|blok(?!uj|ad)|mieszka[nń]|trzepak|bram|zarząd|walne|osiedl)/iu;
 /** to samo po angielsku (jak BLOKOWE w tests/unit/teksty-miejsca-en.test.ts) */
 const BLOKOWE_EN =
   /co-op|(?<!research )\bboard\b|general meeting|\bestate\b|carpet rack|stairwell|\bblocks?\b|\bflats?\b|pavilion|common room|service charge|\bresidents?\b|(?<!garden )\bgate\b/i;
@@ -367,6 +368,111 @@ export function wikiShots(out: string): ShotWiki[] {
         await page.press('#sheet .wiki-q', 'Enter');
         await page.waitForSelector('#sheet .wiki-art');
         await sprawdzUklad(page, 'wyniki wyszukiwania');
+      },
+    },
+    // ludzie i broń na komputerze, po polsku: potrzeby z faktami z funkcji gry, walka, strzelba i długa lista nastrojów
+    {
+      name: 'wiki-ludzie-pc',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, GRA);
+        await otworzZMenu(page, false);
+        for (const id of [
+          'ludzie:zarzad',
+          'potrzeba:warm',
+          'ludzie:cechy',
+          'ludzie:walka',
+          'bron:strzelba',
+          'ludzie:nastroje',
+        ]) {
+          await otworzArtykul(page, id, false);
+          await sprawdzUklad(page, `artykuł ${id} na komputerze`);
+        }
+        const nastroje = await page.$$eval('#sheet .wiki-fakt', (l) => l.length);
+        if (nastroje < 14) throw new Error(`lista nastrojów ma ${nastroje} wierszy`);
+      },
+    },
+    // noc na telefonie po angielsku: napad (najwięcej faktów), wyprawa i karta nocy
+    {
+      name: 'wiki-noc-telefon-en',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await start(page, base, GRA);
+        await otworzZMenu(page, true);
+        for (const id of ['noc:karta', 'noc:wyprawa', 'noc:napad']) {
+          await otworzArtykul(page, id, true);
+          await sprawdzUklad(page, `artykuł ${id} na telefonie`);
+          sprawdzJezyk(`artykuł ${id} na telefonie`, await tekstOkna(page), { en: true });
+          await page.tap('#sheet .wiki-wstecz');
+        }
+        await otworzArtykul(page, 'noc:napad', true);
+        await zapisz(page, 'wiki-noc-telefon-en-napad');
+      },
+    },
+    // zarząd na komputerze: wkurzenie z wierszami dryfu, uchwała z faktami, spis uchwał
+    {
+      name: 'wiki-zarzad-pc',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, GRA);
+        await otworzZMenu(page, false);
+        for (const id of [
+          'zarzad:zaufanie',
+          'zarzad:wkurzenie',
+          'uchwala:u_kociol',
+          'zarzad:uchwaly',
+          'zarzad:raport',
+        ]) {
+          await otworzArtykul(page, id, false);
+          await sprawdzUklad(page, `artykuł ${id} na komputerze`);
+        }
+        await otworzArtykul(page, 'zarzad:wkurzenie', false);
+        const wiersze = await page.$$eval('#sheet .wiki-fakt', (l) => l.map((e) => (e as HTMLElement).dataset.fakt));
+        if (!wiersze.some((w) => w?.startsWith('warm-'))) throw new Error(`brak wierszy dryfu: ${wiersze.join(', ')}`);
+      },
+    },
+    // z karty osoby: klik w pasek potrzeby otwiera artykuł o niej (komputer i telefon), z panelu budowy: znaczek „i”
+    {
+      name: 'wiki-karta-potrzeba',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, 'demo=przymorze&speed=1&cam=hq,1.3');
+        await page.click('#lista .lp');
+        await page.waitForSelector('#card .need[data-wiki="potrzeba:warm"]');
+        await page.click('#card .need[data-wiki="potrzeba:warm"]');
+        await page.waitForSelector('#sheet.wiki .wiki-art[data-art="potrzeba:warm"]');
+        const tempo = await page.evaluate(() => window.zm!.speed());
+        if (tempo !== 0) throw new Error(`gra nie stanęła po kliknięciu paska: tempo ${tempo}`);
+        await sprawdzUklad(page, 'artykuł o cieple z karty osoby');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        await page.waitForFunction(() => window.zm!.speed() === 1);
+        // panel budowy: znaczek „i” przy szczegółach otwiera artykuł o zaznaczonej budowli
+        await page.click('#btnBuild');
+        await page.waitForSelector('#buildPanel .bd:not([hidden]) .build-i');
+        const rodzaj = await page.$eval('#buildPanel .bd:not([hidden])', (e) => (e as HTMLElement).dataset.kind);
+        await page.click('#buildPanel .bd:not([hidden]) .build-i');
+        await page.waitForSelector(`#sheet.wiki .wiki-art[data-art="budowla:${rodzaj}"]`);
+        await sprawdzUklad(page, 'artykuł o budowli z panelu budowy');
+      },
+    },
+    {
+      name: 'wiki-karta-potrzeba-telefon-en',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await start(page, base, GRA);
+        await page.tap('#lista .lp');
+        await page.waitForSelector('#card .need[data-wiki="potrzeba:food"]');
+        await page.tap('#card .need[data-wiki="potrzeba:food"]');
+        await page.waitForSelector('#sheet.wiki .wiki-art[data-art="potrzeba:food"]');
+        await sprawdzUklad(page, 'artykuł o najedzeniu z karty osoby na telefonie');
+        sprawdzJezyk('artykuł o najedzeniu na telefonie', await tekstOkna(page), { en: true });
       },
     },
     // dom (Zielonki): komitet i furtka zamiast zarządu i bramy, bez słów z bloku
