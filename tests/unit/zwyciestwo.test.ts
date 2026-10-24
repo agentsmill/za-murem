@@ -24,6 +24,7 @@ import {
   ludnoscOf,
   nazwaDrogi,
   ocenDrogi,
+  terenMozliwy,
   wlaczZwyciestwo,
   wygrajDroge,
 } from '../../src/gov/zwyciestwo.ts';
@@ -852,6 +853,32 @@ describe('droga terenu na mapie, gdzie nie da się otoczyć żadnego sąsiada (G
     ocenDrogi(st, i);
     expect(JSON.stringify(st)).toBe(stPrzed);
     expect(JSON.stringify(i)).toBe(iPrzed);
+  });
+});
+
+describe('terenMozliwy: jeden predykat dla ekranu dróg i celu „otoczcie sąsiada” ścieżki celów', () => {
+  const teren = (st: GovState, i: GovInput) => ocenDrogi(st, i).find((x) => x.droga === 'teren')!;
+  const bezSasiada = (mozliwe?: number) => wej({ teren: { przylaczone: 0, mozliwe } });
+
+  it('brak pola `mozliwe` albo `teren` to „można” (atrapy i stare wejścia), zero i liczba ujemna to „nie można”', () => {
+    expect(terenMozliwy(wej())).toBe(true);
+    expect(terenMozliwy({ teren: undefined })).toBe(true);
+    expect(terenMozliwy(bezSasiada(undefined))).toBe(true);
+    expect(terenMozliwy(bezSasiada(1))).toBe(true);
+    expect(terenMozliwy(bezSasiada(5))).toBe(true);
+    expect(terenMozliwy(bezSasiada(0))).toBe(false);
+    expect(terenMozliwy(bezSasiada(-2))).toBe(false);
+    // liczba bez sensu (NaN) to jak brak pola, tak samo jak dotąd na ekranie dróg
+    expect(terenMozliwy(bezSasiada(Number.NaN))).toBe(true);
+  });
+
+  it('ekran dróg mówi „Wkrótce: wspólny płot przez jezdnię” dokładnie wtedy, gdy predykat mówi „nie można”', () => {
+    for (const mozliwe of [undefined, 0, 1, 4, -1, Number.NaN]) {
+      const i = bezSasiada(mozliwe);
+      const t = teren(wlaczony(), i);
+      expect(t.wkrotce !== null, `mozliwe ${mozliwe}`).toBe(!terenMozliwy(i));
+      expect(t.dalej !== null, `mozliwe ${mozliwe}`).toBe(terenMozliwy(i));
+    }
   });
 });
 
