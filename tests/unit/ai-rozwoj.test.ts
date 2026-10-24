@@ -6,7 +6,8 @@
    - badań z `KOLEJKA_BADAN` po kolei, gdy nic się nie bada (albo wybrane stoi bez wiedzy), z `t_ambu` (zdrowie wraca 1,6× szybciej)
      na końcu: pracownia nie stoi bez zajęcia od 7. dnia, a zdrowie zarządu to wąskie gardło przeżycia (zadanie 6);
    - tabeli Pracy: priorytet 1 Badań dla osoby z największą umiejętnością w dziedzinie badania i próg drewna 2 × drewno na noc;
-   - werbunku: wędrowiec pod bramą dostaje rozmowę, a po niej zaproszenie, gdy starcza jedzenia na przyjęcie i jest wolne łóżko;
+   - werbunku: wędrowiec pod bramą dostaje rozmowę, a po niej zaproszenie, gdy starcza jedzenia na przyjęcie (porcje na osobę
+     zarządu, bez mieszkańców); wolne łóżko zwiększa szansę zaproszenia w symulacji (+0,15), ale go nie wymaga (zadanie 7);
    - przebiegu prawdziwej gry (Przymorze, ziarno 11, jak w przeglądarce): wybór wydarzeń na kopii zarządu bez ruszania prawdziwego,
      pierwszy kamień ludności, budowle, koszt (warstwy najwyżej raz na 30 sekund przy ekranie) i determinizm (zapis i wczytanie).
    Decydent „bez rozwoju” to silnik, któremu ręce nie pozwalają na nic z warstwy rozwoju (budowy jej rodzajów, badania ponad
@@ -631,14 +632,17 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
     expect(s.polecenia.filter((c) => c.t === 'talk')).toEqual([]);
   });
 
-  it('po rozmowie nie zaprasza bez jedzenia na przyjęcie albo bez wolnego łóżka', () => {
+  it('po rozmowie nie zaprasza bez jedzenia na przyjęcie', () => {
     const glodny = poRozmowie();
     ustawJedzenie(glodny.g, 0);
     dolozLozka(glodny.g);
     const a = szpieg();
     turaRozwoju(glodny.g, a.r);
     expect(a.polecenia.filter((c) => c.t === 'zapros')).toEqual([]);
+  });
 
+  it('po rozmowie zaprasza także bez wolnego łóżka: zwerbowany śpi na podłodze, a wolne łóżko to tylko +0,15 do szansy', () => {
+    // wcześniej wolne łóżko było warunkiem: w Przymorzu 11 wędrowców było kilkudziesięciu, rozmów 16–23 w 20 dni, zaproszeń 0
     const bezLozka = poRozmowie();
     ustawJedzenie(bezLozka.g, 500);
     const st = bezLozka.g.sim.st;
@@ -649,7 +653,26 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
     expect(okazjaWerbunku(st, bezLozka.g.w).wolneLozko).toBe(false);
     const b = szpieg();
     turaRozwoju(bezLozka.g, b.r);
-    expect(b.polecenia.filter((c) => c.t === 'zapros')).toEqual([]);
+    expect(b.polecenia.filter((c) => c.t === 'zapros')).toHaveLength(1);
+  });
+
+  it('jedzenie na przyjęcie liczy się na osoby zarządu: mieszkańcy siedziby go nie zmniejszają', () => {
+    // zapas dokładnie na 2 porcje na osobę zarządu po przyjęciu jednej osoby; mieszkańców jest kilku (jedzą własne porcje),
+    // więc z nimi w głowach (po staremu) zapasu by nie starczało
+    const { g } = poRozmowie();
+    const zarzad = rdzen(g);
+    const i = wejscie(g);
+    expect(i.residents).toBeGreaterThan(0);
+    ustawJedzenie(g, 2 * (zarzad + 1));
+    const s = szpieg();
+    turaRozwoju(g, s.r);
+    expect(s.polecenia.filter((c) => c.t === 'zapros')).toHaveLength(1);
+    // o porcję mniej i zaproszenia nie ma
+    const g2 = poRozmowie().g;
+    ustawJedzenie(g2, 2 * (rdzen(g2) + 1) - 1);
+    const s2 = szpieg();
+    turaRozwoju(g2, s2.r);
+    expect(s2.polecenia.filter((c) => c.t === 'zapros')).toEqual([]);
   });
 
   it('bez wędrowca pod bramą nie rusza niczego w sprawie wędrowców', () => {
@@ -683,8 +706,10 @@ interface OknoPozaru {
 describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
   const okna: OknoWydarzenia[] = [];
   const pozary: OknoPozaru[] = [];
-  /** poranki: dzień, ludność pod zarządem, stojące budowle i zbadane technologie */
-  const poranki: { dzien: number; ludnosc: number; budowle: number; badania: string[] }[] = [];
+  /** poranki: dzień, ludność pod zarządem, osoby zarządu, stojące budowle i zbadane technologie */
+  const poranki: { dzien: number; ludnosc: number; zarzad: number; budowle: number; badania: string[] }[] = [];
+  /** dni gry, w których silnik zlecił zaproszenie wędrowca (polecenie `zapros`) */
+  const zaproszenia: number[] = [];
   let g: GraAi;
 
   /** ocena wyboru z pełnego przeglądu na kopiach, niezależnie od `wyborWydarzenia`. Jedna kopia ze stanem prawdziwego generatora:
@@ -729,6 +754,15 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
         }
         silnik.okno(gr, p, r);
       },
+      tura(gr, r) {
+        silnik.tura(gr, {
+          ...r,
+          polecenie: (c) => {
+            if (c.t === 'zapros') zaproszenia.push(Math.floor(gr.sim.st.tick / TICKS_PER_DAY) + 1);
+            r.polecenie(c);
+          },
+        });
+      },
     };
     for (let d = 2; d <= 20 && !g.gov.over; d++) {
       grajDo(g, mierzacy, poranekTick(d));
@@ -736,6 +770,7 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
       poranki.push({
         dzien: d,
         ludnosc: populacja(g.sim.st).razem,
+        zarzad: g.sim.st.pawns.filter((p) => p.kind === 'core').length,
         budowle: budowleStojace(g.sim.st.things),
         badania: [...(g.sim.st.techDone ?? [])],
       });
@@ -775,6 +810,16 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
     expect(rano13!.badania).toEqual(
       expect.arrayContaining(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo', 't_szklarnia', 't_ambu']),
     );
+  });
+
+  it('werbunek działa: do 10. dnia co najmniej dwa zaproszenia wędrowców, a zarząd rośnie z 4 do co najmniej 8 osób', () => {
+    // Zmierzone w tym przebiegu: 4 zaproszenia i 9 osób w zarządzie rano 10. dnia (przed zmianą werbunku 0 zaproszeń w 20 dni
+    // przy 16–23 rozmowach i 7 osobach w zarządzie): zwerbowani wędrowcy trafiają do zarządu, a w przebiegach 11–50 (trzy dema,
+    // 120 przebiegów) większy zarząd to dłuższe przeżycie (Przymorze 40,9 → 43,9 dnia, Lanciego 29,7 → 34,0).
+    const rano10 = poranki.find((p) => p.dzien === 10);
+    expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
+    expect(zaproszenia.filter((d) => d <= 10).length).toBeGreaterThanOrEqual(2);
+    expect(rano10!.zarzad).toBeGreaterThanOrEqual(8);
   });
 
   it('pierwszy kamień ludności (10 osób) do 5. dnia', () => {

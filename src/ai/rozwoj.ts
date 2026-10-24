@@ -31,9 +31,14 @@
      z drewna ponad ten zapas;
    - werbunek: wędrowiec stojący przy siatce dostaje rozmowę najbliższej wolnej osoby z zarządu (`najblizszaWolna` z
      src/ai/osoby.ts; menu `commandsAt`, polecenie `talk`), a po rozmowie zaproszenie (`zapros`), gdy po przyjęciu starcza
-     jedzenia (`stacNaPrzyjecie`) i jest wolne łóżko (`okazjaWerbunku`). Wędrowiec stoi przy siatce 20–40 minut gry i godzinę
-     po rozmowie, a warstwa idzie co 30 sekund przy ekranie, więc większość wędrowców dostaje rozmowę i zaproszenie dokładnie
-     jeden raz.
+     jedzenia (`stacNaPrzyjecie`: porcje na osobę zarządu, bez mieszkańców). Wolne łóżko nie jest warunkiem: w symulacji dodaje
+     0,15 do szansy zaproszenia (0,30 bazowo, +0,20 przy 2 porcjach na osobę zarządu, −0,30 po niedawnej napaści na obcych,
+     `szansaWerbunku` w src/sim/wedrowcy.ts), a zwerbowany bez łóżka śpi na podłodze (nastrój −5). Do zadania 7 silnik żądał
+     wolnego łóżka i liczył zapas z mieszkańcami: w Przymorzu 11 miał 16–23 rozmów w 20 dni i ani jednego zaproszenia, a zarząd
+     stał na 6–7 osobach; teraz zaprasza, zarząd rośnie do 9–11 osób, a w 120 przebiegach (ziarna 11–50) średni dzień końca gry
+     rośnie o 2,4 ± 0,8 (Przymorze i Lanciego; w Zielonkach bez zmian: tam kończy się jedzenie, nie ludzie). Wędrowiec stoi przy
+     siatce 20–40 minut gry i godzinę po rozmowie, a warstwa idzie co 30 sekund przy ekranie, więc większość wędrowców dostaje
+     rozmowę i zaproszenie dokładnie jeden raz.
 
    Warstwa czyta stan gry jak gracz (`wejscie`, `SimState`, świat) i działa tylko rękami; nie ma własnego stanu poza stanem gry
    (łóżka, plany, badania i tabela Pracy wynikają z niego, więc zapis i wczytanie w połowie nic nie zmieniają), niczego nie
@@ -46,7 +51,7 @@ import { BUILDS, type BuildKind, isUnlocked, limitWhy, type Mat } from '../sim/b
 import { houseOf, inHomeApt } from '../sim/house.ts';
 import { commandsAt } from '../sim/orders.ts';
 import { priorytet, progi, ZARZAD_MAX } from '../sim/praca.ts';
-import { okazjaWerbunku, type SimState, STACK } from '../sim/sim.ts';
+import { type SimState, STACK } from '../sim/sim.ts';
 import { snapshot } from '../sim/snapshot.ts';
 import { modeOf } from '../sim/tryb.ts';
 import type { World } from '../world/world.ts';
@@ -193,7 +198,7 @@ function turaPracy(g: GraAi, r: Rece, i: GovInput, tech: string | null): void {
 }
 
 /** Werbunek: wędrowiec przy siatce dostaje rozmowę (menu `commandsAt`), a po niej zaproszenie, gdy starcza jedzenia na jedno
-    przyjęcie i jest wolne łóżko. Rozmowy, która już trwa, nie ponawia. */
+    przyjęcie (wolne łóżko nie jest wymagane: zwiększa tylko szansę zaproszenia). Rozmowy, która już trwa, nie ponawia. */
 function turaWedrowca(g: GraAi, r: Rece, i: GovInput): void {
   const { sim, w } = g;
   const st = sim.st;
@@ -209,7 +214,7 @@ function turaWedrowca(g: GraAi, r: Rece, i: GovInput): void {
     return;
   }
   const zaproszenie = menu.find((m) => m.cmd.t === 'zapros' && !m.off);
-  if (zaproszenie && stacNaPrzyjecie(i, 1) && okazjaWerbunku(st, w).wolneLozko) r.polecenie(zaproszenie.cmd);
+  if (zaproszenie && stacNaPrzyjecie(i, 1)) r.polecenie(zaproszenie.cmd);
 }
 
 /** Jedna tura warstwy (co 30 s przy ekranie): budowa z kolejki, badania, tabela Pracy i werbunek wędrowca. */

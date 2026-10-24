@@ -3,11 +3,16 @@
    zapas startowy (40 porcji) schodzi do zera około 9. dnia, zarząd traci zdrowie (z 90 do 0 w pięć dni), a bez zdrowych
    nie ma ani dyżuru przy kozie, ani warty, więc zimno wraca i wkurzenie rośnie do odwołania.
 
-   Miara zapasu to porcje surowe i ugotowane (`GovStock.supplies` i `meals`) na głowę, czyli na osobę zarządu i mieszkańca
-   (`jedzenieNaGlowe`). Jedzą z zapasu tylko osoby zarządu (mieszkańcy siedziby nie mają głodu w symulacji), ale mieszkańcy
-   przechodzą do zarządu przy awansach i przyjęciach, więc liczą się z góry (pomiar: bez mieszkańców w głowach wynik w granicach szumu).
-   `stacNaPrzyjecie` mówi, czy po przyjęciu n osób zostaną co najmniej 2 porcje na głowę (korzysta z niego warstwa okien
-   z zadania 5 przy wydarzeniach z przyjęciem).
+   Miara zapasu to porcje surowe i ugotowane (`GovStock.supplies` i `meals`) na głowę, czyli na osobę zarządu
+   (`jedzenieNaGlowe`). Z zapasu zarządu jedzą tylko osoby zarządu: mieszkańcy siedziby jedzą własne porcje i nie mają głodu
+   w symulacji (garnek `potTarget` liczy samo rdzeń), a symulacja liczy tak samo okazję do werbunku (`okazjaWerbunku`:
+   porcje na osobę z zarządu). Do zadania 7 mieszkańcy liczyli się w głowach (mieszkańcy przechodzą do zarządu przy awansach, a w zadaniu 4
+   wynik bez nich mieścił się w szumie), ale w Przymorzu i Lanciego jest ich 11–15 na 5–7 osób zarządu, więc zapas „na głowę”
+   wychodził 2–3 razy mniejszy, niż jest naprawdę: werbunek, przyjęcia i wyprawy po jedzenie uznawały zapas za zbyt mały. Z głowami
+   równymi osobom zarządu, razem z zaproszeniami bez wymogu wolnego łóżka (src/ai/rozwoj.ts), zarząd rośnie z 6–7 do 9–11 osób,
+   a średni dzień końca gry (żyje = 45) rośnie o 2,4 ± 0,8 (120 przebiegów, ziarna 11–50). `stacNaPrzyjecie` mówi, czy po
+   przyjęciu n osób zostaną co najmniej 2 porcje na osobę zarządu (korzysta z niego warstwa okien z zadania 5 przy wydarzeniach
+   z przyjęciem, ocena traktuje przy tym przyjętych mieszkańców jak jedzących: ostrożnie).
 
    `turaJedzenia` idzie co 30 sekund przy ekranie (pilnuje tego `silnik` w src/ai/silnik.ts) i robi dwie rzeczy:
    - wyprawa dzienna po jedzenie, gdy zapasu jest poniżej 2 porcji na głowę. Idzie tą drogą co gracz z mapy miasta
@@ -68,15 +73,15 @@ const MNOZNIK_LUPU_ZA_DWIE_OSOBY = 1.6;
 const MIN_LUP = 3;
 
 const porcje = (i: GovInput): number => i.stock.supplies + (i.stock.meals ?? 0);
-/** głowy: osoby zarządu i mieszkańcy siedziby (jak `GovInput.ludnosc`, ale z pól, które test może ustawić ręcznie) */
-const glowy = (i: GovInput): number => i.people.length + (i.residents ?? 0);
+/** głowy: osoby zarządu, czyli ci, którzy jedzą z zapasu zarządu (mieszkańcy siedziby jedzą własne porcje) */
+const glowy = (i: GovInput): number => i.people.length;
 
-/** Porcje surowe i ugotowane w zapasie na osobę zarządu i mieszkańca. */
+/** Porcje surowe i ugotowane w zapasie na osobę zarządu. */
 export function jedzenieNaGlowe(i: GovInput): number {
   return porcje(i) / Math.max(1, glowy(i));
 }
 
-/** Czy przyjąć `n` nowych osób: po przyjęciu co najmniej `MIN_NA_GLOWE` porcje na głowę. */
+/** Czy przyjąć `n` nowych osób do zarządu: po przyjęciu co najmniej `MIN_NA_GLOWE` porcje na osobę zarządu. */
 export function stacNaPrzyjecie(i: GovInput, n: number): boolean {
   return porcje(i) >= MIN_NA_GLOWE * (glowy(i) + n);
 }

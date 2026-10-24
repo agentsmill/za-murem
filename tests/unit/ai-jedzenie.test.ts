@@ -2,9 +2,9 @@
    (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadanie 4). Powód warstwy: po ogrzanej sypialni gry kończy głód
    (dni 19–29, docs/ocena/2026-10-20-zima-w-grach-botow.md, sekcja 7 punkt 4): zapas startowy (40 porcji) schodzi do zera
    około 9. dnia, zarząd traci zdrowie, a bez zdrowych nie ma ani dyżuru przy kozie, ani warty. Pilnuje sześciu rzeczy:
-   - miar zapasu: `jedzenieNaGlowe` (surowe i ugotowane porcje na osobę zarządu i mieszkańca) i `stacNaPrzyjecie` (po
-     przyjęciu co najmniej 2 porcje na głowę), z których korzystają wyprawy, uchwała o kotle i (zadanie 5) wydarzenia
-     z przyjęciem;
+   - miar zapasu: `jedzenieNaGlowe` (surowe i ugotowane porcje na osobę zarządu; mieszkańcy siedziby jedzą własne porcje i
+     się nie liczą, tak jak w symulacji, zadanie 7) i `stacNaPrzyjecie` (po przyjęciu co najmniej 2 porcje na osobę
+     zarządu), z których korzystają wyprawy, uchwała o kotle, werbunek wędrowców i (zadanie 5) wydarzenia z przyjęciem;
    - wyprawy dziennej po jedzenie: poniżej 2 porcji na głowę, tylko między 8:00 a 15:00, jedna naraz, przez mapę miasta jak
      gracz (`Rece.wyslij` z celem z `celZMiejsca`), do najbliższego sklepu z zapasem poza mapą lokalną, z dwiema
      najzdrowszymi osobami, ale tak, żeby ktoś zdrowy został na dyżur przy kozie tej nocy;
@@ -14,7 +14,7 @@
      otwarta: po `u_warty` kocioł jest zablokowany), a `silnik` (od zadania 5, `wyborUchwaly` w src/ai/okna.ts) podpisuje kocioł
      już w pierwszym oknie, bo `u_warty` z drogi porządku blokuje go do końca gry, a pierwszego wieczoru głodu jeszcze nie ma;
    - przebiegu w prawdziwej grze (Przymorze, ziarno 11, jak w przeglądarce: obcy, mieszkańcy z adresu, okolica): wyprawa
-     w każdym dniu głodu, dolne granice zmierzone na tym przebiegu (zapas co najmniej 10 porcji o 6:00 w dniach 2–15, średnie
+     w każdym dniu głodu, dolne granice zmierzone na tym przebiegu (zapas co najmniej 5 porcji o 6:00 w dniach 2–15, średnie
      zdrowie zarządu w 12. dniu co najmniej 70, średnie najedzenie o 6:00 w dniach 15–18 co najmniej 8), okno godzin i jedna
      wyprawa naraz. Granice mają łapać brak warstwy: `ZM_JAK_BAZA=1 npx vitest run tests/unit/ai-jedzenie.test.ts` gra ten
      sam przebieg silnikiem bez wypraw po jedzenie i bez ogródka (jak silnik z zadania 3) i testy przebiegu mają wtedy padać.
@@ -110,10 +110,12 @@ function wejscieZ(g: GraAi, ludzie: number, porcje: number, ugotowane = 0, miesz
 }
 
 describe('miary zapasu', () => {
-  it('jedzenieNaGlowe liczy surowe i ugotowane porcje na osobę zarządu i mieszkańca', () => {
+  it('jedzenieNaGlowe liczy surowe i ugotowane porcje na osobę zarządu; mieszkańcy jedzą własne porcje i się nie liczą', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
-    // 10 surowych + 6 ugotowanych, 3 osoby zarządu + 5 mieszkańców: 16 / 8
-    expect(jedzenieNaGlowe(wejscieZ(g, 3, 10, 6, 5))).toBe(2);
+    // 10 surowych + 6 ugotowanych, 3 osoby zarządu + 5 mieszkańców: 16 / 3 (tak samo liczy okazję do werbunku symulacja,
+    // `okazjaWerbunku` w src/sim/sim.ts: porcje na osobę z zarządu; pot dla zarządu `potTarget` też nie liczy mieszkańców)
+    expect(jedzenieNaGlowe(wejscieZ(g, 3, 10, 6, 5))).toBeCloseTo(16 / 3, 10);
+    expect(jedzenieNaGlowe(wejscieZ(g, 3, 10, 6, 0))).toBe(jedzenieNaGlowe(wejscieZ(g, 3, 10, 6, 40)));
     // bez mieszkańców i bez ugotowanych: same surowe na osoby zarządu
     expect(jedzenieNaGlowe(wejscieZ(g, 4, 10))).toBe(2.5);
     // bez pola mieszkańców (ręczne wejście testów) i bez ugotowanych
@@ -134,13 +136,17 @@ describe('miary zapasu', () => {
     expect(stacNaPrzyjecie(i, 0)).toBe(true);
   });
 
-  it('stacNaPrzyjecie liczy też ugotowane porcje i mieszkańców', () => {
+  it('stacNaPrzyjecie liczy też ugotowane porcje, ale nie mieszkańców', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
-    // 8 surowych + 4 ugotowane = 12 porcji, 3 osoby zarządu + 2 mieszkańców: po jednym przyjęciu 6 głów, 12 / 6 = 2
-    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 4, 2), 1)).toBe(true);
-    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 4, 2), 2)).toBe(false);
-    // bez ugotowanych tylko 8 / 6
-    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 0, 2), 1)).toBe(false);
+    // 8 surowych + 4 ugotowane = 12 porcji, 3 osoby zarządu: po trzech przyjęciach 6 jedzących, 12 / 6 = 2; po czterech nie
+    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 4), 3)).toBe(true);
+    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 4), 4)).toBe(false);
+    // bez ugotowanych tylko 8 porcji: po jednym przyjęciu 8 / 4 = 2, po dwóch 8 / 5
+    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 0), 1)).toBe(true);
+    expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 0), 2)).toBe(false);
+    // mieszkańcy siedziby nie jedzą z zapasu zarządu, więc nie zmieniają odpowiedzi (przed zmianą 8 / 6 mówiło „nie”)
+    for (const mieszkancy of [0, 2, 15])
+      expect(stacNaPrzyjecie(wejscieZ(g, 3, 8, 0, mieszkancy), 1), `${mieszkancy}`).toBe(true);
   });
 });
 
@@ -174,7 +180,10 @@ describe('wyprawa dzienna po jedzenie', () => {
 
   it('przy zapasie na 2 porcje na głowę i więcej wyprawy nie ma', () => {
     const g = graNa(3, 9);
-    const ludzi = wejscie(g).people.length + (wejscie(g).residents ?? 0);
+    // zapas liczy się na osoby zarządu: mieszkańcy siedziby jedzą własne porcje (w tej grze są już mieszkańcy, więc test
+    // odróżnia obie miary)
+    expect(wejscie(g).residents).toBeGreaterThan(0);
+    const ludzi = wejscie(g).people.length;
     ustawLudzi(g, [90, 80, 70, 60]);
     for (const [porcje, wyprawa] of [
       [2 * ludzi - 1, true],
@@ -409,7 +418,7 @@ describe('uchwała o wspólnym kotle', () => {
 
   it('w pierwszym oknie silnik podpisuje u_kociol i z głodu, i przy zapasie; silnik podstawowy dalej u_warty', () => {
     const g = graPrzedUchwala();
-    const ludzi = wejscie(g).people.length + (wejscie(g).residents ?? 0);
+    const ludzi = wejscie(g).people.length;
     const okno = oknoUchwaly(g, false);
     expect(okno.options.map((o) => `${o.id}:${o.s}`)).toEqual(['u_warty:ok', 'u_kociol:ok', 'u_meble:ok']);
 
@@ -537,11 +546,12 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
       expect(d.wyprawy, `dzień ${d.dzien}: ${JSON.stringify(d.przed9)}`).toBeGreaterThanOrEqual(1);
   });
 
-  it('zapas jedzenia o 6:00 wynosi co najmniej 10 porcji w dniach 2–15', () => {
-    // z warstwą najmniej 17 porcji (dzień 6), bez niej (ten sam przebieg, `ZM_JAK_BAZA=1`) 3 od 9. dnia i 0 w 15.
+  it('zapas jedzenia o 6:00 wynosi co najmniej 5 porcji w dniach 2–15', () => {
+    // z warstwą najmniej 7 porcji (dzień 14; zarząd rośnie tu do 9–11 osób, więc zapas jest mniejszy niż w zadaniu 4, kiedy było
+    // to 17 w dniu 6, a najedzenie zarządu wyższe), bez niej (ten sam przebieg, `ZM_JAK_BAZA=1`) 3 od 9. dnia i 0 w 15.
     const dni2do15 = dni.filter((d) => d.dzien >= 2 && d.dzien <= 15);
     expect(dni2do15.map((d) => d.dzien)).toEqual(Array.from({ length: 14 }, (_, k) => k + 2));
-    for (const d of dni2do15) expect(d.rano.porcje, `dzień ${d.dzien}`).toBeGreaterThanOrEqual(10);
+    for (const d of dni2do15) expect(d.rano.porcje, `dzień ${d.dzien}`).toBeGreaterThanOrEqual(5);
   });
 
   it('średnie zdrowie zarządu o 6:00 w 12. dniu wynosi co najmniej 70', () => {

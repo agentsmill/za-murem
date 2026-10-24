@@ -126,15 +126,16 @@ describe('ocenSkutki', () => {
     expect(roznica(efekty({ residents: -1 }), i)).toBe(-50);
   });
 
-  it('przyjęcia: +4 na osobę, gdy po przyjęciu starcza 2 porcje na głowę, inaczej −4', () => {
-    // 8 głów; 40 porcji: po przyjęciu 3 osób 11 głów, 22 porcje potrzebne
+  it('przyjęcia: +4 na osobę, gdy po przyjęciu starcza 2 porcje na osobę zarządu, inaczej −4', () => {
+    // 4 osoby zarządu (i 4 mieszkańców, którzy jedzą własne porcje i się nie liczą); 40 porcji: po przyjęciu 3 osób 7 jedzących,
+    // 14 porcji potrzebnych
     expect(roznica(efekty({ residents: 3 }), i)).toBe(12);
     // ten sam skutek bez zapasu: −4 na osobę (stały składnik oceny zapasu jest taki sam w obu wejściach, więc różnica wprost)
     const biedne = atrapa(10).input();
     expect(roznica(efekty({ residents: 3 }), biedne)).toBe(-12);
-    // granica: 8 głów + 1 przyjęty = 18 porcji
-    expect(roznica(efekty({ residents: 1 }), atrapa(18).input())).toBe(4);
-    expect(roznica(efekty({ residents: 1 }), atrapa(17).input())).toBe(-4);
+    // granica: 4 osoby zarządu + 1 przyjęty = 10 porcji (przed zadaniem 7 z mieszkańcami w głowach było to 18)
+    expect(roznica(efekty({ residents: 1 }), atrapa(10).input())).toBe(4);
+    expect(roznica(efekty({ residents: 1 }), atrapa(9).input())).toBe(-4);
     // osoba dołączająca do zarządu i mieszkańcy liczą się razem
     const osoba = { ...i.people[0], id: 'x' } as unknown as GovEffects['join'][number];
     expect(roznica(efekty({ join: [osoba], residents: 2 }), i)).toBe(12);
@@ -223,7 +224,8 @@ describe('wyborWydarzenia', () => {
       'Odprawić',
     ]);
     expect(wyborWydarzenia(syty.gov, syty.i, syty.p)).toBe(2);
-    const glodny = oknoUchodzcow(20);
+    // 4 osoby zarządu: przyjęcie czterech miejsc (i dwóch na podłodze) wymaga 16 porcji
+    const glodny = oknoUchodzcow(12);
     expect(wyborWydarzenia(glodny.gov, glodny.i, glodny.p)).toBe(3);
   });
 
@@ -900,8 +902,8 @@ describe('wyborUchwaly', () => {
     expect(wyborUchwaly(wejscieUchwal(100), oknoUchwaly(bezKotla, true))).toBeNull();
   });
 
-  it('głód (poniżej 1 porcji na głowę): kocioł, a gdy go nie ma (podpisany, zablokowany), nic: racje kosztują wkurzenie', () => {
-    const glodny = wejscieUchwal(5);
+  it('głód (poniżej 1 porcji na osobę zarządu): kocioł, a gdy go nie ma (podpisany, zablokowany), nic: racje kosztują wkurzenie', () => {
+    const glodny = wejscieUchwal(3);
     expect(wyborUchwaly(glodny, oknoUchwaly(pozniej('u_zebrania', 'u_kociol', 'u_racje', 'u_meble')))).toBe('u_kociol');
     expect(wyborUchwaly(glodny, oknoUchwaly(pozniej('u_zebrania', 'u_racje', 'u_meble')))).toBeNull();
     const zablokowany = [opcja('u_kociol', 'lock'), opcja('u_racje'), opcja('u_meble')];
@@ -919,7 +921,7 @@ describe('wyborUchwaly', () => {
   });
 
   it('głód przy dziurach w siatce: kocioł, nie warta', () => {
-    const i = wejscieUchwal(5, 2);
+    const i = wejscieUchwal(3, 2);
     expect(wyborUchwaly(i, oknoUchwaly(pozniej('u_warty', 'u_kociol')))).toBe('u_kociol');
   });
 
