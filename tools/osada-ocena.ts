@@ -2,6 +2,9 @@
    bez gry i bez wyjścia na ekran, żeby werdykt dało się sprawdzić na syntetycznych przebiegach (tests/unit/ai-ocena.test.ts).
    Przebiegi liczy uprząż `npm run bot:osada` (tools/bot-osada.ts), a tu jest tylko to, co z nich wynika.
 
+   Ocena nie zależy od tego, jak grano: przebiegi z gry z łańcuchami kart (domyślnie, jak w przeglądarce) i bez nich
+   (`--bez-lancuchow` w uprzęży) liczą się tymi samymi progami, a to, jak grano, mówi nagłówek wyjścia uprzęży.
+
    Przebieg to jedna gra silnika: demo, ziarno, długość w dobach (`dni`; gra zaczyna się o 15:00 dnia 1, więc ostatni
    poranek wypada w dniu `dni + 1`), koniec gry (`gov.over`: pustka, odwołanie albo exodus, z dniem, w którym nastąpił;
    null: dożył końca) i poranki, czyli stan o 6:00 każdego dnia po kroku zarządu z tej chwili (od dnia 2; przebieg, który
@@ -19,7 +22,7 @@
    Przy innej liczbie ziaren niż `zZiaren` wymagana liczba przebiegów skaluje się proporcjonalnie (w górę), więc trzy
    ziarna muszą dożyć wszystkie, a dziesięć: osiem.
    Dwa wyjątki od oceny dema, żeby werdykt nie mówił o tym, czego nie zmierzono:
-   - demo, w którym któryś przebieg się nie udał (proces padł, limit czasu, zawieszone okno zarządu), nie jest oceniane
+   - demo, w którym któryś przebieg się nie udał (proces padł, limit czasu, zawieszone okno zarządu, błąd decydenta), nie jest oceniane
      w ogóle: zostaje wpis „nie oceniono” w `nieocenione`, a pozostałe przebiegi tego dema nie liczą się do werdyktu
      (brakujący przebieg nie jest porażką silnika, tylko dziurą w pomiarze); werdykt jako całość nie przechodzi;
    - przy przebiegu krótszym niż dolna granica dnia kamienia (`--dni` poniżej `kamien[1]`) kryterium kamienia jest
@@ -72,8 +75,8 @@ export function budowleStojace(rzeczy: readonly { kind: string }[]): number {
   return rzeczy.filter((t) => Object.hasOwn(BUILDS, t.kind) && !naObwodzie(t.kind)).length;
 }
 
-/** Przebieg, który się nie udał (proces padł, przekroczył limit czasu albo zostawił zawieszone okno zarządu): demo, ziarno
-    i powód po polsku. Dema z takim przebiegiem werdykt pomija. */
+/** Przebieg, który się nie udał (proces padł, przekroczył limit czasu, zostawił zawieszone okno zarządu albo decydent rzucił
+    błąd, który `krokGry` złapał): demo, ziarno i powód po polsku. Dema z takim przebiegiem werdykt pomija. */
 export interface BlednyPrzebieg {
   demo: string;
   ziarno: number;

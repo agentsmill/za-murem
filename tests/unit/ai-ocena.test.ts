@@ -10,13 +10,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { type Decydent, grajDo, nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
+import { type Decydent, grajDo, MAX_BLEDOW, nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
 import { silnik } from '../../src/ai/silnik.ts';
-import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { buildWorld } from '../../src/world/world.ts';
 import {
+  argumentyPrzebiegu,
   dniLudnosci,
   naglowekTabeli,
+  opisBledowDecydenta,
+  opisGry,
   opisZawieszonych,
   ostatniePoranki,
   parsujArgumenty,
@@ -439,6 +442,7 @@ describe('uprząż bot:osada: argumenty', () => {
     expect(o.dni).toBe(45);
     expect(o.dema).toEqual(['przymorze', 'lanciego', 'zielonki']);
     expect(o.prosto).toBe(false);
+    expect(o.bezLancuchow).toBe(false);
     expect(o.bezProgu).toBe(false);
     expect(o.jedna).toBeNull();
     // procesów tyle, ile rdzeni bez jednego, ale co najmniej jeden
@@ -457,12 +461,13 @@ describe('uprząż bot:osada: argumenty', () => {
     expect(() => parsujArgumenty(['--ziarna=15-11'])).toThrow(/ziaren/);
   });
 
-  it('flagi i liczby: --dni, --demo, --prosto, --bez-progu, --procesy, --limit', () => {
+  it('flagi i liczby: --dni, --demo, --prosto, --bez-lancuchow, --bez-progu, --procesy, --limit', () => {
     const o = parsujArgumenty([
       '--ziarna=1-3',
       '--dni=25',
       '--demo=zielonki,przymorze',
       '--prosto',
+      '--bez-lancuchow',
       '--bez-progu',
       '--procesy=2',
       '--limit=5',
@@ -472,6 +477,7 @@ describe('uprząż bot:osada: argumenty', () => {
       dni: 25,
       dema: ['zielonki', 'przymorze'],
       prosto: true,
+      bezLancuchow: true,
       bezProgu: true,
       procesy: 2,
       limitMin: 5,
@@ -486,6 +492,8 @@ describe('uprząż bot:osada: argumenty', () => {
     expect(() => parsujArgumenty(['--ziarna'])).toThrow(/--ziarna/);
     expect(() => parsujArgumenty(['--prostoo'])).toThrow(/--prostoo/);
     expect(() => parsujArgumenty(['--bez-progu=1'])).toThrow(/--bez-progu/);
+    expect(() => parsujArgumenty(['--bez-lancuchow=1'])).toThrow(/--bez-lancuchow/);
+    expect(() => parsujArgumenty(['--bez-lancuchowx'])).toThrow(/--bez-lancuchowx/);
     expect(() => parsujArgumenty(['45'])).toThrow(/45/);
   });
 
@@ -493,6 +501,36 @@ describe('uprząż bot:osada: argumenty', () => {
     expect(parsujArgumenty(['--jedna=lanciego:12']).jedna).toEqual({ demo: 'lanciego', ziarno: 12 });
     expect(() => parsujArgumenty(['--jedna=sopot:12'])).toThrow(/--jedna/);
     expect(() => parsujArgumenty(['--jedna=lanciego'])).toThrow(/--jedna/);
+  });
+});
+
+describe('uprząż bot:osada: jak grano', () => {
+  it('opisGry: nagłówek mówi, czy gra ma łańcuchy kart (domyślny tekst bez zmian), a --prosto zawsze jest bez nich', () => {
+    const jak = parsujArgumenty([]);
+    expect(opisGry(jak)).toBe(
+      'jak w przeglądarce (obcy, mieszkańcy z adresu, okolica miasta, ludność 2021, łańcuchy kart, tempo przeglądarki)',
+    );
+    expect(opisGry(parsujArgumenty(['--bez-lancuchow']))).toBe(
+      'jak w przeglądarce, ale bez łańcuchów kart (obcy, mieszkańcy z adresu, okolica miasta, ludność 2021, tempo przeglądarki)',
+    );
+    const prosto =
+      'prosto (bez obcych, mieszkańców z adresu, okolicy miasta, ludności 2021 i łańcuchów kart, tempo przeglądarki)';
+    expect(opisGry(parsujArgumenty(['--prosto']))).toBe(prosto);
+    expect(opisGry(parsujArgumenty(['--prosto', '--bez-lancuchow']))).toBe(prosto);
+  });
+
+  it('argumentyPrzebiegu: proces potomny dostaje grę, długość i te flagi, które zmieniają grę (nie próg ani liczbę procesów)', () => {
+    expect(argumentyPrzebiegu(parsujArgumenty([]), 'lanciego', 12)).toEqual(['--jedna=lanciego:12', '--dni=45']);
+    expect(
+      argumentyPrzebiegu(
+        parsujArgumenty(['--dni=30', '--prosto', '--bez-lancuchow', '--bez-progu', '--procesy=3', '--limit=9']),
+        'zielonki',
+        15,
+      ),
+    ).toEqual(['--jedna=zielonki:15', '--dni=30', '--prosto', '--bez-lancuchow']);
+    // to, co dostaje potomek, parsuje się z powrotem na tę samą grę
+    const potomek = parsujArgumenty(argumentyPrzebiegu(parsujArgumenty(['--bez-lancuchow']), 'przymorze', 13));
+    expect(potomek).toMatchObject({ jedna: { demo: 'przymorze', ziarno: 13 }, bezLancuchow: true, prosto: false });
   });
 });
 
@@ -576,6 +614,55 @@ describe('uprząż bot:osada: tabela', () => {
   });
 });
 
+describe('uprząż bot:osada: usterki przebiegu', () => {
+  it('opis zawieszonych z obciętą listą mówi, ile było razem i że liczy tylko zachowane wpisy', () => {
+    // bez obcięcia (razem równe długości listy albo bez drugiego argumentu) tekst jak dawniej
+    const wpisy = [
+      { k: 'nowe_okno', s: 3 },
+      { k: 'nowe_okno', s: 4 },
+    ];
+    expect(opisZawieszonych(wpisy, 2)).toEqual(opisZawieszonych(wpisy));
+    const obciete = opisZawieszonych(wpisy, 1000);
+    expect(obciete).toHaveLength(1);
+    expect(obciete[0]).toContain('nowe_okno');
+    expect(obciete[0]).toContain('co najmniej 2 razy');
+    expect(obciete[0]).toContain('razem 1000');
+    expect(obciete[0]).toContain('15:04');
+    expect(obciete[0]).toContain('silnik nie umie zamknąć tego okna');
+  });
+
+  it('opis błędów decydenta: jedna linia na miejsce i tekst, ile razy i kiedy pierwszy raz, bez błędów pusty', () => {
+    expect(opisBledowDecydenta([])).toEqual([]);
+    // sekunda 3 to tick 60: dzień 1, 15:04 (jak w opisie zawieszonych)
+    const opis = opisBledowDecydenta([
+      { s: 3, gdzie: 'tura', tekst: 'TypeError: x is not a function' },
+      { s: 4, gdzie: 'tura', tekst: 'TypeError: x is not a function' },
+      { s: 4, gdzie: 'okno', tekst: 'TypeError: x is not a function' },
+      { s: 9, gdzie: 'start', tekst: 'Error: inny' },
+    ]);
+    expect(opis).toHaveLength(3);
+    expect(opis[0]).toContain('w turze');
+    expect(opis[0]).toContain('TypeError: x is not a function');
+    expect(opis[0]).toContain('2 razy');
+    expect(opis[0]).toContain('dniu 1');
+    expect(opis[0]).toContain('15:04');
+    expect(opis[1]).toContain('w oknie zarządu');
+    expect(opis[1]).toContain('1 raz ');
+    expect(opis[2]).toContain('w starcie');
+    expect(opis[2]).toContain('Error: inny');
+    for (const linia of opis) expect(linia).toContain('decydent rzucił');
+  });
+
+  it('opis błędów decydenta z obciętą listą mówi, ile było razem', () => {
+    const wpisy = Array.from({ length: 50 }, (_, n) => ({ s: 100 + n, gdzie: 'tura' as const, tekst: 'Error: x' }));
+    expect(opisBledowDecydenta(wpisy, 50)).toEqual(opisBledowDecydenta(wpisy));
+    const obciete = opisBledowDecydenta(wpisy, 4000);
+    expect(obciete).toHaveLength(1);
+    expect(obciete[0]).toContain('co najmniej 50 razy');
+    expect(obciete[0]).toContain('razem 4000');
+  });
+});
+
 describe('uprząż bot:osada: błąd procesu potomnego', () => {
   it('streszczenieBledu: linia błędu z dwiema następnymi, bez źródła i reszty stosu', () => {
     const stderr = [
@@ -620,7 +707,15 @@ describe('uprząż bot:osada: jedna gra', () => {
     for (const demo of ['przymorze', 'lanciego', 'zielonki']) {
       const g = await przygotujGre(demo, 11, false);
       expect(g.seed, demo).toBe(11);
-      expect(g.opts, demo).toMatchObject({ core: 4, obcy: true, lancuchy: true, tempoPrzegladarki: true });
+      // odpowiedzNaNieznane jawnie false: nowy rodzaj okna z innej gałęzi ma być w pomiarze błędem przebiegu, nie cichą odpowiedzią
+      expect(g.opts, demo).toMatchObject({
+        core: 4,
+        obcy: true,
+        lancuchy: true,
+        tempoPrzegladarki: true,
+        odpowiedzNaNieznane: false,
+      });
+      expect(g.opts.odpowiedzNaNieznane, demo).toBe(false);
       expect(g.opts.mieszkancy, demo).toBeDefined();
       expect(g.opts.okolica!.length, demo).toBeGreaterThan(0);
       expect(g.opts.ludnosc2021, demo).toBeGreaterThan(0);
@@ -636,9 +731,28 @@ describe('uprząż bot:osada: jedna gra', () => {
     }
   }, 120_000);
 
+  it('przygotujGre z czwartym argumentem false: gra jak w przeglądarce, ale bez łańcuchów kart (zarząd bez wątków sezonu)', async () => {
+    const g = await przygotujGre('przymorze', 11, false, false);
+    expect(g.opts).toMatchObject({
+      core: 4,
+      obcy: true,
+      lancuchy: false,
+      tempoPrzegladarki: true,
+      odpowiedzNaNieznane: false,
+    });
+    expect(g.opts.mieszkancy).toBeDefined();
+    expect(g.opts.okolica!.length).toBeGreaterThan(0);
+    expect(g.opts.ludnosc2021).toBeGreaterThan(0);
+    // reszta jak w przeglądarce: obcy, mapa miasta i drogi do zwycięstwa, ale zarząd bez łańcuchów
+    expect(g.sim.st.obcy).toBeDefined();
+    expect(g.gov.miasto).toBeDefined();
+    expect(g.gov.zwyciestwo).toBeDefined();
+    expect(g.gov.lancuchy).toBeUndefined();
+  }, 120_000);
+
   it('przygotujGre prosto: bez obcych, mieszkańców z adresu, okolicy, ludności 2021 i łańcuchów kart, ale z tempem przeglądarki', async () => {
     const g = await przygotujGre('lanciego', 12, true);
-    expect(g.opts).toEqual({ core: 4, tempoPrzegladarki: true });
+    expect(g.opts).toEqual({ core: 4, tempoPrzegladarki: true, odpowiedzNaNieznane: false });
     expect(g.sim.st.obcy).toBeUndefined();
     expect(g.gov.lancuchy).toBeUndefined();
     expect(g.gov.miasto).toBeUndefined();
@@ -658,6 +772,9 @@ describe('uprząż bot:osada: jedna gra', () => {
       expect(d.wkurzenie).toBeGreaterThanOrEqual(0);
     }
     expect(wynik.zawieszone).toEqual([]);
+    expect(wynik.zawieszonychRazem).toBe(0);
+    expect(wynik.bledy).toEqual([]);
+    expect(wynik.bledowRazem).toBe(0);
     expect(wynik.czasMs).toBeGreaterThan(0);
     // ta sama gra bez zatrzymań na poranki kończy w tym samym stanie
     const demo = JSON.parse(
@@ -678,6 +795,33 @@ describe('uprząż bot:osada: jedna gra', () => {
     expect(rano.zarzad).toBeGreaterThanOrEqual(1);
     expect(rano.ludnosc).toBeGreaterThan(rano.zarzad);
     expect(wynik.zawieszone).toEqual([]);
+  }, 120_000);
+
+  it('zagraj bez łańcuchów (szósty argument false) to ta sama gra co przygotujGre bez łańcuchów', async () => {
+    // skrót gry obejmuje stan zarządu, a w nim flagę `lancuchy`, więc gra z łańcuchami nigdy nie ma skrótu gry bez nich
+    const bez = await zagraj('przymorze', 12, 1, false, silnik, false);
+    const g = await przygotujGre('przymorze', 12, false, false);
+    expect(g.gov.lancuchy).toBeUndefined();
+    grajDo(g, silnik, TICKS_PER_DAY);
+    expect(bez.skrot).toBe(skrotGry(g));
+  }, 120_000);
+
+  it('zagraj: błąd decydenta nie przerywa przebiegu, ale wychodzi w wyniku z licznikiem (uprząż liczy to jako błędny przebieg)', async () => {
+    const rzuca: Decydent = {
+      okno: () => {},
+      tura: (g) => {
+        if (g.sim.st.tick % (10 * TICKS_PER_SECOND) === 0) throw new Error('rzut w turze');
+      },
+    };
+    const wynik = await zagraj('zielonki', 11, 2, true, rzuca);
+    expect(wynik.przebieg.poranki.map((d) => d.dzien)).toEqual([2, 3]);
+    expect(wynik.przebieg.koniec).toBeNull();
+    // co dziesiąta sekunda dwóch dób (960 s na dobę): 192 błędy, na liście ostatnie MAX_BLEDOW
+    expect(wynik.bledowRazem).toBe(192);
+    expect(wynik.bledy).toHaveLength(MAX_BLEDOW);
+    expect(wynik.bledy.at(-1)).toEqual({ s: 1920, gdzie: 'tura', tekst: 'Error: rzut w turze' });
+    expect(wynik.zawieszone).toEqual([]);
+    expect(opisBledowDecydenta(wynik.bledy, wynik.bledowRazem)).toHaveLength(1);
   }, 120_000);
 
   it('zagraj gra podanym decydentem: koniec w pierwszym dniu to brak poranków i koniec z dniem 1', async () => {
