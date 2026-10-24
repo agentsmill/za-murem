@@ -6,6 +6,7 @@
    mapie miasta ma jedną linię stanu (M13). Zdania zarządu są w stanie w obu językach, więc testy czytają `.pl` i `.en`. */
 
 import { describe, expect, it } from 'vitest';
+import { cudzyslowy } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { type Gosc, type KtoId, osobyGrupy } from '../../src/gov/goscie.ts';
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
@@ -13,6 +14,7 @@ import { placeOf, wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts'
 import { makeCard } from '../../src/gov/noc.ts';
 import type { GovGosc, GovInput } from '../../src/gov/typy.ts';
 import { eventView } from '../../src/gov/wydarzenia.ts';
+import { celZMiejsca } from '../../src/gov/wyprawy.ts';
 import { chooseEvent, govUpdate, newGov } from '../../src/gov/zarzad.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
@@ -303,5 +305,34 @@ describe('M6: grupa w zdaniu liczy pozostałych, nie „resztę (2 osoby)”', (
     const { linia, imie } = przyjecie(1);
     expect(linia.pl).toBe(`Przyjęliście: ${imie}.`);
     expect(linia.en).toBe(`You took in ${imie}.`);
+  });
+});
+
+describe('M8: cudzysłowy w nazwach miejsc z OSM są typograficzne, osobno w każdym języku', () => {
+  it('cudzyslowy: para po parze, nieparzysta liczba zostaje', () => {
+    expect(cudzyslowy('Przedszkole "Chatka"', 'pl')).toBe('Przedszkole \u201eChatka\u201d');
+    expect(cudzyslowy('Przedszkole "Chatka"', 'en')).toBe('Przedszkole \u201cChatka\u201d');
+    expect(cudzyslowy('"A" i "B"', 'pl')).toBe('\u201eA\u201d i \u201eB\u201d');
+    expect(cudzyslowy('Bazarek "Na Dołku"', 'pl')).toBe('Bazarek \u201eNa Dołku\u201d');
+    // brak cudzysłowu i nieparzysta liczba (brak zamknięcia, cal): bez zmian
+    expect(cudzyslowy('Sklep Żabka', 'pl')).toBe('Sklep Żabka');
+    expect(cudzyslowy('Sklep "Żabka', 'pl')).toBe('Sklep "Żabka');
+    expect(cudzyslowy('Telewizor 32" i "Okno"', 'en')).toBe('Telewizor 32" i "Okno"');
+    // już typograficzne zostają
+    expect(cudzyslowy('Klub \u201eMaciuś\u201d', 'pl')).toBe('Klub \u201eMaciuś\u201d');
+  });
+
+  it('cel wyprawy z nazwą w cudzysłowie: kategoria i nazwa w nawiasie, polskie „…” po polsku, angielskie “…” po angielsku', () => {
+    const cel = celZMiejsca({
+      klucz: 'poi:43:7',
+      kat: 'szkola',
+      x: 120,
+      y: 10,
+      odl: 120,
+      nazwa: 'Niepubliczne Przedszkole "Nasze Przedszkole"',
+    });
+    expect(cel.nazwa.pl).toBe('Szkoła (Niepubliczne Przedszkole \u201eNasze Przedszkole\u201d)');
+    expect(cel.nazwa.en).toBe('School (Niepubliczne Przedszkole \u201cNasze Przedszkole\u201d)');
+    expect(cel.nazwa.pl + cel.nazwa.en).not.toContain('"');
   });
 });

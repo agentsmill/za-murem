@@ -572,10 +572,11 @@ describe('kartaHtml', () => {
   });
 
   it('nazwa z OSM idzie przez ucieczkę HTML', () => {
+    // nazwa z OSM: znaczniki i & idą przez ucieczkę HTML, a proste cudzysłowy stają się polskimi (src/gov/wyprawy.ts, nazwaCelu)
     const zly = { ...m, nazwa: '<b>Sklep & "Spółka"</b>' };
     const h = kartaHtml(zly, kartaMiejsca(zly, st, i), true);
     expect(h).not.toContain('<b>Sklep');
-    expect(h).toContain('&lt;b&gt;Sklep &amp; &quot;Spółka&quot;&lt;/b&gt;');
+    expect(h).toContain('&lt;b&gt;Sklep &amp; „Spółka”&lt;/b&gt;');
   });
 });
 
@@ -907,6 +908,7 @@ describe('planWyprawySheet', () => {
     const { st, i, m } = plan();
     i.people[0].name = '<img src=x onerror=alert(1)> "Zła"';
     i.people[0].id = 'a"b<c>';
+    // nazwa z OSM: znaczniki i & idą przez ucieczkę HTML, a proste cudzysłowy stają się polskimi (src/gov/wyprawy.ts, nazwaCelu)
     const zly = { ...m, nazwa: '<b>Sklep & "Spółka"</b>' };
     const cel = celZMiejsca(zly);
     const s = planWyprawySheet(cel, i, st, new Set([i.people[0].id]), tx('<i>źle</i>', '<i>bad</i>'));
@@ -917,7 +919,7 @@ describe('planWyprawySheet', () => {
     expect(wszystko).not.toContain('a"b<c>');
     expect(wszystko).toContain('&lt;img src=x onerror=alert(1)&gt; &quot;Zła&quot;');
     expect(wszystko).toContain('data-arg="a&quot;b&lt;c&gt;"');
-    expect(wszystko).toContain('&lt;b&gt;Sklep &amp; &quot;Spółka&quot;&lt;/b&gt;');
+    expect(wszystko).toContain('&lt;b&gt;Sklep &amp; „Spółka”&lt;/b&gt;');
   });
 });
 

@@ -34,7 +34,7 @@
 
 import { POICAT, type Res } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { cudzyslowy, type Tx, tx } from '../core/jezyk.ts';
 import { hashString, mulberry } from '../core/rng.ts';
 import { type Miejsce, naMapieLokalnej } from '../world/miasto.ts';
 import { placeIn } from './miejsce.ts';
@@ -147,12 +147,14 @@ export function zapasStartowy(klucz: string, kat: string): number {
 }
 
 /** Nazwa celu z miejsca: kategoria, a z niepustą nazwą (po filtrze nazw wywołującego) kategoria z nazwą w nawiasie.
-    Nazwa równa kategorii w którymkolwiek języku nie powtarza się. */
+    Nazwa równa kategorii w którymkolwiek języku nie powtarza się. Proste cudzysłowy w nazwie z OSM zamieniają się na
+    polskie („…”) w polskim napisie i angielskie (“…”) w angielskim. */
 function nazwaCelu(kat: string, wlasna: string): Tx {
   const k = nazwaKategorii(kat);
   const n = wlasna.trim();
   if (!n || n.toLowerCase() === k.pl.toLowerCase() || n.toLowerCase() === k.en.toLowerCase()) return k;
-  return tx(`${k.pl} (${n})`, `${k.en} (${n})`);
+  // nazwa z OSM bywa w prostych cudzysłowach (Przedszkole "Chatka"): w napisie typograficzne, osobne dla każdego języka
+  return tx(`${k.pl} (${cudzyslowy(n, 'pl')})`, `${k.en} (${cudzyslowy(n, 'en')})`);
 }
 
 /** Cel z miejsca z OSM: ryzyko POICAT.risk razy (1 + odl / 900), łup z POICAT razy SKALA_LUPU, zapas z klucza.
