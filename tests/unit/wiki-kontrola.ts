@@ -19,8 +19,16 @@ export const BLOKOWE = /klatk|trzepak|spółdziel|zarząd|walne|\bbram/i;
 export const DOMOWE = /furtk|komitet/i;
 
 /** Ile zdań ma tekst: zdanie kończy kropka, wykrzyknik albo pytajnik (z cudzysłowem po nim), po których idzie spacja
-    i początek następnego zdania (wielka litera albo cudzysłów otwierający). */
-export const ileZdan = (t: string): number => 1 + (t.match(/[.!?][”"]?\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ„“"])/g) ?? []).length;
+    i początek następnego zdania (wielka litera albo cudzysłów otwierający). Zdania w cudzysłowie (cytaty z gry, które same
+    bywają dwuzdaniowe) liczą się jako jedno słowo. */
+export const ileZdan = (t: string): number =>
+  1 +
+  (
+    t
+      .replace(/„[^”]*”/g, 'Q')
+      .replace(/“[^”]*”/g, 'Q')
+      .match(/[.!?][”"]?\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ„“"])/g) ?? []
+  ).length;
 
 /** Kontrole treści wszystkich artykułów kategorii `kat` w jednym przypadku (miejsce, język, urządzenie), w obu trybach gry:
     od dwóch do pięciu zdań po jednym w elemencie, bez pauz-myślników i pogrubień, cudzysłowy właściwe dla języka, angielski
