@@ -4,6 +4,7 @@
 
 import { definicjeBudowle } from './wiki-budowle.ts';
 import { definicjeDrogi } from './wiki-drogi.ts';
+import { definicjeMiasto } from './wiki-miasto.ts';
 import { definicjeSasiedzi } from './wiki-sasiedzi.ts';
 import { definicjeStart } from './wiki-start.ts';
 import type { Def } from './wiki-typy.ts';
@@ -15,6 +16,7 @@ export function definicjeTresc(): Def[] {
     ...definicjeStart(),
     ...definicjeZasoby(),
     ...definicjeBudowle(),
+    ...definicjeMiasto(),
     ...definicjeSasiedzi(),
     ...definicjeDrogi(),
     ...definicjeZombie(),

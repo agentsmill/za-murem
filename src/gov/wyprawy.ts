@@ -62,23 +62,23 @@ export const LUP_03: Readonly<Partial<Record<Res, LootKey>>> = {
 };
 
 /** 3 km/h w metrach na minutę */
-const METROW_NA_MIN = 50;
+export const METROW_NA_MIN = 50;
 /** ulice są dłuższe niż linia prosta */
-const KRZYWIZNA_ULIC = 1.4;
+export const KRZYWIZNA_ULIC = 1.4;
 /** przeszukanie: jedna osoba 3 godziny, każda następna godzinę mniej, najkrócej godzina */
-const PRZESZUKANIE_MIN = 180;
-const PRZESZUKANIE_KROK_MIN = 60;
-const PRZESZUKANIE_NAJKROCEJ_MIN = 60;
+export const PRZESZUKANIE_MIN = 180;
+export const PRZESZUKANIE_KROK_MIN = 60;
+export const PRZESZUKANIE_NAJKROCEJ_MIN = 60;
 /** wyprawa, która wraca po 20:00, wraca o 6:00 następnego dnia */
 const GODZINA_ZMIERZCHU = 20;
 const GODZINA_SWITU = 6;
 /** ryzyko rośnie z odległością: razy (1 + odl / tyle) */
-const RYZYKO_ODL_M = 900;
+export const RYZYKO_ODL_M = 900;
 /** zapas startowy: ułamek miejsc pustych, mnożnik łupu (od, rozstęp) i górna granica */
-const PUSTE_MIEJSCA = 0.25;
-const ZAPAS_MNOZNIK_OD = 3;
-const ZAPAS_MNOZNIK_ROZSTEP = 3;
-const ZAPAS_MAX = 60;
+export const PUSTE_MIEJSCA = 0.25;
+export const ZAPAS_MNOZNIK_OD = 3;
+export const ZAPAS_MNOZNIK_ROZSTEP = 3;
+export const ZAPAS_MAX = 60;
 
 /** Cel wyprawy: miejsce z OSM albo cel z TARGETS. Siedzi w stanie zarządu (JSON), więc same liczby i napisy Tx. */
 export interface Cel {
