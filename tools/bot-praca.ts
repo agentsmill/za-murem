@@ -35,6 +35,10 @@
    zaproszenia, zwerbowani do zarządu i do mieszkańców, ludność), potem podsumowanie pięciu ziaren. Cel projektu: 2–5
    zwerbowanych do zarządu w 10 dni.
 
+   Gra bez łańcuchów kart: `playWithGov` dostaje te opcje bez `lancuchy`, więc zarząd zaczyna od `newGov(ziarno, tryb)` bez
+   przełącznika, a nie jak gra w przeglądarce (łańcuchy tam są domyślnie włączone). Ten bot mierzy pracę ludzi, wyjścia i werbunek,
+   a nie pulę kart, więc łańcuchy tylko dokładałyby gości i okna; boty `npm run bot` i `bot:zombie` grają z nimi.
+
    Uruchomienie: npm run bot:praca [-- ziarno] [--werbunek] [--dni=N] [--przelacznik | --bez-przelacznika] */
 
 import fs from 'node:fs';

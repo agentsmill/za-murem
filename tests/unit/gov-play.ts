@@ -519,7 +519,8 @@ export interface LawsRun {
 }
 
 /** Gra bez zarządu z uchwałami o jedzeniu od startu: samouczek i drzewo na opał, kiedy drewna mało (jak w playWithGov),
-    przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. */
+    przez `days` dni od 15:00. Do porównania racji, kotła i wspólnych posiłków. Zarządu nie ma wcale, więc i łańcuchów kart
+    (`lancuchy` dotyczy tylko `playWithGov`); pomiar racji i kotła nie zależy od gości z kart. */
 export function playLaws(
   w: World,
   seed: number,

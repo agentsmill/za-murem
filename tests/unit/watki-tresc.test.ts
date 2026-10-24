@@ -200,22 +200,122 @@ describe('teksty: angielski bez polskich słów, bez pięter, numerów mieszkań
     expect(en).toBeGreaterThan(10);
   });
 
-  it('kroki od drugiego nie zakładają, ile czasu minęło od haka: bez „od wczoraj”, „od dwóch dni”, „całą noc”, „last night”…', () => {
-    // krok może wypaść o `po` godzin po haku, ale przy tempie 8× także o dobę i więcej, więc tekst nie liczy dni ani nocy
-    const ZALOZENIE =
-      /zeszłej nocy|od wczoraj|dwóch dni|dwie noce|całą noc|następnego dnia|(?<![a-ząćęłńóśźż])Tej nocy|last night|since yesterday|two days|all night|next day|This morning/;
-    let sprawdzone = 0;
-    for (const id of IDY) {
-      const sc = SCEN[id][0];
-      const w = przejdz(lancuch(id), nowySwiat(id, sc.o));
-      for (const t of w.teksty) {
-        if ((krokPoId(t.krok)?.nr ?? 1) < 2) continue;
-        sprawdzone++;
-        expect(t.tx.pl, `${t.krok}: założenie o czasie`).not.toMatch(ZALOZENIE);
-        expect(t.tx.en, `${t.krok}: założenie o czasie (EN)`).not.toMatch(ZALOZENIE);
+  describe('kroki od drugiego nie zakładają, ile czasu minęło od haka ani jaka jest pora', () => {
+    // Krok może wypaść o `po` godzin po haku, ale przy tempie 8× także o dobę i więcej, a pora dnia zależy od `when` karty i od
+    // tempa gry, więc tekst nie liczy dni ani nocy i nie mówi „tej nocy”, „rano”, „jutro”. Dozwolone jest odwołanie do nocy samego
+    // haka („tamtej nocy”, „o tamtej nocy przy kozie”), bo hak zawsze ma swoją noc, i opis tego, co się z nią działo.
+    const PRZED = '(?<![a-ząćęłńóśźż])';
+    const PO = '(?![a-ząćęłńóśźż])';
+    const ZALOZENIE_PL = new RegExp(
+      [
+        'zeszłej nocy',
+        'od wczoraj',
+        'dwóch dni',
+        'dwie noce',
+        'całą noc',
+        'następnego dnia',
+        'kilka dni',
+        'tydzień temu',
+        `${PRZED}[Tt]ej nocy`,
+        `${PRZED}[Dd]ziś w nocy`,
+        `${PRZED}[Dd]zisiejszej nocy`,
+        `${PRZED}[Dd]ziś rano`,
+        `${PRZED}[Rr]ano${PO}`,
+        `${PRZED}[Ww]czoraj`,
+        `${PRZED}[Pp]rzedwczoraj`,
+        `${PRZED}[Jj]utro`,
+        `${PRZED}[Pp]rzed świtem`,
+      ].join('|'),
+    );
+    const ZALOZENIE_EN = new RegExp(
+      [
+        'last night',
+        'since yesterday',
+        'two days',
+        'all night',
+        'next day',
+        'days ago',
+        'a day ago',
+        'earlier today',
+        'this evening',
+        `${PRZED}this (morning|night)`,
+        `${PRZED}tonight`,
+        `${PRZED}yesterday`,
+        `${PRZED}tomorrow`,
+        `${PRZED}morning${PO}`,
+        `${PRZED}before dawn`,
+      ].join('|'),
+      'i',
+    );
+    /** Wyjątki: opis nocy samego haka w kroku, który wypada w dzień (`when: ['dzien']`) po nocy z haka (kartą nocną). „Dach”:
+        koc machał do rana albo jeszcze raz przed świtem, czyli w nocy, którą zaczęła karta z dachu, a krok 2 wypada osiem godzin
+        później w ciągu dnia. Wyjątek zdejmuje tylko te frazy z tego jednego kroku, reszta tekstu dalej idzie przez sprawdzenie. */
+    const Z_NOCY_HAKA: Record<string, RegExp> = {
+      dach_2:
+        /Czerwony koc na kiju zamachał jeszcze raz przed świtem|The red blanket on the stick (waved once more before dawn|waved until morning)/,
+    };
+
+    it('kontrola: wyrażenia łapią to, co mają, a „tamtej nocy” i „Wieczorek” przepuszczają', () => {
+      for (const zle of [
+        'Tej nocy przyszli.',
+        'Przyszli tej nocy.',
+        'Rano ich nie było.',
+        'Od wczoraj nikt nie wyszedł.',
+        'Jutro wrócą.',
+      ]) {
+        expect(zle, zle).toMatch(ZALOZENIE_PL);
       }
+      for (const dobre of [
+        'Tamtej nocy przyszli.',
+        'Kinga Wieczorek wróciła.',
+        'Pod bramą stoi Ranota.',
+        'Wieczorem Stanisław przyniósł skrzynkę.',
+      ]) {
+        expect(dobre, dobre).not.toMatch(ZALOZENIE_PL);
+      }
+      for (const zle of [
+        'They came last night.',
+        'This morning it was quiet.',
+        'Come back tomorrow.',
+        'In the morning they left.',
+        'Tonight is cold.',
+      ]) {
+        expect(zle, zle).toMatch(ZALOZENIE_EN);
+      }
+      for (const dobre of [
+        'They came that night.',
+        'Kinga Wieczorek is back.',
+        'In the evening Stanisław came.',
+        'Nobody came that night.',
+      ]) {
+        expect(dobre, dobre).not.toMatch(ZALOZENIE_EN);
+      }
+    });
+
+    for (const id of IDY) {
+      it(`${id}: wszystkie ścieżki, oba języki`, () => {
+        let sprawdzone = 0;
+        let wyjatki = 0;
+        for (const sc of SCEN[id]) {
+          const w = przejdz(lancuch(id), nowySwiat(id, sc.o));
+          for (const t of w.teksty) {
+            if ((krokPoId(t.krok)?.nr ?? 1) < 2) continue;
+            sprawdzone++;
+            const wyjatek = Z_NOCY_HAKA[t.krok];
+            const bez = (txt: string): string => {
+              if (wyjatek?.test(txt)) wyjatki++;
+              return wyjatek ? txt.replace(wyjatek, '') : txt;
+            };
+            expect(bez(t.tx.pl), `${t.krok} (${sc.nazwa}): założenie o czasie`).not.toMatch(ZALOZENIE_PL);
+            expect(bez(t.tx.en), `${t.krok} (${sc.nazwa}): założenie o czasie (EN)`).not.toMatch(ZALOZENIE_EN);
+          }
+        }
+        expect(sprawdzone, id).toBeGreaterThan(0);
+        // wyjątek ma po co istnieć: jeśli tekst się zmienił, wpis w Z_NOCY_HAKA trzeba usunąć
+        for (const k of Object.keys(Z_NOCY_HAKA))
+          if (k.startsWith(`${id}_`)) expect(wyjatki, `wyjątek ${k}`).toBeGreaterThan(0);
+      });
     }
-    expect(sprawdzone).toBeGreaterThan(50);
   });
 
   it('teksty nie zawierają pauz ani wykrzykników z sufitu', () => {
