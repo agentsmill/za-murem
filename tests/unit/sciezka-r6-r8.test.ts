@@ -19,6 +19,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { TECH_DOMS } from '../../src/content/data.ts';
+import { WYBOR } from '../../src/content/napisy-sasiedzi.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
 import { wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
@@ -1516,17 +1517,37 @@ describe('teksty R7 (blok i dom, zwykły tryb i zombie, mysz i dotyk, po polsku 
       }
   });
 
-  it('spotkanie: okno spotkania z wyborami z gry („Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”)', () => {
+  it('spotkanie: okno spotkania z wyborami z gry („Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”), a szansę w procentach podaje okno', () => {
     const g = wRozdziale('przymorze', 'zwykly', 'r7');
     expect(slowa(g, false, 'spotkanie')).toEqual({
       text: 'Porozmawiajcie z lokatorami.',
-      how: 'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas (… szans)”. Kto was zna, chętniej pomoże.',
+      how: 'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”. Przy tej pozycji okno podaje szansę w procentach. Kto was zna, chętniej pomoże.',
     });
     ustawJezyk('en');
     expect(slowa(g, false, 'spotkanie')).toEqual({
       text: 'Talk to the residents next door.',
-      how: 'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you (… chance)”. People who know you are more willing to help.',
+      how: 'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you”. The window shows the chance in percent beside it. People who know you are more willing to help.',
     });
+    ustawJezyk('pl');
+  });
+
+  it('spotkanie: podpowiedź cytuje napisy przycisków okna (WYBOR w src/content/napisy-sasiedzi.ts), zaproszenie bez liczby w nawiasie, i nie ma w niej niedokończonego „(…)”', () => {
+    const g = wRozdziale('przymorze', 'zwykly', 'r7');
+    for (const en of [false, true]) {
+      if (en) ustawJezyk('en');
+      const jezyk = (d: { pl: string; en: string }): string => (en ? d.en : d.pl);
+      const cytat = (t: string): string => (en ? `“${t}”` : `„${t}”`);
+      const how = slowa(g, false, 'spotkanie').how;
+      // przycisk zaproszenia w oknie ma szansę w nawiasie („Zaprosić do nas (45% szans)”), podpowiedź cytuje sam początek
+      const zaproszenie = jezyk(WYBOR.zaproszenie('45%'));
+      expect(zaproszenie).toMatch(en ? /\(45% chance\)$/ : /\(45% szans\)$/);
+      expect(how).toContain(cytat(jezyk(WYBOR.rozmowa())));
+      expect(how).toContain(cytat(jezyk(WYBOR.jedzenie())));
+      expect(how).toContain(cytat(zaproszenie.replace(/ \(.*\)$/, '')));
+      expect(how).toContain(en ? 'chance in percent' : 'szansę w procentach');
+      expect(how).not.toContain('…');
+    }
+    ustawJezyk('pl');
   });
 
   it('wejscie i szaber: blok z mieszkaniami i piętrami, dom bez słów z bloku; „głośno” z dopiskiem o szwendaczach w zombie', () => {

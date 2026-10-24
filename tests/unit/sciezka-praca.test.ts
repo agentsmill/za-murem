@@ -21,7 +21,15 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WYBOR } from '../../src/content/napisy-sasiedzi.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
-import { PROGI_DOMYSLNE, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../../src/sim/praca.ts';
+import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
+import {
+  PROGI_DOMYSLNE,
+  type Priorytet,
+  type Progi,
+  RODZAJE,
+  type RodzajPracy,
+  zaSiatkeDomyslnie,
+} from '../../src/sim/praca.ts';
 import type { Pawn } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { NAPISY } from '../../src/sim/wedrowcy.ts';
@@ -328,26 +336,46 @@ describe.each(KOMBINACJE)('R3 „Praca”: %s %s', (key, mode) => {
     expect(zrobione(g, 'r3')).toEqual(['r3.priorytet', 'r3.stale', 'r3.zapas']);
   });
 
-  it('podpowiedź stałego zajęcia mówi jednym zdaniem o przełączniku „za siatkę”: zwykły tryb za dnia wychodzą sami, zombie to ryzyko', () => {
+  it('podpowiedź stałego zajęcia mówi jednym zdaniem o przełączniku „za siatkę”: osobny dla każdej osoby, domyślnie włączony w zwykłym trybie (za dnia wychodzą sami), wyłączony w zombie (ryzyko)', () => {
     const g = wRozdziale(key, mode, 'r3');
     const jak = () => cel(g, 'stale').how;
     if (zombie) {
-      expect(jak()).toContain('„Może wychodzić za siatkę”: wyłączone.');
-      expect(jak()).toContain('Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.');
+      expect(jak()).toContain(
+        'Obok jest przełącznik „Może wychodzić za siatkę”, ustawiany osobno dla każdej osoby; domyślnie jest wyłączony. Za siatką są szwendacze: kto tam wyjdzie sam, ryzykuje ugryzienie.',
+      );
       expect(jak()).not.toContain('za dnia ludzie sami');
       ustawJezyk('en');
-      expect(jak()).toContain('“Can go outside the fence”: off.');
-      expect(jak()).toContain('There are shamblers outside the fence: anyone who goes out on their own risks a bite.');
+      expect(jak()).toContain(
+        'Beside it is a “Can go outside the fence” switch, set separately for each person; it is off by default. There are shamblers outside the fence: anyone who goes out on their own risks a bite.',
+      );
     } else {
       expect(jak()).toContain(
-        '„Może wychodzić za siatkę”: włączone, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.',
+        'Obok jest przełącznik „Może wychodzić za siatkę”, ustawiany osobno dla każdej osoby; domyślnie jest włączony, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.',
       );
       expect(jak()).not.toContain('szwendacze');
       ustawJezyk('en');
       expect(jak()).toContain(
-        '“Can go outside the fence”: on, so by day people go outside the fence on their own for wood and loot.',
+        'Beside it is a “Can go outside the fence” switch, set separately for each person; it is on by default, so by day people go outside the fence on their own for wood and loot.',
       );
       expect(jak()).not.toContain('shamblers');
+    }
+  });
+
+  it('„domyślnie” w podpowiedzi stałego zajęcia to prawdziwa wartość przełącznika: tryb zwykły włączony, zombie wyłączony, i tak pokazuje go karta nowej osoby', () => {
+    const g = wRozdziale(key, mode, 'r3');
+    const o = odczyt(g);
+    // symulacja: domyślna wartość trybu, a osoba bez ustawień jej nie zmienia
+    expect(zaSiatkeDomyslnie(g.sim.st)).toBe(!zombie);
+    expect(g.sim.st.praca).toBeUndefined();
+    // karta osoby bez ustawień: przełącznik wciśnięty tylko w trybie zwykłym
+    const karta = pracaKartaHtml(o.snap.people[0], { widoczne: o.snap.praca.widoczne, zombie });
+    expect(karta).toContain(`data-card="zasiatke" aria-pressed="${!zombie}"`);
+    // podpowiedź mówi o tej samej wartości po polsku i po angielsku
+    for (const en of [false, true]) {
+      if (en) ustawJezyk('en');
+      const jak = cel(g, 'stale').how;
+      if (en) expect(jak).toContain(zombie ? 'it is off by default' : 'it is on by default');
+      else expect(jak).toContain(zombie ? 'domyślnie jest wyłączony' : 'domyślnie jest włączony');
     }
   });
 
@@ -397,7 +425,7 @@ describe.each(KOMBINACJE)('R3 „Praca”: %s %s', (key, mode) => {
       'Przycisk Praca u góry: stuknięcie w komórkę zmienia priorytet, 1 to najpierw, puste: nie robi. Bez rozkazów ludzie biorą prace z tej tabeli po kolei, a polecenie zawsze wygrywa.',
     );
     expect(jak('stale', false)).toMatch(
-      /^Na karcie osoby wybierzcie „Stałe zajęcie”, na przykład Drwal albo Szaber: te zlecenia weźmie przed wszystkimi innymi\. Obok jest „Może wychodzić za siatkę”: /,
+      /^Na karcie osoby wybierzcie „Stałe zajęcie”, na przykład Drwal albo Szaber: te zlecenia weźmie przed wszystkimi innymi\. Obok jest przełącznik „Może wychodzić za siatkę”, ustawiany osobno dla każdej osoby; domyślnie jest (włączony|wyłączony)/,
     );
     expect(jak('stale', true)).toBe(jak('stale', false));
     expect(jak('zapas', false)).toBe(
@@ -417,7 +445,7 @@ describe.each(KOMBINACJE)('R3 „Praca”: %s %s', (key, mode) => {
       'The Work button at the top: tap a cell to change the priority; 1 goes first, blank means they won’t do it. With no orders, people take jobs from this table in turn, and an order always comes first.',
     );
     expect(jak('stale', false)).toMatch(
-      /^On a person’s card pick a “Fixed job”, for example Woodcutting or Scavenging: they take those jobs before anything else\. Beside it is “Can go outside the fence”: /,
+      /^On a person’s card pick a “Fixed job”, for example Woodcutting or Scavenging: they take those jobs before anything else\. Beside it is a “Can go outside the fence” switch, set separately for each person; it is (on|off) by default/,
     );
     expect(jak('stale', true)).toBe(jak('stale', false));
     expect(jak('zapas', false)).toBe(
@@ -577,10 +605,10 @@ describe.each(KOMBINACJE)('automat pracy a rozdziały: %s %s', (key, mode) => {
     expect(widok(g).rozdzial!.biezacy?.key).not.toBe('przeszukaj');
     // automat niczego nie zapisał w ustawieniach pracy
     expect(st.praca).toBeUndefined();
-    // otwarty R3 w tej samej grze: żaden cel nie jest zrobiony przez samą pracę automatu, choćby minęło pół dnia
+    // otwarty R3 w tej samej grze: żaden cel nie jest zrobiony przez samą pracę automatu, choćby minęło sześć godzin gry
     otworz(g, 'r3');
     const t0 = g.sim.st.tick;
-    graj(g, (x) => x.sim.st.tick >= t0 + 6 * 800, {}, 1200);
+    graj(g, (x) => x.sim.st.tick >= t0 + 6 * TICKS_PER_HOUR, {}, 1200);
     expect(g.sim.st.praca).toBeUndefined();
     expect(cele(g).every((c) => !c.done)).toBe(true);
     expect(g.sciezka.rozdzial).toBe('r3');

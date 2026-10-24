@@ -69,9 +69,12 @@ import { num } from './tekst.ts';
 /** pionek wędrowca, który przystanął przy siatce (faza 1): rozmowa i zaproszenie możliwe tylko wtedy */
 const wedrowcaPrzySiatce = (o: OdczytCelow) => o.st.pawns.find((p) => p.kind === 'wedrowiec' && p.job?.phase === 1);
 
-/** pionek o danym id ze stanu okazji (`cel`), jeśli ma taki rodzaj */
-const pionekOkazji = (o: OdczytCelow, s: StanSciezki, kind: string) =>
-  s.okazja?.cel === undefined ? undefined : o.st.pawns.find((p) => p.id === s.okazja!.cel && p.kind === kind);
+/** pionek o id ze stanu okazji (`cel`); z `kind` tylko taki rodzaj, bez niego jakikolwiek (zwerbowany wędrowiec zostaje tym
+    samym pionkiem i zmienia tylko rodzaj: zarząd albo mieszkaniec) */
+const pionekOkazji = (o: OdczytCelow, s: StanSciezki, kind?: string) =>
+  s.okazja?.cel === undefined
+    ? undefined
+    : o.st.pawns.find((p) => p.id === s.okazja!.cel && (kind === undefined || p.kind === kind));
 
 /** „Zaznaczcie kogoś i prawy przycisk” albo na dotyku „Stuknijcie kogoś i przytrzymajcie palec” */
 const zaznaczIKlik = (o: OdczytCelow): string =>
@@ -89,11 +92,6 @@ const click = (o: OdczytCelow): string => (o.touch ? 'press and hold on' : 'righ
 const alarmZrobiony = (o: OdczytCelow): boolean => alarmOn(o.st);
 
 /* ---------------------------------------------------------------- O1. Wędrowiec */
-
-/** pionek, o którego chodzi w okazji (id w stanie), jakiegokolwiek rodzaju: zwerbowany wędrowiec zostaje tym samym pionkiem i
-    zmienia tylko rodzaj (zarząd albo mieszkaniec) */
-const pionekWedrowca = (o: OdczytCelow, s: StanSciezki) =>
-  s.okazja?.cel === undefined ? undefined : o.st.pawns.find((p) => p.id === s.okazja!.cel);
 
 /** Praca zarządu z tym wędrowcem: zaproszenie (`zapros`) albo pytanie o rękę (`reka`), obie to praca `zapros` z `what` równym
     poleceniu (`startZapros` w src/sim/sim.ts). Trwa dojście do siatki i dwie minuty gry rozmowy przez siatkę. */
@@ -116,6 +114,16 @@ const jestMiejsceNaZaproszenie = (o: OdczytCelow): boolean => {
   const dokad = okazjaWerbunku(o.st, o.w).dokad;
   return dokad === 'zarzad' || dokad === 'mieszkaniec';
 };
+
+/** Nazwa pozycji menu z zaproszeniem wędrowca bez szansy w nawiasie: menu dopisuje szansę samo (`werbunekAt` w src/sim/orders.ts),
+    a podpowiedź cytuje sam początek. Przy pełnym zarządzie menu zaprasza mieszkańca („Zaprosić do nas jako mieszkańca (N%)”,
+    po angielsku „Invite to stay as a resident (N%)”), inaczej zarząd („Zaprosić do nas (N% szans)”), a bez miejsca pozycja jest
+    wyszarzona pod nazwą bez liczby (`NAPISY.zaprosicBez`). Podpowiedź zawsze cytuje tę nazwę, którą gracz zobaczy w menu. */
+const szansaWNawiasie = / \(.*\)$/;
+function nazwaZaproszenia(o: OdczytCelow): { pl: string; en: string } {
+  const n = okazjaWerbunku(o.st, o.w).dokad === 'mieszkaniec' ? NAPISY.zaprosicMieszkanca(0) : NAPISY.zaprosicBez;
+  return { pl: n.pl.replace(szansaWNawiasie, ''), en: n.en.replace(szansaWNawiasie, '') };
+}
 
 const O1: DefOkazji = {
   k: 'o1',
@@ -163,7 +171,8 @@ const O1: DefOkazji = {
         wiescPoOtwarciu(o, s, NAPISY.rekaCzysta(true).pl, NAPISY.rekaUgryziona(true).pl),
     },
     {
-      // O1.3 werbunek [praca-ludzi]: po rozmowie „Zaprosić do nas” z szansą w procentach (menu pokazuje liczbę, podpowiedź „…”)
+      // O1.3 werbunek [praca-ludzi]: po rozmowie „Zaprosić do nas” z szansą w procentach (liczbę pokazuje menu, podpowiedź
+      // cytuje nazwę pozycji bez niej i mówi, że szansa stoi obok; bez „(… szans)”, które gracz czyta jak urwany tekst)
       key: 'zapros',
       tekst: (o) =>
         zombieMode(o.st, o.gov)
@@ -171,9 +180,10 @@ const O1: DefOkazji = {
           : L('Zaproście wędrowca do siebie.', 'Invite the wanderer to stay.'),
       jak: (o) => {
         const kto = zombieMode(o.st, o.gov) ? { pl: 'ocalałym', en: 'survivor' } : { pl: 'wędrowcu', en: 'wanderer' };
+        const nazwa = nazwaZaproszenia(o);
         return L(
-          `Po rozmowie ${klik(o)} na ${kto.pl}: „${NAPISY.zaprosicBez.pl} (… szans)”. Szanse rosną z jedzeniem w zapasie i wolnym łóżkiem, spadają po napaści na obcych.`,
-          `After the chat, ${click(o)} the ${kto.en}: “${NAPISY.zaprosicBez.en} (… chance)”. The odds go up with food in stock and a free bed, and down after you rob strangers.`,
+          `Po rozmowie ${klik(o)} na ${kto.pl}: „${nazwa.pl}”. Gdy jest miejsce, menu podaje przy tej pozycji szansę w procentach; rośnie z jedzeniem w zapasie i wolnym łóżkiem, spada po napaści na obcych.`,
+          `After the chat, ${click(o)} the ${kto.en}: “${nazwa.en}”. When there is room, the menu shows the chance in percent beside it; it goes up with food in stock and a free bed, and down after you rob strangers.`,
         );
       },
       // zaproszenia nie ma gdzie przyjąć (pełny zarząd bez wolnego łóżka mieszkańców, w domu wcale): cel czeka na miejsce
@@ -183,7 +193,7 @@ const O1: DefOkazji = {
       // samego pionka) albo wieść o odmowie (nieudane zaproszenie, także „nie mamy już miejsca”)
       zrobiony: (o, s) => {
         const zombie = zombieMode(o.st, o.gov);
-        const p = pionekWedrowca(o, s);
+        const p = pionekOkazji(o, s);
         return (
           pracaWerbunku(o, s, 'zapros') ||
           (!!p && (p.kind === 'core' || p.kind === 'resident')) ||

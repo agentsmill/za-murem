@@ -9,7 +9,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makePerson } from '../../src/content/people.ts';
 import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
-import { hashString, mulberry, nextRandom } from '../../src/core/rng.ts';
+import { hashString, mulberry } from '../../src/core/rng.ts';
 import { govUpdate, newGov } from '../../src/gov/zarzad.ts';
 import { TICKS_PER_DAY, TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { govInput } from '../../src/sim/gov.ts';
@@ -42,6 +42,7 @@ import {
 import { buildWorld, type World } from '../../src/world/world.ts';
 import { mockBlockM2 } from './interior-mock.ts';
 import { POLSKIE } from './po-angielsku.ts';
+import { ustawLosowanie } from './praca-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
 
@@ -123,18 +124,6 @@ const menu = (sim: Sim, world: World, t: Pawn): MenuItem[] =>
     Math.floor(t.y) * world.size + Math.floor(t.x),
   );
 const zaprosMenu = (sim: Sim, world: World, t: Pawn) => menu(sim, world, t).find((m) => m.cmd.t === 'zapros');
-
-/** ustawia st.rng tak, żeby następne losowanie wypadło poniżej szansy (ok) albo nie (!ok) */
-function ustawLosowanie(st: SimState, ok: boolean, szansa: number): void {
-  for (let s = 1; s < 100000; s++) {
-    const r = { s };
-    if (nextRandom(r) < szansa === ok) {
-      st.rng.s = s;
-      return;
-    }
-  }
-  throw new Error('brak ziarna losowania');
-}
 
 /** polecenie zaproszenia (albo pytania o rękę) i przewinięcie aż do rozstrzygnięcia; losowanie ustawione tuż przed nim
     na prawdziwą szansę z chwili rozstrzygnięcia */

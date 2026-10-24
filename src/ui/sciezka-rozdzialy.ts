@@ -524,22 +524,23 @@ function priorytetJak(o: OdczytCelow): string {
 
 /** Podpowiedź stałego zajęcia z jednym zdaniem o przełączniku „Może wychodzić za siatkę”, który stoi na tej samej karcie. Cel
     „włączcie przełącznik” nie istnieje w żadnym trybie (domyślnie włączony w zwykłym, wyłączony w zombie), więc zdanie mówi, jak
-    jest: w zwykłym trybie za dnia ludzie sami wychodzą za siatkę, w zombie to ryzyko ugryzienia (to samo ostrzeżenie co w panelu
+    jest: przełącznik ustawia się osobno dla każdej osoby (`aria-pressed` na karcie), w zwykłym trybie jest domyślnie włączony i
+    za dnia ludzie sami wychodzą za siatkę, w zombie domyślnie wyłączony i to ryzyko ugryzienia (to samo ostrzeżenie co w panelu
     Pracy i na karcie, `ZA_SIATKE_ZOMBIE`). Przykłady rodzajów (Drwal, Szaber) mają nazwy z listy rozwijanej na karcie. */
 function staleJak(o: OdczytCelow): string {
   const zombie = zombieMode(o.st, o.gov);
   const rodzaje = `${nazwaRodzaju('drwal', false)} albo ${nazwaRodzaju('szaber', false)}`;
   const rodzajeEn = `${nazwaRodzaju('drwal', true)} or ${nazwaRodzaju('szaber', true)}`;
   return L(
-    `Na karcie osoby wybierzcie „Stałe zajęcie”, na przykład ${rodzaje}: te zlecenia weźmie przed wszystkimi innymi. Obok jest „Może wychodzić za siatkę”: ${
+    `Na karcie osoby wybierzcie „Stałe zajęcie”, na przykład ${rodzaje}: te zlecenia weźmie przed wszystkimi innymi. Obok jest przełącznik „Może wychodzić za siatkę”, ustawiany osobno dla każdej osoby; domyślnie jest ${
       zombie
-        ? `wyłączone. ${ZA_SIATKE_ZOMBIE.pl}`
-        : 'włączone, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.'
+        ? `wyłączony. ${ZA_SIATKE_ZOMBIE.pl}`
+        : 'włączony, więc za dnia ludzie sami wychodzą za siatkę po drewno i łup.'
     }`,
-    `On a person’s card pick a “Fixed job”, for example ${rodzajeEn}: they take those jobs before anything else. Beside it is “Can go outside the fence”: ${
+    `On a person’s card pick a “Fixed job”, for example ${rodzajeEn}: they take those jobs before anything else. Beside it is a “Can go outside the fence” switch, set separately for each person; it is ${
       zombie
-        ? `off. ${ZA_SIATKE_ZOMBIE.en}`
-        : 'on, so by day people go outside the fence on their own for wood and loot.'
+        ? `off by default. ${ZA_SIATKE_ZOMBIE.en}`
+        : 'on by default, so by day people go outside the fence on their own for wood and loot.'
     }`,
   );
 }
@@ -1011,8 +1012,8 @@ const R7: DefRozdzialu = {
           : L('Porozmawiajcie z lokatorami.', 'Talk to the residents next door.'),
       jak: () =>
         L(
-          'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas (… szans)”. Kto was zna, chętniej pomoże.',
-          'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you (… chance)”. People who know you are more willing to help.',
+          'Kiedy ktoś otworzy, okno spotkania pokaże, kto stoi w drzwiach i co o was myśli: „Porozmawiać”, „Dać jedzenie (2 porcje)”, „Zaprosić do nas”. Przy tej pozycji okno podaje szansę w procentach. Kto was zna, chętniej pomoże.',
+          'When someone opens up, the meeting window shows who is at the door and what they think of you: “Talk”, “Give them 2 food”, “Invite them to join you”. The window shows the chance in percent beside it. People who know you are more willing to help.',
         ),
       okno: 'spotkanie',
       // Licznik spotkań rośnie z początkiem spotkania, a liczą się tylko te po otwarciu rozdziału. Cel zalicza się dopiero,
