@@ -6,6 +6,7 @@ import { definicjeBadania } from './wiki-badania.ts';
 import { definicjeBron } from './wiki-bron.ts';
 import { definicjeBudowle } from './wiki-budowle.ts';
 import { definicjeLudzie } from './wiki-ludzie.ts';
+import { definicjeNoc } from './wiki-noc.ts';
 import { definicjePraca } from './wiki-praca.ts';
 import { definicjeStart } from './wiki-start.ts';
 import type { Def } from './wiki-typy.ts';
@@ -20,5 +21,6 @@ export function definicjeTresc(): Def[] {
     ...definicjeLudzie(),
     ...definicjeBron(),
     ...definicjePraca(),
+    ...definicjeNoc(),
   ];
 }

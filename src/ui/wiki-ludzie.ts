@@ -222,21 +222,21 @@ const nastrojEtykieta = (n: Nastroj, c: WikiCtx): string =>
 
 /** siła warty osoby przy bramie w mocnym układzie (broń palna, uchwała o wartach, lampa przy bramie), żeby zaokrąglenie
     do 0,1 w `guardValue` nie psuło ilorazów */
-function wartaWartosc(osoba: Partial<GovPerson>): number {
+export function wartaWartosc(osoba: Partial<GovPerson>): number {
   const st = sondaStanZUchwalami('u_warty');
   const i = sondaWejscie({ light: { campfire: false, gateLamp: true } });
   return guardValue(st, i, sondaOsoba({ arm: 'palna', ...osoba }), 'brama');
 }
 
 /** mnożnik siły warty od cechy (przy umiejętności Obrona 4, żeby wartość była duża) */
-const wartaMnoznik = (cecha: string): number =>
+export const wartaMnoznik = (cecha: string): number =>
   wartaWartosc({ skills: { obrona: 4 }, traits: [cecha] }) / wartaWartosc({ skills: { obrona: 4 } });
 
 /** o ile rośnie siła warty na poziom umiejętności Obrona (ułamek) */
-const wartaNaPoziom = (): number => (wartaWartosc({ skills: { obrona: 4 } }) / wartaWartosc({}) - 1) / 4;
+export const wartaNaPoziom = (): number => (wartaWartosc({ skills: { obrona: 4 } }) / wartaWartosc({}) - 1) / 4;
 
 /** ryzyko kłopotów w wyprawie osoby z daną zmianą w stosunku do osoby bez niej (`expRisk`; ryzyko bazowe 0,4) */
-function ryzykoMnoznik(zmiana: Partial<GovPerson>): number {
+export function ryzykoMnoznik(zmiana: Partial<GovPerson>): number {
   const st = sondaStan();
   const cel = { ryzyko: 0.4 };
   return expRisk(st, sondaOsoba(zmiana), cel) / expRisk(st, sondaOsoba(), cel);
