@@ -16,13 +16,16 @@
 
    Wyjście: dla każdego przebiegu dzień i godzina otwarcia i końca każdego rozdziału, cele, które przepadły, okazje
    z godziną każdego zaliczonego celu i (od R8) kamienie drogi ludnościowej; na końcu tabela rozdziałów dla wszystkich
-   przebiegów. Kod wyjścia 1, gdy w którymś przebiegu rozdział nie skończył się w limicie dni (gra przegrana też jest
-   niepowodzeniem), w zwykłym trybie przepadł jakiś cel (gracz z podpowiedziami zdąży ze wszystkimi nocnymi celami) albo
-   napis z menu nie zgadzał się z podpowiedzią (gracz szuka w menu napisu z cudzysłowu; liczone w każdym przebiegu, nie
-   tylko z `gadaj`); przyczyny stoją w wyjściu. Przepadłe cele w zombie tylko się wypisuje, nie zmieniają kodu wyjścia:
-   rozdział na przepadły cel nie czeka, a tam przepadają wtedy, gdy drewna na wieczór nie ma skąd wziąć, czyli z tej samej
-   przyczyny co przegrana gra (zob. `powody`). Rozdział, którego nie da się skończyć na jakiejś mapie, poprawia się w celu
-   albo w jego zapasowym warunku (projekt i kod ścieżki), nie w bocie.
+   przebiegów. Kod wyjścia zależy tylko od trybu zwykłego: 1, gdy w którymś przebiegu zwykłym rozdział nie skończył się
+   w limicie dni (gra przegrana też jest niepowodzeniem), przepadł jakiś cel (gracz z podpowiedziami zdąży ze wszystkimi
+   nocnymi celami) albo napis z menu nie zgadzał się z podpowiedzią (gracz szuka w menu napisu z cudzysłowu; liczone w
+   każdym przebiegu, nie tylko z `gadaj`); przyczyny stoją w wyjściu. Przebiegi zombie zostają w tabeli i w wyjściu jako
+   informacja i kodu wyjścia nie zmieniają. Powód: ścieżka w zombie staje na R5 albo R6 (deski na ogródek, pracownia i
+   badania) także wtedy, gdy nikt nie umiera (`bezsmierci`), więc czerwony kod z zombie zasłaniałby w bocie każdą
+   prawdziwą regresję w trybie zwykłym. To pytanie o projekt ścieżki w zombie (przegląd spójności), nie o bota; gdy
+   zapadnie decyzja, zombie wraca do kodu wyjścia.
+   Rozdział, którego nie da się skończyć na jakiejś mapie, poprawia się w celu albo w jego zapasowym warunku (projekt i
+   kod ścieżki), nie w bocie.
 
    Uruchomienie: npm run bot:cele [-- dni] [zwykly|zombie] [--demo=NAZWA] [ziarno:N] [cele] [gadaj] [rownolegle] [karty] [lancuchy=0]
    - dni (domyślnie 10), `zwykly` albo `zombie` i `--demo=NAZWA` (przymorze, lanciego, zielonki) zawężają przebiegi;
@@ -526,16 +529,16 @@ function okazje(r: Wynik): string[] {
 const przepadle = (r: Wynik): string[] =>
   r.zdarzenia.filter((z) => z.co === 'przepadl').map((z) => `${z.klucz} (${hhmm(z.tick)})`);
 
-/** Powody niepowodzenia przebiegu (kod wyjścia 1): przegrana gra, rozdział nieskończony w limicie, w zwykłym trybie cel,
-    który przepadł, i napis menu niezgodny z podpowiedzią. Przepadłe cele w zombie tylko się wypisuje: rozdział na nie nie
-    czeka (przepadły cel jest rozstrzygnięty), a tam przepadają wtedy, gdy drewna na wieczór nie ma skąd wziąć (brak drzew
-    w obrębie siatki, meble w klatce, do której droga idzie ulicą), co jest tą samą przyczyną co przegrana gra. */
+/** Powody niepowodzenia przebiegu: przegrana gra, rozdział nieskończony w limicie, cel, który przepadł (gracz z
+    podpowiedziami zdąży ze wszystkimi nocnymi celami; w zombie przepadają wtedy, gdy drewna na wieczór nie ma skąd wziąć,
+    czyli z tej samej przyczyny co przegrana gra) i napis menu niezgodny z podpowiedzią. Kod wyjścia 1 biorą z nich tylko
+    przebiegi zwykłe; powody przebiegów zombie idą do wyjścia jako informacja (zob. nagłówek). */
 function powody(r: Wynik): string[] {
   const p: string[] = [];
   if (r.koniec.przegrana) p.push(`przegrana (${r.koniec.przegrana})`);
   const brak = nieskonczone(r);
   if (brak.length) p.push(`nieskończone ${brak.join(', ')}`);
-  if (r.tryb === 'zwykly' && przepadle(r).length) p.push(`przepadłe cele ${przepadle(r).join(', ')}`);
+  if (przepadle(r).length) p.push(`przepadłe cele ${przepadle(r).join(', ')}`);
   if (r.uwagi.length) p.push(`menu niezgodne z podpowiedzią: ${r.uwagi.join('; ')}`);
   return p;
 }
@@ -720,19 +723,24 @@ for (const demo of DEMO ? [DEMO] : DEMA)
   }
 tabela(wyniki);
 const nazwaPrzebiegu = (r: Wynik): string => `${r.nazwa.split(' ')[0]} ${tryb(r.tryb)}`;
-const nieudane = wyniki.filter((r) => powody(r).length);
-const przepadleZombie = wyniki.filter((r) => r.tryb === 'zombie' && przepadle(r).length);
-if (przepadleZombie.length)
+const opisPowodow = (lista: Wynik[]): string =>
+  lista.map((r) => `${nazwaPrzebiegu(r)}: ${powody(r).join(' i ')}`).join('; ');
+// kod wyjścia decyduje tylko tryb zwykły; zombie jest informacją (powód w nagłówku)
+const zwykle = wyniki.filter((r) => r.tryb === 'zwykly');
+const zombie = wyniki.filter((r) => r.tryb === 'zombie');
+const nieudane = zwykle.filter((r) => powody(r).length);
+const zombieZPowodami = zombie.filter((r) => powody(r).length);
+if (zombie.length)
   console.log(
-    `\nCele przepadłe w zombie (nie zmieniają kodu wyjścia, rozdział na nie nie czeka): ${przepadleZombie
-      .map((r) => `${nazwaPrzebiegu(r)}: ${przepadle(r).join(', ')}`)
-      .join('; ')}`,
+    zombieZPowodami.length
+      ? `\nZombie, tylko informacja (kod wyjścia nie zależy od zombie): ${zombieZPowodami.length} z ${zombie.length} przebiegów z powodami (${opisPowodow(zombieZPowodami)})`
+      : `\nZombie, tylko informacja (kod wyjścia nie zależy od zombie): żaden z ${zombie.length} przebiegów nie ma powodów`,
   );
-console.log(
-  nieudane.length
-    ? `\nNIEUDANE przebiegi: ${nieudane.length} z ${wyniki.length} (${nieudane
-        .map((r) => `${nazwaPrzebiegu(r)}: ${powody(r).join(' i ')}`)
-        .join('; ')})`
-    : `\nWszystkie rozdziały skończone w ${DNI} dniach we wszystkich ${wyniki.length} przebiegach`,
-);
+if (!zwykle.length) console.log('\nBez przebiegów zwykłych: kod wyjścia 0, o nim decyduje tylko tryb zwykły');
+else
+  console.log(
+    nieudane.length
+      ? `\nNIEUDANE przebiegi zwykłe: ${nieudane.length} z ${zwykle.length} (${opisPowodow(nieudane)})`
+      : `\nTryb zwykły: wszystkie rozdziały skończone w ${DNI} dniach we wszystkich ${zwykle.length} przebiegach`,
+  );
 process.exit(nieudane.length ? 1 : 0);
