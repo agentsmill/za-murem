@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { TECH_DOMS } from '../../src/content/data.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { mulberry } from '../../src/core/rng.ts';
+import { wordsEnOfWorld, wordsOfWorld } from '../../src/gov/miejsce.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import {
   celLudnosci,
@@ -31,6 +32,7 @@ import {
   wlaczZwyciestwo,
 } from '../../src/gov/zwyciestwo.ts';
 import { kartka, nazwaTech, TECH_BY, TECHS } from '../../src/sim/badania.ts';
+import { BUILDS } from '../../src/sim/budowle.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { drzwiZewnNaStart } from '../../src/sim/sasiedzi.ts';
 import { populacja, snapshot } from '../../src/sim/snapshot.ts';
@@ -54,12 +56,14 @@ import {
   badajDo,
   bezSzwendaczy,
   budynkiSasiadow,
+  graBezPrezentow,
   kartkiDoWziecia,
   MAPY,
   mapaDomowa,
   otoczPlotem,
   otworzBudynek,
   PLOT_NA_MAPIE,
+  planPracowni,
   planujPracownie,
   posadzPrzyStole,
   postawPracownie,
@@ -259,6 +263,56 @@ describe.each(KOMBINACJE)('R6 pracownia: %s %s', (key, mode) => {
     expect(g.sciezka.rozdzial).toBe('r6');
     expect(zrobione(g, 'r6')).toEqual(['r6.pracownia']);
     expect(widok(g).rozdzial!.biezacy?.key).toBe('badanie');
+  });
+});
+
+/* Pracownia kosztuje 14 desek i 4 części. Zielonki (dom jednorodzinny) zbierają z własnych pomieszczeń za mało desek, więc
+   tam cel `pracownia` jest do zrobienia dopiero z łupem od sąsiednich domów (stąd zdanie w podpowiedzi). Dowód bez
+   `dajMaterial`: gra z automatem pracy ludzi, plan budowy i polecenia gracza-bota sąsiadów. */
+describe('R6 pracownia na Zielonkach bez prezentów', () => {
+  const deskiNaPracownie = BUILDS.pracownia.cost.deski ?? 0;
+  const stoi = (x: Gra): boolean => x.sim.st.things.some((t) => t.kind === 'pracownia');
+  const deski = (x: Gra): number => snapshot(x.sim.st, x.sim.w).stock.boards;
+
+  it.each([5, 1, 2])(
+    'zwykły tryb, ziarno %i: start bez desek na pracownię, po łupie od sąsiadów stoi, a cel jest fałszem przed i prawdą po',
+    (ziarno) => {
+      const g = swiezaGra('zielonki', 'zwykly', ziarno);
+      otworz(g, 'r6');
+      expect(cel(g, 'pracownia').done).toBe(false);
+      // podpowiedź celu odsyła do sąsiednich domów po deski i części
+      expect(cel(g, 'pracownia').how).toContain('Deski i części mają też sąsiednie domy');
+      expect(deski(g), 'start: dom nie ma desek na pracownię').toBeLessThan(deskiNaPracownie);
+      planPracowni(g);
+      expect(cel(g, 'pracownia').done, 'sam plan niczego nie zalicza').toBe(false);
+      const { sekundy, log } = graBezPrezentow(g, stoi);
+      expect(sekundy, 'pracownia stanęła w sześć dób').not.toBeNull();
+      expect(log.rooms, 'łup z pomieszczeń sąsiednich domów').toBeGreaterThan(0);
+      expect(log.opened, 'otwarte budynki sąsiadów').toBeGreaterThan(0);
+      expect(cel(g, 'pracownia').done).toBe(true);
+      expect(g.sciezka.zrobione).toHaveProperty(['r6.pracownia']);
+    },
+  );
+
+  it('bez wyjścia do sąsiadów ta sama gra nie stawia pracowni w sześć dób, bo dom ma za mało desek', () => {
+    const g = swiezaGra('zielonki', 'zwykly');
+    otworz(g, 'r6');
+    planPracowni(g);
+    const { sekundy } = graBezPrezentow(g, stoi, { sasiedzi: false });
+    // jeśli to kiedyś zacznie się udawać, zdanie o sąsiednich domach w podpowiedzi (R6.1) przestaje być potrzebne
+    expect(sekundy, 'pracownia z samych własnych desek').toBeNull();
+    expect(deski(g)).toBeLessThan(deskiNaPracownie);
+    expect(cel(g, 'pracownia').done).toBe(false);
+  });
+
+  it('tryb zombie: pracownia stoi z własnych materiałów, bez wyjścia za siatkę, i cel jest zaliczony', () => {
+    const g = swiezaGra('zielonki', 'zombie');
+    otworz(g, 'r6');
+    expect(cel(g, 'pracownia').done).toBe(false);
+    planPracowni(g);
+    const { sekundy } = graBezPrezentow(g, stoi, { sasiedzi: false });
+    expect(sekundy, 'pracownia stanęła w sześć dób').not.toBeNull();
+    expect(cel(g, 'pracownia').done).toBe(true);
   });
 });
 
@@ -1101,29 +1155,69 @@ const slowa = (g: Gra, touch: boolean, k: string) => {
 };
 
 describe('teksty R6 (blok i dom, mysz i dotyk, po polsku i po angielsku)', () => {
-  it('pracownia: koszt z BUILDS, pokój „waszego mieszkania” w bloku i „waszego domu” w domu', () => {
+  it('pracownia: koszt z BUILDS, pokój „waszego mieszkania” w bloku i „waszego domu” w domu, a w domu wskazówka o sąsiednich domach', () => {
     for (const key of ['przymorze', 'zielonki'] as const) {
       const dom = wDomu(key);
       const g = wRozdziale(key, 'zwykly', 'r6');
       expect(slowa(g, false, 'pracownia')).toEqual({
         text: 'Postawcie pracownię.',
-        how: `Budowa, zakładka Dom: Pracownia (deski 14, części 4) w pokoju ${dom ? 'waszego domu' : 'waszego mieszkania'}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`,
+        how: `Budowa, zakładka Dom: Pracownia (deski 14, części 4) w pokoju ${dom ? 'waszego domu' : 'waszego mieszkania'}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${
+          dom ? ' Deski i części mają też sąsiednie domy: prawy przycisk na ich drzwiach.' : ''
+        }`,
       });
-      expect(
-        slowa(g, true, 'pracownia').how.startsWith(
-          'Przycisk Budowa u góry, zakładka Dom: Pracownia (deski 14, części 4)',
-        ),
-      ).toBe(true);
+      const dotyk = slowa(g, true, 'pracownia').how;
+      expect(dotyk.startsWith('Przycisk Budowa u góry, zakładka Dom: Pracownia (deski 14, części 4)')).toBe(true);
+      expect(dotyk.endsWith('Deski i części mają też sąsiednie domy: przytrzymajcie palec na ich drzwiach.')).toBe(dom);
       ustawJezyk('en');
       expect(slowa(g, false, 'pracownia')).toEqual({
         text: 'Build a research room.',
-        how: `Build, Home tab: Research room (planks 14, parts 4) in a room of ${dom ? 'your house' : 'your flat'}. Parts come from searching and from the workshop (“Make a part from scrap”).`,
+        how: `Build, Home tab: Research room (planks 14, parts 4) in a room of ${dom ? 'your house' : 'your flat'}. Parts come from searching and from the workshop (“Make a part from scrap”).${
+          dom ? ' The houses next door have planks and parts too: right-click their door.' : ''
+        }`,
       });
-      expect(slowa(g, true, 'pracownia').how.startsWith('The Build button at the top, Home tab: Research room')).toBe(
-        true,
+      const touchEn = slowa(g, true, 'pracownia').how;
+      expect(touchEn.startsWith('The Build button at the top, Home tab: Research room')).toBe(true);
+      expect(touchEn.endsWith('The houses next door have planks and parts too: press and hold on their door.')).toBe(
+        dom,
       );
       ustawJezyk('pl');
     }
+  });
+
+  it('pracownia: wskazówka o sąsiednich domach tylko tam, gdzie siedziba to dom, a obok stoją domy', () => {
+    const g = wRozdziale('zielonki', 'zwykly', 'r6');
+    const pracownia = ROZDZIALY.find((r) => r.k === 'r6')!.cele.find((c) => c.key === 'pracownia')!;
+    const jak = (swiat: ReturnType<typeof placeWorld>): { pl: string; en: string } => {
+      const o = {
+        ...odczyt(g),
+        w: swiat as unknown as ReturnType<typeof odczyt>['w'],
+        words: wordsOfWorld(swiat),
+        wordsEn: wordsEnOfWorld(swiat),
+      };
+      const pl = pracownia.jak(o, g.sciezka);
+      ustawJezyk('en');
+      const en = pracownia.jak(o, g.sciezka);
+      ustawJezyk('pl');
+      return { pl, en };
+    };
+    const SASIEDNIE = /sąsiednie domy|houses next door/;
+    // dom z domami obok: jest (Zielonki są tak ustawione)
+    const domZDomami = jak(placeWorld([bud(0, 'dom', 0, 0), bud(1, 'dom', 40, 0)]));
+    expect(domZDomami.pl).toMatch(SASIEDNIE);
+    expect(domZDomami.en).toMatch(SASIEDNIE);
+    // samotny dom: nie ma do kogo iść, więc wskazówki nie ma
+    const samotny = jak(placeWorld([bud(0, 'dom', 0, 0)]));
+    expect(samotny.pl).not.toMatch(SASIEDNIE);
+    expect(samotny.en).not.toMatch(SASIEDNIE);
+    expect(samotny.pl).toContain('waszego domu');
+    // dom z blokami obok: sąsiedzi to nie domy
+    const domZBlokami = jak(placeWorld([bud(0, 'dom', 0, 0), bud(1, 'blok', 40, 0, { levels: 5 })]));
+    expect(domZBlokami.pl).not.toMatch(SASIEDNIE);
+    expect(domZBlokami.en).not.toMatch(SASIEDNIE);
+    // siedziba w bloku, choćby domy obok: blok ma własne puste mieszkania i słownik bez sąsiednich domów
+    const blokZDomami = jak(placeWorld([bud(0, 'blok', 0, 0, { levels: 5 }), bud(1, 'dom', 40, 0)]));
+    expect(blokZDomami.pl).not.toMatch(SASIEDNIE);
+    expect(blokZDomami.en).not.toMatch(SASIEDNIE);
   });
 
   it('badanie, odkrycie i era2: teksty z projektu, na dotyku bez klawisza T i „klik” zamiast „stuknięcia”', () => {

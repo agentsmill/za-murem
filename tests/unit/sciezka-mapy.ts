@@ -8,7 +8,12 @@
    gra, która go stawia, nie może dzielić świata z innymi testami (inaczej niż `demoWorld`). Osiedle zapasowe jest
    w dwóch ziarnach: 2 ma trzech sąsiadów, których da się otoczyć wspólnym płotem, 1 żadnego (jak Przymorze). W trybie
    zombie droga do cudzych drzwi jest wolna od szwendaczy tylko wtedy, gdy gracz ją sobie zrobi (dzidą albo czekaniem,
-   aż stado się rozejdzie); test robi to jednym wywołaniem `bezSzwendaczy` przed każdym wyjściem za siatkę. */
+   aż stado się rozejdzie); test robi to jednym wywołaniem `bezSzwendaczy` przed każdym wyjściem za siatkę.
+
+   Pracownia bez prezentów (`planPracowni`, `graBezPrezentow`): plan budowy bez materiału i gra z automatem pracy ludzi,
+   jak w prawdziwej grze (zarząd sam przeszukuje własny dom), z graczem-botem sąsiadów z tests/unit/sasiedzi-play.ts
+   (opcja `--sasiedzi` botów: otwiera najbliższe budynki, przeszukuje, nosi łup). Na Zielonkach dom nie zapłaci pracowni
+   (14 desek) z własnych pomieszczeń, więc dowodem, że cel `pracownia` da się tam zrobić, jest ta gra, a nie `dajMaterial`. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,8 +41,18 @@ import { allowedAnchors } from '../../src/ui/budowa.ts';
 import { genProc } from '../../src/world/osm.ts';
 import { wspolnyPlot } from '../../src/world/plot.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
+import { type SasiedziLog, sasiedziPlayer } from './sasiedzi-play.ts';
 import { core as rdzen } from './sasiedzi-pomoc.ts';
-import { type Demo, doPierwszegoRaportu, type Gra, godzina, graj, graZSymulacji, sekunda } from './sciezka-pomoc.ts';
+import {
+  type Demo,
+  doPierwszegoRaportu,
+  ekran,
+  type Gra,
+  godzina,
+  graj,
+  graZSymulacji,
+  sekunda,
+} from './sciezka-pomoc.ts';
 
 /** mapy: trzy dema (Przymorze i Lanciego to bloki, Zielonki to domy) i osiedle zapasowe w dwóch ziarnach */
 export const MAPY = ['przymorze', 'lanciego', 'zielonki', 'zapasowe', 'zapasowe-bez-plotu'] as const;
@@ -139,12 +154,11 @@ function krokuj(g: Gra, kto: Pawn, dalej: () => boolean, limit: number): void {
 
 /* ---------------------------------------------------------------- badania */
 
-/** Plan pracowni: materiał na podwórku i polecenie budowy w pierwszym miejscu, które dopuszcza budowa (pokój naszego
-    mieszkania). Błąd, gdy w mieszkaniu nie ma dla niej miejsca. */
-export function planujPracownie(g: Gra): void {
+/** Polecenie budowy pracowni w pierwszym miejscu, które dopuszcza budowa (pokój naszego mieszkania), bez żadnego
+    materiału: zarząd zbuduje ją, gdy deski i części znajdą się na podwórku. Błąd, gdy w mieszkaniu nie ma dla niej miejsca. */
+export function planPracowni(g: Gra): void {
   const { sim } = g;
   const { st, w } = sim;
-  dajMaterial(g, { deski: 20, czesci: 6 });
   for (const rot of [0, 1] as const) {
     const a = allowedAnchors(st, w, 'pracownia', rot)[0];
     if (a === undefined) continue;
@@ -155,11 +169,37 @@ export function planujPracownie(g: Gra): void {
   throw new Error('w mieszkaniu zarządu nie ma miejsca na pracownię');
 }
 
+/** Plan pracowni z materiałem na podwórku (prezent: starcza na każdej mapie, więc testy innych celów R6 nie zależą od
+    szabru) i polecenie budowy. */
+export function planujPracownie(g: Gra): void {
+  dajMaterial(g, { deski: 20, czesci: 6 });
+  planPracowni(g);
+}
+
 /** Pracownia: plan (`planujPracownie`) i czekanie, aż zarząd ją zbuduje. Zwraca postawioną rzecz. */
 export function postawPracownie(g: Gra): Thing {
   planujPracownie(g);
   graj(g, (x) => x.sim.st.things.some((t) => t.kind === 'pracownia'), {}, 4000);
   return g.sim.st.things.find((t) => t.kind === 'pracownia')!;
+}
+
+/** Gra sekunda po sekundzie bez żadnego prezentu, aż `warunek` będzie spełniony (najwyżej `limit` sekund przy ekranie;
+    domyślnie sześć dób). Zarząd ma automat pracy ludzi, jak w grze, a z `sasiedzi` co sekundę decyduje też gracz-bot
+    sąsiadów (`sasiedziPlayer`): ostatnia osoba z zarządu otwiera najbliższe budynki, przeszukuje i nosi łup, w trybie
+    zombie tylko za jasnego dnia i z bronią. Zwraca sekundy przy ekranie do spełnienia warunku (null, gdy nie doszło do
+    skutku w limicie) i liczniki łupu u sąsiadów. */
+export function graBezPrezentow(
+  g: Gra,
+  warunek: (g: Gra) => boolean,
+  { sasiedzi = true, limit = 6 * 960 }: { sasiedzi?: boolean; limit?: number } = {},
+): { sekundy: number | null; log: SasiedziLog } {
+  const nb = sasiedziPlayer();
+  for (let s = 0; s < limit; s++) {
+    if (warunek(g)) return { sekundy: s, log: nb.log };
+    if (sasiedzi) nb.player(g.sim, g.sim.w, ekran(g.sim.st), (c) => g.sim.push(c));
+    sekunda(g);
+  }
+  return { sekundy: warunek(g) ? limit : null, log: nb.log };
 }
 
 /** kartki ery `era`, które osada może teraz wziąć (stan „do wzięcia”), od najtańszej */

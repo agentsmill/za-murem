@@ -647,6 +647,13 @@ const jestGdyMoznaBadac =
   (o: OdczytCelow, s: StanSciezki): boolean =>
     Object.hasOwn(s.zrobione, klucz) || warunek(o.st) || mozeWziacKartke(o.st, era);
 
+/** Dom jednorodzinny z domami obok (Zielonki). Pracownia bierze 14 desek, a taki dom zbiera z własnych pomieszczeń ich
+    za mało (4 na początku drugiego dnia, po przeszukaniu i rozbiórce najwyżej około 10, a z automatem pracy ludzi 7 do 8
+    w sześć dób), więc deski i części trzeba wziąć też z sąsiednich domów. W bloku (i w domu bez domów obok, gdzie nie ma
+    do kogo iść) zdania nie ma: blok ma własne puste mieszkania, a w słowniku `szukanie.obok` jest tylko dla domu. */
+const sasiednieDomy = (o: OdczytCelow): boolean =>
+  o.words.szukanie.obok !== null && sasiedzi(placeOfWorld(o.w)) === 'domy';
+
 const R6: DefRozdzialu = {
   k: 'r6',
   tytul: () => L('Badania', 'Research'),
@@ -657,9 +664,18 @@ const R6: DefRozdzialu = {
       jak: (o) => {
         const koszt = costText(BUILDS.pracownia.cost);
         const b = budowaZakladka(o.touch);
+        const obok = sasiednieDomy(o);
         return L(
-          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).`,
-          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).`,
+          `${b}, zakładka Dom: ${BUILDS.pracownia.name} (${koszt}) w pokoju ${waszeLokum(o.words)}. Części dają przeszukiwanie i warsztat („Zrobić część ze złomu”).${
+            obok
+              ? ` Deski i części mają też sąsiednie domy: ${o.touch ? 'przytrzymajcie palec' : 'prawy przycisk'} na ich drzwiach.`
+              : ''
+          }`,
+          `${b}, Home tab: ${BUILDS_EN.pracownia.name} (${koszt}) in a room of ${o.wordsEn.lokal.w}. Parts come from searching and from the workshop (“Make a part from scrap”).${
+            obok
+              ? ` The houses next door have planks and parts too: ${o.touch ? 'press and hold on' : 'right-click'} their door.`
+              : ''
+          }`,
         );
       },
       // postawiona wcześniej zalicza od razu przy otwarciu rozdziału; sam plan budowy nie wystarcza
