@@ -329,9 +329,9 @@ const O7: DefOkazji = {
 const BADANIE_KOZY = 't_kozy';
 /** od którego dnia roku (z 40) okazja się otwiera: trzy dni przed zimą, która zaczyna się jedenastego */
 const OD_DNIA = 8;
-/** do którego dnia roku trwa: trzeci dzień zimy (8, 9, 10 to jesień, 11, 12, 13 to zima). Okno jest krótkie, bo zwinięte
-    okienko na telefonie pokazuje wtedy tylko okazję i chowa rozdział, a zima wyprzedza gości; cały sezon mrozów (do dnia 20)
-    wisiałaby tam nad rozdziałem do 13 dni. Po oknie okazja mija bez zaliczenia i wraca z następną jesienią. */
+/** do którego dnia roku trwa: trzeci dzień zimy (dni 8, 9, 10 to jesień, 11, 12, 13 to zima). Okno jest krótkie, bo zwinięte
+    okienko na telefonie pokazuje wtedy tylko okazję i chowa rozdział, a zima stoi nad gośćmi: gdyby trwała do końca zimy
+    (dzień 20), wisiałaby tam nad rozdziałem do 13 dni. Po oknie mija bez zaliczenia i wraca z następną jesienią. */
 const DO_DNIA = OD_DNIA + 5;
 
 /** czy dzień gry leży w oknie okazji: dni 8–13 każdego roku (rok ma cztery pory po 10 dni, więc też 48–53, 88–93…) */
