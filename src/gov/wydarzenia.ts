@@ -631,7 +631,7 @@ export const nextGap = (st: GovState, screen: number): number =>
     dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
 export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boolean): void {
   // wątki sezonu raz na grę, przy pierwszym wywołaniu (także w starym zapisie bez `watki`); bez łańcuchów nic nie robi
-  wybierzWatki(st, st.mode ?? 'zwykly', !i.goscie);
+  wybierzWatki(st, st.mode ?? 'zwykly', !i.goscie, !i.lokatorzy?.length);
   // okno z zapisu, którego gra już nie zna (zmieniona pula), znika zamiast blokować grę
   if (st.ev.active && !defOf(st.ev.active.id)) st.ev.active = null;
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy

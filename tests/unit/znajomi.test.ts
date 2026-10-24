@@ -15,6 +15,7 @@ import { type Gosc, KTO, type KtoId, osobyGrupy, skladPowrotu } from '../../src/
 import { frazaSkad } from '../../src/gov/goscie-teksty.ts';
 import { confirm, poscigNocy } from '../../src/gov/noc.ts';
 import type { FazaGoscia, GovEffects, GovGosc, GovInput, GovLokator, GovState, RaidPlan } from '../../src/gov/typy.ts';
+import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { planujPowrot } from '../../src/gov/wizyta.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { eventTick, eventView, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
@@ -48,6 +49,10 @@ import { swiatMieszkancow } from '../../tools/bot-mieszkancy.ts';
 import { Atrapa, at, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
+
+// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
+// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
+podmienLancuchy([]);
 
 const def = (id: string) => M1_EVENTS.find((e) => e.id === id)!;
 const tickAt = (day: number, hour: number, minute = 0): number =>

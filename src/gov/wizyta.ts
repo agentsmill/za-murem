@@ -206,6 +206,8 @@ export interface GoscHost {
       miejsca), cel `target` z TARGETS. `bron`: miejsce z bronią (rozliczenie wyprawy dokłada wtedy pewną broń i amunicję).
       Oddaje nazwę miejsca do zdania (mianownik: „apteka „Pod Różą””). */
   wskazowkaMiejsca(kat: readonly string[], target: string, bron?: boolean): Tx;
+  /** to samo miejsce co `wskazowkaMiejsca`, ale tylko do odczytu (nic nie zapisuje): nazwa do tekstu karty, zanim gracz wybierze */
+  miejsceWskazowki(kat: readonly string[], target: string): Tx;
   /** choroba rano (`GovState.later[].sick`), z linią do raportu */
   chorobaRano(line: Tx): void;
   /** zapamiętuje, co pokazało obejrzenie rąk */
@@ -333,6 +335,7 @@ export function goscHost(st: GovState, i: GovInput, fx: GovEffects): GoscHost {
       (st.wskazowki ??= {})[c.klucz] = { dzien: i.day };
       return c.nazwa;
     },
+    miejsceWskazowki: (kat, target) => celKategorii(st, i, kat, target).nazwa,
     wskazowkaMiejsca: (kat, target, bron) => {
       const c = celKategorii(st, i, kat, target);
       const jest = st.wskazowki?.[c.klucz];
@@ -519,6 +522,7 @@ export function planujKarte(
     haczyk: ugryziony !== undefined ? 'ugryziony' : 'prawda',
     skad: { strona, nazwa: KIERUNEK[strona] },
     ...(ugryziony !== undefined ? { ugryziony } : {}),
+    ...(k.wraca ? { wraca: k.wraca } : {}),
   };
   wystaw(st, i, fx, rng, g, { id: def.id, dane: structuredClone(d) }, k.look);
   return true;

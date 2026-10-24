@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { guardValue, weaponFactor } from '../../src/gov/noc.ts';
 import type { GovEffects, GovInput, GovState, NightCard } from '../../src/gov/typy.ts';
+import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { emptyEffects } from '../../src/gov/wspolne.ts';
 import { chooseEvent, confirmNight, govUpdate, newGov, pending, signLaw } from '../../src/gov/zarzad.ts';
 import { applyGov } from '../../src/sim/gov.ts';
@@ -11,6 +12,10 @@ import { createSim } from '../../src/sim/sim.ts';
 import { Atrapa, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { pl } from './po-angielsku.ts';
+
+// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
+// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
+podmienLancuchy([]);
 
 const HORDE = { near: 3, pressing: 1, killed: 0, breaches: 0, bites: 0, tonight: 8 };
 

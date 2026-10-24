@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GovInput } from '../../src/gov/typy.ts';
+import { podmienLancuchy } from '../../src/gov/watki.ts';
 import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
 import { eventTick, eventView, fitsMode, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov, pending } from '../../src/gov/zarzad.ts';
@@ -13,6 +14,10 @@ import { createSim, Sim, spawnZombie } from '../../src/sim/sim.ts';
 import { Atrapa } from './gov-atrapa.ts';
 import { mockBlock } from './interior-mock.ts';
 import { polskieSlowa } from './po-angielsku.ts';
+
+// Łańcuchy historii (src/gov/watki-tresc.ts) dokładają pierwsze kroki do puli kart i losują wątki z ziarna zarządu. Ten plik
+// sprawdza coś innego i gra na samej puli, więc łańcuchów w nim nie ma (ich testy: watki-tresc*.test.ts).
+podmienLancuchy([]);
 
 const w = mockBlock();
 const size = w.size;

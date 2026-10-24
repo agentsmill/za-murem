@@ -405,6 +405,9 @@ export interface GoscKarty {
   look?: readonly number[];
   chce?: ChceId;
   ugryziony?: number;
+  /** id wpisu `Znajomy` mówiącego, gdy ten sam człowiek wraca (kolejny krok łańcucha): decyzja o nim poprawia ten wpis zamiast
+      zakładać drugi (pionek jest za każdym razem nowy, więc inaczej to byłby dla zarządu inny człowiek) */
+  wraca?: string;
 }
 
 /** wybór wydarzenia w grze: jak EventChoice z 0.3, ale z napisem w obu językach */

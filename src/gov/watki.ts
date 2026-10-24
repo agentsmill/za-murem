@@ -3,8 +3,8 @@
    wymaganym hakiem. Hak to fakt w stanie zarządu (`GovState.watki.haki[id] = { t, d? }`, `t` w minutach gry od północy
    pierwszego dnia), który ustawia wybór gracza na karcie przez `GovHost.hak(id, d?)`; następny krok wypada dopiero wtedy,
    gdy hak istnieje od `po` godzin gry. Ten moduł to sam silnik: stan, wybór wątków i gotowość kroków. Pulę, pierwszeństwo
-   dojrzałych kroków i pacing ma `eventTick` (wydarzenia.ts), a dwanaście prawdziwych łańcuchów wpisuje się w `LANCUCHY`
-   (na tym etapie lista jest pusta).
+   dojrzałych kroków i pacing ma `eventTick` (wydarzenia.ts), a dwanaście prawdziwych łańcuchów leży w watki-tresc.ts i
+   jest tu `LANCUCHY`.
 
    Kontrakt.
    - Pusta lista (albo żaden łańcuch nie pasuje do trybu) nie robi nic: żadnego losowania z ziarna zarządu, żadnego zapisu
@@ -38,6 +38,7 @@
 import { rngOf } from '../core/rng.ts';
 import type { GEventDef } from './tresc.ts';
 import type { GameMode, GovInput, GovState } from './typy.ts';
+import { LANCUCHY_TRESC } from './watki-tresc.ts';
 
 /** krok łańcucha: karta z numerem (od 1, równym miejscu w `Lancuch.kroki` plus 1), odstępem w godzinach gry (`po`) i, od
     drugiego kroku, wymaganym hakiem; bez haka odstęp liczy się od rozstrzygnięcia poprzedniego kroku. Pierwszy krok nie
@@ -60,6 +61,12 @@ export interface Lancuch {
   /** w jakich trybach łańcuch może zostać wybrany na wątek sezonu */
   tryby: readonly GameMode[];
   kroki: readonly Krok[];
+  /** Łańcuch potrzebuje obcych w grze (`GovInput.goscie`): wybiera go się tylko w grze z obcymi. Brak pola znaczy: tak, gdy
+      któryś krok ma `gosc`; „Dług” podaje `true` jawnie, bo jego kroki czekają na handlarza pod bramą, a nie na gościa. */
+  obcy?: boolean;
+  /** Łańcuch potrzebuje mieszkańców z generatora (`GovInput.lokatorzy`: jego bohater to prawdziwy mieszkaniec siedziby);
+      w grze bez nich go się nie wybiera. */
+  lokatorzy?: boolean;
 }
 
 /** ile wątków sezonu wybiera się na grę */
@@ -67,8 +74,8 @@ export const WATKOW = 3;
 /** szansa przy każdym losowaniu, że krok z dojrzałym hakiem wypadnie przed zwykłą pulą */
 export const SZANSA_KROKU = 0.6;
 
-/** prawdziwe łańcuchy gry; na tym etapie pusta lista (dwanaście łańcuchów dochodzi w następnym zadaniu) */
-export const LANCUCHY: readonly Lancuch[] = [];
+/** prawdziwe łańcuchy gry: dwanaście, z src/gov/watki-tresc.ts */
+export const LANCUCHY: readonly Lancuch[] = LANCUCHY_TRESC;
 
 let rejestr: readonly Lancuch[] = LANCUCHY;
 let indeks: Map<string, Krok> | null = null;
@@ -101,14 +108,16 @@ function stanWatkow(st: GovState): NonNullable<GovState['watki']> {
 }
 
 /** czy któryś krok łańcucha wystawia gościa (`GEventDef.gosc`) */
-const maGoscia = (l: Lancuch): boolean => l.kroki.some((k) => k.gosc !== undefined);
+const wymagaObcych = (l: Lancuch): boolean => l.obcy ?? l.kroki.some((k) => k.gosc !== undefined);
 
 /** Wybór wątków sezonu: do `WATKOW` łańcuchów z pasujących do trybu, Fisher-Yates z ziarna zarządu, raz na grę (kolejne
-    wołania oddają to samo bez losowania). W grze bez obcych (`bezObcych`) odpadają łańcuchy z krokiem z gościem. Gdy żaden
+    wołania oddają to samo bez losowania). W grze bez obcych (`bezObcych`) odpadają łańcuchy, które ich wymagają (`Lancuch.obcy`), a w grze bez mieszkańców z generatora (`bezLokatorow`) te z `Lancuch.lokatorzy`. Gdy żaden
     łańcuch nie pasuje, nic nie losuje i nic nie zapisuje. */
-export function wybierzWatki(st: GovState, mode: GameMode, bezObcych = false): string[] {
+export function wybierzWatki(st: GovState, mode: GameMode, bezObcych = false, bezLokatorow = false): string[] {
   if (st.watki?.wybrane.length) return [...st.watki.wybrane];
-  const ids = rejestr.filter((l) => l.tryby.includes(mode) && !(bezObcych && maGoscia(l))).map((l) => l.id);
+  const ids = rejestr
+    .filter((l) => l.tryby.includes(mode) && !(bezObcych && wymagaObcych(l)) && !(bezLokatorow && l.lokatorzy))
+    .map((l) => l.id);
   if (!ids.length) return [];
   const r = rngOf(st.rng);
   for (let k = ids.length - 1; k > 0; k--) {
@@ -195,7 +204,7 @@ export function porzadkuj(st: GovState, i: Pick<GovInput, 'goscie'>): void {
     const nr = w.krok[id] ?? 0;
     if (nr >= l.kroki.length) continue;
     if (nr === 0) {
-      if (!i.goscie && maGoscia(l)) zakoncz(st, l);
+      if (!i.goscie && wymagaObcych(l)) zakoncz(st, l);
       continue;
     }
     const k = l.kroki[nr - 1];

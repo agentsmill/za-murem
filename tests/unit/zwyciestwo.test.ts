@@ -590,11 +590,14 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); po scaleniu obu 20.10.2026
     // aaa8b716, d1a8e423 i 76e72ff9. Siódmy raz w zadaniu 12 wydarzeń (pies i kot jako pionki): „Kot w piwnicy”
     // z wyborem „Uwolnić i przygarnąć” ustawia flagę `cat` w stanie zarządu (na samych wydarzeniach cf77bec1, 0e44994c
-    // i f064e248); tu znów po scaleniu obu, 23.10.2026.
+    // i f064e248); tu znów po scaleniu obu, 23.10.2026. Ósmy raz w zadaniu 15 wydarzeń (dwanaście łańcuchów historii,
+    // src/gov/watki-tresc.ts): pierwszy tick zarządu wybiera wątki sezonu z ziarna zarządu (`wybierzWatki`), a pierwsze kroki
+    // wybranych łańcuchów wchodzą do puli, czyli inne losowanie; atrapa nie ma obcych ani mieszkańców z generatora, więc do
+    // wyboru zostają tylko „List z 2026” i „Pies ujada nocami” (były f90d5ef8, 949f8cf5 i 76e72ff9).
     const przebiegi = [
-      [1, 'propozycja', 'f90d5ef8'],
-      [3, 'zawsze-warta', '949f8cf5'],
-      [5, 'losowo', '76e72ff9'],
+      [1, 'propozycja', 'bb1442e9'],
+      [3, 'zawsze-warta', 'efd50682'],
+      [5, 'losowo', '4be52ef7'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));
