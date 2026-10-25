@@ -818,9 +818,9 @@ describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', (
     SEED = Number.parseInt(hashString(demo.addr), 16) || 2051;
   }, 120_000);
 
-  /** nowa osada po starcie w ticku startu (6:00 drugiego dnia), z nadrabianiem naraz */
-  function poStarcie(tryb: 'zwykly' | 'zombie' = 'zwykly'): OsadaGry {
-    const o = nowaOsadaGry(SEED, dane, uklad, tryb);
+  /** nowa osada po starcie w ticku startu (6:00 drugiego dnia), z nadrabianiem naraz; `ziarno` to ziarno naszej gry (domyślnie z adresu dema) */
+  function poStarcie(tryb: 'zwykly' | 'zombie' = 'zwykly', ziarno = SEED): OsadaGry {
+    const o = nowaOsadaGry(ziarno, dane, uklad, tryb);
     o.dane(demo.kwadraty);
     o.krok(TICK_STARTU_OSADY);
     return o;
@@ -880,6 +880,26 @@ describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', (
     expect([...dni].sort()).toEqual([4, 5, 6]);
   });
 
+  it('na innych ziarnach gry (inne kwadraty osady): dzień kontaktu z kwadratu bez zamiany osi, ludność z mieszkańcami siedziby', () => {
+    // ziarna dobrane tak, żeby osada stała na kwadracie, na którym zamiana osi (sx, sy) zmienia dzień kontaktu (7: −1,0; 10: 0,−1;
+    // 13: 0,1), a mieszkańcy siedziby już są (ludność większa od samego zarządu); test pilnuje, że dobór nadal to daje
+    const wyniki = [7, 10, 13].map((ziarno) => {
+      const osada = poStarcie('zwykly', ziarno);
+      const { sx, sy } = osada.swiat!;
+      const w = osada.dlaZarzadu()!;
+      const ludnosc = populacja(osada.gra!.sim.st);
+      expect(w.dzienKontaktu, `ziarno ${ziarno}`).toBe(4 + (ziarnoOsady(ziarno, sx, sy) % 3));
+      expect(w.ludnosc, `ziarno ${ziarno}`).toBe(ludnosc.razem);
+      return {
+        ziarno,
+        zamiana: 4 + (ziarnoOsady(ziarno, sy, sx) % 3) !== w.dzienKontaktu,
+        mieszkancy: ludnosc.mieszkancy,
+      };
+    });
+    expect(wyniki.filter((r) => r.zamiana).length, 'zamiana osi zmienia dzień kontaktu').toBeGreaterThanOrEqual(2);
+    expect(wyniki.filter((r) => r.mieszkancy > 0).length, 'osada z mieszkańcami siedziby').toBeGreaterThanOrEqual(1);
+  });
+
   it('budowle to stojące budowle poza obwodem: ta sama miara co w uprzęży (budowleStojace), nie meble ani zasieki', () => {
     const rzeczy = [
       { kind: 'warsztat' },
@@ -926,6 +946,11 @@ describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', (
       naprzod(upadla, 2 * TICKS_PER_SECOND);
       expect(upadla.upadla?.powod, powod).toBe(powod);
       expect(upadla.dlaZarzadu()!.upadla).toEqual({ dzien: dayOf(upadla.gra!.sim.st.tick), powod });
+      // wejście niesie kopię upadku: zmiana wyniku nie rusza stanu osady
+      const w = upadla.dlaZarzadu()!;
+      w.upadla!.dzien = 99;
+      expect(upadla.upadla!.dzien, powod).toBe(dayOf(upadla.gra!.sim.st.tick));
+      expect(upadla.dlaZarzadu()!.upadla!.dzien, powod).toBe(dayOf(upadla.gra!.sim.st.tick));
     }
   });
 
