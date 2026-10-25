@@ -1886,6 +1886,75 @@ a.btn {
   }
 }
 
+/* ---------- telefon (okno węższe niż 768 px): zwijane bloki stanu, src/ui/telefon.ts ---------- */
+@media (max-width: 767px) {
+  /* Pasek stanu: pojemnik jest przyciskiem (role, tabindex i aria-expanded ustawia main.ts). Zwinięty (`data-zwiniete`) zostawia
+     jedną niską linię z kafelkami pilnymi (klasa `pilne` z `oznaczPilne`: w stanie „uwaga” i „źle”, a gdy nic takiego nie ma,
+     jedzenie, drewno i wkurzenie), każdy w jednym wierszu (etykieta obok wartości), ze strzałką ▾ na końcu; rozwinięty pokazuje
+     wszystkie kafelki, a pod nimi pasek ze strzałką ▴. Kafelki, których jest za dużo na jedną linię, zawijają się, a nie giną. */
+  .stats[role="button"] {
+    position: relative;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Strefa dotyku wyższa od widocznej linii o 4 px z góry (przerwa między wierszami paska) i z dołu (jego dopełnienie), a po bokach
+     o 6 px (dopełnienie paska): zwinięta linia ma 19 px, a palec potrzebuje około 27. Nie sięga dalej, więc nie zabiera dotyku
+     przyciskom z wiersza wyżej. */
+  .stats[role="button"]::before {
+    content: "";
+    position: absolute;
+    inset: -4px -6px;
+  }
+  .stats[role="button"]:focus-visible {
+    outline: 2px solid var(--lamp);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .stats[role="button"]::after {
+    content: "▴";
+    flex: 0 0 100%;
+    height: 12px;
+    margin-top: -1px;
+    color: var(--ink-dim);
+    font: 700 10px / 12px var(--f-sign);
+    text-align: center;
+  }
+  .stats[data-zwiniete] {
+    order: 5;
+    flex: 1 1 100%;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 3px 4px;
+  }
+  /* z `#stats`, bo `#sMats { display: flex }` (jedno pole materiałów na telefonie) ma wyższą swoistość niż same klasy */
+  #stats[data-zwiniete] .stat:not(.pilne) {
+    display: none;
+  }
+  .stats[data-zwiniete] .stat {
+    flex: 0 0 auto;
+    min-width: 0;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+    padding: 1px 6px 2px;
+  }
+  .stats[data-zwiniete] .stat-k {
+    letter-spacing: 0.04em;
+  }
+  .stats[data-zwiniete] .stat-v {
+    font-size: 13px;
+  }
+  .stats[data-zwiniete]::after {
+    content: "▾";
+    flex: 0 0 auto;
+    height: auto;
+    margin: 0 0 0 auto;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 1;
+  }
+}
+
 /* ---------- M2: budowa i puste mieszkania ---------- */
 /* plan budowy za kursorem (atrapa, dopóki rysowanie nie poda view.setPlacement) */
 .plan-ghost {

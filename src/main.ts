@@ -22,7 +22,10 @@
    symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty).
    ?lancuchy=0 wyłącza w nowej grze łańcuchy kart i wątki sezonu (src/gov/watki.ts): bez parametru nowa gra ma je włączone
    (`newGov(…, true)`, pole `GovState.lancuchy`). Zapis trzyma to, z czym grę zaczęto (zapis sprzed łańcuchów, bez pola, gra
-   dalej bez nich), a parametr nie zmienia wczytanej gry. */
+   dalej bez nich), a parametr nie zmienia wczytanej gry.
+   Na telefonie (okno węższe niż 768 px) pasek stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, wybór
+   w pamięci przeglądarki: src/ui/telefon.ts), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`,
+   `--zapas-dol`). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -165,7 +168,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
-import { renderStats, statsOf } from './ui/pasek.ts';
+import { oznaczPilne, renderStats, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
   nastepnePietro,
@@ -197,6 +200,7 @@ import {
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
+import { PASEK_KEY, TELEFON_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import {
   adresStartowy,
@@ -1990,7 +1994,9 @@ function hud(now: number) {
       : '';
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
-  renderStats(statsOf(snap, gov, words, wordsE));
+  const kafelki = statsOf(snap, gov, words, wordsE);
+  renderStats(kafelki);
+  oznaczPilne(kafelki);
   odswiezPietra();
   alarmButton(st);
   renderGoals(snap);
@@ -3791,6 +3797,51 @@ window.addEventListener('resize', () => {
   requestAnimationFrame(dopasujNazwe);
 });
 document.fonts?.addEventListener('loadingdone', dopasujNazwe);
+
+/* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px, src/ui/telefon.ts) ---------- */
+const telefonMq = matchMedia(TELEFON_MQ);
+let statyRozwiniete = wczytajWybor(PASEK_KEY) === 'rozwiniete';
+/** Pasek stanu na telefonie: zwinięty (atrybut `data-zwiniete` na `#stats`; src/style.css zostawia w nim tylko kafelki z klasą
+    `pilne`) albo rozwinięty; cały pojemnik jest przyciskiem (role, aria-expanded, Enter i Spacja), na komputerze zwykłym pasem. */
+function zastosujPasekStanu() {
+  const el = $('stats');
+  const telefon = telefonMq.matches;
+  el.toggleAttribute('data-zwiniete', telefon && !statyRozwiniete);
+  if (!telefon) {
+    for (const a of ['role', 'tabindex', 'aria-expanded', 'aria-label']) el.removeAttribute(a);
+    return;
+  }
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.setAttribute('aria-expanded', String(statyRozwiniete));
+  el.setAttribute(
+    'aria-label',
+    statyRozwiniete
+      ? L('Stan osiedla: stuknij, żeby zwinąć do tego, co pilne', 'Estate status: tap to collapse to what is urgent')
+      : L('Stan osiedla: stuknij, żeby pokazać wszystko', 'Estate status: tap to show everything'),
+  );
+}
+function przelaczPasekStanu() {
+  if (!telefonMq.matches) return;
+  statyRozwiniete = !statyRozwiniete;
+  zapiszWybor(PASEK_KEY, statyRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujPasekStanu();
+}
+$('stats').addEventListener('click', (e) => {
+  przelaczPasekStanu();
+  // dotyk i mysz nie zostawiają fokusu na pasku, tak jak na przyciskach paska (src/ui/fokus.ts): spacja ma dalej zatrzymywać grę,
+  // a nie zwijać pasek; z klawiatury (Tab, potem Enter albo Spacja) fokus zostaje
+  if (e.detail > 0) $('stats').blur();
+});
+$('stats').addEventListener('keydown', (e) => {
+  if (e.target !== e.currentTarget || (e.code !== 'Enter' && e.code !== 'Space')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  przelaczPasekStanu();
+});
+telefonMq.addEventListener('change', zastosujPasekStanu);
+poZmianieJezyka(zastosujPasekStanu);
+zastosujPasekStanu();
 
 /* ---------- start ---------- */
 (async () => {
