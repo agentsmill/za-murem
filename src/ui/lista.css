@@ -201,6 +201,13 @@
   .app.build-open .lista {
     display: none;
   }
+}
+/* Mniejsze chipy też w niskim oknie (telefon poziomo): zostają na prawo od celów dnia jak na komputerze, ale wiersz ma 54 px
+   zamiast 68, żeby nie sięgał karty osoby w lewym dolnym rogu. */
+@media (max-width: 640px), (max-height: 500px) {
+  .lista {
+    gap: 4px;
+  }
   .lp {
     padding: 2px 3px 1px;
     column-gap: 3px;
@@ -230,5 +237,15 @@
   .lp-nm {
     max-width: 54px;
     font-size: 11px;
+  }
+}
+
+/* Telefon poziomo (niskie okno, od 641 px): lista ludzi stoi na prawo od karty osoby (330 px od lewej plus odstęp), także gdy cele
+   dnia znikną: w niskim oknie karta sięga pod wiersz chipów, więc lista nie może zejść nad nią. Moduł jest ładowany po
+   src/style.css, więc te reguły muszą być tu, żeby wygrać z regułami listy wyżej. */
+@media (min-width: 641px) and (max-height: 500px) {
+  .lista,
+  #goals[hidden] ~ .lista {
+    left: 346px;
   }
 }

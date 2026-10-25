@@ -13,6 +13,7 @@ import {
   POTRZEBY_KEY,
   pilneKafelki,
   TELEFON_MQ,
+  UKLAD_TELEFONU_MQ,
   wczytajWybor,
   zapiszWybor,
 } from '../../src/ui/telefon.ts';
@@ -68,8 +69,10 @@ describe('telefon: pamięć wyboru', () => {
     expect(wczytajWybor(PASEK_KEY, null)).toBe('zwiniete');
   });
 
-  it('próg telefonu to 767 px (od 768 pasek i karta jak na komputerze)', () => {
-    expect(TELEFON_MQ).toBe('(max-width: 767px)');
+  it('telefon to okno węższe niż 768 px albo niższe niż 501 px (od 768 px szerokości i 501 px wysokości pasek i karta jak na komputerze)', () => {
+    expect(TELEFON_MQ).toBe('(max-width: 767px), (max-height: 500px)');
+    // układ telefonu (zwarty stos, cele zwinięte domyślnie) zaczyna się wcześniej: do 640 px albo w niskim oknie
+    expect(UKLAD_TELEFONU_MQ).toBe('(max-width: 640px), (max-height: 500px)');
   });
 });
 

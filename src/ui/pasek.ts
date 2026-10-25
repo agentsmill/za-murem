@@ -3,7 +3,7 @@
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. Wartości i podpowiedzi
    (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. Skąd biorą się deski, złom i części,
    mówią słowa miejsca (`szukanie.zrodla`, zdania „Pochodzą z …”). Podpis pory roku nad paskiem (`sezonPodpis`) idzie
-   z zegara gry, nie ze stałego napisu: main.ts wpisuje go przy każdym odświeżeniu paska. Na telefonie (okno węższe niż 768 px)
+   z zegara gry, nie ze stałego napisu: main.ts wpisuje go przy każdym odświeżeniu paska. Na telefonie (okno węższe niż 768 px albo niższe niż 501 px)
    pasek stanu jest zwinięty do kafelków pilnych: `oznaczPilne` daje im klasę `pilne` (reguła w src/ui/telefon.ts, wygląd
    w src/style.css). */
 

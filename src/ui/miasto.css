@@ -281,3 +281,14 @@
     display: none;
   }
 }
+
+/* telefon poziomo (niskie okno, od 641 px): krótki napis przycisku jak na telefonie pionowo, żeby przyciski paska zmieściły się
+   w jednym wierszu (reguły paska: src/style.css, `telefon poziomo`) */
+@media (min-width: 641px) and (max-height: 500px) {
+  .mm-dlugi {
+    display: none;
+  }
+  .mm-krotki {
+    display: inline;
+  }
+}
