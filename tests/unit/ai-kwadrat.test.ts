@@ -656,10 +656,29 @@ describe('swiatOsady: świat osady', () => {
     expect(w.geo.b[0].p[0][1]).toBeCloseTo(geoKw.b[0].p[0][1] - dy, 9);
   });
 
-  it('zwycięska siedziba wygrywa na pierwszej próbie na demach z blokami i na tym próby się kończą', () => {
+  it('zwycięska siedziba kończy próby: pierwsza próba na wszystkich kwadratach dem poza Przymorzem (1,0), gdzie wygrywa druga', () => {
     for (const d of ['przymorze', 'lanciego'] as const) {
-      for (const w of zakwaterowane(d)) expect(w.pomiar.proby, `${d} ${w.klucz}`).toBe(1);
+      for (const w of zakwaterowane(d)) {
+        const oczekiwane = d === 'przymorze' && w.klucz === '1,0' ? 2 : 1;
+        expect(w.pomiar.proby, `${d} ${w.klucz}`).toBe(oczekiwane);
+      }
     }
+  });
+
+  it('świat osady ma suche drzewo: Przymorze (1,0) przy pierwszej próbie jest bez podwórka (8 kafelków) i bez drzewa, więc wygrywa druga', () => {
+    const w = zakwaterowane('przymorze').find((x) => x.klucz === '1,0')!;
+    expect(w.pomiar.proby).toBe(2);
+    expect(w.world.dryTree).toBeGreaterThanOrEqual(0);
+    for (const d of ['przymorze', 'lanciego'] as const)
+      for (const x of zakwaterowane(d)) expect(x.world.dryTree, `${d} ${x.klucz}`).toBeGreaterThanOrEqual(0);
+    // pierwszy kandydat tego kwadratu sam, bez następnych: świat bez suchego drzewa nie wystarcza
+    const p = dla('przymorze');
+    const geo = p.demo.kwadraty['1,0'];
+    const srodek = srodekKwadratu(p.uklad, 1, 0);
+    const [pierwszy] = kandydaciSiedziby(geo, srodek, p.dane!);
+    const swiat = swiatZGeo(przesunGeo(geo, pierwszy.punkt[0], pierwszy.punkt[1]), ziarnoOsady(ZIARNO, 1, 0), p.dane);
+    expect(swiat.world.dryTree).toBe(-1);
+    expect(siedzibaWystarcza(opiszSiedzibe(swiat.world))).toBe(false);
   });
 
   it('nazwa idzie z ulicy siedziby, gdy budynki mają tag addr:street (dane z Overpass), inaczej z kierunku', () => {
@@ -748,7 +767,7 @@ describe('swiatOsady: powody odrzucenia', () => {
     expect(r.pomiar.jedzenie).toBeNull();
   });
 
-  it('siedziba wystarcza: budynek mieszkalny, co najmniej 3 pokoje i pokój zarządu (każdy warunek osobno)', () => {
+  it('siedziba wystarcza: budynek mieszkalny, co najmniej 3 pokoje, pokój zarządu i suche drzewo (każdy warunek osobno)', () => {
     const w = zakwaterowane('przymorze')[0].world;
     const s = opiszSiedzibe(w);
     expect(s.mieszkalna).toBe(true);
@@ -760,12 +779,15 @@ describe('swiatOsady: powody odrzucenia', () => {
     expect(siedzibaWystarcza({ ...s, pokoje: MIN_POKOI_SIEDZIBY - 1 })).toBe(false);
     expect(siedzibaWystarcza({ ...s, pokoje: MIN_POKOI_SIEDZIBY })).toBe(true);
     expect(siedzibaWystarcza({ ...s, pokojeZarzadu: 0 })).toBe(false);
+    expect(siedzibaWystarcza({ ...s, sucheDrzewo: false })).toBe(false);
+    expect(s.sucheDrzewo).toBe(true);
     // świat bez wnętrza: same zera
     expect(opiszSiedzibe({ ...w, interior: undefined } as unknown as typeof w)).toEqual({
       pole: 0,
       pokoje: 0,
       pokojeZarzadu: 0,
       mieszkalna: false,
+      sucheDrzewo: false,
     });
   });
 

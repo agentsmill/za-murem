@@ -11,9 +11,10 @@
      to samo co dostanie tag `zm:bud`) o środku w promieniu `PROMIEN_SIEDZIBY_M` (120 m) od środka kwadratu, malejąco po polu
      obrysu; dla kolejnych (najwyżej `PROBY_SIEDZIBY` = 4) geo przesuwa się tak, że punkt wewnątrz obrysu wypada w (0, 0), i
      buduje świat (siedzibą zostaje budynek najbliżej środka, nie zawsze ten sam, który wybrano); pierwszy, który ma co najmniej
-     `MIN_POKOI_SIEDZIBY` (3) pokoje w całym wnętrzu i pokój w mieszkaniu zarządu, wygrywa, i na nim kończą się próby. Pokój w
-     mieszkaniu zarządu jest dodatkiem do reguły z decyzji: bez niego `pokojZarzadu` (src/ai/miejsca.ts) daje −1 i silnik nie
-     postawi kozy z beczki, więc osada zamarzłaby bez ogrzanej sypialni (Przymorze i Lanciego mają go);
+     `MIN_POKOI_SIEDZIBY` (3) pokoje w całym wnętrzu, pokój w mieszkaniu zarządu i suche drzewo w świecie, wygrywa, i na nim kończą się
+     próby. Dwa ostatnie warunki są dodatkiem do reguły z decyzji, żeby osada miała jak wystartować: bez pokoju zarządu
+     `pokojZarzadu` (src/ai/miejsca.ts) daje −1 i silnik nie postawi kozy z beczki, a bez suchego drzewa (świat bez podwórka,
+     Przymorze (1,0): podwórko 8 kafelków) nie ma pierwszego drewna i zarząd marznie od drugiej doby, w grze od dnia 13 do odwołania;
    - mieszkańcy: generator mieszkańców (`mieszkancyNowejGry`) daje wynik dla tej siedziby i jest w niej co najmniej
      `MIN_LOKATORZY_SIEDZIBY` osób poza zarządem (blok z lokatorami; dom z jednym mieszkaniem ich nie ma). Bez tabel
      mieszkańców (`dane` null) żaden kwadrat nie spełnia reguły, bo reguła ich wymaga;
@@ -371,19 +372,20 @@ export interface SwiatOsady {
   pomiar: PomiarKwadratu;
 }
 
-/** Siedziba świata: pole obrysu, pokoje całego wnętrza, pokoje mieszkania zarządu i to, czy generator mieszkańców zna ten
-    budynek (ma tag `zm:bud`, czyli jest blokiem albo domem według niego). */
+/** Siedziba świata: pole obrysu, pokoje całego wnętrza, pokoje mieszkania zarządu, to, czy generator mieszkańców zna ten
+    budynek (ma tag `zm:bud`, czyli jest blokiem albo domem według niego), i to, czy świat ma suche drzewo (pierwsze drewno). */
 export interface OpisSiedziby {
   pole: number;
   pokoje: number;
   pokojeZarzadu: number;
   mieszkalna: boolean;
+  sucheDrzewo: boolean;
 }
 
 /** Opis siedziby świata (`World.hq`); świat bez wnętrza albo siedziby to same zera. */
 export function opiszSiedzibe(w: World): OpisSiedziby {
   const h = houseOf(w);
-  if (!h || w.hq < 0) return { pole: 0, pokoje: 0, pokojeZarzadu: 0, mieszkalna: false };
+  if (!h || w.hq < 0) return { pole: 0, pokoje: 0, pokojeZarzadu: 0, mieszkalna: false, sucheDrzewo: false };
   const hq = w.buildings[w.hq];
   const pokoje = h.rooms.filter((r) => r.kind === 'pokoj');
   return {
@@ -391,13 +393,14 @@ export function opiszSiedzibe(w: World): OpisSiedziby {
     pokoje: pokoje.length,
     pokojeZarzadu: pokoje.filter((r) => r.apt === h.home).length,
     mieszkalna: TAG_BUDYNKU in hq.tags,
+    sucheDrzewo: w.dryTree >= 0,
   };
 }
 
-/** Czy siedziba spełnia regułę: budynek mieszkalny według generatora, co najmniej `MIN_POKOI_SIEDZIBY` pokoi w całym wnętrzu i
-    pokój w mieszkaniu zarządu. */
+/** Czy siedziba spełnia regułę: budynek mieszkalny według generatora, co najmniej `MIN_POKOI_SIEDZIBY` pokoi w całym wnętrzu,
+    pokój w mieszkaniu zarządu i suche drzewo w świecie (z niego idzie pierwsze drewno). */
 export const siedzibaWystarcza = (s: OpisSiedziby): boolean =>
-  s.mieszkalna && s.pokoje >= MIN_POKOI_SIEDZIBY && s.pokojeZarzadu >= 1;
+  s.mieszkalna && s.pokoje >= MIN_POKOI_SIEDZIBY && s.pokojeZarzadu >= 1 && s.sucheDrzewo;
 
 /** Świat osady dla jednego kandydata albo powód odrzucenia (siedziba, jedzenie, mieszkańcy: pierwszy z kolei). `geoKwadratu`
     to geo kwadratu (sx, sy) w układzie domu (metry od adresu, bez obrotu: dema `*-kwadraty.json`, `geoKwadratu` z
