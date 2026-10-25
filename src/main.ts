@@ -212,7 +212,6 @@ import {
   MARGINES_ETYKIETY,
   naSiedzibie,
   obrysKwadratu,
-  type Prostokat,
   polozenieEtykiety,
   type SiedzibaWidoku,
   siedzibaWKwadracie,
@@ -225,6 +224,7 @@ import {
   blokujKlik,
   nastepnePietro,
   PODPOWIEDZ_ZARZAD,
+  type Prostokat,
   podpowiedz as podpowiedzPietra,
   przyjmijPietro,
   SelektorPieter,
@@ -386,9 +386,10 @@ declare global {
       kwadraty: readonly KwadratGry[];
       /** osada AI (?osada=1, src/ui/osada.ts): stan drugiej gry, jej klucz kwadratu, skrót, tick (równy naszemu), licznik odwołań i
           błędów oraz `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem, w grze bez jej kwadratu i gdy się nie zbudował), i
-          `siedziba`, jej siedziba w tym kwadracie (kotwica etykiety i środek w kafelkach układu miasta; null, gdy się nie znalazła);
-          null w grze bez flagi */
-      osada: () => (PodgladOsady & { kwadrat: number; siedziba: SiedzibaWidoku | null }) | null;
+          `siedziba`, jej siedziba w tym kwadracie (kotwica etykiety w kafelkach układu miasta; null, gdy się nie znalazła) oraz
+          `budowa`, czy gra trzyma jeszcze budowę ich kwadratu (od otwarcia karty posła do dołożenia kwadratu do widoku; potem
+          nie, bo trzymałaby kopię geo kwadratu do końca sesji); null w grze bez flagi */
+      osada: () => (PodgladOsady & { kwadrat: number; siedziba: SiedzibaWidoku | null; budowa: boolean }) | null;
       /** tylko do zrzutów i pomiarów: odsłania osadę teraz, jakby poseł podał jej liczby w tej chwili (bez karty), i czeka, aż jej
           kwadrat stanie w widoku; false, gdy osady nie ma, jeszcze nie powstała albo jest już odkryta */
       odkryjOsade: () => Promise<boolean>;
@@ -432,7 +433,8 @@ interface ZbudowanyKwadrat {
   scena: Scene;
 }
 /** Budowa ich kwadratu (jedna na grę, obietnica trzymana, żeby budowę zacząć przed odkryciem i dokończyć po nim; niepowodzenie to
-    `null`, nie jest ponawiane i daje jedno ostrzeżenie w konsoli). */
+    `null`, nie jest ponawiane i daje jedno ostrzeżenie w konsoli). Po dołożeniu kwadratu do widoku (albo po porażce) `pokazOsade`
+    ją zwalnia: trzymałaby kopię geo kwadratu do końca sesji, a dalej wystarcza `osadaPokazana`. */
 let osadaBudowa: Promise<ZbudowanyKwadrat | null> | null = null;
 /** czy kwadrat osady już poszedł do widoku (albo próba się nie udała): `pokazOsade` działa raz na grę */
 let osadaPokazana = false;
@@ -1246,7 +1248,10 @@ async function pokazOsade(o: OsadaGry): Promise<void> {
   if (!k || !o.odkryta || osadaWidok || osadaPokazana) return;
   osadaPokazana = true;
   try {
-    const b = await budujKwadratOsady(o);
+    const budowa = budujKwadratOsady(o);
+    const b = await budowa;
+    // obietnica z geo kwadratu nie jest już potrzebna (nowa gra mogła w tym czasie zacząć własną: jej nie ruszamy)
+    if (osadaBudowa === budowa) osadaBudowa = null;
     if (!b || kontekstKwadratow !== k) return;
     const { kw, swiat, scena } = b;
     const klucz = kluczKwadratu(kw.sx, kw.sy);
@@ -2613,8 +2618,7 @@ function odswiezNakladki(now: number): void {
   osadaNakladki = elementy
     .filter((e) => naEkranie(e))
     .map((e) => e.getBoundingClientRect())
-    .filter((r) => r.width > 0 && r.height > 0)
-    .map((r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom }));
+    .filter((r) => r.width > 0 && r.height > 0);
 }
 
 /** Etykieta z nazwą osady nad jej siedzibą (po odkryciu): ten sam napis co „Suche drzewo” (klasa `treemark`), jedzie z mapą, a stuknięcie
@@ -4461,7 +4465,9 @@ zastosujKarte();
     kwadraty: [],
     osada: () => {
       const p = osada?.podglad();
-      return p ? { ...p, kwadrat: osadaWidok?.q ?? -1, siedziba: osadaWidok?.siedziba ?? null } : null;
+      return p
+        ? { ...p, kwadrat: osadaWidok?.q ?? -1, siedziba: osadaWidok?.siedziba ?? null, budowa: osadaBudowa !== null }
+        : null;
     },
     odkryjOsade: async () => {
       const w = osada?.dlaZarzadu();

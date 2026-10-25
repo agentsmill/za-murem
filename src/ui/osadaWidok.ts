@@ -16,12 +16,14 @@
    (`polozenieEtykiety`: wyśrodkowana nad kotwicą, przy brzegu ekranu przesunięta do środka) i ustępowanie nakładkom
    (`zaslaniaNakladki`: pasek, cele, lista ludzi, karta, podpowiedź, przyciski, atrybucja; etykieta wtedy znika) to też czyste
    funkcje, żeby dało się je sprawdzić bez przeglądarki; `placeOsadaMark` w src/main.ts tylko mierzy nakładki i ustawia element.
-   `obrysKwadratu` daje rogi kwadratu osady dla mapy miasta. */
+   `obrysKwadratu` daje rogi kwadratu osady dla mapy miasta. Prostokąty ekranu mają kształt `DOMRect` (`Prostokat` z src/ui/pietra.ts:
+   left, top, right, bottom), więc nakładki idą prosto z `getBoundingClientRect()`. */
 
 import type { Pt } from '../world/geo.ts';
 import { kluczBudynku } from '../world/klucze.ts';
-import type { Uklad } from '../world/kwadraty.ts';
+import { srodekKwadratu, type Uklad } from '../world/kwadraty.ts';
 import type { World } from '../world/world.ts';
+import type { Prostokat } from './pietra.ts';
 
 /** Siedziba osady w jej kwadracie w widoku. Współrzędne w kafelkach układu miasta (kwadrat (sx, sy) zaczyna się w (sx·bok, sy·bok)). */
 export interface SiedzibaWidoku {
@@ -29,8 +31,6 @@ export interface SiedzibaWidoku {
   bid: number;
   /** kotwica etykiety: środek górnej krawędzi obrysu */
   etykieta: { x: number; y: number };
-  /** środek ciężkości obrysu (kamera i znacznik na mapie miasta) */
-  srodek: { x: number; y: number };
   /** po czym znaleziono budynek: klucz budynku albo punkt przesunięcia */
   skad: 'klucz' | 'punkt';
 }
@@ -86,31 +86,20 @@ export function siedzibaWKwadracie(
     id = budynekPrzyPunkcie(kw, o.sx, o.sy, o.punkt, kat);
   }
   if (id < 0) return null;
-  // jeden przebieg po ramce budynku: górny rząd (jego środek to kotwica etykiety) i środek ciężkości
+  // jeden przebieg po ramce budynku: górny rząd obrysu, którego środek to kotwica etykiety
   const b = buildings[id];
-  let n = 0;
-  let sumaX = 0;
-  let sumaY = 0;
   let gora = -1;
   const wGorze: number[] = [];
   for (let y = Math.max(0, b.y0); y <= Math.min(size - 1, b.y1); y++)
     for (let x = Math.max(0, b.x0); x <= Math.min(size - 1, b.x1); x++) {
       if (bid[y * size + x] !== id) continue;
-      n++;
-      sumaX += x;
-      sumaY += y;
       if (gora < 0) gora = y;
       if (y === gora) wGorze.push(x);
     }
-  if (!n) return null;
+  if (gora < 0) return null;
   const ox = o.sx * size;
   const oy = o.sy * size;
-  return {
-    bid: id,
-    etykieta: { x: ox + wGorze[(wGorze.length - 1) >> 1] + 0.5, y: oy + gora },
-    srodek: { x: ox + sumaX / n + 0.5, y: oy + sumaY / n + 0.5 },
-    skad,
-  };
+  return { bid: id, etykieta: { x: ox + wGorze[(wGorze.length - 1) >> 1] + 0.5, y: oy + gora }, skad };
 }
 
 /** Czy punkt (x, y) w kafelkach układu miasta leży na obrysie siedziby `bid` w świecie kwadratu (sx, sy): kafelek pod punktem w jego
@@ -130,26 +119,16 @@ export function naSiedzibie(
 }
 
 /** Rogi kwadratu (sx, sy) w metrach od adresu w układzie geo, bez obrotu (jak `Miejsce` i `Geo`): na mapie miasta z północą u góry to
-    kwadrat obrócony o kąt domu. Kwadrat zajmuje w układzie obróconym [(sx−½)·bok, (sx+½)·bok] × [(sy−½)·bok, (sy+½)·bok], a rogi
-    wracają o ten sam obrót, który `srodekKwadratu` cofa dla środka: kolejno północny zachód, północny wschód, południowy wschód,
-    południowy zachód. */
-export function obrysKwadratu(uklad: Pick<Uklad, 'kat' | 'bok'>, sx: number, sy: number): Pt[] {
-  const c = Math.cos(uklad.kat);
-  const s = Math.sin(uklad.kat);
-  const rog = (dx: number, dy: number): Pt => {
-    const x = (sx + dx) * uklad.bok;
-    const y = (sy + dy) * uklad.bok;
-    return [x * c + y * s, y * c - x * s];
-  };
-  return [rog(-0.5, -0.5), rog(0.5, -0.5), rog(0.5, 0.5), rog(-0.5, 0.5)];
-}
-
-/** prostokąt na ekranie w pikselach: lewy, górny, prawy i dolny brzeg */
-export interface Prostokat {
-  l: number;
-  t: number;
-  r: number;
-  b: number;
+    kwadrat obrócony o kąt domu. Kwadrat zajmuje w układzie obróconym [(sx−½)·bok, (sx+½)·bok] × [(sy−½)·bok, (sy+½)·bok], więc róg to
+    „środek kwadratu” przesunięty o pół kwadratu (`srodekKwadratu` cofa ten sam obrót co `rotateGeo`): kolejno północny zachód,
+    północny wschód, południowy wschód, południowy zachód. */
+export function obrysKwadratu(uklad: Uklad, sx: number, sy: number): Pt[] {
+  return [
+    srodekKwadratu(uklad, sx - 0.5, sy - 0.5),
+    srodekKwadratu(uklad, sx + 0.5, sy - 0.5),
+    srodekKwadratu(uklad, sx + 0.5, sy + 0.5),
+    srodekKwadratu(uklad, sx - 0.5, sy + 0.5),
+  ];
 }
 
 /** odstęp dolnej krawędzi napisu etykiety od jej kotwicy w pikselach (w nim leży ogonek strzałki; jak `bottom: 10px` w `.treemark-t`) */
@@ -169,10 +148,12 @@ export function polozenieEtykiety(
 ): { przesuniecie: number; rect: Prostokat } {
   const x0 = ax - szer / 2;
   const przesuniecie = Math.max(MARGINES_ETYKIETY - x0, Math.min(0, szerEkranu - MARGINES_ETYKIETY - (x0 + szer)));
-  const l = x0 + przesuniecie;
-  return { przesuniecie, rect: { l, t: ay - ODSTEP_ETYKIETY - wys, r: l + szer, b: ay } };
+  const left = x0 + przesuniecie;
+  return { przesuniecie, rect: { left, top: ay - ODSTEP_ETYKIETY - wys, right: left + szer, bottom: ay } };
 }
 
 /** Czy prostokąt etykiety (od jej napisu do kotwicy) nachodzi na którąś z nakładek; prostokąty, które się tylko stykają, nie nachodzą. */
 export const zaslaniaNakladki = (etykieta: Prostokat, nakladki: readonly Prostokat[]): boolean =>
-  nakladki.some((n) => etykieta.l < n.r && etykieta.r > n.l && etykieta.t < n.b && etykieta.b > n.t);
+  nakladki.some(
+    (n) => etykieta.left < n.right && etykieta.right > n.left && etykieta.top < n.bottom && etykieta.bottom > n.top,
+  );

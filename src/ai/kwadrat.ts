@@ -40,7 +40,8 @@
    Widok ich kwadratu (zadanie 5) buduje kwadrat obok domu z geo kwadratu SPRZED przesunięcia, a zapis trzyma tylko geo przesunięte:
    `przesuniecieOsady` odczytuje przesunięcie z `c` obu geo (`przesunGeo` przesuwa środek geograficznie o tyle samo co punkty, a `c`
    kwadratu to środek układu domu), `geoKwadratuOsady` oddaje z niego geo kwadratu punkt w punkt (współrzędne na siatce 0,5 m
-   wracają co do wartości, minus zero jako zero), bez zmiany formatu zapisu.
+   wracają co do wartości, minus zero jako zero), bez zmiany formatu zapisu. Gdy `c` obu geo się rozjadą (przesunięcie nie wypada na siatce
+   0,5 m), `przesuniecieOsady` rzuca zamiast po cichu przesunąć kwadrat o zły kawałek; gospodarz łapie to jednym ostrzeżeniem i kwadratu nie dokłada.
 
    Geo osady (`SwiatOsady.geo`) to geo kwadratu przesunięte o punkt siedziby zaokrąglony do 0,5 m (zapis zostaje zwarty, a
    współrzędne na siatce, na której je podano), ze środkiem `c` przesuniętym geograficznie o tyle samo (generator
@@ -77,7 +78,7 @@ import { dryTreeOf, houseOf } from '../sim/house.ts';
 import type { LokatorzyGry } from '../sim/lokatorzy.ts';
 import { ludnoscSpisu2021, mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../sim/osiedle.ts';
 import type { Geo, Pt } from '../world/geo.ts';
-import { kluczKwadratu, sasiedzi8, srodekKwadratu, type Uklad } from '../world/kwadraty.ts';
+import { kluczKwadratu, nz, sasiedzi8, srodekKwadratu, type Uklad } from '../world/kwadraty.ts';
 import { type Miejsce, miejscaZPoi, naMapieLokalnej, uzupelnijKlucze } from '../world/miasto.ts';
 import { buildWorld, type World } from '../world/world.ts';
 import type { OpcjeGryAi } from './gra.ts';
@@ -170,16 +171,28 @@ export function przesunGeo(geo: Geo, dx: number, dy: number): Geo {
 
 const naPolmetry = (v: number): number => Math.round(v * 2) / 2;
 
-/** bez minus zera (wyniki trafiają do porównań) */
-const nz = (v: number): number => (v === 0 ? 0 : v);
+/** Najwięcej, o ile przesunięcie odczytane z `c` może odbiegać od siatki 0,5 m, żeby uznać je za błąd zaokrąglenia (metry): przy
+    zgodnych `c` błąd to rząd 1e-9 m, więc 1 mm odrzuca każdy rozjazd o ułamek metra, a nie rusza poprawnych danych. */
+const TOLERANCJA_SIATKI_M = 0.001;
 
 /** Przesunięcie, o które `przesunGeo` przesunęło geo kwadratu do siedziby (punkt siedziby w metrach od adresu w układzie geo, bez
     obrotu, na siatce 0,5 m): wynika z `c`, bo `przesunGeo` przesuwa geograficznie środek geo o tyle samo co punkty, a `c` geo
     kwadratu to środek układu domu (`uklad.c`, `geoKwadratu` i dema liczą je od adresu). Tak zapis osady, który trzyma tylko geo
-    już przesunięte, oddaje przesunięcie bez zmiany formatu. Odwrotność: `przesunGeo(geoKwadratu, ...przesuniecieOsady(...))`. */
+    już przesunięte, oddaje przesunięcie bez zmiany formatu. Odwrotność: `przesunGeo(geoKwadratu, ...przesuniecieOsady(...))`.
+    Straż niezmiennika „`c` geo kwadratu == `c` układu domu”: gdy odczytane przesunięcie nie leży na siatce 0,5 m (rozjazd `c` o
+    ułamek metra, np. adres z Nominatim przesunięty od zapisu), rzuca zamiast po cichu zaokrąglić do złego przesunięcia, przy którym
+    kwadrat stanąłby kilka metrów obok, a szwy by się rozjechały; wołający (src/main.ts, `budujKwadratOsady`) łapie to jednym
+    ostrzeżeniem i nie dokłada kwadratu. Rozjazd o równą wielokrotność 0,5 m jest nie do odróżnienia od innego przesunięcia. */
 export function przesuniecieOsady(geoOsady: Pick<Geo, 'c'>, uklad: Pick<Uklad, 'c'>): Pt {
   const { kx, ky } = metryNaStopien(uklad.c[0]);
-  return [nz(naPolmetry((geoOsady.c[1] - uklad.c[1]) * kx)), nz(naPolmetry((uklad.c[0] - geoOsady.c[0]) * ky))];
+  const rx = (geoOsady.c[1] - uklad.c[1]) * kx;
+  const ry = (uklad.c[0] - geoOsady.c[0]) * ky;
+  const [dx, dy] = [naPolmetry(rx), naPolmetry(ry)];
+  if (!(Math.abs(rx - dx) <= TOLERANCJA_SIATKI_M && Math.abs(ry - dy) <= TOLERANCJA_SIATKI_M))
+    throw new Error(
+      `Osada AI: środek geo osady ${JSON.stringify(geoOsady.c)} nie zgadza się ze środkiem układu domu ${JSON.stringify(uklad.c)}: przesunięcie (${rx}, ${ry}) m nie leży na siatce 0,5 m`,
+    );
+  return [nz(dx), nz(dy)];
 }
 
 /** Geo kwadratu osady SPRZED przesunięcia do siedziby (metry od adresu w układzie domu, bez obrotu, `c` układu domu): to, z czego

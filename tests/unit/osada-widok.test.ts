@@ -17,6 +17,7 @@ import {
   wybierzOsade,
 } from '../../src/ai/kwadrat.ts';
 import { hashString } from '../../src/core/rng.ts';
+import { metryNaStopien } from '../../src/mieszkancy/budynki.ts';
 import { mapaMieszkancow } from '../../src/sim/osiedle.ts';
 import { nowaOsadaGry, osadaZZapisu, type StanOsady, TICK_STARTU_OSADY } from '../../src/ui/osada.ts';
 import {
@@ -150,6 +151,27 @@ describe('przesunięcie i geo kwadratu osady z jej geo', () => {
     }
   });
 
+  it('rozjazd c geo osady i układu domu, który nie wypada na siatce 0,5 m, rzuca zamiast po cichu przesunąć kwadrat', () => {
+    const p = przypadki[0];
+    const d = demA[p.demo];
+    const { kx, ky } = metryNaStopien(d.uklad.c[0]);
+    const poprawne = przesuniecieOsady(p.swiat.geo, d.uklad);
+    // c przesunięte o kilka decymetrów w obu osiach (nie wielokrotność 0,5 m): każda z wartości jest błędem, który rzuca
+    for (const m of [0.1, 0.2, 0.3, 0.45, 0.7, 1.3, 7.2]) {
+      const poWschodzie = { ...p.swiat.geo, c: [p.swiat.geo.c[0], p.swiat.geo.c[1] + m / kx] as [number, number] };
+      const poPolnocy = { ...p.swiat.geo, c: [p.swiat.geo.c[0] + m / ky, p.swiat.geo.c[1]] as [number, number] };
+      for (const zepsute of [poWschodzie, poPolnocy]) {
+        expect(() => przesuniecieOsady(zepsute, d.uklad), `rozjazd ${m} m`).toThrow(/siatce 0,5 m/);
+        expect(() => geoKwadratuOsady(zepsute, d.uklad), `rozjazd ${m} m`).toThrow(/siatce 0,5 m/);
+      }
+    }
+    // rozjazd o równą wielokrotność 0,5 m to inne, poprawne przesunięcie: tej straży nie złapie (ten sam niezmiennik co w zapisie)
+    const o2 = { ...p.swiat.geo, c: [p.swiat.geo.c[0], p.swiat.geo.c[1] + 2 / kx] as [number, number] };
+    expect(przesuniecieOsady(o2, d.uklad)).toEqual([poprawne[0] + 2, poprawne[1]]);
+    // dane z dema i z kafelków przechodzą (błąd zaokrąglenia jest o rzędy mniejszy niż tolerancja)
+    for (const q of przypadki) expect(() => przesuniecieOsady(q.swiat.geo, demA[q.demo].uklad)).not.toThrow();
+  });
+
   it('zapis i wczytanie geo (JSON) nie zmieniają wyniku', () => {
     const p = przypadki[0];
     const d = demA[p.demo];
@@ -240,28 +262,6 @@ describe('siedziba osady w świecie kwadratu', () => {
       let min = Number.POSITIVE_INFINITY;
       for (let i = 0; i < size * size; i++) if (kw.bid[i] === s.bid) min = Math.min(min, Math.floor(i / size));
       expect(Math.floor(ly)).toBe(min);
-    }
-  });
-
-  it('środek obrysu (do kamery i mapy) leży w kwadracie osady', () => {
-    for (const p of przypadki) {
-      const { kw } = swiatKwadratu(p);
-      const d = demA[p.demo];
-      const s = siedzibaWKwadracie(
-        kw,
-        {
-          klucz: kluczSiedziby(p.swiat),
-          sx: p.swiat.sx,
-          sy: p.swiat.sy,
-          punkt: przesuniecieOsady(p.swiat.geo, d.uklad),
-        },
-        d.uklad.kat,
-      )!;
-      const size = kw.size;
-      expect(s.srodek.x).toBeGreaterThan(p.swiat.sx * size);
-      expect(s.srodek.x).toBeLessThan((p.swiat.sx + 1) * size);
-      expect(s.srodek.y).toBeGreaterThan(p.swiat.sy * size);
-      expect(s.srodek.y).toBeLessThan((p.swiat.sy + 1) * size);
     }
   });
 });
@@ -438,6 +438,27 @@ describe('OsadaGry.kwadrat: dane ich kwadratu dla widoku, także po zapisie i wc
   }, 120_000);
 });
 
+describe('OsadaGry.kwadrat przy zepsutym c w zapisie osady', () => {
+  it('rzuca (host zapisze ostrzeżenie i nie dołoży kwadratu), a reszta osady działa dalej', () => {
+    const d = demA.przymorze;
+    const zywa = nowaOsadaGry(d.seed, d.dane, d.uklad);
+    zywa.dane(d.demo.kwadraty);
+    zywa.krok(TICK_STARTU_OSADY + 10);
+    zywa.odkryj({ dzien: 4, ludnosc: 4, budowle: 1 });
+    const zapis = JSON.parse(JSON.stringify(zywa.zapisz())) as StanOsady & { stan: 'jest' };
+    // ten sam zapis, ale c geo osady rozjechane o 0,3 m od środka układu domu (jak po zmianie adresu z Nominatim o kilka metrów)
+    const { kx } = metryNaStopien(d.uklad.c[0]);
+    zapis.geo.c = [zapis.geo.c[0], zapis.geo.c[1] + 0.3 / kx];
+    const wczytana = osadaZZapisu(zapis, d.seed, d.dane, d.uklad);
+    expect(wczytana.stan).toBe('jest');
+    expect(() => wczytana.kwadrat()).toThrow(/siatce 0,5 m/);
+    // sama osada (nazwa, kierunek, kontakt) działa, tylko widoku jej kwadratu nie da się zbudować
+    expect(wczytana.odkryta).toBe(true);
+    expect(wczytana.swiat).not.toBeNull();
+    expect(wczytana.kontakt).toEqual({ dzien: 4, ludnosc: 4, budowle: 1 });
+  }, 120_000);
+});
+
 describe('obrysKwadratu: kwadrat osady na mapie miasta (metry od adresu bez obrotu)', () => {
   it('cztery rogi kwadratu o boku układu wokół jego środka, a punkt siedziby leży wewnątrz', () => {
     for (const p of przypadki) {
@@ -479,41 +500,41 @@ describe('położenie etykiety nad siedzibą i ustępowanie nakładkom', () => {
   it('napis wyśrodkowany nad kotwicą, 10 px od niej, bez przesunięcia, gdy mieści się na ekranie', () => {
     const { przesuniecie, rect } = polozenieEtykiety(500, 300, 160, 24, 1440);
     expect(przesuniecie).toBe(0);
-    expect(rect).toEqual({ l: 420, t: 266, r: 580, b: 300 });
+    expect(rect).toEqual({ left: 420, top: 266, right: 580, bottom: 300 });
   });
 
   it('przy brzegu ekranu napis przesuwa się do środka o tyle, ile trzeba, z marginesem, a kotwica zostaje', () => {
     // lewy brzeg: napis zaczynałby się w −30, a ma zacząć w 4
     const lewo = polozenieEtykiety(50, 300, 160, 24, 1440);
-    expect(lewo.rect.l).toBe(MARGINES_ETYKIETY);
+    expect(lewo.rect.left).toBe(MARGINES_ETYKIETY);
     expect(lewo.przesuniecie).toBe(MARGINES_ETYKIETY - (50 - 80));
     // prawy brzeg: napis kończyłby się w 1470, a ma kończyć się w 1436
     const prawo = polozenieEtykiety(1390, 300, 160, 24, 1440);
-    expect(prawo.rect.r).toBe(1440 - MARGINES_ETYKIETY);
+    expect(prawo.rect.right).toBe(1440 - MARGINES_ETYKIETY);
     expect(prawo.przesuniecie).toBe(-34);
     // w obu wypadkach napis ma ten sam rozmiar, a jego dolna krawędź leży na kotwicy
     for (const w of [lewo, prawo]) {
-      expect(w.rect.r - w.rect.l).toBe(160);
-      expect(w.rect.b).toBe(300);
+      expect(w.rect.right - w.rect.left).toBe(160);
+      expect(w.rect.bottom).toBe(300);
     }
   });
 
   it('nakładka, na którą napis wchodzi, go zasłania; styk krawędzi i nakładki dalej nie', () => {
-    const napis = { l: 100, t: 100, r: 200, b: 130 };
+    const napis = { left: 100, top: 100, right: 200, bottom: 130 };
     expect(zaslaniaNakladki(napis, [])).toBe(false);
-    expect(zaslaniaNakladki(napis, [{ l: 150, t: 120, r: 400, b: 400 }])).toBe(true);
+    expect(zaslaniaNakladki(napis, [{ left: 150, top: 120, right: 400, bottom: 400 }])).toBe(true);
     // wchodzi z każdej strony
-    expect(zaslaniaNakladki(napis, [{ l: 0, t: 0, r: 101, b: 101 }])).toBe(true);
-    expect(zaslaniaNakladki(napis, [{ l: 199, t: 129, r: 300, b: 300 }])).toBe(true);
+    expect(zaslaniaNakladki(napis, [{ left: 0, top: 0, right: 101, bottom: 101 }])).toBe(true);
+    expect(zaslaniaNakladki(napis, [{ left: 199, top: 129, right: 300, bottom: 300 }])).toBe(true);
     // tylko się stykają
-    expect(zaslaniaNakladki(napis, [{ l: 200, t: 100, r: 300, b: 130 }])).toBe(false);
-    expect(zaslaniaNakladki(napis, [{ l: 100, t: 130, r: 200, b: 200 }])).toBe(false);
-    expect(zaslaniaNakladki(napis, [{ l: 0, t: 0, r: 100, b: 100 }])).toBe(false);
+    expect(zaslaniaNakladki(napis, [{ left: 200, top: 100, right: 300, bottom: 130 }])).toBe(false);
+    expect(zaslaniaNakladki(napis, [{ left: 100, top: 130, right: 200, bottom: 200 }])).toBe(false);
+    expect(zaslaniaNakladki(napis, [{ left: 0, top: 0, right: 100, bottom: 100 }])).toBe(false);
     // jedna z wielu wystarczy
     expect(
       zaslaniaNakladki(napis, [
-        { l: 500, t: 500, r: 600, b: 600 },
-        { l: 190, t: 110, r: 250, b: 120 },
+        { left: 500, top: 500, right: 600, bottom: 600 },
+        { left: 190, top: 110, right: 250, bottom: 120 },
       ]),
     ).toBe(true);
   });

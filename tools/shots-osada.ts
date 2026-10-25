@@ -74,7 +74,7 @@ import { tickAt } from '../src/sim/handlarz.ts';
 import { nowaOsadaGry, type OsadaGry } from '../src/ui/osada.ts';
 import { ukladZGeo, zKlucza } from '../src/world/kwadraty.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
-import { waitIdle } from './browser.ts';
+import { kafelkiMapy, waitIdle } from './browser.ts';
 import { daneDema, wczytajDemo } from './osada-kwadraty.ts';
 import { chopDryTree, GRA, kliknij, minutaGry, poHudzie, przewin, type ShotCele } from './shots-cele.ts';
 import { nachodzenia, stos } from './shots-uklad.ts';
@@ -165,24 +165,6 @@ async function sasiedziBezSieci(page: Page, tryb: 'zerwana' | 'wisi'): Promise<v
       return oryginal(wejscie, init);
     };
   }, tryb);
-}
-
-/** Kafelki dla okna mapy miasta jak `kafelkiMapy` w tools/shots.ts: szablon i z=14 z tests/fixtures (cztery wokół Przymorza), inne z=14
-    i całe z=12 puste. */
-async function kafelkiMapy(page: Page): Promise<void> {
-  await page.route('https://tiles.openfreemap.org/planet', (r) =>
-    r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
-  );
-  await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
-    const m = r
-      .request()
-      .url()
-      .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
-    const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
-    if (m[1] === '14' && fs.existsSync(f))
-      return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
-    return r.fulfill({ status: 204, body: '' });
-  });
 }
 
 /** liczy ostrzeżenia konsoli o osadzie (komunikaty modułu zaczynają się od „Osada AI”) */
@@ -496,6 +478,13 @@ async function sprawdzKarte(
     telefonie) i czeka, aż jej kwadrat stanie w widoku i dorysują się kawałki. Zwraca odczyt osady po odkryciu. */
 async function doOdkrycia(page: Page, dotyk: boolean, wybor = 0): Promise<NonNullable<Odczyt['osada']>> {
   await doPosla(page);
+  // budowa ich kwadratu zaczyna się przy otwarciu karty posła, jeszcze przed odpowiedzią
+  const przedOdpowiedzia = (await odczyt(page)).osada;
+  wymagaj(
+    przedOdpowiedzia?.budowa === true,
+    'budowa kwadratu osady zaczęła się przy otwarciu karty posła',
+    przedOdpowiedzia,
+  );
   await kliknij(page, `#sheet .choices [data-act="event"][data-arg="${wybor}"]`, dotyk);
   await page.waitForFunction(() => document.getElementById('modal')!.hidden);
   await page.waitForFunction(() => (window.zm!.osada()?.kwadrat ?? -1) > 0, null, { timeout: 30_000 });
@@ -503,6 +492,8 @@ async function doOdkrycia(page: Page, dotyk: boolean, wybor = 0): Promise<NonNul
   const o = (await odczyt(page)).osada;
   wymagaj(o?.stan === 'jest' && o.odkryta === true && o.kwadrat > 0, 'osada odkryta i jej kwadrat w widoku', o);
   wymagaj(o.siedziba !== null, 'siedziba osady znaleziona w jej kwadracie', o);
+  // kwadrat jest w widoku, więc gra nie trzyma już budowy (a z nią kopii geo kwadratu)
+  wymagaj(o.budowa === false, 'po dołożeniu kwadratu do widoku gra nie trzyma jego budowy', o);
   return o;
 }
 
@@ -803,13 +794,13 @@ function widokOsadyShots(out: string): ShotCele[] {
           u.mgla,
           ileMgly(['0,0', o.klucz!]),
         ]);
-        // siedziba leży w kwadracie osady
+        // siedziba leży w kwadracie osady (jej kotwica to środek górnej krawędzi obrysu)
         const sied = o.siedziba!;
         wymagaj(
-          sied.srodek.x > sx * 384 &&
-            sied.srodek.x < (sx + 1) * 384 &&
-            sied.srodek.y > sy * 384 &&
-            sied.srodek.y < (sy + 1) * 384,
+          sied.etykieta.x > sx * 384 &&
+            sied.etykieta.x < (sx + 1) * 384 &&
+            sied.etykieta.y > sy * 384 &&
+            sied.etykieta.y < (sy + 1) * 384,
           'siedziba w kwadracie osady',
           [sied, sx, sy],
         );

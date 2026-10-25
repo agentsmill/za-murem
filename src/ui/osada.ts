@@ -230,7 +230,8 @@ export interface OsadaGry {
   dlaZarzadu(): WejscieOsady | null;
   /** Dane ich kwadratu dla widoku (zadanie 5: po odkryciu `main.ts` pokazuje go obok domu): geo kwadratu sprzed przesunięcia do
       siedziby, jego położenie, punkt i klucz siedziby. Liczy się z geo osady (`geoKwadratuOsady`), więc jest taki sam dla żywej
-      osady i wczytanej z zapisu; kopia geo przy każdym wywołaniu (wołaj raz). `null` poza stanem `jest`. */
+      osady i wczytanej z zapisu; kopia geo przy każdym wywołaniu (wołaj raz). `null` poza stanem `jest`. Rzuca, gdy `c` geo osady nie
+      zgadza się ze środkiem układu domu (`przesuniecieOsady`: przesunięcie poza siatką 0,5 m); wołający łapie to i kwadratu nie dokłada. */
   kwadrat(): KwadratOsady | null;
   zapisz(): StanOsady;
   podglad(): PodgladOsady;

@@ -1,5 +1,7 @@
 /* Wspólne dla narzędzi z przeglądarką: serwer Vite w tym samym procesie i Chromium z Playwright. */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { createServer, preview } from 'vite';
 
@@ -64,5 +66,26 @@ export async function webglRenderer(page: Page): Promise<string> {
     if (!gl) return 'brak WebGL';
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+  });
+}
+
+/** katalog kafelków testowych i TileJSON */
+const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
+
+/** kafelki dla okna mapy miasta: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
+export async function kafelkiMapy(page: Page, zerwane = false): Promise<void> {
+  await page.route('https://tiles.openfreemap.org/planet', (r) =>
+    r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
+  );
+  await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
+    const m = r
+      .request()
+      .url()
+      .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
+    const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
+    if (m[1] === '14' && fs.existsSync(f))
+      return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
+    if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
+    return r.fulfill({ status: 204, body: '' });
   });
 }
