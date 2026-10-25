@@ -6,8 +6,19 @@
      zarządu): przed startem osada czeka, o 6:00 powstaje, tick osady równa się naszemu, zero błędów i zawieszonych okien, osada
      nieodkryta; zapis i „Kontynuuj” z adresem bez `osada=1` (zapis wygrywa z adresem) przywracają tę samą osadę z tym samym skrótem;
    - `osada-8x`: tempo 8× przy ekranie przez 6:00 drugiego dnia (start osady w pętli klatek; do 7:00 i 30 próbek, najwyżej 2 minuty), z celowym zawieszeniem wątku
-     głównego na pół sekundy (pętla ścina zaległość): w każdej próbce tick osady równa się naszemu; do dziennika najdłuższa klatka
-     (nadrabianie 12000 kroków osady jest jednorazową kropką w klatce startu);
+     głównego na pół sekundy: pętla klatek ścina wtedy `dt` do 100 ms, więc nadrabia najwyżej kilkanaście kroków na klatkę (do gałęzi
+     `acc = 0` przy 40 krokach nie dochodzi, osiągnąć jej się przy ≤ 8× nie da). W każdej próbce tick osady równa się naszemu; do
+     dziennika klatki ponad 100 ms;
+   - `osada-nadrabianie`: demo Przymorze od 3:00 drugiego dnia w tempie 8× do 7:00: nadrabianie gry osady idzie po kawałku na klatkę
+     (postęp `przygotowanie.tick` rośnie w kilku próbkach, osada `czeka` do 6:00 i jest gotowa przed startem), a żadna klatka
+     przed 6:00 ani w chwili startu nie trwa dłużej niż 33 ms, liczone dwojako: praca tyknięcia gry (`frame()` z rysowaniem,
+     mierzona w tickerze PixiJS) i odstęp od początku jednej klatki do początku następnej (zegar); do dziennika najdłuższe klatki
+     z osadą i ta sama próba bez osady (szum tej maszyny), klatka, w której osada powstaje, i czas startu gry z osadą i bez;
+   - `osada-siec`: nowa gra z `?osada=1` i `?siec=1` nie dostaje osady (`zm.osada()` to null), w konsoli jedno ostrzeżenie o tym, a
+     zapis nie ma pola `osada`;
+   - `osada-modul-blad`: plik z kodem osady jest zablokowany: nowa gra z `?osada=1` rusza bez niej (`brak`, powód `blad`, jedno
+     ostrzeżenie, zapis z tym stanem), a „Kontynuuj” z zapisem, w którym osada jest, kończy się dotychczasowym komunikatem błędu
+     wczytania (gra się nie zaczyna); po odblokowaniu ten sam zapis wczytuje się;
    - `osada-adres`: adres spoza dem (Lanciego z danych testowych) z działającymi kafelkami: osiem sąsiednich kwadratów z kafelków w tle
      (`geoKwadratu`, `pobierzKandydatow`), po 6:00 drugiego dnia osada jest, bez ostrzeżeń, a jej geo z kafelków siedzi w zapisie;
    - `osada-bez-sieci`: adres spoza dem (Lanciego z danych testowych), ale kafelki sąsiednich kwadratów nie przychodzą (`fetch`
@@ -22,16 +33,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { tickAt } from '../src/sim/handlarz.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { waitIdle } from './browser.ts';
-import { GRA, przewin, type ShotCele } from './shots-cele.ts';
+import { chopDryTree, GRA, minutaGry, przewin, type ShotCele } from './shots-cele.ts';
 
 /** katalog kafelków testowych i TileJSON (jak w tools/shots.ts) */
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
 const SAVE = 'za-murem-0.4-zapis';
-
-/** minuta gry od początku dnia 1 (0:00) dla dnia i godziny */
-const minutaGry = (dzien: number, godz: number, min = 0): number => (dzien - 1) * 1440 + godz * 60 + min;
 
 /** odczyt osady i naszego ticka w jednym wywołaniu */
 interface Odczyt {
@@ -40,16 +49,6 @@ interface Odczyt {
 }
 const odczyt = (page: Page): Promise<Odczyt> =>
   page.evaluate(() => ({ osada: window.zm!.osada(), nasz: window.zm!.sim!.st.tick }));
-
-/** samouczek bez klikania (jak w shots-cele.ts): pierwszy z zarządu ścina suche drzewo */
-async function chopDryTree(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const sim = window.zm!.sim!;
-    const who = sim.st.pawns.find((p) => p.kind === 'core')!;
-    sim.push({ t: 'select', ids: [who.id] });
-    sim.push({ t: 'chop', ids: [who.id], tree: sim.w.dryTree });
-  });
-}
 
 /** Zamyka otwarte okno zarządu pierwszą odpowiedzią: raport, karta nocy, uchwała bez podpisu, wydarzenie, spotkanie; okno innego
     rodzaju pierwszym aktywnym przyciskiem, a bez przycisku klawiszem Esc. false, gdy żadnego okna nie ma. Czas gry zależy od czasu
@@ -71,9 +70,6 @@ const zamknijOkno = (page: Page): Promise<boolean> =>
 function wymagaj(warunek: unknown, opis: string, stan?: unknown): asserts warunek {
   if (!warunek) throw new Error(`${opis}${stan === undefined ? '' : `: ${JSON.stringify(stan)}`}`);
 }
-
-/** tick gry dla minuty gry od początku dnia 1 (gra zaczyna się o 15:00 dnia 1, godzina gry to 800 ticków) */
-const tickMinuty = (minuta: number): number => Math.round(((minuta - 900) * 800) / 60);
 
 /** Sieć podmieniona na dane testowe jak w tools/shots.ts (`offlineNetwork`): Nominatim zwraca Lanciego, kafelki z tests/fixtures. */
 async function sieczLanciego(page: Page): Promise<void> {
@@ -162,6 +158,138 @@ async function adresDoDrugiegoDnia(
   await chopDryTree(page);
   await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
   return { ostrzezenia, startMs, po: await odczyt(page) };
+}
+
+/** Rejestr klatek od `zacznijMierzycKlatki`: odstępy między klatkami z rAF ([ms od poprzedniej klatki, nasz tick w klatce]) i praca
+    każdej klatki gry ([ms od początku do końca tyknięcia PixiJS: `frame()` w main.ts razem z rysowaniem, nasz tick]). */
+interface Klatki {
+  odstepy: [number, number][];
+  praca: [number, number][];
+  /** odstępy z rAF (znaczniki czasu klatek, wyrównane do odświeżania ekranu), do porównania z zegarem */
+  raf: [number, number][];
+}
+
+/** włącza w stronie rejestr klatek (rAF dla odstępów, dwa znaczniki tickera PixiJS, pierwszy przed `frame()`, drugi po rysowaniu,
+    dla pracy klatki; nic poza zapisem czasu i odczytem ticku, więc nie rusza tego, co mierzy) */
+const zacznijMierzycKlatki = (page: Page): Promise<void> =>
+  page.evaluate(() => {
+    type Rejestr = {
+      ost: number;
+      ostRaf: number;
+      od: number;
+      on: boolean;
+      odstepy: [number, number][];
+      praca: [number, number][];
+      raf: [number, number][];
+    };
+    const w = window as unknown as { __zmKl: Rejestr };
+    const k: Rejestr = { ost: 0, ostRaf: performance.now(), od: 0, on: true, odstepy: [], praca: [], raf: [] };
+    w.__zmKl = k;
+    const ticker = window.zm!.view.app.ticker;
+    // priorytet 50 (INTERACTION) idzie przed grą, -100 po rysowaniu (UTILITY to -50)
+    ticker.add(
+      () => {
+        if (!k.on) return;
+        k.od = performance.now();
+        if (k.ost) k.odstepy.push([k.od - k.ost, window.zm!.sim!.st.tick]);
+        k.ost = k.od;
+      },
+      null,
+      50,
+    );
+    ticker.add(
+      () => {
+        if (k.on) k.praca.push([performance.now() - k.od, window.zm!.sim!.st.tick]);
+      },
+      null,
+      -100,
+    );
+    const krok = (t: number) => {
+      if (!k.on) return;
+      k.raf.push([t - k.ostRaf, window.zm!.sim!.st.tick]);
+      k.ostRaf = t;
+      requestAnimationFrame(krok);
+    };
+    requestAnimationFrame(krok);
+  });
+
+/** wyłącza rejestr i oddaje zebrane klatki */
+const zbierzKlatki = (page: Page): Promise<Klatki> =>
+  page.evaluate(() => {
+    const k = (window as unknown as { __zmKl: Klatki & { on: boolean } }).__zmKl;
+    k.on = false;
+    return { odstepy: k.odstepy, praca: k.praca, raf: k.raf };
+  });
+
+/** Klatki z okna ticków [od, do): liczba, najdłuższy odstęp i jego 99. percentyl oraz najdłuższa praca klatki i jej 99. percentyl
+    (ms). Dwie pierwsze klatki rejestru niosą sam jego start (czas `evaluate`), więc się ich nie liczy. */
+function opisOkna(kl: Klatki, od: number, doTicku: number) {
+  const z = (lista: [number, number][]) => {
+    const w = lista
+      .slice(2)
+      .filter(([, t]) => t >= od && t < doTicku)
+      .map(([ms]) => ms)
+      .sort((a, b) => a - b);
+    return {
+      n: w.length,
+      max: Math.round((w.at(-1) ?? 0) * 10) / 10,
+      p99: Math.round((w[Math.floor(0.99 * w.length)] ?? 0) * 10) / 10,
+    };
+  };
+  const odstepy = z(kl.odstepy);
+  const praca = z(kl.praca);
+  const raf = z(kl.raf);
+  return {
+    n: odstepy.n,
+    max: odstepy.max,
+    p99: odstepy.p99,
+    pracaMax: praca.max,
+    pracaP99: praca.p99,
+    rafMax: raf.max,
+  };
+}
+
+/** Postęp przygotowania osady widziany z zewnątrz: nasz tick, faza i tick hodowanej gry osady (`przygotowanie` z podglądu). */
+interface Postep {
+  nasz: number;
+  faza: string;
+  tick: number;
+}
+
+/** Jedna próba przez 6:00 drugiego dnia w tempie 8×: start gry z `query`, rejestr klatek, odpowiedzi na okna zarządu, aż nasz tick
+    minie 7:00 (najwyżej 3 minuty). Dopóki przed 6:00, odczytuje postęp przygotowania osady (`osada()` w stanie `jest` liczy skrót
+    gry, więc po starcie nie jest wołane, żeby nie wydłużać mierzonych klatek). */
+async function biegPrzezStart(
+  page: Page,
+  base: string,
+  query: string,
+): Promise<{ startMs: number; klatki: Klatki; postep: Postep[]; koniec: Odczyt }> {
+  const t0 = Date.now();
+  await page.goto(`${base}?${query}`);
+  await waitIdle(page);
+  const startMs = Date.now() - t0;
+  await zacznijMierzycKlatki(page);
+  // klik w stronie, a nie `page.click`: sprawdzanie widoczności i przewijanie Playwrighta wydłuża jedną klatkę o kilkanaście ms
+  // (także bez osady), co do gry nie należy
+  await page.evaluate(() => document.querySelector<HTMLElement>('#speed [data-s="4"]')?.click());
+  const start = tickAt(2, 6);
+  const postep: Postep[] = [];
+  const od = Date.now();
+  let tick = 0;
+  while (tick < tickAt(2, 7) && Date.now() - od < 180_000) {
+    await zamknijOkno(page);
+    const o = await page.evaluate((s) => {
+      const zm = window.zm!;
+      const t = zm.sim!.st.tick;
+      return { t, p: t < s ? (zm.osada()?.przygotowanie ?? null) : null };
+    }, start);
+    tick = o.t;
+    if (o.p) postep.push({ nasz: tick, faza: o.p.faza, tick: o.p.tick ?? -1 });
+    await page.waitForTimeout(60);
+  }
+  const klatki = await zbierzKlatki(page);
+  await page.evaluate(() => document.querySelector<HTMLElement>('#speed [data-s="0"]')?.click());
+  return { startMs, klatki, postep, koniec: await odczyt(page) };
 }
 
 export function osadaShots(): ShotCele[] {
@@ -290,7 +418,8 @@ export function osadaShots(): ShotCele[] {
             if (o.osada.tick !== o.nasz) rozjazd ??= o;
             if (!jank) {
               jank = true;
-              // wątek główny stoi pół sekundy: pętla klatek ścina zaległość, ale obie gry mają tyle samo kroków
+              // wątek główny stoi pół sekundy: pętla klatek ścina `dt` do 100 ms (najwyżej kilkanaście kroków na klatkę), a obie gry
+              // i tak mają tyle samo kroków, bo każdy krok naszej gry niesie krok osady
               await page.evaluate(() => {
                 const t = performance.now();
                 while (performance.now() - t < 500) {
@@ -301,7 +430,7 @@ export function osadaShots(): ShotCele[] {
               if (po.osada?.stan === 'jest' && po.osada.tick !== po.nasz) rozjazd ??= po;
             }
           }
-          gotowe = probek >= 30 && o.nasz >= tickMinuty(minutaGry(2, 7));
+          gotowe = probek >= 30 && o.nasz >= tickAt(2, 7);
           await page.waitForTimeout(250);
         }
         const koniec = await odczyt(page);
@@ -319,8 +448,183 @@ export function osadaShots(): ShotCele[] {
           'osada bez błędów i zawieszeń',
           koniec.osada,
         );
-        wymagaj(koniec.nasz > tickMinuty(minutaGry(2, 7)), 'gra przeszła 7:00 drugiego dnia w tempie 8×', koniec.nasz);
+        wymagaj(koniec.nasz > tickAt(2, 7), 'gra przeszła 7:00 drugiego dnia w tempie 8×', koniec.nasz);
         await page.click('#speed [data-s="0"]');
+      },
+    },
+    {
+      name: 'osada-nadrabianie',
+      query: '',
+      run: async (page, base) => {
+        const start = tickAt(2, 6);
+        // z osadą pierwsza (zimna strona), potem ta sama próba bez osady jako szum tej maszyny
+        const z = await biegPrzezStart(page, base, 'demo=przymorze&osada=1&godzina=3&speed=0&cam=hq,1');
+        const bez = await biegPrzezStart(page, base, 'demo=przymorze&godzina=3&speed=0&cam=hq,1');
+        const okna = { przed: [0, start - 40], start: [start - 40, start + 400], po: [start + 400, Infinity] } as const;
+        const opis = (kl: Klatki) =>
+          Object.entries(okna)
+            .map(([nazwa, [od, doTicku]]) => {
+              const o = opisOkna(kl, od, doTicku);
+              return `${nazwa} ${o.n} klatek: odstęp najdłuższy ${o.max} ms (p99 ${o.p99}), praca klatki najdłuższa ${o.pracaMax} ms (p99 ${o.pracaP99}), rAF najdłuższy ${o.rafMax}`;
+            })
+            .join('; ');
+        console.log(`  start gry (adres do gotowej gry): z osadą ${z.startMs} ms, bez ${bez.startMs} ms`);
+        console.log(`  klatki z osadą: ${opis(z.klatki)}`);
+        console.log(`  klatki bez osady: ${opis(bez.klatki)}`);
+        const nad = z.postep.filter((p) => p.faza === 'nadrabianie');
+        const roznych = new Set(nad.map((p) => p.tick)).size;
+        console.log(
+          `  postęp przygotowania w ${z.postep.length} próbkach: ${roznych} różnych ticków w nadrabianiu, ostatnia próbka ${JSON.stringify(z.postep.at(-1))}`,
+        );
+        // nadrabianie idzie po kawałku na klatkę, a nie naraz: wiele różnych ticków, skończone przed startem
+        wymagaj(
+          roznych >= 4,
+          'nadrabianie ma iść w kawałkach (kilka różnych ticków w próbkach)',
+          z.postep.slice(0, 10),
+        );
+        wymagaj(
+          z.postep.some((p) => p.faza === 'gotowa' && p.tick === start && p.nasz < start),
+          'przed ticku startu gra osady jest już nadrobiona',
+          z.postep.at(-1),
+        );
+        wymagaj(
+          z.postep.every((p) => p.nasz < start),
+          'próbki postępu są sprzed startu',
+        );
+        // osada powstała w ticku startu i idzie krok w krok
+        wymagaj(z.koniec.osada?.stan === 'jest', 'o 7:00 osada ma być', z.koniec);
+        wymagaj(z.koniec.osada.tick === z.koniec.nasz, 'ticki równe po starcie', z.koniec);
+        wymagaj(z.koniec.osada.bledowRazem === 0, 'osada bez błędów', z.koniec.osada);
+        // Rozstrzygnięcie 1 kontrolera: żadna klatka przed 6:00 (nadrabianie) ani w chwili startu osady nie trwa dłużej niż 33 ms.
+        // Mierzone dwojako: praca tyknięcia gry (`frame()` z rysowaniem, czyli to, co dokłada nasz kod) i odstęp od początku jednej
+        // klatki do początku następnej (zegar; do niego wchodzą też zatrzymania poza grą, np. obciążona maszyna)
+        const przed = opisOkna(z.klatki, ...okna.przed);
+        const naStarcie = opisOkna(z.klatki, ...okna.start);
+        const klatkaStartu = z.klatki.praca.find(([, t]) => t >= start);
+        const najdluzsze = (kl: Klatki) =>
+          [...kl.odstepy.slice(2)]
+            .sort((a, b) => b[0] - a[0])
+            .slice(0, 3)
+            .map(([ms, t]) => `${ms.toFixed(1)} ms przy ${t}`)
+            .join(', ');
+        console.log(
+          `  klatka, w której osada powstaje (nasz tick ${klatkaStartu?.[1]}): praca ${klatkaStartu?.[0].toFixed(1)} ms; trzy najdłuższe odstępy z osadą: ${najdluzsze(z.klatki)}; bez osady: ${najdluzsze(bez.klatki)}`,
+        );
+        wymagaj(przed.n >= 100, 'za mało klatek przed startem, żeby coś znaczyły', przed);
+        wymagaj(naStarcie.n >= 10, 'za mało klatek w chwili startu', naStarcie);
+        wymagaj(przed.pracaMax <= 33, `klatka z nadrabiania osady pracowała ${przed.pracaMax} ms (limit 33 ms)`, przed);
+        wymagaj(
+          naStarcie.pracaMax <= 33,
+          `klatka w chwili startu osady pracowała ${naStarcie.pracaMax} ms (limit 33 ms)`,
+          naStarcie,
+        );
+        wymagaj(przed.max <= 33, `odstęp między klatkami przy nadrabianiu osady ${przed.max} ms (limit 33 ms)`, przed);
+        wymagaj(
+          naStarcie.max <= 33,
+          `odstęp między klatkami w chwili startu osady ${naStarcie.max} ms (limit 33 ms)`,
+          naStarcie,
+        );
+      },
+    },
+    {
+      name: 'osada-siec',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&siec=1&${GRA}`);
+        await waitIdle(page);
+        wymagaj(
+          (await page.evaluate(() => window.zm!.osada())) === null,
+          'z ?siec=1 nowa gra nie dostaje osady (zm.osada() to null)',
+        );
+        wymagaj(
+          ostrzezenia.length === 1 && ostrzezenia[0].includes('?siec=1'),
+          'jedno ostrzeżenie o osadzie razem z ?siec=1',
+          ostrzezenia,
+        );
+        await chopDryTree(page);
+        await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
+        wymagaj((await page.evaluate(() => window.zm!.osada())) === null, 'o 7:00 drugiego dnia nadal bez osady');
+        wymagaj(ostrzezenia.length === 1, 'ostrzeżenie jest jedno na całą grę', ostrzezenia);
+        await page.evaluate(() => window.zm!.save());
+        const tekst = await page.evaluate((k) => localStorage.getItem(k) ?? '', SAVE);
+        wymagaj(tekst.length > 0, 'gra zapisała się');
+        wymagaj(!tekst.includes('"osada"'), 'zapis bez osady nie ma pola osada');
+        console.log(`  ostrzeżenie: ${ostrzezenia[0]}`);
+      },
+    },
+    {
+      name: 'osada-modul-blad',
+      query: '',
+      allow: /Failed to load resource: net::ERR_FAILED|dynamically imported module/,
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        // kod osady: moduł src/ui/osada.ts w trybie dev, kawałek assets/osada-*.js w buildzie (osada-brak.ts siedzi w głównym pakiecie)
+        const KOD_OSADY = /\/(src\/ui\/osada\.ts|assets\/osada-[\w-]+\.js)(\?.*)?$/;
+        let zablokowane = 0;
+        await page.route(KOD_OSADY, (r) => {
+          zablokowane++;
+          return r.abort('failed');
+        });
+        // nowa gra: rusza bez osady
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        wymagaj(zablokowane >= 1, 'plik z kodem osady miał być zablokowany', zablokowane);
+        const nowa = await odczyt(page);
+        console.log(`  nowa gra bez kodu osady: ${JSON.stringify(nowa.osada)}`);
+        wymagaj(
+          nowa.osada?.stan === 'brak' && nowa.osada.powod === 'blad',
+          'bez kodu osady nowa gra ma osadę „brak, blad”',
+          nowa.osada,
+        );
+        wymagaj(!!nowa.osada.blad, 'podgląd niesie tekst błędu', nowa.osada);
+        wymagaj(ostrzezenia.length === 1, 'dokładnie jedno ostrzeżenie o osadzie', ostrzezenia);
+        await chopDryTree(page);
+        await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
+        const po = await odczyt(page);
+        wymagaj(po.nasz > tickAt(2, 6), 'gra idzie dalej bez osady', po);
+        wymagaj(po.osada?.stan === 'brak' && po.osada.powod === 'blad', 'osada dalej „brak, blad”', po.osada);
+        wymagaj(ostrzezenia.length === 1, 'o osadzie nadal jedno ostrzeżenie', ostrzezenia);
+        await page.evaluate(() => window.zm!.save());
+        const zapis = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null')?.osada, SAVE);
+        wymagaj(zapis?.stan === 'brak' && zapis.powod === 'blad', 'zapis pamięta „brak, blad”', zapis);
+
+        // gra z zapisu, w którym osada jest, a kodu brak: dotychczasowy błąd wczytania, gra się nie zaczyna
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await page.waitForFunction(
+          () =>
+            /Nie mogę połączyć|Can’t reach|Something went wrong/.test(
+              document.getElementById('startStatus')?.textContent ?? '',
+            ),
+          null,
+          {
+            timeout: 20_000,
+          },
+        );
+        const komunikat = await page.evaluate(() => document.getElementById('startStatus')?.textContent ?? '');
+        console.log(`  wczytanie zapisu z osadą bez kodu osady: „${komunikat}”`);
+        wymagaj(
+          komunikat.startsWith('Nie mogę połączyć się z serwerami map'),
+          'dotychczasowy komunikat błędu wczytania',
+          komunikat,
+        );
+        wymagaj((await page.evaluate(() => window.zm?.sim ?? null)) === null, 'gra z tym zapisem nie ruszyła');
+
+        // po odblokowaniu ten sam zapis wczytuje się, osada zostaje „brak, blad” (zapisu nic nie zgubiło)
+        await page.unroute(KOD_OSADY);
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const wczytana = await odczyt(page);
+        wymagaj(
+          wczytana.osada?.stan === 'brak' && wczytana.osada.powod === 'blad',
+          'po odblokowaniu zapis wczytuje się z tą samą osadą',
+          wczytana.osada,
+        );
+        wymagaj(wczytana.nasz >= po.nasz - 1600, 'wczytana gra jest z późnego zapisu', [wczytana.nasz, po.nasz]);
       },
     },
     {

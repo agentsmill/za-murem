@@ -35,10 +35,15 @@
    ?osada=1 (osada AI, etap 2, src/ui/osada.ts) dokłada drugą, pełną grę na sąsiednim kwadracie miasta, prowadzoną przez silnik
    decyzji (src/ai): powstaje o 6:00 drugiego dnia (`TICK_STARTU_OSADY`), nadrabia swój czas od ticku 0 i potem idzie krok w krok
    z naszą (`krokSymulacji`: krok naszej symulacji i zaraz po nim `osada.krok`, w pętli klatek i w `zm.ff`), trafia do zapisu
-   (`Save.osada`; zapis wygrywa z adresem jak `pietra`) i niczego w naszej grze nie zmienia. Dane ośmiu kandydatów: dema z
-   public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry, prawdziwy adres w tle po starcie, po jednym kwadracie, bez
-   czekania; bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero
-   przy fladze), a zapis nie ma pola `osada`. Bez osady w trybie zombie. `window.zm.osada()` pokazuje stan osady (null bez flagi). */
+   (`Save.osada`; zapis wygrywa z adresem jak `pietra`) i niczego w naszej grze nie zmienia. Nadrabianie nie wchodzi w klatkę
+   startu: najcięższe kroki (wybór kwadratu, budowa gry, rozgrzewka) demo robi pod ekranem ładowania (`osada.przygotujCiezkie()`),
+   a gra osady nadrabia swój czas po kawałku na klatkę przez cały pierwszy dzień (`osada.przygotuj()` w `frame`), poza zapisem
+   (zapis w jej trakcie to `czeka`). Dane ośmiu kandydatów: dema z public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry,
+   prawdziwy adres w tle po starcie, po jednym kwadracie, bez czekania (jego ciężkie kroki idą wtedy w grze, po jednym na klatkę);
+   bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero przy fladze), a
+   zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z `?siec=1` (jedno ostrzeżenie w konsoli); gdy kod osady się
+   nie załaduje, nowa gra rusza bez niej (`osadaBezKodu`), a gra z zapisu z osadą kończy się błędem wczytania.
+   `window.zm.osada()` pokazuje stan osady (null bez flagi). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -189,6 +194,7 @@ import {
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
 import type { OsadaGry, PodgladOsady } from './ui/osada.ts';
+import { osadaBezKodu } from './ui/osada-brak.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
 import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
@@ -239,6 +245,7 @@ import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui
 import {
   adresStartowy,
   clearSave,
+  osadaOdrzuconaPrzezSiec,
   osadaWlaczona,
   pietraWlaczone,
   poleOsady,
@@ -744,8 +751,11 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // widok pięter: wczytany zapis zachowuje to, z czym go zaczęto (nie czyta adresu), nowa gra czyta ?pietra=1
   const pietra = pietraWlaczone(saved ?? null, params);
   pietraGry = pietra;
-  // osada AI (?osada=1): tak samo zapis wygrywa z adresem; przestarzały zapis (niżej) zachowuje flagę, ale zaczyna osadę od nowa
+  // osada AI (?osada=1): tak samo zapis wygrywa z adresem; przestarzały zapis (niżej) zachowuje flagę, ale zaczyna osadę od nowa.
+  // Nowa gra z ?siec=1 (gra z sąsiadami) osady nie dostaje: w tym etapie nie łączymy obu rzeczy, jedno ostrzeżenie w konsoli
   const osadaWlaczonaGra = osadaWlaczona(saved ?? null, params);
+  if (osadaOdrzuconaPrzezSiec(saved ?? null, params))
+    console.warn('Osada AI: ?osada=1 nie działa razem z ?siec=1 (gra z sąsiadami), gra idzie dalej bez osady');
   const t0 = performance.now();
   // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
   // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
@@ -864,19 +874,33 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     );
   // ?osada=1: druga gra na sąsiednim kwadracie. Kod osady (silnik AI) ładuje się dopiero tu, więc gra bez flagi go nie niesie.
   // Dane kandydatów dema przychodzą przed pierwszym krokiem gry (to jeden plik z public/demo, `sim` jest jeszcze pusty, więc pętla
-  // klatek czeka), prawdziwego adresu pobierają się w tle po starcie, po jednym kwadracie; osada startuje w 6:00 drugiego dnia
+  // klatek czeka), prawdziwego adresu pobierają się w tle po starcie, po jednym kwadracie. Osada startuje w 6:00 drugiego dnia, ale
+  // jej najcięższą pracę (wybór kwadratu, budowa gry, rozgrzewka) demo robi tu, pod ekranem ładowania, a nadrabianie jej gry idzie
+  // po kawałku na klatkę (`osada.przygotuj()` w `frame`); adres robi wszystko to w grze, po jednym kroku na klatkę, gdy przyjdą dane.
+  // Nie załadował się kod osady: nowa gra rusza bez niej (`osadaBezKodu`: brak, powód blad, jedno ostrzeżenie), a gra z zapisu,
+  // w którym osada jest, kończy się dotychczasowym błędem wczytania, bo bez kodu nie da się jej odtworzyć
   let osadaGry: OsadaGry | null = null;
   if (osadaWlaczonaGra) {
-    const modul = await import('./ui/osada.ts');
-    const uklad = ukladDomu(geo, world);
-    const jej = saved?.osada
-      ? modul.osadaZZapisu(saved.osada, seed, dane, uklad)
-      : modul.nowaOsadaGry(seed, dane, uklad, modeOf(st));
-    osadaGry = jej;
-    if (jej.stan === 'czeka') {
-      const kandydaci = modul.daneKandydatow(data, uklad, seed);
-      if (data.src === 'demo') jej.dane(await kandydaci);
-      else void kandydaci.then((k) => jej.dane(k));
+    let modul: typeof import('./ui/osada.ts') | null = null;
+    try {
+      modul = await import('./ui/osada.ts');
+    } catch (e) {
+      if (saved?.osada) throw e;
+      osadaGry = osadaBezKodu(e);
+    }
+    if (modul) {
+      const uklad = ukladDomu(geo, world);
+      const jej = saved?.osada
+        ? modul.osadaZZapisu(saved.osada, seed, dane, uklad)
+        : modul.nowaOsadaGry(seed, dane, uklad, modeOf(st));
+      osadaGry = jej;
+      if (jej.stan === 'czeka') {
+        const kandydaci = modul.daneKandydatow(data, uklad, seed);
+        if (data.src === 'demo') {
+          jej.dane(await kandydaci);
+          jej.przygotujCiezkie();
+        } else void kandydaci.then((k) => jej.dane(k));
+      }
     }
   }
   sim = new Sim(world, st);
@@ -1886,8 +1910,10 @@ let hudT = 0;
 const keys = new Set<string>();
 
 /** Jeden krok czasu gry: krok naszej symulacji, a zaraz po nim krok drugiej gry (osada AI, `?osada=1`) z naszym tickiem po kroku.
-    Jedyne miejsce, w którym czas płynie (pętla klatek i `zm.ff`), więc obie gry mają zawsze tyle samo kroków: także przy tempie
-    8×, przy zrzucaniu zaległości przez pętlę (`acc = 0`) i przy przewijaniu. Bez osady (`osada === null`) to dawny krok. */
+    Tędy płynie czas w grze (pętla klatek i `zm.ff`), więc obie gry mają zawsze tyle samo kroków: także przy tempie 8× (pętla ścina
+    `dt` do 100 ms, więc klatka ma najwyżej kilkanaście kroków) i przy przewijaniu. Jedyny inny `step()` to `badaniaDemo`
+    (`?badania=demo`, do 2000 kroków przed pierwszą klatką, czyli przed 6:00 drugiego dnia): osada o nich nie wie i dogania je przy
+    następnym `krok`, bo gra osady idzie „do ticku”. Bez osady (`osada === null`) to dawny krok. */
 function krokSymulacji(s: Sim): void {
   view.beforeStep(s.st);
   s.step();
@@ -1916,6 +1942,9 @@ function frame(now: number, dtMs: number) {
     n++;
   }
   if (n === 40) acc = 0;
+  // osada AI (?osada=1): jeden niewielki kawałek pracy na zapas przed jej startem w 6:00 drugiego dnia (niezależnie od kroków czasu,
+  // więc także przy pauzie); po starcie i bez osady nic
+  osada?.przygotuj();
   // czas przy ekranie płynie tylko w grze bez pauzy, niezależnie od tempa
   if (mult && !modal.open) screen += dt;
   if (screen - govAt >= 1) {
