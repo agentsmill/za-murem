@@ -165,6 +165,27 @@ export function przesunGeo(geo: Geo, dx: number, dy: number): Geo {
 
 const naPolmetry = (v: number): number => Math.round(v * 2) / 2;
 
+/** bez minus zera (wyniki trafiają do porównań) */
+const nz = (v: number): number => (v === 0 ? 0 : v);
+
+/** Przesunięcie, o które `przesunGeo` przesunęło geo kwadratu do siedziby (punkt siedziby w metrach od adresu w układzie geo, bez
+    obrotu, na siatce 0,5 m): wynika z `c`, bo `przesunGeo` przesuwa geograficznie środek geo o tyle samo co punkty, a `c` geo
+    kwadratu to środek układu domu (`uklad.c`, `geoKwadratu` i dema liczą je od adresu). Tak zapis osady, który trzyma tylko geo
+    już przesunięte, oddaje przesunięcie bez zmiany formatu. Odwrotność: `przesunGeo(geoKwadratu, ...przesuniecieOsady(...))`. */
+export function przesuniecieOsady(geoOsady: Pick<Geo, 'c'>, uklad: Pick<Uklad, 'c'>): Pt {
+  const { kx, ky } = metryNaStopien(uklad.c[0]);
+  return [nz(naPolmetry((geoOsady.c[1] - uklad.c[1]) * kx)), nz(naPolmetry((uklad.c[0] - geoOsady.c[0]) * ky))];
+}
+
+/** Geo kwadratu osady SPRZED przesunięcia do siedziby (metry od adresu w układzie domu, bez obrotu, `c` układu domu): to, z czego
+    widok buduje jej kwadrat obok domu (`buildKwadrat`, jak kwadrat z `?kwadraty=`), a zapis osady go nie trzyma (ma geo
+    przesunięte, `SwiatOsady.geo`). Odwrotność `przesunGeo` o `przesuniecieOsady`: współrzędne na siatce 0,5 m wracają bit w bit.
+    Klucze miejsc dopisane do geo osady przy wyborze zostają. Wejście zostaje nietknięte. */
+export function geoKwadratuOsady(geoOsady: Geo, uklad: Pick<Uklad, 'c'>): Geo {
+  const [dx, dy] = przesuniecieOsady(geoOsady, uklad);
+  return { ...przesunGeo(geoOsady, -dx, -dy), c: [uklad.c[0], uklad.c[1]] };
+}
+
 /** Punkt na siatce 0,5 m wewnątrz obrysu (w którymkolwiek pierścieniu), najbliżej `cel` (pierwszy w kolejności x, y przy
     remisie): zaokrąglony środek, jeśli leży w obrysie, inaczej najbliższy punkt siatki w ramce obrysu. null, gdy obrys nie ma
     żadnego (zdegenerowany). */
