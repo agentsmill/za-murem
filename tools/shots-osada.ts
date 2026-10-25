@@ -54,7 +54,7 @@
      i osady), siedziba znaleziona po kluczu budynku, etykieta z nazwą nad nią niczego nie zasłania; zapis i wczytanie budują kwadrat
      od nowa z tą samą siedzibą. Zrzuty: siedziba z bliska (`osada-widok`) i dom z osadą z daleka (`osada-widok-daleko`);
    - `osada-karta`: klik w budynek siedziby (albo etykietę) otwiera kartę osady z nazwą, kierunkiem i liczbami z ostatniego kontaktu
-     (nie z gry osady), jedynym przyciskiem „×” i bez dyplomacji; zamykają ją „×”, Esc, zaznaczenie kogoś i klik w dom, klik w siedzibę
+     (nie z gry osady), jedynym przyciskiem „×” i bez dyplomacji, a cały jej tekst to wiedza z kontaktu (bez wieści o upadku i odwołaniu); zamykają ją „×”, Esc, zaznaczenie kogoś i klik w dom, klik w siedzibę
      z zaznaczoną osobą nie wydaje polecenia. Zrzuty: karta na komputerze po polsku (`osada-karta`, `osada-karta-otwarta`);
    - `osada-karta-en`: to samo na telefonie 390×844 po angielsku: karta w ekranie, nic na nic nie nachodzi (`nachodzenia`), etykieta
      niczego nie zasłania, „×” na palec, tekst bez polskich liter;
@@ -879,7 +879,14 @@ function widokOsadyShots(out: string): ShotCele[] {
           k,
         );
         wymagaj(k.tekst.includes('To wszystko, co o nich wiecie.'), 'karta mówi, skąd to wie', k.tekst);
-        wymagaj(!/upadła|odwoływany/.test(k.tekst), 'zdrowa osada bez zdań o upadku i odwołaniu', k.tekst);
+        // karta to tylko wiedza z kontaktu (decyzja 6): nazwa, kierunek, dzień kontaktu, ludność, budowle i zdanie o źródle, bez wieści z
+        // żywej gry osady (upadek, odwołanie zarządu); cały tekst co do znaku, bez odstępów
+        const oczekiwany = `${nazwa.pl}×Leży ${kierunek.pl} od was.Z ostatniego kontaktu (dzień ${o.kontakt!.dzien})Mieszkańcy${o.kontakt!.ludnosc}Budowle${o.kontakt!.budowle}To wszystko, co o nich wiecie.`;
+        wymagaj(
+          k.tekst.replace(/\s/g, '') === oczekiwany.replace(/\s/g, ''),
+          'cały tekst karty to nazwa, kierunek i liczby z kontaktu, bez wieści o upadku i odwołaniu',
+          [k.tekst, oczekiwany],
+        );
         await sprawdzAtrybucje(page, 'karta otwarta');
         await page.screenshot({ path: path.join(out, 'osada-karta-otwarta.png') });
         // „×” zamyka

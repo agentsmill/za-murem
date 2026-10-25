@@ -2335,9 +2335,8 @@ function hud(now: number) {
     // karta mieszkania po kliknięciu w mieszkanie siedziby, karta budynku po kliknięciu w sąsiedni budynek
     const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
-    // karta osady po kliknięciu w jej siedzibę: liczby z ostatniego kontaktu, nigdy z jej gry (src/ui/kartaOsady.ts)
-    const dane =
-      !apt && !bud && osadaFocus && osada ? daneKartyOsady(osada, tx(words.zarzad.krotko, wordsE.krotko)) : null;
+    // karta osady po kliknięciu w jej siedzibę: tylko to, co gracz wie z kontaktu, nic z jej gry (src/ui/kartaOsady.ts)
+    const dane = !apt && !bud && osadaFocus && osada ? daneKartyOsady(osada) : null;
     if (osadaFocus && !dane && !apt && !bud) osadaFocus = false;
     card.hidden = !apt && !bud && !dane;
     if (apt) setCard(aptCard(apt, touchUI, words, wordsE));

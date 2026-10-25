@@ -50,7 +50,9 @@
 
    Widok ich kwadratu (zadanie 5): `kwadrat()` podaje gospodarzowi to, z czego buduje on kwadrat obok domu po odkryciu (geo kwadratu
    sprzed przesunięcia do siedziby, położenie, punkt i klucz siedziby), tak samo dla żywej osady i wczytanej z zapisu; resztę robi
-   main.ts (src/ui/osadaWidok.ts, src/ui/kartaOsady.ts), a karta osady czyta z osady tylko kontakt, nazwę i kierunek.
+   main.ts (src/ui/osadaWidok.ts, src/ui/kartaOsady.ts). Karta osady czyta z osady tylko odkrycie, kontakt, nazwę i kierunek
+   (`odkryta`, `kontakt`, `swiat`): upadek osady, licznik odwołań i jej gra to wiedza z żywej gry, której gracz bez swoich ludzi na
+   miejscu nie ma, więc karta ich nie pokazuje (testy: karta-osady.test.ts, osada-gra.test.ts).
 
    Moduł niczego nie losuje (kolejność kandydatów, ziarna i wszystko w grze osady idzie z ziaren) i nie czyta zegara. Poza kartą posła
    nic z osady nie wpływa na naszą grę: etap 2 nie ma ludzi między grami, handlu ani napadów. */

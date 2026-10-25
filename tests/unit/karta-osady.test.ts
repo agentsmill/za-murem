@@ -1,9 +1,11 @@
 /* Karta osady AI (src/ui/kartaOsady.ts), etap 2 osady AI (docs/superpowers/plans/2026-10-24-osada-ai-etap-2.md, zadanie 5): zwykła
    karta jak karta budynku, którą otwiera kliknięcie w siedzibę osady po odkryciu. Sprawdzane: tekst po polsku i angielsku (nazwa,
    kierunek od domu, „z ostatniego kontaktu (dzień N)”, ludność i budowle z kontaktu przez `num` z src/ui/tekst.ts), jeden przycisk
-   (zamknięcie) i żadnych przycisków dyplomacji (to etap 3), zdania o upadku i o odwołaniu zarządu bez liczby z gry osady, ucieczka
-   HTML, język bieżący (`ustawJezyk`) i to, że dane karty (`daneKartyOsady`) czytają z osady tylko to, co gracz mógł zobaczyć:
-   kontakt, nazwę, kierunek, upadek i to, czy zarząd był odwoływany (nigdy jej gry ani liczb z niej). */
+   (zamknięcie) i żadnych przycisków dyplomacji (to etap 3), ucieczka HTML, język bieżący (`ustawJezyk`) i to, że dane karty
+   (`daneKartyOsady`) czytają z osady tylko to, co gracz wie z kontaktu: odkrycie, kontakt, nazwę i kierunek. Upadek osady i odwołanie
+   jej zarządu to wiedza z żywej gry, więc karty nie zmieniają (rozstrzygnięcie kontrolera, runda poprawek 1): osada, która od
+   kontaktu upadła albo odwołała zarząd, ma kartę taką samą jak przedtem. Ten sam przypadek na prawdziwej osadzie z gry sprawdza
+   osada-gra.test.ts (`koniec gry osady`). */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { tx, ustawJezyk } from '../../src/core/jezyk.ts';
@@ -104,13 +106,7 @@ describe('kartaOsadyHtml po angielsku', () => {
 
   it('nie ma polskich liter ani polskich słówek (nazwa własna po angielsku)', () => {
     ustawJezyk('en');
-    for (const extra of [
-      {},
-      { upadla: { dzien: 32, powod: 'pustka' as const } },
-      { upadla: { dzien: 40, powod: 'exodus' as const } },
-      { odwolana: true as const },
-    ])
-      expect(polskieSlowa(kartaOsadyHtml(dane(extra)))).toEqual([]);
+    expect(polskieSlowa(kartaOsadyHtml(dane()))).toEqual([]);
   });
 
   it('język czyta w chwili wywołania: ta sama dana, dwa języki', () => {
@@ -124,34 +120,8 @@ describe('kartaOsadyHtml po angielsku', () => {
   });
 });
 
-describe('kartaOsadyHtml: upadek i odwołanie zarządu', () => {
-  it('osada upadła: dzień i powód, po polsku i angielsku, liczby z kontaktu zostają z dniem kontaktu', () => {
-    const pustka = dane({ upadla: { dzien: 32, powod: 'pustka' } });
-    expect(tekst(kartaOsadyHtml(pustka))).toContain('Osada upadła w dniu 32: nikt tam nie przeżył.');
-    const exodus = dane({ upadla: { dzien: 40, powod: 'exodus' } });
-    expect(tekst(kartaOsadyHtml(exodus))).toContain('Osada upadła w dniu 40: ludzie przestali wierzyć i rozeszli się.');
-    ustawJezyk('en');
-    expect(tekst(kartaOsadyHtml(pustka))).toContain('The settlement fell on day 32: nobody there survived.');
-    expect(tekst(kartaOsadyHtml(exodus))).toContain(
-      'The settlement fell on day 40: the people lost faith and scattered.',
-    );
-    // liczby dalej z kontaktu, z jego dniem
-    expect(tekst(kartaOsadyHtml(exodus)).toLowerCase()).toContain('from the last contact (day 4)');
-  });
-
-  it('zarząd był odwoływany: jedno zdanie bez liczby, ze słowem miejsca', () => {
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true })))).toContain('Ich zarząd był już odwoływany.');
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true, zarzad: tx('komitet', 'the committee') })))).toContain(
-      'Ich komitet był już odwoływany.',
-    );
-    ustawJezyk('en');
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true })))).toContain('The board there has already been recalled.');
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true, zarzad: tx('komitet', 'the committee') })))).toContain(
-      'The committee there has already been recalled.',
-    );
-  });
-
-  it('bez upadku i bez odwołania nie ma tych zdań', () => {
+describe('karta osady: tylko to, co gracz wie z kontaktu', () => {
+  it('nie ma zdań o upadku ani o odwołaniu zarządu, po polsku i angielsku', () => {
     const t = tekst(kartaOsadyHtml(dane()));
     expect(t).not.toContain('upadła');
     expect(t).not.toContain('odwoły');
@@ -160,17 +130,22 @@ describe('kartaOsadyHtml: upadek i odwołanie zarządu', () => {
     expect(en).not.toContain('fell');
     expect(en).not.toContain('recalled');
   });
+
+  it('dane karty to nazwa, kierunek i kontakt, nic więcej', () => {
+    const d = daneKartyOsady(osadaZywa({ odkryta: true, kontakt: { dzien: 5, ludnosc: 8, budowle: 2 } }).osada)!;
+    expect(Object.keys(d).sort()).toEqual(['kierunek', 'kontakt', 'nazwa']);
+  });
 });
 
-/** osada w kształcie, który czyta `daneKartyOsady`: bez jej gry (dostęp do czegokolwiek poza tymi polami rzuca) */
-function osadaBezGry(p: {
+/** Osada w kształcie, który czyta `daneKartyOsady`, razem z tym, co z niej odczytano. Pola żywej gry (upadek, licznik odwołań, stan,
+    sama gra) są w obiekcie, ale każde sięgnięcie po pole poza odkryciem, kontaktem i światem (nazwa, kierunek) idzie do `odczytane`. */
+function osadaZywa(p: {
   odkryta: boolean;
   kontakt?: { dzien: number; ludnosc: number; budowle: number };
   swiat?: boolean;
   upadla?: { dzien: number; powod: 'pustka' | 'exodus' } | null;
   odwolania?: number;
 }) {
-  const dozwolone = new Set(['odkryta', 'kontakt', 'swiat', 'upadla', 'odwolania']);
   const swiat =
     p.swiat === false
       ? null
@@ -181,53 +156,72 @@ function osadaBezGry(p: {
     swiat,
     upadla: p.upadla ?? null,
     odwolania: p.odwolania ?? 0,
+    stan: 'jest',
+    gra: { sim: { st: { tick: 123456 } } },
   };
-  return new Proxy(wartosci, {
+  const odczytane = new Set<string>();
+  const osada = new Proxy(wartosci, {
     get(cel, klucz) {
-      if (typeof klucz === 'string' && !dozwolone.has(klucz)) throw new Error(`karta czyta z osady pole „${klucz}”`);
+      if (typeof klucz === 'string') odczytane.add(klucz);
       return cel[klucz as string];
     },
   }) as unknown as Parameters<typeof daneKartyOsady>[0];
+  return { osada, odczytane };
 }
 
 describe('daneKartyOsady', () => {
+  const kontakt = { dzien: 4, ludnosc: 4, budowle: 1 };
+
   it('bez odkrycia, bez kontaktu albo bez świata nie ma karty', () => {
-    expect(daneKartyOsady(osadaBezGry({ odkryta: false, kontakt: { dzien: 4, ludnosc: 4, budowle: 1 } }))).toBeNull();
-    expect(daneKartyOsady(osadaBezGry({ odkryta: true }))).toBeNull();
-    expect(
-      daneKartyOsady(osadaBezGry({ odkryta: true, kontakt: { dzien: 4, ludnosc: 4, budowle: 1 }, swiat: false })),
-    ).toBeNull();
+    expect(daneKartyOsady(osadaZywa({ odkryta: false, kontakt }).osada)).toBeNull();
+    expect(daneKartyOsady(osadaZywa({ odkryta: true }).osada)).toBeNull();
+    expect(daneKartyOsady(osadaZywa({ odkryta: true, kontakt, swiat: false }).osada)).toBeNull();
   });
 
-  it('bierze nazwę, kierunek i kontakt (kopię) i czyta z osady tylko to, co gracz mógł zobaczyć', () => {
-    const kontakt = { dzien: 5, ludnosc: 8, budowle: 2 };
-    const d = daneKartyOsady(osadaBezGry({ odkryta: true, kontakt }));
+  it('bierze nazwę, kierunek i kontakt (kopię)', () => {
+    const k = { dzien: 5, ludnosc: 8, budowle: 2 };
+    const d = daneKartyOsady(osadaZywa({ odkryta: true, kontakt: k }).osada);
     expect(d).not.toBeNull();
     expect(d!.nazwa).toEqual(tx('Osada na północy', 'Settlement to the north'));
     expect(d!.kierunek).toEqual(tx('na północ', 'to the north'));
-    expect(d!.kontakt).toEqual(kontakt);
-    expect(d!.kontakt).not.toBe(kontakt);
-    expect(d!.upadla).toBeUndefined();
-    expect(d!.odwolana).toBeUndefined();
+    expect(d!.kontakt).toEqual(k);
+    expect(d!.kontakt).not.toBe(k);
   });
 
-  it('upadek z jej gry to znana wieść (dzień i powód), odwołanie to „było”, bez licznika', () => {
-    const kontakt = { dzien: 4, ludnosc: 4, budowle: 1 };
-    const d = daneKartyOsady(
-      osadaBezGry({ odkryta: true, kontakt, upadla: { dzien: 31, powod: 'exodus' }, odwolania: 3 }),
-    )!;
-    expect(d.upadla).toEqual({ dzien: 31, powod: 'exodus' });
-    expect(d.odwolana).toBe(true);
-    // żadnego licznika odwołań w danych ani w tekście
-    expect(JSON.stringify(d)).not.toContain('"odwolania"');
-    expect(tekst(kartaOsadyHtml(d))).not.toMatch(/\b3\b/);
-    expect(daneKartyOsady(osadaBezGry({ odkryta: true, kontakt, odwolania: 1 }))!.odwolana).toBe(true);
-    expect(daneKartyOsady(osadaBezGry({ odkryta: true, kontakt, odwolania: 0 }))!.odwolana).toBeUndefined();
+  it('czyta z osady tylko odkrycie, kontakt i świat (nazwę, kierunek): ani upadku, ani odwołań, ani jej gry', () => {
+    for (const p of [
+      { odkryta: true, kontakt },
+      { odkryta: true, kontakt, upadla: { dzien: 31, powod: 'exodus' as const }, odwolania: 3 },
+      { odkryta: false, kontakt },
+      { odkryta: true },
+      { odkryta: true, kontakt, swiat: false },
+    ]) {
+      const { osada, odczytane } = osadaZywa(p);
+      daneKartyOsady(osada);
+      for (const pole of odczytane) expect(['odkryta', 'kontakt', 'swiat']).toContain(pole);
+    }
   });
 
-  it('słowo zarządu bierze od wołającego', () => {
-    const kontakt = { dzien: 4, ludnosc: 4, budowle: 1 };
-    const d = daneKartyOsady(osadaBezGry({ odkryta: true, kontakt, odwolania: 1 }), tx('komitet', 'the committee'))!;
-    expect(tekst(kartaOsadyHtml(d))).toContain('Ich komitet był już odwoływany.');
+  it('osada, która od kontaktu upadła albo odwołała zarząd, ma kartę taką samą jak przedtem (dane i HTML, po polsku i angielsku)', () => {
+    const zdrowa = daneKartyOsady(osadaZywa({ odkryta: true, kontakt }).osada)!;
+    for (const zywa of [
+      { upadla: { dzien: 31, powod: 'exodus' as const } },
+      { upadla: { dzien: 32, powod: 'pustka' as const } },
+      { odwolania: 1 },
+      { odwolania: 3, upadla: { dzien: 40, powod: 'exodus' as const } },
+    ]) {
+      const d = daneKartyOsady(osadaZywa({ odkryta: true, kontakt, ...zywa }).osada)!;
+      expect(d).toEqual(zdrowa);
+      for (const jezyk of ['pl', 'en'] as const) {
+        ustawJezyk(jezyk);
+        expect(kartaOsadyHtml(d)).toBe(kartaOsadyHtml(zdrowa));
+        const t = tekst(kartaOsadyHtml(d));
+        expect(t).not.toMatch(/upadła|odwoły|fell|recalled/);
+        // liczby i dzień zostają z kontaktu
+        expect(t.toLowerCase()).toContain(
+          jezyk === 'pl' ? 'z ostatniego kontaktu (dzień 4)' : 'from the last contact (day 4)',
+        );
+      }
+    }
   });
 });

@@ -34,6 +34,7 @@ import {
 import { kandydaciOsady, swiatZGeo, wybierzOsade, ziarnoOsady } from '../../src/ai/kwadrat.ts';
 import { START_WKURZENIA, START_ZAUFANIA } from '../../src/ai/odwolanie.ts';
 import { silnik, silnikPodstawowy } from '../../src/ai/silnik.ts';
+import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
 import { dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
@@ -46,6 +47,7 @@ import {
   opcjaMieszkancow,
 } from '../../src/sim/osiedle.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
+import { daneKartyOsady, kartaOsadyHtml } from '../../src/ui/kartaOsady.ts';
 import {
   nowaOsadaGry,
   type OsadaGry,
@@ -744,6 +746,40 @@ describe('koniec gry osady', () => {
       expect(wczytana.gra!.sim.st.tick).toBe(stoi);
       expect(wczytana.podglad()).toMatchObject({ stan: 'jest', upadla: { powod }, tick: stoi });
     }
+  });
+
+  it('karta osady po odwołaniu zarządu i po upadku żywej osady jest ta sama co po kontakcie (gracz wie tyle, ile mu powiedziano)', () => {
+    const osada = osadaPoStarcieBezNaszej();
+    osada.odkryj({ dzien: 4, ludnosc: 6, budowle: 2 });
+    const przed = daneKartyOsady(osada)!;
+    expect(przed).not.toBeNull();
+    const html = (d: NonNullable<typeof przed>) => {
+      ustawJezyk('pl');
+      const pl = kartaOsadyHtml(d);
+      ustawJezyk('en');
+      const en = kartaOsadyHtml(d);
+      ustawJezyk('pl');
+      return { pl, en };
+    };
+    const kartaPrzed = html(przed);
+    // odwołanie zarządu osady: licznik rośnie, karta bez zmian
+    naprzod(osada, 100);
+    osada.gra!.gov.anger = 100;
+    naprzod(osada, 2 * TICKS_PER_SECOND);
+    expect(osada.odwolania).toBe(1);
+    expect(osada.upadla).toBeNull();
+    expect(daneKartyOsady(osada)).toEqual(przed);
+    expect(html(daneKartyOsady(osada)!)).toEqual(kartaPrzed);
+    // upadek osady: dzień i powód w jej stanie, karta bez zmian
+    osada.gra!.gov.over = 'pustka';
+    naprzod(osada, 2 * TICKS_PER_SECOND);
+    expect(osada.upadla).not.toBeNull();
+    expect(daneKartyOsady(osada)).toEqual(przed);
+    expect(html(daneKartyOsady(osada)!)).toEqual(kartaPrzed);
+    // po zapisie i wczytaniu tak samo
+    const wczytana = osadaZZapisu(JSON.parse(JSON.stringify(osada.zapisz())), SEED, dane, uklad);
+    expect(wczytana.upadla).not.toBeNull();
+    expect(daneKartyOsady(wczytana)).toEqual(przed);
   });
 
   it('wyjątek w grze osady w trakcie gry wyłącza osadę (brak, blad, jedno ostrzeżenie), a krok nie rzuca', () => {
