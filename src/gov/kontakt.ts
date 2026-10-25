@@ -6,11 +6,13 @@
    Kiedy. Wejście zarządu ma osadę (`GovInput.osada`, tylko w grze z ?osada=1, gdy osada już powstała, w trybie zwykłym) i
    gracz jej jeszcze nie zna (`odkryta` fałsz). Poseł przychodzi w dniu `dzienKontaktu` z wejścia (4, 5 albo 6, z ziarna osady:
    `dzienKontaktu(ziarno)`, liczy go gospodarz) od 9:00, w dzień albo wieczorem, gdy nic innego nie czeka na decyzję i od
-   ostatniej decyzji gracza minęło `QUIET` sekund przy ekranie. Nigdy przed 4. dniem, choćby wejście podało wcześniejszy dzień.
-   Gdy w tym dniu coś go wstrzyma, przychodzi przy najbliższej okazji, od 9:00 któregoś z następnych dni. Raz: karta zapisuje się
-   w `ev.done`, więc nie wraca, choćby gospodarz nie zdążył odsłonić osady. Nie losuje niczego i niczego nie zużywa, więc gra
-   bez osady w wejściu (bez flagi, tryb zombie, przed 6:00 drugiego dnia, osada, której zabrakło) ma te same losowania i skróty co
-   przed kartą; pierwsze losowanie z ziarna zarządu dopiero po odpowiedzi gracza (zwykły odstęp do następnej karty).
+   ostatniej decyzji gracza minęło `QUIET` sekund przy ekranie. Nigdy przed 4. dniem, choćby wejście podało wcześniejszy dzień;
+   dzień spoza liczb skończonych (NaN, nieskończoność) to brak dnia, więc karty nie ma. Gdy w tym dniu coś go wstrzyma, przychodzi
+   przy najbliższej okazji, od 9:00 któregoś z następnych dni. Raz: karta zapisuje się w `ev.done`, więc nie wraca, choćby
+   gospodarz nie zdążył odsłonić osady. Nie losuje niczego i niczego nie zużywa, a po wystawieniu kończy krok zarządu (`return` w
+   `eventTick`), więc nawet gdy odstęp do losowej karty jest już należny, losowa karta nie nadpisze posła. Gra bez osady w wejściu
+   (bez flagi, tryb zombie, przed 6:00 drugiego dnia, osada, której zabrakło) ma te same losowania i skróty co przed kartą;
+   pierwsze losowanie z ziarna zarządu dopiero po odpowiedzi gracza (zwykły odstęp do następnej karty).
 
    Co mówi. Dane karty (`DanePosla`) powstają przy jej wystawieniu i zostają w stanie zarządu: nazwa osady i kierunek od domu
    (zdania w obu językach, z kierunku, bez nazw ulic), dzień kontaktu, ludność i budowle w tej chwili, licznik odwołań ich
@@ -34,14 +36,17 @@ import { atHour, gameMin, QUIET } from './wspolne.ts';
 export const PIERWSZY_DZIEN_KONTAKTU = 4;
 /** dzień kontaktu to jeden z tylu kolejnych dni od `PIERWSZY_DZIEN_KONTAKTU` (4, 5 albo 6) */
 export const DNI_KONTAKTU = 3;
-/** w dniu kontaktu poseł przychodzi od tej godziny */
+/** Poseł przychodzi od tej godziny, w dniu kontaktu i w każdym następnym, jeśli coś go wstrzymało; przed nią nigdy. */
 export const GODZINA_POSLA = 9;
 
 /** Dzień kontaktu z ziarna osady (`ziarnoOsady`, src/ai/kwadrat.ts): 4, 5 albo 6. Czyste liczby, bez losowania. */
 export const dzienKontaktu = (ziarno: number): number => PIERWSZY_DZIEN_KONTAKTU + (ziarno % DNI_KONTAKTU);
 
 /** Dane karty posła, zamrożone w chwili jej wystawienia (w stanie zarządu, zwykły JSON): to, co poseł powiedział, niezależnie od
-    tego, co osada robi potem. `dzien` to dzień naszej gry, w którym przyszedł; `odwolania` i `upadla` jak w `WejscieOsady`. */
+    tego, co osada robi potem. `dzien` to dzień naszej gry, w którym poseł przyszedł, a nie dzień z ziarna, na który kontakt był
+    zaplanowany: karta bywa spóźniona (wstrzymała ją uchwała, karta nocy albo inna karta, zapis wczytano po dniu kontaktu), a liczby
+    ludności i budowli są z chwili, w której stoi pod bramą, więc ten dzień idzie do `kontakt.dzien` osady („z ostatniego kontaktu”);
+    `odwolania` i `upadla` jak w `WejscieOsady`. */
 export interface DanePosla {
   nazwa: Tx;
   nazwaZ: Tx;
@@ -59,8 +64,10 @@ export function poselCzeka(st: GovState, i: GovInput, pora: Pora): boolean {
   const o = i.osada;
   if (!o || o.odkryta || st.ev.done[POSEL_EVENT.id]) return false;
   if (POSEL_EVENT.tryby?.includes(st.mode ?? 'zwykly') === false || !POSEL_EVENT.when.includes(pora)) return false;
-  // nigdy przed 4. dniem, także gdy wejście podaje wcześniejszy dzień albo liczbę bez sensu
-  const dzien = Math.max(PIERWSZY_DZIEN_KONTAKTU, Number.isFinite(o.dzienKontaktu) ? o.dzienKontaktu : 0);
+  // dzień kontaktu spoza liczb skończonych (NaN, nieskończoność) to brak dnia, więc karty nie ma; nigdy przed 4. dniem, także gdy
+  // wejście podaje wcześniejszy dzień (0, ujemny, ułamek)
+  if (!Number.isFinite(o.dzienKontaktu)) return false;
+  const dzien = Math.max(PIERWSZY_DZIEN_KONTAKTU, o.dzienKontaktu);
   if (gameMin(i) < atHour(dzien, GODZINA_POSLA) || i.hour < GODZINA_POSLA) return false;
   const ostatnia = st.decisions.at(-1)?.s ?? Number.NEGATIVE_INFINITY;
   return i.screen >= ostatnia + QUIET;

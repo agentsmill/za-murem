@@ -253,14 +253,33 @@ describe('poseł z osady: kiedy przychodzi', () => {
     }
   });
 
-  it('nigdy przed 4. dniem, nawet gdy wejście podaje wcześniejszy dzień kontaktu', () => {
-    const osada = osadaWej({ dzienKontaktu: 1 });
-    for (const dzien of [1, 2, 3]) {
-      const gov = zarzad(dzien);
-      for (const hour of [9, 10, 15, 21]) expect(czekaPosel(gov, wejscie({ day: dzien, hour, osada }))).toBe(false);
-      expect(gov.ev.done.posel).toBeUndefined();
+  it.each([1, 0, -3, 2.5])(
+    'nigdy przed 4. dniem, nawet gdy wejście podaje wcześniejszy albo dziwny dzień kontaktu (%s)',
+    (dzienKontaktu) => {
+      const osada = osadaWej({ dzienKontaktu });
+      for (const dzien of [1, 2, 3]) {
+        const gov = zarzad(dzien);
+        for (const hour of [9, 10, 15, 21]) expect(czekaPosel(gov, wejscie({ day: dzien, hour, osada }))).toBe(false);
+        expect(gov.ev.done.posel).toBeUndefined();
+      }
+      expect(czekaPosel(zarzad(4), wejscie({ day: 4, hour: 9, osada }))).toBe(true);
+    },
+  );
+
+  it('dzień kontaktu spoza liczb skończonych (NaN, nieskończoność) to brak dnia: karty nie ma przez dwanaście dób', () => {
+    for (const dzienKontaktu of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const osada = osadaWej({ dzienKontaktu });
+      const gov = zarzad(1);
+      for (let dzien = 1; dzien <= 12; dzien++)
+        for (const hour of [9, 12, 21]) {
+          // doby już policzone, żeby uchwała i karta nocy nie zasłaniały karty, której tu nie ma
+          gov.cardDay = dzien;
+          gov.lawDay = dzien;
+          const wejsciowe = wejscie({ day: dzien, hour, screen: 5000 + dzien * 100 + hour, osada });
+          expect(czekaPosel(gov, wejsciowe), `${dzienKontaktu}, dzień ${dzien}, ${hour}:00`).toBe(false);
+        }
+      expect(gov.ev.done.posel, String(dzienKontaktu)).toBeUndefined();
     }
-    expect(czekaPosel(zarzad(4), wejscie({ day: 4, hour: 9, osada }))).toBe(true);
   });
 
   it('nie przychodzi w nocy ani przed 9:00, a wieczorem tak', () => {
@@ -274,7 +293,29 @@ describe('poseł z osady: kiedy przychodzi', () => {
   it('opóźniona przychodzi, gdy tylko wolno: w dniu po dniu kontaktu od 9:00', () => {
     const gov = zarzad(6);
     expect(czekaPosel(gov, wejscie({ day: 6, hour: 9, minute: 0 }))).toBe(true);
+    // zaplanowana na dzień 5, przyszła w dniu 6: dane karty niosą dzień, w którym poseł przyszedł
+    expect((gov.ev.active!.d as DanePosla).dzien).toBe(6);
   });
+
+  it.each([
+    [4, 4],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+  ])(
+    'karta zaplanowana na dzień %i, która przyszła w dniu %i, niesie dzień swojego przyjścia i liczby z tej chwili (do osady idzie ten dzień)',
+    (plan, przyszla) => {
+      // Karta bywa spóźniona (wstrzymała ją uchwała, karta nocy albo inna karta, albo zapis wczytano po dniu kontaktu). Poseł podaje
+      // liczby z chwili, w której stoi pod bramą, więc to ich dzień idzie do `kontakt.dzien` osady („z ostatniego kontaktu”), a nie
+      // dzień z ziarna, na który kontakt był zaplanowany.
+      const osada = osadaWej({ dzienKontaktu: plan, ludnosc: 17, budowle: 3 });
+      const { gov, i } = zKarta({ day: przyszla, osada });
+      const d = gov.ev.active!.d as DanePosla;
+      expect(d.dzien).toBe(przyszla);
+      expect(d).toMatchObject({ ludnosc: 17, budowle: 3 });
+      expect(chooseEvent(gov, i, 0).odkryjOsade).toEqual({ dzien: przyszla, ludnosc: 17, budowle: 3 });
+    },
+  );
 
   it('wystawia dokładnie raz: po wystawieniu i po odpowiedzi nie wraca, nawet gdy gospodarz zapomni odkryć osadę', () => {
     const { gov, i } = zKarta();
@@ -323,6 +364,25 @@ describe('poseł z osady: kiedy przychodzi', () => {
     gov.decisions.push({ s: 4990, k: 'wydarzenie' });
     expect(czekaPosel(gov, wejscie({ screen: 4990 + QUIET - 1 }))).toBe(false);
     expect(czekaPosel(gov, wejscie({ screen: 4990 + QUIET }))).toBe(true);
+  });
+
+  it('gdy odstęp do losowej karty jest już należny, poseł i tak zostaje na ekranie: nic się nie losuje, odstęp stoi', () => {
+    // Bez `return` po wystawieniu posła ten sam krok zarządu szedłby dalej do losowania, a losowa karta nadpisałaby posła w
+    // `ev.active`, choć `ev.done.posel` już stoi: poseł przepadłby, a osada nigdy by się nie odsłoniła. Z łańcuchami kart pierwszy
+    // krok zarządu wybiera wątki sezonu (to losuje), więc ten krok robimy przed ustawieniem odstępu; potem poseł nie losuje już nic.
+    for (const lancuchy of [false, true])
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const gov = zarzad(5, seed);
+        if (lancuchy) gov.lancuchy = true;
+        govUpdate(gov, wejscie({ day: 5, hour: 7 }, seed));
+        gov.ev.next = 0; // losowanie kart jest już należne w chwili, gdy poseł ma przyjść
+        const rng0 = structuredClone(gov.rng);
+        govUpdate(gov, wejscie({ day: 5, hour: 9 }, seed));
+        const opis = `ziarno ${seed}, łańcuchy ${lancuchy}`;
+        expect(gov.ev.active?.id, opis).toBe('posel');
+        expect(gov.rng, opis).toEqual(rng0);
+        expect(gov.ev.next, opis).toBe(0);
+      }
   });
 
   it('tylko gdy wejście ma osadę i jest nieodkryta: bez pola, z odkrytą i w trybie zombie karty nie ma', () => {
@@ -731,7 +791,8 @@ describe('poseł z osady: zapis i wczytanie', () => {
 
 /** Skróty stanu zarządu (`hashString(saveGov(gov))`) po siedmiu dobach na atrapie, z gry sprzed tej zmiany (HEAD c8454c32): ziarno,
     polityka gracza, łańcuchy kart włączone albo nie. Przypięte jako liczby, bo test determinizmu zarządu (zarzad.test.ts) porównuje
-    przebiegi tylko ze sobą i nie zauważyłby, że karta posła przestawiła losowania w grze bez osady. */
+    przebiegi tylko ze sobą i nie zauważyłby, że karta posła przestawiła losowania w grze bez osady. Gdy zmiana w zarządzie nie ma nic
+    wspólnego z posłem, a zmienia przebieg na atrapie, te skróty przypina się od nowa (po sprawdzeniu, że to ta zmiana je rusza). */
 const SKROTY_PRZED: readonly [number, 'losowo' | 'nigdy-warty' | 'propozycja', boolean, string][] = [
   [1, 'losowo', false, '28d4771d'],
   [1, 'losowo', true, '316416b3'],
