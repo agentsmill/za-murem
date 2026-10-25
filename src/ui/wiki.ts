@@ -269,7 +269,7 @@ export function wikiSheet(st: WikiStan, c: WikiCtx): Sheet {
   const szukaj = L('Szukaj w wiki', 'Search the wiki');
   return {
     tone: 'wiki',
-    kicker: 'Za Murem 0.4',
+    kicker: 'Za Murem 1.0',
     title: 'Wiki',
     body: `<div class="wiki-uklad" data-widok="${st.art ? 'art' : 'lista'}"><nav class="wiki-nav" aria-label="Wiki"><label class="wiki-szukaj"><span class="sr">${esc(
       szukaj,
