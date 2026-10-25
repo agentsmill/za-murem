@@ -5,6 +5,7 @@
    `loadDemoKwadraty` (plik dema) i `geoKwadratu` (kafelki adresu) z src/world/load.ts, których main.ts nie podmienia, a testy
    podstawiają własne (`ZrodlaKandydatow`). Reszta (`nowaOsadaGry`, `osadaZZapisu`, stan osady) dostaje od gospodarza tylko ziarno,
    tabele mieszkańców, układ domu i tryb gry i niczego nie pobiera, więc chodzi w Node i ma testy (tests/unit/osada-gra.test.ts).
+   Ten plik jest w skanie czystości (tests/unit/ai-czystosc.test.ts): bez DOM, zegara, losowania spoza ziarna, `fetch(` i modułów Node.
    Wszystko za flagą `?osada=1`: gra bez flagi nie tworzy osady, a jej zapis nie ma pola `osada` (`poleOsady`). Kod osady main.ts
    ładuje dopiero przy fladze (`import()`), więc gra bez flagi nie niesie silnika AI.
 
