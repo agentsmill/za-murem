@@ -52,12 +52,19 @@
      w domu daje podpowiedź). Zrzut: zachodni brzeg domu i mgła ze znakiem zapytania;
    - `osada-widok`: po odkryciu przez kartę posła kwadrat osady stoi w widoku (numer, położenie, mgła na nieodkrytych sąsiadach domu
      i osady), siedziba znaleziona po kluczu budynku, etykieta z nazwą nad nią niczego nie zasłania; zapis i wczytanie budują kwadrat
-     od nowa z tą samą siedzibą. Zrzuty: siedziba z bliska (`osada-widok`) i dom z osadą z daleka (`osada-widok-daleko`);
-   - `osada-karta`: klik w budynek siedziby (albo etykietę) otwiera kartę osady z nazwą, kierunkiem i liczbami z ostatniego kontaktu
-     (nie z gry osady), jedynym przyciskiem „×” i bez dyplomacji, a cały jej tekst to wiedza z kontaktu (bez wieści o upadku i odwołaniu); zamykają ją „×”, Esc, zaznaczenie kogoś i klik w dom, klik w siedzibę
-     z zaznaczoną osobą nie wydaje polecenia, a po kliknięciu etykiety myszą spacja dalej zatrzymuje i puszcza grę (etykieta nie trzyma fokusu). Zrzuty: karta na komputerze po polsku (`osada-karta`, `osada-karta-otwarta`);
+     od nowa z tą samą siedzibą; budowa kwadratu zaczyna się przy otwarciu karty posła, a po dołożeniu kwadratu do widoku gra jej nie
+     trzyma (`zm.osada().budowa`, sprawdza to `doOdkrycia` w każdym scenariuszu, który odkrywa osadę). Zrzuty: siedziba z bliska
+     (`osada-widok`) i dom z osadą z daleka (`osada-widok-daleko`);
+   - `osada-karta`: klik w budynek siedziby (albo w napis etykiety) otwiera kartę osady z nazwą, kierunkiem i liczbami z ostatniego
+     kontaktu (nie z gry osady), jedynym przyciskiem „×” i bez dyplomacji, a cały jej tekst to wiedza z kontaktu (bez wieści o
+     upadku i odwołaniu); zamykają ją „×”, Esc, zaznaczenie kogoś i klik w dom, klik w siedzibę z zaznaczoną osobą nie wydaje
+     polecenia. Etykieta przepuszcza wskaźnik do mapy: kółko nad napisem przybliża, przeciągnięcie myszą od napisu przesuwa mapę i
+     nie otwiera karty; po kliknięciu etykiety myszą spacja dalej zatrzymuje i puszcza grę (etykieta nie trzyma fokusu); przy brzegu
+     ekranu napis jedzie do środka, a jego ogonek zostaje przy kotwicy. Zrzuty: karta na komputerze po polsku (`osada-karta`,
+     `osada-karta-otwarta`);
    - `osada-karta-en`: to samo na telefonie 390×844 po angielsku: karta w ekranie, nic na nic nie nachodzi (`nachodzenia`), etykieta
-     niczego nie zasłania, „×” na palec, tekst bez polskich liter;
+     niczego nie zasłania, „×” na palec, tekst bez polskich liter; palec zaczęty na napisie etykiety przesuwa mapę, a dwa palce
+     (jeden na napisie) przybliżają (zdarzenia dotyku przez CDP); ogonek przy lewym brzegu ekranu zostaje przy kotwicy;
    - `osada-mapa`: mapa miasta ma znacznik osady po odkryciu (nie ma go przed).
    Zrzut na końcu pozostałych scenariuszy to zwykła gra, po nim ogląda się, że gra wygląda jak zawsze (atrybucja mapy, brak plam po
    błędzie). */
