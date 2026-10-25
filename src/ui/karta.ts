@@ -1,5 +1,6 @@
-/* Karta osoby: paski potrzeb (na telefonie, w oknie węższym niż 768 px, zwinięte do linii z ostrzeżeniami, `potrzebyLinia`;
-   rozwija je stuknięcie, stan trzyma main.ts; pasek potrzeby otwiera artykuł wiki dopiero po rozwinięciu, zwinięte są schowane), chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
+/* Karta osoby: paski potrzeb (na telefonie, w oknie węższym niż 768 px albo niższym niż 501 px, zwinięte do linii z ostrzeżeniami,
+   `potrzebyLinia`; rozwija je stuknięcie, stan trzyma main.ts; pasek potrzeby otwiera artykuł wiki dopiero po rozwinięciu,
+   zwinięte są schowane; tak samo „Więcej”, `wiecejHtml`, które chowa rodzinę, historię i zmianę imienia), chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
    drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
    trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
    wymyśleni, i przycisk zmiany imienia (`data-card="imie"`: main.ts otwiera w karcie edytor z src/ui/imiona.ts, także
@@ -42,7 +43,7 @@ export const NEED_ORDER: readonly (keyof Needs)[] = ['food', 'warm', 'rest', 'he
 /** poziom paska: źle poniżej 25, uwaga poniżej 50 */
 export const needLevel = (v: number): 'bad' | 'mid' | 'ok' => (v < 25 ? 'bad' : v < 50 ? 'mid' : 'ok');
 
-/** Linia potrzeb na karcie osoby na telefonie (okno węższe niż 768 px; na komputerze jej nie widać, src/style.css): potrzeby w stanie
+/** Linia potrzeb na karcie osoby na telefonie (okno węższe niż 768 px albo niższe niż 501 px; na komputerze jej nie widać, src/style.css): potrzeby w stanie
     „uwaga” i „źle” w jednej linijce („Ciepło 22 · Najedzenie 45”), a gdy żadnej nie ma, „Potrzeby w normie”. Stuknięcie w nią
     rozwija paski i nastroje (`data-card="potrzeby"`, main.ts); jej kolor to najgorszy stan, a `aria-expanded` ustawia main.ts
     według klasy karty (HTML nie zna stanu zwinięcia). */
@@ -130,6 +131,17 @@ function fikcjaHtml(p: SimPerson, imie: boolean): string {
       )}">${L('Zmień imię', 'Rename')}</button>`
     : '';
   return `<div class="osoba-fikcja"><p class="fikcja">${L(FIKCJA, FIKCJA_EN)}</p>${btn}</div>`;
+}
+
+/** Przycisk „Więcej” na karcie osoby (telefon; na komputerze CSS go chowa): rodzina, historia i przycisk zmiany imienia stoją
+    za nim, a napis o wymyślonych mieszkańcach zostaje na widoku. Stan (rozwinięte albo nie) trzyma main.ts: klasa `wiecej-zwiniete`
+    na karcie i `aria-expanded` przycisku, bo HTML karty nie zna stanu. Bez przycisku, gdy karta nie ma czego chować. */
+function wiecejHtml(maCoChowac: boolean): string {
+  if (!maCoChowac) return '';
+  return `<button type="button" class="wiecej" data-card="wiecej" aria-expanded="false" title="${L(
+    'Rodzina, historia i zmiana imienia',
+    'Family, story and renaming',
+  )}">${L('Więcej', 'More')}</button>`;
 }
 
 /** historia osoby: przycisk z tekstem, zwinięty do jednej linijki albo rozwinięty */
@@ -235,12 +247,15 @@ export function personCard(
     })
     .join('');
   const prof = en ? (opts.en?.prof ?? zawodEn(p.prof)) : p.prof;
+  const rodzina = en ? (opts.en?.rodzina ?? p.rodzina) : p.rodzina;
+  const historia = en ? (opts.en?.story ?? p.story) : p.story;
   return [
     `<h2>${esc(p.name)}</h2>`,
+    wiecejHtml(!!(rodzina || historia || p.ref)),
     // osoba z generatora: zawód i wiek zostają też na zwartej karcie telefonu (klasa `gen`, spec §9)
     `<p class="sub${p.ref ? ' gen' : ''}">${esc(prof)}, ${en ? p.age : wiek(p.age)}</p>`,
-    rodzinaHtml(en ? (opts.en?.rodzina ?? p.rodzina) : p.rodzina),
-    storyHtml(en ? (opts.en?.story ?? p.story) : p.story, storyOpen),
+    rodzinaHtml(rodzina),
+    storyHtml(historia, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
     opts.lokator ? biteHtml(p, tick, false, words, e) : armHtml(p, tick, words, e),
     potrzebyLinia(p.needs, en),

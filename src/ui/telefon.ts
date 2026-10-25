@@ -1,10 +1,11 @@
-/* Telefon (okno węższe niż 768 px albo niższe niż 501 px, czyli też telefon trzymany poziomo): dwa bloki, które gracz zwija, żeby
+/* Telefon (okno węższe niż 768 px albo niższe niż 501 px, czyli też telefon trzymany poziomo): trzy bloki, które gracz zwija, żeby
    interfejs nie przytłaczał ekranu: pasek stanu u góry (domyślnie jedna linia z tym, co pilne: kafelki w stanie „uwaga” albo
    „źle”, a gdy takich nie ma, jedzenie, drewno i wkurzenie), potrzeby na karcie osoby (domyślnie jedna linia z ostrzeżeniami,
-   paski i nastroje po stuknięciu). Stuknięcie w linię rozwija blok, kolejne zwija. Na komputerze (od 768 px szerokości i
+   paski i nastroje po stuknięciu) i „Więcej” na karcie osoby (rodzina, historia i przycisk zmiany imienia schowane, napis o
+   wymyślonych mieszkańcach zostaje). Stuknięcie w linię rozwija blok, kolejne zwija. Na komputerze (od 768 px szerokości i
    od 501 px wysokości) nic się nie zmienia (reguły w src/style.css leżą w zapytaniu `TELEFON_MQ`).
 
-   Pamięć wyboru: localStorage przeglądarki pod kluczami `PASEK_KEY` i `POTRZEBY_KEY` („zwiniete” albo „rozwiniete”),
+   Pamięć wyboru: localStorage przeglądarki pod kluczami `PASEK_KEY`, `POTRZEBY_KEY` i `WIECEJ_KEY` („zwiniete” albo „rozwiniete”),
    tak jak język i imiona (src/ui/jezyk.ts, src/ui/imiona.ts): to stan interfejsu, nie symulacji, więc nie trafia do zapisu gry.
    Kontrakt: każda funkcja działa bez wyjątku także wtedy, gdy przeglądarka nie daje dostępu do pamięci (tryb prywatny, zablokowane
    dane witryny, podgląd miniatur): wtedy nic się nie zapisuje, a odczyt to domyślne „zwiniete”; uszkodzony wpis to też domyślne.
@@ -25,6 +26,7 @@ export const UKLAD_TELEFONU_MQ = '(max-width: 640px), (max-height: 500px)';
 export const MALY_TELEFON_MQ = '(max-width: 640px)';
 export const PASEK_KEY = 'za-murem-0.4-pasek';
 export const POTRZEBY_KEY = 'za-murem-0.4-potrzeby';
+export const WIECEJ_KEY = 'za-murem-0.4-wiecej';
 
 export type Wybor = 'zwiniete' | 'rozwiniete';
 

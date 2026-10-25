@@ -27,7 +27,7 @@
    stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, osobny przycisk `#statsToggle`, wybór w pamięci
    przeglądarki), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`, `--zapas-dol`; poziomo chowa
    się, gdy karta zostawia mu mniej niż nagłówek). Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami
-   (`przelaczPotrzeby`). Ostrzeżenie o zgasłej kozie wisi
+   (`przelaczPotrzeby`), a „Więcej” chowa rodzinę, historię i zmianę imienia (`przelaczWiecej`). Ostrzeżenie o zgasłej kozie wisi
    na telefonie 9 s, potem zostaje czerwona linia stanu. Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
    z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok i nie otwiera wiki (main.ts przechwytuje
    kliknięcie i Enter w zwiniętym pasku, kafelki nie biorą dotyku), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera
@@ -216,7 +216,15 @@ import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
-import { PASEK_KEY, POTRZEBY_KEY, TELEFON_MQ, UKLAD_TELEFONU_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
+import {
+  PASEK_KEY,
+  POTRZEBY_KEY,
+  TELEFON_MQ,
+  UKLAD_TELEFONU_MQ,
+  WIECEJ_KEY,
+  wczytajWybor,
+  zapiszWybor,
+} from './ui/telefon.ts';
 import { utworzWiki } from './ui/wiki-okno.ts';
 import { wikiCtx } from './ui/wiki-typy.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
@@ -1924,14 +1932,14 @@ function setCard(html: string, key = '') {
       pkNowy.remove();
       card.append(...nowa.content.childNodes);
       cardHtml = html;
-      ariaPotrzeb();
+      ariaKarty();
       return;
     }
   }
   card.innerHTML = html;
   cardHtml = html;
   cardKey = key;
-  ariaPotrzeb();
+  ariaKarty();
 }
 // lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
 $('card').addEventListener('focusout', (e) => {
@@ -2481,8 +2489,9 @@ function alarmButton(st: SimState) {
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
 $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
-  // linia potrzeb na telefonie rozwija i zwija paski i nastroje; to wybór interfejsu, nie polecenie dla symulacji
+  // linia potrzeb i przycisk „Więcej” na telefonie rozwijają i zwijają blok karty; to wybór interfejsu, nie polecenie dla symulacji
   if (b?.dataset.card === 'potrzeby') return przelaczPotrzeby();
+  if (b?.dataset.card === 'wiecej') return przelaczWiecej();
   if (!b || !sim) return;
   const st = sim.st;
   // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
@@ -3890,6 +3899,7 @@ document.fonts?.addEventListener('loadingdone', dopasujNazwe);
 const telefonMq = matchMedia(TELEFON_MQ);
 let statyRozwiniete = wczytajWybor(PASEK_KEY) === 'rozwiniete';
 let potrzebyRozwiniete = wczytajWybor(POTRZEBY_KEY) === 'rozwiniete';
+let wiecejRozwiniete = wczytajWybor(WIECEJ_KEY) === 'rozwiniete';
 const przyciskPaska = $('statsToggle');
 /** Pasek stanu na telefonie: zwinięty (atrybut `data-zwiniete` na `#stats`; src/style.css zostawia w nim tylko kafelki z klasą
     `pilne`) albo rozwinięty. Zwija i rozwija go osobny przycisk (`#statsToggle`: `aria-expanded`, podpis w obu językach), więc
@@ -3944,21 +3954,28 @@ telefonMq.addEventListener('change', zastosujPasekStanu);
 poZmianieJezyka(zastosujPasekStanu);
 zastosujPasekStanu();
 /** Karta osoby na telefonie: potrzeby zwinięte (klasa `potrzeby-zwiniete` na `#card`) do linii z ostrzeżeniami albo rozwinięte do
-    pasków i nastrojów; klasa żyje na pojemniku, więc przeżywa przepisywanie karty co 200 ms. */
-function ariaPotrzeb() {
-  const linia = $('card').querySelector('.potrzeby-linia');
-  if (linia) linia.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+    pasków i nastrojów, a „Więcej” (klasa `wiecej-zwiniete`) chowa rodzinę, historię i przycisk zmiany imienia; klasy żyją na
+    pojemniku, więc przeżywają przepisywanie karty co 200 ms. */
+function ariaKarty() {
+  $('card').querySelector('.potrzeby-linia')?.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+  $('card').querySelector('.wiecej')?.setAttribute('aria-expanded', String(wiecejRozwiniete));
 }
-function zastosujPotrzeby() {
+function zastosujKarte() {
   $('card').classList.toggle('potrzeby-zwiniete', !potrzebyRozwiniete);
-  ariaPotrzeb();
+  $('card').classList.toggle('wiecej-zwiniete', !wiecejRozwiniete);
+  ariaKarty();
 }
 function przelaczPotrzeby() {
   potrzebyRozwiniete = !potrzebyRozwiniete;
   zapiszWybor(POTRZEBY_KEY, potrzebyRozwiniete ? 'rozwiniete' : 'zwiniete');
-  zastosujPotrzeby();
+  zastosujKarte();
 }
-zastosujPotrzeby();
+function przelaczWiecej() {
+  wiecejRozwiniete = !wiecejRozwiniete;
+  zapiszWybor(WIECEJ_KEY, wiecejRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujKarte();
+}
+zastosujKarte();
 
 /* ---------- start ---------- */
 (async () => {
