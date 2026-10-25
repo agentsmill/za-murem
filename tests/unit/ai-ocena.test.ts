@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type Decydent, grajDo, MAX_BLEDOW, nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
+import { ziarnoOsady } from '../../src/ai/kwadrat.ts';
 import { silnik } from '../../src/ai/silnik.ts';
 import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { buildWorld } from '../../src/world/world.ts';
@@ -21,6 +22,7 @@ import {
   dniLudnosci,
   naglowekTabeli,
   opisBledowDecydenta,
+  opisBrakuOsady,
   opisGry,
   opisPowoduOdrzucenia,
   opisPozaRegula,
@@ -30,7 +32,9 @@ import {
   poranek as poranekGry,
   poranekTick,
   pozaRegula,
+  pozaRegulaOsady,
   przygotujGre,
+  przygotujGreOsady,
   streszczenieBledu,
   wierszPrzebiegu,
   zagraj,
@@ -640,6 +644,24 @@ describe('uprząż bot:osada: reguła miejsca osady', () => {
       ).toContain(forma);
   });
 
+  it('pozaRegulaOsady: Przymorze i Lanciego mają kwadrat osady dla ziarna, Zielonki nie (żaden z ośmiu sąsiadów nie spełnia reguły)', async () => {
+    expect(await pozaRegulaOsady('przymorze', 11)).toBeNull();
+    expect(await pozaRegulaOsady('lanciego', 11)).toBeNull();
+    const powod = await pozaRegulaOsady('zielonki', 11);
+    // siedem kwadratów bez siedziby spełniającej warunki i jeden (−1,0) z siedzibą, ale bez jedzenia w zasięgu (tabela z tools/osada-kwadraty.ts)
+    expect(powod).toBe('żaden z 8 sąsiednich kwadratów nie spełnia reguły: siedziba 7, jedzenie 1');
+    // wynik nie zależy od ziarna (reguła patrzy na kwadrat, ziarno zmienia tylko kolejność i wnętrze)
+    expect(await pozaRegulaOsady('zielonki', 13)).toBe(powod);
+    expect(await pozaRegulaOsady('przymorze', 14)).toBeNull();
+  }, 120_000);
+
+  it('opisBrakuOsady: dopisek dema bez kwadratu osady zamiast tabeli', () => {
+    const opis = opisBrakuOsady('żaden z 8 sąsiednich kwadratów nie spełnia reguły: siedziba 7, jedzenie 1');
+    expect(opis).toContain('brak osady');
+    expect(opis).toContain('siedziba 7, jedzenie 1');
+    expect(opis).toContain('poza werdyktem');
+  });
+
   it('opisPozaRegula: dopisek dema w tabeli', () => {
     const opis = opisPozaRegula('jedzenie: 17 porcji w zasięgu 720 m, potrzeba 300');
     expect(opis).toContain('poza regułą miejsca');
@@ -710,6 +732,22 @@ describe('uprząż bot:osada: argumenty', () => {
     expect(() => parsujArgumenty(['45'])).toThrow(/45/);
   });
 
+  it('--osada gra na światach osady z wybierzOsade: domyślnie wyłączona, z wartością albo z --prosto i --bez-lancuchow rzuca', () => {
+    expect(parsujArgumenty([]).osada).toBe(false);
+    expect(parsujArgumenty(['--osada']).osada).toBe(true);
+    expect(parsujArgumenty(['--osada', '--bez-progu', '--ziarna=11-30', '--demo=lanciego'])).toMatchObject({
+      osada: true,
+      bezProgu: true,
+      ziarna: parsujZiarna('11-30'),
+      dema: ['lanciego'],
+      prosto: false,
+      bezLancuchow: false,
+    });
+    expect(() => parsujArgumenty(['--osada=1'])).toThrow(/--osada/);
+    expect(() => parsujArgumenty(['--osada', '--prosto'])).toThrow(/--prosto/);
+    expect(() => parsujArgumenty(['--bez-lancuchow', '--osada'])).toThrow(/--bez-lancuchow/);
+  });
+
   it('ukryty --jedna=demo:ziarno wybiera jedną grę', () => {
     expect(parsujArgumenty(['--jedna=lanciego:12']).jedna).toEqual({ demo: 'lanciego', ziarno: 12 });
     expect(() => parsujArgumenty(['--jedna=sopot:12'])).toThrow(/--jedna/);
@@ -730,6 +768,25 @@ describe('uprząż bot:osada: jak grano', () => {
       'prosto (bez obcych, mieszkańców z adresu, okolicy miasta, ludności 2021 i łańcuchów kart, tempo przeglądarki)';
     expect(opisGry(parsujArgumenty(['--prosto']))).toBe(prosto);
     expect(opisGry(parsujArgumenty(['--prosto', '--bez-lancuchow']))).toBe(prosto);
+  });
+
+  it('opisGry: z --osada nagłówek mówi, że gra toczy się na sąsiednim kwadracie wybranym regułą miejsca, bez łańcuchów kart', () => {
+    expect(opisGry(parsujArgumenty(['--osada']))).toBe(
+      'osada na sąsiednim kwadracie wybranym regułą miejsca, jak w przeglądarce (obcy, mieszkańcy siedziby z generatora, okolica i ludność 2021 jej kwadratu, bez łańcuchów kart, tempo przeglądarki)',
+    );
+  });
+
+  it('argumentyPrzebiegu: --osada idzie do procesu potomnego i parsuje się z powrotem', () => {
+    const o = parsujArgumenty(['--osada', '--bez-progu', '--procesy=3']);
+    expect(argumentyPrzebiegu(o, 'lanciego', 12)).toEqual(['--jedna=lanciego:12', '--dni=45', '--osada']);
+    expect(parsujArgumenty(argumentyPrzebiegu(o, 'przymorze', 13))).toMatchObject({
+      jedna: { demo: 'przymorze', ziarno: 13 },
+      osada: true,
+      bezLancuchow: false,
+      prosto: false,
+    });
+    // bez flagi proces potomny nie dostaje --osada
+    expect(argumentyPrzebiegu(parsujArgumenty([]), 'lanciego', 12)).not.toContain('--osada');
   });
 
   it('argumentyPrzebiegu: proces potomny dostaje grę, długość i te flagi, które zmieniają grę (nie próg ani liczbę procesów)', () => {
@@ -778,6 +835,29 @@ describe('uprząż bot:osada: tabela', () => {
     const wiersz = wierszPrzebiegu(pada, 4_000);
     // koniec w dniu 20: ludność w dniu 10 jest (8), w dniach 30 i 45 już nie
     expect(wiersz.split(/\s+/)).toEqual(['12', 'dzień', '20', 'odwolanie', '8', '12', '-', '-', '12', '5', '4.0', 's']);
+  });
+
+  it('z --osada tabela ma kolumnę kwadratu między ziarnem a końcem, bez niej wiersz i nagłówek są jak dotąd', () => {
+    const [p] = przebiegi({ kamien: 12, budowle: 16, ile: 1 });
+    expect(naglowekTabeli(45, true).split(/\s+/).slice(0, 3)).toEqual(['ziarno', 'kwadrat', 'koniec']);
+    expect(naglowekTabeli(45, false)).toBe(naglowekTabeli(45));
+    expect(wierszPrzebiegu({ ...p, kwadrat: '0,-1' }, 12_340).split(/\s+/)).toEqual([
+      '11',
+      '0,-1',
+      'żyje',
+      '-',
+      '8',
+      '12',
+      '12',
+      '12',
+      '12',
+      '16',
+      '12.3',
+      's',
+    ]);
+    // kolumny nagłówka i wiersza stoją w tych samych miejscach
+    const wiersz = wierszPrzebiegu({ ...p, kwadrat: '-1,1' }, 12_340);
+    expect(wiersz.indexOf('żyje')).toBe(naglowekTabeli(45, true).indexOf('koniec'));
   });
 
   it('wiersz bez kamienia ma kreskę w kolumnie kamienia', () => {
@@ -970,6 +1050,56 @@ describe('uprząż bot:osada: jedna gra', () => {
     expect(g.gov.lancuchy).toBeUndefined();
     expect(g.gov.miasto).toBeUndefined();
     expect(g.gov.zwyciestwo).toBeUndefined();
+  }, 120_000);
+
+  it('przygotujGreOsady: kwadrat z wybierzOsade dla ziarna, opcje osady jak w przeglądarce, ale z odpowiedzNaNieznane false', async () => {
+    const o = (await przygotujGreOsady('przymorze', 11))!;
+    expect(o.swiat.klucz).toBe('0,-1');
+    expect([o.swiat.sx, o.swiat.sy]).toEqual([0, -1]);
+    // ziarno gry osady z ziarna naszej gry i kwadratu, nie samo ziarno naszej gry
+    expect(o.g.seed).toBe(ziarnoOsady(11, 0, -1));
+    expect(o.g.seed).not.toBe(11);
+    // opcje z wyniku wyboru (cztery osoby zarządu, obcy, mieszkańcy siedziby, okolica i ludność jej kwadratu, bez łańcuchów kart, tempo
+    // przeglądarki); w przeglądarce osada odpowiada na każde okno, uprząż każe nieznanemu oknu zawisnąć
+    expect(o.swiat.opcje.odpowiedzNaNieznane).toBe(true);
+    expect(o.g.opts).toMatchObject({
+      core: 4,
+      obcy: true,
+      lancuchy: false,
+      tempoPrzegladarki: true,
+      odpowiedzNaNieznane: false,
+    });
+    expect(o.g.opts.mieszkancy).toBeDefined();
+    expect(o.g.opts.okolica!.length).toBeGreaterThan(0);
+    expect(o.g.sim.st.obcy).toBeDefined();
+    expect(o.g.gov.lancuchy).toBeUndefined();
+    expect(o.g.sim.st.pawns.filter((p) => p.kind === 'core')).toHaveLength(4);
+    // inne ziarno: inna kolejność kandydatów, więc inny kwadrat (Przymorze 12 → 1,0, Lanciego 11 → 0,-1)
+    expect((await przygotujGreOsady('przymorze', 12))!.swiat.klucz).toBe('1,0');
+    expect((await przygotujGreOsady('lanciego', 11))!.swiat.klucz).toBe('0,-1');
+    // Zielonki: żaden sąsiedni kwadrat nie spełnia reguły, więc nie ma gry
+    expect(await przygotujGreOsady('zielonki', 11)).toBeNull();
+  }, 120_000);
+
+  it('zagraj z osadą: kwadrat w przebiegu, poranki od dnia 2, ta sama gra co przygotujGreOsady, deterministyczna', async () => {
+    const wynik = await zagraj('przymorze', 11, 2, false, silnik, true, true);
+    const p = wynik.przebieg;
+    expect([p.demo, p.ziarno, p.kwadrat, p.dni, p.koniec]).toEqual(['przymorze', 11, '0,-1', 2, null]);
+    expect(p.poranki.map((d) => d.dzien)).toEqual([2, 3]);
+    expect(wynik.zawieszone).toEqual([]);
+    expect(wynik.bledy).toEqual([]);
+    const o = (await przygotujGreOsady('przymorze', 11))!;
+    grajDo(o.g, silnik, 2 * TICKS_PER_DAY);
+    expect(wynik.skrot).toBe(skrotGry(o.g));
+    expect((await zagraj('przymorze', 11, 2, false, silnik, true, true)).skrot).toBe(wynik.skrot);
+    // gra na domu dema to inna gra i nie ma pola kwadratu
+    const dom = await zagraj('przymorze', 11, 2, false);
+    expect('kwadrat' in dom.przebieg).toBe(false);
+    expect(dom.skrot).not.toBe(wynik.skrot);
+  }, 120_000);
+
+  it('zagraj z osadą na demie bez kwadratu osady rzuca z nazwą dema i ziarna (uprząż pokaże to jako błąd przebiegu)', async () => {
+    await expect(zagraj('zielonki', 11, 1, false, silnik, true, true)).rejects.toThrow(/zielonki.*ziarna 11/);
   }, 120_000);
 
   it('zagraj prosto: trzy doby dają poranki dni 2–4 o 6:00, a przebieg gry jest ten sam co bez przerw na poranki', async () => {

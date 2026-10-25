@@ -61,6 +61,9 @@ export interface DzienPrzebiegu {
 export interface Przebieg {
   demo: string;
   ziarno: number;
+  /** klucz „sx,sy” sąsiedniego kwadratu dema, na którym grano osadę (`--osada` w uprzęży: kwadrat z `wybierzOsade` dla ziarna);
+      brak pola: gra na domu dema (domyślny przebieg uprzęży). Ocena go nie czyta, tabela go pokazuje. */
+  kwadrat?: string;
   dni: number;
   /** null: gra dożyła końca przebiegu */
   koniec: { dzien: number; przyczyna: string } | null;

@@ -15,6 +15,17 @@
    `odpowiedzNaNieznane: false`: okno zarządu nowego rodzaju z innej gałęzi nie dostaje odpowiedzi „na ślepo”, tylko zawisa,
    a to jest błąd przebiegu (silnik nie umie na nie odpowiedzieć).
 
+   `--osada` gra silnikiem na prawdziwych światach osady zamiast na domach dem: dla ziarna naszej gry `wybierzOsade`
+   (src/ai/kwadrat.ts) wybiera sąsiedni kwadrat dema (public/demo/<klucz>-kwadraty.json) tą samą regułą miejsca i w tej samej
+   kolejności z ziarna co gra w przeglądarce, świat i opcje gry osady (cztery osoby zarządu, obcy, mieszkańcy siedziby z generatora,
+   okolica i ludność 2021 jej kwadratu, bez łańcuchów kart, tempo przeglądarki) idą z tego wyniku, a ziarno gry osady z `ziarnoOsady`.
+   `odpowiedzNaNieznane` zostaje jawnie false jak w całej uprzęży (w przeglądarce osada ma true). Tabela ma wtedy kolumnę „kwadrat”.
+   Demo, na którym żaden sąsiedni kwadrat nie spełnia reguły (dziś Zielonki), nie ma co grać: stoi pod nim jedna linia z powodem,
+   a werdykt pomija je jako „poza regułą miejsca”. Miara werdyktu ta sama co na domach. Silnik był strojony na trzech domach dem i na
+   cudzych budynkach gra słabiej (koza z beczki, zima: raport etapu 2, zadanie 2), więc ten przebieg mówi, jak bardzo; bramką etapu
+   jest domyślny przebieg na domach, a ten służy do pomiaru i do ziaren, na których osada naprawdę stanie (`--bez-progu`). Z `--prosto`
+   (goła gra bez generatora mieszkańców) i z `--bez-lancuchow` (osada nigdy nie ma łańcuchów) nie łączy się.
+
    Jedna gra na proces (procesy równolegle, jak tools/bot-zombie-siatka.ts): ten sam skrypt z ukrytym argumentem
    `--jedna=demo:ziarno` gra jedną grę i drukuje jej wynik jako jedną linię JSON, a proces główny zbiera wyniki, rysuje
    tabelę i liczy werdykt. Procesów tyle, ile rdzeni bez jednego (`--procesy=N` zmienia). Gra jest deterministyczna, więc
@@ -42,7 +53,7 @@
    a reszta eksportów to czyste funkcje argumentów i tabeli. Uprząż rusza tylko wtedy, gdy skrypt uruchomiono wprost.
 
    Uruchomienie: npm run bot:osada [-- --ziarna=11-15] [--dni=45] [--demo=przymorze,lanciego,zielonki] [--prosto]
-                 [--bez-lancuchow] [--bez-progu] [--procesy=N] [--limit=MIN] */
+                 [--bez-lancuchow] [--osada] [--bez-progu] [--procesy=N] [--limit=MIN] */
 
 import { type ChildProcess, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -60,12 +71,17 @@ import {
   wejscie,
 } from '../src/ai/gra.ts';
 import {
+  kandydaciOsady,
   MIN_LOKATORZY_SIEDZIBY,
   MIN_POKOI_SIEDZIBY,
   type OdrzucenieOsady,
+  type PowodOdrzucenia,
   PROG_JEDZENIA_OSADY,
   PROMIEN_SIEDZIBY_M,
+  type SwiatOsady,
   swiatOsady,
+  wybierzOsade,
+  ziarnoOsady,
 } from '../src/ai/kwadrat.ts';
 import { silnik } from '../src/ai/silnik.ts';
 import { mnogaPl } from '../src/core/jezyk.ts';
@@ -73,7 +89,7 @@ import { MAX_OKOLICA_M } from '../src/gov/wyprawy.ts';
 import { liczbaZbadanych } from '../src/sim/badania.ts';
 import { clockOf, dayOf, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { populacja } from '../src/sim/snapshot.ts';
-import { ukladZGeo } from '../src/world/kwadraty.ts';
+import { kluczKwadratu, ukladZGeo } from '../src/world/kwadraty.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import { okolicaZGeo } from '../tests/unit/miasto-play.ts';
 import { DEMA, daneDema, PUBLIC, parsujZiarna, wczytajDemo } from './osada-kwadraty.ts';
@@ -110,6 +126,8 @@ export interface Opcje {
   prosto: boolean;
   /** gra bez łańcuchów kart i wątków sezonu (jak adres `?lancuchy=0`); domyślnie z nimi, jak nowa gra w przeglądarce */
   bezLancuchow: boolean;
+  /** gra na świecie osady wybranym przez `wybierzOsade` (sąsiedni kwadrat dema), nie na domu dema; domyślnie na domach */
+  osada: boolean;
   bezProgu: boolean;
   /** ile procesów gra naraz */
   procesy: number;
@@ -121,7 +139,7 @@ export interface Opcje {
 }
 
 const UZYCIE =
-  'Użycie: node tools/bot-osada.ts [--ziarna=11-15] [--dni=45] [--demo=przymorze,lanciego,zielonki] [--prosto] [--bez-lancuchow] [--bez-progu] [--procesy=N] [--limit=MIN]';
+  'Użycie: node tools/bot-osada.ts [--ziarna=11-15] [--dni=45] [--demo=przymorze,lanciego,zielonki] [--prosto] [--bez-lancuchow] [--osada] [--bez-progu] [--procesy=N] [--limit=MIN]';
 
 function liczbaDodatnia(nazwa: string, tekst: string): number {
   if (!/^\d+$/.test(tekst) || Number(tekst) < 1)
@@ -138,6 +156,7 @@ export function parsujArgumenty(argv: readonly string[]): Opcje {
     dema: [...DEMA],
     prosto: false,
     bezLancuchow: false,
+    osada: false,
     bezProgu: false,
     procesy: Math.max(1, os.availableParallelism() - 1),
     limitMin: 30,
@@ -150,6 +169,7 @@ export function parsujArgumenty(argv: readonly string[]): Opcje {
     if (wartosc === null) {
       if (flaga === '--prosto') o.prosto = true;
       else if (flaga === '--bez-lancuchow') o.bezLancuchow = true;
+      else if (flaga === '--osada') o.osada = true;
       else if (flaga === '--bez-progu') o.bezProgu = true;
       else if (flaga === '--pomoc') o.pomoc = true;
       else throw new Error(`nieznany argument „${a}”`);
@@ -185,11 +205,22 @@ export function parsujArgumenty(argv: readonly string[]): Opcje {
         throw new Error(`nieznany argument „${a}”`);
     }
   }
+  if (o.osada && o.prosto)
+    throw new Error(
+      '--osada gra na światach osady z generatorem mieszkańców, a --prosto to goła gra bez niego: nie łączą się',
+    );
+  if (o.osada && o.bezLancuchow)
+    throw new Error(
+      '--osada gra zawsze bez łańcuchów kart (jak osada w przeglądarce), więc --bez-lancuchow jest zbędne',
+    );
   return o;
 }
 
-/** Jak grano, do nagłówka wyjścia: konfiguracja gry z opcji uprzęży (`--prosto` jest zawsze bez łańcuchów kart). */
-export function opisGry(o: Pick<Opcje, 'prosto' | 'bezLancuchow'>): string {
+/** Jak grano, do nagłówka wyjścia: konfiguracja gry z opcji uprzęży (`--prosto` jest zawsze bez łańcuchów kart, `--osada` gra na
+    świecie osady z jej opcjami). */
+export function opisGry(o: Pick<Opcje, 'prosto' | 'bezLancuchow'> & Partial<Pick<Opcje, 'osada'>>): string {
+  if (o.osada)
+    return 'osada na sąsiednim kwadracie wybranym regułą miejsca, jak w przeglądarce (obcy, mieszkańcy siedziby z generatora, okolica i ludność 2021 jej kwadratu, bez łańcuchów kart, tempo przeglądarki)';
   if (o.prosto)
     return 'prosto (bez obcych, mieszkańców z adresu, okolicy miasta, ludności 2021 i łańcuchów kart, tempo przeglądarki)';
   return o.bezLancuchow
@@ -205,6 +236,7 @@ export function argumentyPrzebiegu(o: Opcje, demo: string, ziarno: number): stri
     `--dni=${o.dni}`,
     ...(o.prosto ? ['--prosto'] : []),
     ...(o.bezLancuchow ? ['--bez-lancuchow'] : []),
+    ...(o.osada ? ['--osada'] : []),
   ];
 }
 
@@ -292,10 +324,31 @@ export async function przygotujGre(
   return nowaGraAi(world, ziarno, opts);
 }
 
+/** Gra osady na świecie, który wybiera reguła miejsca dla ziarna naszej gry (`wybierzOsade` na sąsiednich kwadratach dema, jak
+    w przeglądarce): świat i opcje (cztery osoby zarządu, obcy, mieszkańcy siedziby, okolica i ludność 2021 jej kwadratu, bez
+    łańcuchów kart, tempo przeglądarki) z wyniku wyboru, ziarno gry osady z `ziarnoOsady`. `odpowiedzNaNieznane` jest jawnie false jak
+    w całej uprzęży (w przeglądarce osada ma true). null, gdy dla tego ziarna żaden sąsiedni kwadrat nie spełnia reguły. Eksportowana
+    z tego samego powodu co `przygotujGre`: testy grają na tej samej konfiguracji co pomiar. */
+export async function przygotujGreOsady(
+  demoKlucz: string,
+  ziarno: number,
+): Promise<{ g: GraAi; swiat: SwiatOsady } | null> {
+  const demo = wczytajDemo(demoKlucz);
+  const swiat = wybierzOsade(ziarno, demo.kwadraty, await daneDema(demoKlucz), ukladZGeo(demo.geo));
+  if (!swiat) return null;
+  const g = nowaGraAi(swiat.world, ziarnoOsady(ziarno, swiat.sx, swiat.sy), {
+    ...swiat.opcje,
+    odpowiedzNaNieznane: false,
+  });
+  return { g, swiat };
+}
+
 /** Jedna gra decydenta (domyślnie `silnik`): `dni` dób od 15:00 dnia 1 albo do końca gry. Poranki o 6:00 od dnia 2
     (przebieg, który kończy się w ciągu dnia, ma ostatni poranek poprzedniego dnia; koniec o 6:00 ma poranek z chwili
     końca). Inny decydent niż `silnik` służy testom (znany silnik podstawowy, decydent kończący grę albo rzucający błędy);
-    `lancuchy` false to gra bez łańcuchów kart (`--bez-lancuchow`, patrz `przygotujGre`). */
+    `lancuchy` false to gra bez łańcuchów kart (`--bez-lancuchow`, patrz `przygotujGre`). `osada` true gra na świecie osady z
+    `wybierzOsade` (`--osada`, patrz `przygotujGreOsady`; `prosto` i `lancuchy` są wtedy bez znaczenia) i zapisuje kwadrat w
+    przebiegu; rzuca, gdy dla tego ziarna nie ma kwadratu, który spełnia regułę. */
 export async function zagraj(
   demoKlucz: string,
   ziarno: number,
@@ -303,9 +356,18 @@ export async function zagraj(
   prosto: boolean,
   decydent: Decydent = silnik,
   lancuchy = true,
+  osada = false,
 ): Promise<WynikGry> {
   const t0 = performance.now();
-  const g = await przygotujGre(demoKlucz, ziarno, prosto, lancuchy);
+  let g: GraAi;
+  let kwadrat: string | undefined;
+  if (osada) {
+    const o = await przygotujGreOsady(demoKlucz, ziarno);
+    if (!o)
+      throw new Error(`demo ${demoKlucz} nie ma dla ziarna ${ziarno} kwadratu, który spełnia regułę miejsca osady`);
+    g = o.g;
+    kwadrat = o.swiat.klucz;
+  } else g = await przygotujGre(demoKlucz, ziarno, prosto, lancuchy);
   const koniecTick = dni * TICKS_PER_DAY;
   const poranki: DzienPrzebiegu[] = [];
   for (let dzien = 2; poranekTick(dzien) <= koniecTick && !g.gov.over; dzien++) {
@@ -317,6 +379,7 @@ export async function zagraj(
     przebieg: {
       demo: demoKlucz,
       ziarno,
+      ...(kwadrat !== undefined ? { kwadrat } : {}),
       dni,
       koniec: g.gov.over ? { dzien: dayOf(g.sim.st.tick), przyczyna: g.gov.over } : null,
       poranki,
@@ -342,21 +405,22 @@ export function dniLudnosci(dni: number): number[] {
 const lewo = (t: string | number, szer: number): string => String(t).padEnd(szer);
 const prawo = (t: string | number | null, szer: number): string => String(t ?? '-').padStart(szer);
 
-export function naglowekTabeli(dni: number): string {
+export function naglowekTabeli(dni: number, zKwadratem = false): string {
   const lud = dniLudnosci(dni)
     .map((d) => prawo(`lud${d}`, 6))
     .join('');
-  return `${lewo('ziarno', 7)}${lewo('koniec', 10)}${lewo('przyczyna', 11)}${lud}${prawo('kamień', 8)}${prawo('budowle', 9)}${prawo('czas', 8)}`;
+  return `${lewo('ziarno', 7)}${zKwadratem ? lewo('kwadrat', 9) : ''}${lewo('koniec', 10)}${lewo('przyczyna', 11)}${lud}${prawo('kamień', 8)}${prawo('budowle', 9)}${prawo('czas', 8)}`;
 }
 
-/** Wiersz tabeli jednego przebiegu: ziarno, koniec („żyje” albo „dzień N”), przyczyna, ludność w dniach z `dniLudnosci`
-    („-”, gdy przebieg do nich nie dotrwał), dzień pierwszego kamienia, budowle na koniec i czas w sekundach. */
+/** Wiersz tabeli jednego przebiegu: ziarno, kwadrat osady (tylko z `--osada`), koniec („żyje” albo „dzień N”), przyczyna,
+    ludność w dniach z `dniLudnosci` („-”, gdy przebieg do nich nie dotrwał), dzień pierwszego kamienia, budowle na koniec i
+    czas w sekundach. */
 export function wierszPrzebiegu(p: Przebieg, czasMs: number): string {
   const lud = dniLudnosci(p.dni)
     .map((d) => prawo(ludnoscWDniu(p, d), 6))
     .join('');
   const koniec = p.koniec ? `dzień ${p.koniec.dzien}` : 'żyje';
-  return `${lewo(p.ziarno, 7)}${lewo(koniec, 10)}${lewo(p.koniec?.przyczyna ?? '-', 11)}${lud}${prawo(dzienKamienia(p), 8)}${prawo(budowleNaKoniec(p), 9)}${prawo(`${(czasMs / 1000).toFixed(1)} s`, 8)}`;
+  return `${lewo(p.ziarno, 7)}${p.kwadrat !== undefined ? lewo(p.kwadrat, 9) : ''}${lewo(koniec, 10)}${lewo(p.koniec?.przyczyna ?? '-', 11)}${lud}${prawo(dzienKamienia(p), 8)}${prawo(budowleNaKoniec(p), 9)}${prawo(`${(czasMs / 1000).toFixed(1)} s`, 8)}`;
 }
 
 const POLA_PORANKA: [keyof DzienPrzebiegu, string, number][] = [
@@ -468,6 +532,44 @@ export function opisPozaRegula(powod: string): string {
   return `poza regułą miejsca (${powod}): przebiegi w tabeli, ale poza werdyktem`;
 }
 
+const NAZWA_POWODU: Record<PowodOdrzucenia, string> = {
+  siedziba: 'siedziba',
+  jedzenie: 'jedzenie',
+  mieszkancy: 'mieszkańcy',
+};
+
+/** Czy dla ziarna jest na demie jakikolwiek sąsiedni kwadrat osady (`wybierzOsade`, z `--osada`): null, gdy tak; inaczej powód
+    po polsku z liczbą kandydatów i powodami ich odrzucenia („żaden z 8 sąsiednich kwadratów nie spełnia reguły: siedziba 6,
+    jedzenie 2”). Kandydat to kwadrat z geo w pliku dema (Lanciego ma cztery boczne). Bez tabel mieszkańców dema reguła nigdy nie
+    jest spełniona (jak w `wybierzOsade`). */
+export async function pozaRegulaOsady(demoKlucz: string, ziarno: number): Promise<string | null> {
+  const demo = wczytajDemo(demoKlucz);
+  const dane = await daneDema(demoKlucz);
+  const uklad = ukladZGeo(demo.geo);
+  if (wybierzOsade(ziarno, demo.kwadraty, dane, uklad)) return null;
+  if (!dane) return 'brak tabel mieszkańców dema';
+  const powody = new Map<PowodOdrzucenia, number>();
+  let kandydatow = 0;
+  for (const [sx, sy] of kandydaciOsady(ziarno)) {
+    const geo = demo.kwadraty[kluczKwadratu(sx, sy)];
+    if (!geo) continue;
+    kandydatow++;
+    const r = swiatOsady(geo, sx, sy, dane, ziarno, uklad);
+    if ('odrzucony' in r) powody.set(r.odrzucony, (powody.get(r.odrzucony) ?? 0) + 1);
+  }
+  if (!kandydatow) return 'demo nie ma sąsiednich kwadratów';
+  const lista = (Object.keys(NAZWA_POWODU) as PowodOdrzucenia[])
+    .filter((p) => powody.has(p))
+    .map((p) => `${NAZWA_POWODU[p]} ${powody.get(p)}`)
+    .join(', ');
+  return `${kandydatow === 1 ? 'jedyny sąsiedni kwadrat nie spełnia' : `żaden z ${kandydatow} sąsiednich kwadratów nie spełnia`} reguły: ${lista}`;
+}
+
+/** Dopisek przy demie bez kwadratu osady (`--osada`), zamiast tabeli. */
+export function opisBrakuOsady(powod: string): string {
+  return `brak osady (${powod}): nie ma czego grać, poza werdyktem`;
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Proces główny
 // ---------------------------------------------------------------------------------------------------------------------
@@ -543,16 +645,20 @@ type Rezultat = { wynik: WynikGry } | { blad: string };
 async function glowny(o: Opcje): Promise<number> {
   sprzataj();
   const t0 = performance.now();
-  const zadania = o.dema.flatMap((demo) => o.ziarna.map((ziarno) => ({ demo, ziarno })));
+  // dema, których dom nie spełnia reguły miejsca osady (z --osada: na których żaden sąsiedni kwadrat jej nie spełnia): ich przebiegi
+  // są w tabeli, ale poza werdyktem (z --osada nie ma czego grać, więc nie ma i przebiegów)
+  const poza: PozaRegula[] = [];
+  for (const demo of o.dema) {
+    const powod = o.osada ? await pozaRegulaOsady(demo, o.ziarna[0]) : await pozaRegula(demo, o.ziarna[0]);
+    if (powod) poza.push({ demo, powod });
+  }
+  const bezOsady = (demo: string): boolean => o.osada && poza.some((x) => x.demo === demo);
+  const zadania = o.dema
+    .filter((demo) => !bezOsady(demo))
+    .flatMap((demo) => o.ziarna.map((ziarno) => ({ demo, ziarno })));
   const rezultaty = new Map<string, Rezultat>();
   const klucz = (demo: string, ziarno: number): string => `${demo}:${ziarno}`;
   const procesy = Math.min(o.procesy, zadania.length);
-  // dema, których dom nie spełnia reguły miejsca osady: ich przebiegi są w tabeli, ale poza werdyktem
-  const poza: PozaRegula[] = [];
-  for (const demo of o.dema) {
-    const powod = await pozaRegula(demo, o.ziarna[0]);
-    if (powod) poza.push({ demo, powod });
-  }
   console.log(
     `Osada AI: ${o.dema.join(', ')}; ziarna ${o.ziarna.join(',')}; ${o.dni} dni; gra ${opisGry(o)}; procesów ${procesy}${
       o.bezProgu ? '; bez progu (sam pomiar)' : ''
@@ -590,8 +696,12 @@ async function glowny(o: Opcje): Promise<number> {
   const bledne: BlednyPrzebieg[] = [];
   for (const demo of o.dema) {
     const pozaDemo = poza.find((x) => x.demo === demo);
+    if (pozaDemo && bezOsady(demo)) {
+      console.log(`\n${demo} [${opisBrakuOsady(pozaDemo.powod)}]`);
+      continue;
+    }
     console.log(`\n${demo}${pozaDemo ? ` [${opisPozaRegula(pozaDemo.powod)}]` : ''}`);
-    console.log(naglowekTabeli(o.dni));
+    console.log(naglowekTabeli(o.dni, o.osada));
     const wDemie: Przebieg[] = [];
     for (const ziarno of o.ziarna) {
       const r = rezultaty.get(klucz(demo, ziarno))!;
@@ -674,7 +784,7 @@ if (jestGlowny()) {
   }
   if (o.pomoc) console.log(UZYCIE);
   else if (o.jedna) {
-    const wynik = await zagraj(o.jedna.demo, o.jedna.ziarno, o.dni, o.prosto, silnik, !o.bezLancuchow);
+    const wynik = await zagraj(o.jedna.demo, o.jedna.ziarno, o.dni, o.prosto, silnik, !o.bezLancuchow, o.osada);
     process.stdout.write(`${JSON.stringify(wynik)}\n`);
   } else process.exitCode = await glowny(o);
 }
