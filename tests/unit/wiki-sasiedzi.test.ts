@@ -7,11 +7,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { BUDYNEK, KARTA, MENU, WYBOR, zdanie } from '../../src/content/napisy-sasiedzi.ts';
 import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
+import { placeOfWorld } from '../../src/gov/miejsce.ts';
+import type { GovPlace } from '../../src/gov/typy.ts';
 import { searchTicks } from '../../src/sim/mieszkania.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { PATCH_HP, REINFORCED_HP } from '../../src/sim/perimeter.ts';
 import {
   atakOdRazu,
+  drzwiBudynku,
   drzwiNaStart,
   type Gospodarstwo,
   HALAS,
@@ -39,6 +42,7 @@ import {
   WARIANTY_PLOTU,
   WYWAZ_KLATKA_TICKS,
   WYWAZ_MIESZKANIE_TICKS,
+  wnetrze,
   wybory,
   ZABIJANIE_DESKI,
   ZABIJANIE_TICKS,
@@ -49,14 +53,15 @@ import {
 } from '../../src/sim/sasiedzi.ts';
 import { createSim, Sim } from '../../src/sim/sim.ts';
 import { NAPISY as SUROWCE } from '../../src/sim/surowce.ts';
-import { artykul, maArtykul, rejestr, szukaj, tytulArtykulu } from '../../src/ui/wiki.ts';
-import { PRZYKLAD_PLOTU, STANY_DRZWI } from '../../src/ui/wiki-sasiedzi.ts';
+import { artykul, maArtykul, rejestr, szukaj, tytulArtykulu, wikiCtx } from '../../src/ui/wiki.ts';
+import { PRZYKLAD_PLOTU, STANY_DRZWI, sasiedziWDomach } from '../../src/ui/wiki-sasiedzi.ts';
 import { czasTickow, proc } from '../../src/ui/wiki-slowa.ts';
 import { matNazwa } from '../../src/ui/wiki-zasoby.ts';
+import { IN } from '../../src/world/interior.ts';
 import { PLOT_MAX } from '../../src/world/plot.ts';
-import { demoWorld, newGame } from './sasiedzi-pomoc.ts';
+import { core, demoWorld, newGame } from './sasiedzi-pomoc.ts';
 import { kontrolaOdnosnikow, kontrolaTresci } from './wiki-kontrola.ts';
-import { kontekst, PRZYPADKI, tekstArtykulu } from './wiki-pomoc.ts';
+import { kontekst, miejsce, PRZYPADKI, tekstArtykulu } from './wiki-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
 
@@ -389,6 +394,205 @@ describe('język i słownik miejsca', () => {
     ustawJezyk('en');
     expect(tytulArtykulu('sasiedzi:plot', c)).toBe('The shared fence');
     expect(tytulArtykulu('sasiedzi:teren', c)).toBe('Joined ground');
+  });
+});
+
+describe('sąsiedzi w domach i w blokach', () => {
+  /** miejsce siedziby z zadanym rodzajem i zadanymi sąsiadami (reszta z prawdziwego dema tego rodzaju) */
+  const miejsceZ = (kind: 'dom' | 'blok', near: GovPlace['near']): GovPlace => ({ ...miejsce(kind), kind, near });
+  const ctx = (kind: 'dom' | 'blok', near: GovPlace['near'], zombie = false) =>
+    wikiCtx(miejsceZ(kind, near), false, zombie);
+  const art = (id: string, kind: 'dom' | 'blok', near: GovPlace['near'], zombie = false) =>
+    artykul(id, ctx(kind, near, zombie))!;
+  const ids = (id: string, kind: 'dom' | 'blok', near: GovPlace['near']): string[] =>
+    art(id, kind, near).fakty.map((f) => f.id);
+  /** słowa o mieszkaniach, piętrach, klatkach i lokatorach (po polsku i po angielsku), których sąsiedzi w domach nie mają;
+      polskie „lokatorzy” sprawdza osobny test (cytat z gry „To nie lokatorzy.” zostaje w obu wariantach) */
+  const BLOKOWE_SASIEDZI =
+    /mieszkani|mieszkań|piętr|klatk|\bflats?\b|\bresidents?\b|stairwell|storey|upstairs|\bstairs\b|\bfloors?\b/i;
+  const SASIEDZI = moje.map((d) => d.id);
+
+  it('sąsiedzi stoją w domach, gdy tak mówi okolica, a w samotnym miejscu gdy siedziba jest domem', () => {
+    const tabela: [GovPlace['kind'], GovPlace['near'], boolean][] = [
+      ['dom', 'domy', true],
+      ['blok', 'domy', true],
+      ['dom', 'bloki', false],
+      ['blok', 'bloki', false],
+      ['dom', 'nikt', true],
+      ['blok', 'nikt', false],
+    ];
+    for (const [kind, near, domy] of tabela) expect(sasiedziWDomach(ctx(kind, near)), `${kind} / ${near}`).toBe(domy);
+    // prawdziwe dema: Zielonki to dom wśród domów, Przymorze blok wśród bloków
+    const zielonki = placeOfWorld(demoWorld('zielonki'));
+    const przymorze = placeOfWorld(demoWorld('przymorze'));
+    expect([zielonki.kind, zielonki.near]).toEqual(['dom', 'domy']);
+    expect([przymorze.kind, przymorze.near]).toEqual(['blok', 'bloki']);
+    expect(sasiedziWDomach(kontekst('dom'))).toBe(true);
+    expect(sasiedziWDomach(kontekst('blok'))).toBe(false);
+  });
+
+  it('w świecie domów nie ma drzwi mieszkań, klatek, schodów ani pięter, a w bloku są', () => {
+    const w = demoWorld('zielonki');
+    const domy = w.buildings.filter((b) => b.cls === 'dom' && b.id !== w.hq && b.entrances.length);
+    expect(domy.length).toBeGreaterThan(5);
+    const pokoje = new Set<string>();
+    for (const b of domy) {
+      const it = wnetrze(w, b.id);
+      expect(drzwiBudynku(w, b.id).mieszkan.size, `dom ${b.id}: drzwi mieszkań`).toBe(0);
+      expect(
+        it.cell.some((c) => c === IN.STAIRS),
+        `dom ${b.id}: schody`,
+      ).toBe(false);
+      for (const r of it.rooms) pokoje.add(r.kind);
+    }
+    expect([...pokoje].sort()).toEqual(['kuchnia', 'lazienka', 'pokoj', 'przedpokoj']);
+    const blokowy = demoWorld('przymorze');
+    const bloki = blokowy.buildings.filter((b) => b.cls === 'blok' && b.id !== blokowy.hq && b.entrances.length);
+    expect(bloki.some((b) => drzwiBudynku(blokowy, b.id).mieszkan.size > 0)).toBe(true);
+    expect(bloki.some((b) => wnetrze(blokowy, b.id).cell.some((c) => c === IN.STAIRS))).toBe(true);
+    expect(bloki.some((b) => wnetrze(blokowy, b.id).rooms.some((r) => r.kind === 'klatka'))).toBe(true);
+  });
+
+  it('menu przy drzwiach domu sąsiada nie ma poleceń o mieszkaniu', () => {
+    for (const lang of ['pl', 'en'] as const) {
+      ustawJezyk(lang);
+      const sim = newGame('zielonki');
+      const w = demoWorld('zielonki');
+      const dom = w.buildings.find((b) => b.cls === 'dom' && b.id !== w.hq && b.entrances.length)!;
+      const menu = commandsAt(sim.st, w, [core(sim)[0].id], dom.entrances[0].tile).map((x) => x.label);
+      const dwa = (t: { pl: string; en: string }) => t[lang];
+      expect(
+        menu.some((l) => l.startsWith(dwa(MENU.otworz))),
+        lang,
+      ).toBe(true);
+      expect(
+        menu.some((l) => l.startsWith(dwa(MENU.wywaz))),
+        lang,
+      ).toBe(true);
+      for (const l of menu) {
+        expect(l, lang).not.toContain(dwa(MENU.otworzMieszkanie));
+        expect(l, lang).not.toContain(dwa(MENU.zapukajMieszkanie));
+        expect(l, lang).not.toContain(dwa(MENU.wywazMieszkanie));
+      }
+    }
+  });
+
+  for (const lang of ['pl', 'en'] as const)
+    for (const zombie of [false, true])
+      it(`dom wśród domów: artykuły o sąsiadach i hałasie bez mieszkań, pięter i lokatorów: ${lang}, ${zombie ? 'zombie' : 'zwykła gra'}`, () => {
+        ustawJezyk(lang);
+        for (const id of [...SASIEDZI, 'zombie:halas']) {
+          const a = art(id, 'dom', 'domy', zombie);
+          expect(tekstArtykulu(a), `${id} ${lang}`).not.toMatch(BLOKOWE_SASIEDZI);
+        }
+      });
+
+  it('dom wśród domów: brak faktów o drzwiach mieszkania i piętrach, krótsze kroki „Jak to zrobić”', () => {
+    expect(ids('sasiedzi:wywazanie', 'dom', 'domy')).toEqual(['czas-budynek', 'halas-budynek', 'halas-budynek-lom']);
+    expect(ids('sasiedzi:przeszukiwanie', 'dom', 'domy')).toEqual(['czas-min', 'czas-max', 'lup']);
+    expect(ids('sasiedzi:przeszukiwanie', 'dom', 'domy')).not.toContain('pietro');
+    expect(art('sasiedzi:przeszukiwanie', 'dom', 'domy').jak).toHaveLength(2);
+    expect(art('sasiedzi:przeszukiwanie', 'blok', 'bloki').jak).toHaveLength(3);
+    expect(art('sasiedzi:pukanie', 'dom', 'domy').jak).toHaveLength(1);
+    expect(art('sasiedzi:pukanie', 'blok', 'bloki').jak).toHaveLength(2);
+    // reszta faktów (czasy, hałas przy drzwiach budynku) zostaje taka sama jak w bloku
+    for (const id of ['czas-budynek', 'halas-budynek', 'halas-budynek-lom'])
+      expect(art('sasiedzi:wywazanie', 'dom', 'domy').fakty.find((f) => f.id === id)?.v).toBe(
+        art('sasiedzi:wywazanie', 'blok', 'bloki').fakty.find((f) => f.id === id)?.v,
+      );
+    // liczby w zdaniach domu to te same liczby z tabel gry
+    const t = tekstArtykulu(art('sasiedzi:wywazanie', 'dom', 'domy'));
+    expect(t).toContain(czasTickow(WYWAZ_KLATKA_TICKS));
+    expect(t).toContain(m(HALAS.wywazanie));
+    expect(t).toContain(m(HALAS.wywazanieLom));
+    expect(t).not.toContain(m(HALAS.mieszkanie));
+    expect(tekstArtykulu(art('sasiedzi:przeszukiwanie', 'dom', 'domy'))).not.toContain(czasTickow(PIETRO_TICKS));
+  });
+
+  it('dom wśród domów: o szabrze w domu mówi polecenie „Okraść …”, a gra zaczyna je od tego samego słowa', () => {
+    expect(MENU.okradnij.pl.startsWith('Okraść ')).toBe(true);
+    expect(MENU.okradnij.en.startsWith('Rob ')).toBe(true);
+    expect(tekstArtykulu(art('sasiedzi:przeszukiwanie', 'dom', 'domy'))).toContain('„Okraść …”');
+    ustawJezyk('en');
+    expect(tekstArtykulu(art('sasiedzi:przeszukiwanie', 'dom', 'domy'))).toContain('“Rob …”');
+    // w bloku napis z gry w całości
+    expect(tekstArtykulu(art('sasiedzi:przeszukiwanie', 'blok', 'bloki'))).toContain(`“${MENU.okradnij.en}”`);
+  });
+
+  it('dom wśród domów: ludzie za drzwiami to sąsiedzi (tytuł i zdania), w bloku lokatorzy', () => {
+    expect(art('sasiedzi:lokatorzy', 'dom', 'domy').tytul).toBe('Sąsiedzi za drzwiami');
+    expect(art('sasiedzi:lokatorzy', 'blok', 'bloki').tytul).toBe('Lokatorzy za drzwiami');
+    expect(art('sasiedzi:lokatorzy', 'dom', 'domy').zdania[0]).toContain('Gdy sąsiedzi otworzą drzwi');
+    expect(art('sasiedzi:lokatorzy', 'blok', 'bloki').zdania[0]).toContain('Gdy lokatorzy otworzą drzwi');
+    // szukanie po „sąsiedzi” i po „lokatorzy” znajduje ten sam artykuł
+    expect(szukaj('lokatorzy', kontekst('dom')).map((x) => x.id)).toContain('sasiedzi:lokatorzy');
+    expect(szukaj('sąsiedzi za drzwiami', kontekst('dom'))[0].id).toBe('sasiedzi:lokatorzy');
+    ustawJezyk('en');
+    expect(art('sasiedzi:lokatorzy', 'dom', 'domy').zdania[0]).toContain('When the neighbours open the door');
+    expect(art('sasiedzi:lokatorzy', 'blok', 'bloki').zdania[0]).toContain('When the residents open the door');
+  });
+
+  it('dom wśród domów: nocni goście, gra po angielsku mówi o „residents”, więc wiki opisuje to własnymi słowami', () => {
+    ustawJezyk('en');
+    const dom = tekstArtykulu(art('sasiedzi:noc', 'dom', 'domy'));
+    expect(dom).toContain('looters who have been there since last night');
+    expect(dom).not.toContain(KARTA.szabrownicy.en);
+    expect(tekstArtykulu(art('sasiedzi:noc', 'blok', 'bloki'))).toContain(KARTA.szabrownicy.en);
+    // po polsku zdanie gry nie ma słów z bloku, więc zostaje w cytacie w obu wariantach
+    ustawJezyk('pl');
+    expect(tekstArtykulu(art('sasiedzi:noc', 'dom', 'domy'))).toContain(KARTA.szabrownicy.pl);
+    expect(KARTA.szabrownicy.pl).not.toMatch(BLOKOWE_SASIEDZI);
+  });
+
+  it('dom wśród domów w trybie zombie: gospodarstwa to domy, a szwendacz czeka za drzwiami domu', () => {
+    ustawJezyk('pl');
+    expect(art('sasiedzi:budynki', 'dom', 'domy', true).uwaga).toContain('reszta domów stoi pusta');
+    expect(art('sasiedzi:budynki', 'blok', 'bloki', true).uwaga).toContain('reszta mieszkań stoi pusta');
+    expect(art('sasiedzi:pukanie', 'dom', 'domy', true).uwaga).toContain('przy domu ze szwendaczem');
+    expect(art('sasiedzi:pukanie', 'blok', 'bloki', true).uwaga).toContain('przy mieszkaniu ze szwendaczem');
+    expect(art('sasiedzi:wywazanie', 'dom', 'domy', true).uwaga).toContain('za drzwiami domu');
+    expect(art('sasiedzi:przeszukiwanie', 'dom', 'domy', true).uwaga).toBe(
+      'Grasz w trybie zombie: w pustych domach po wymarciu jest dwa razy więcej jedzenia.',
+    );
+    expect(art('sasiedzi:budynki', 'dom', 'domy', true).uwaga).toContain(proc(ZOMBIE_W_MIESZKANIU));
+  });
+
+  it('dom wśród bloków ma słowa bloku, a blok wśród domów słowa domu tylko o sąsiadach (słownik siedziby zostaje)', () => {
+    // dom wśród bloków: sąsiedzi są w blokach, więc mieszkania, piętra i drzwi mieszkań jak w bloku
+    expect(ids('sasiedzi:wywazanie', 'dom', 'bloki')).toContain('czas-mieszkanie');
+    expect(ids('sasiedzi:przeszukiwanie', 'dom', 'bloki')).toContain('pietro');
+    expect(tekstArtykulu(art('sasiedzi:pukanie', 'dom', 'bloki'))).toContain('mieszkani');
+    expect(art('sasiedzi:lokatorzy', 'dom', 'bloki').tytul).toBe('Lokatorzy za drzwiami');
+    // ale siedziba nadal jest domem: komitet, nie zarząd
+    expect(tekstArtykulu(art('sasiedzi:plot', 'dom', 'bloki'))).toContain('z komitetu');
+    // blok wśród domów: sąsiednie domy bez mieszkań i pięter, a siedziba mówi „zarząd”
+    expect(ids('sasiedzi:wywazanie', 'blok', 'domy')).not.toContain('czas-mieszkanie');
+    expect(ids('sasiedzi:przeszukiwanie', 'blok', 'domy')).not.toContain('pietro');
+    expect(tekstArtykulu(art('sasiedzi:plot', 'blok', 'domy'))).toContain('z zarządu');
+    // bez sąsiadów rozstrzyga siedziba
+    expect(ids('sasiedzi:wywazanie', 'dom', 'nikt')).not.toContain('czas-mieszkanie');
+    expect(ids('sasiedzi:wywazanie', 'blok', 'nikt')).toContain('czas-mieszkanie');
+  });
+
+  it('hałas przy drzwiach (artykuł o szwendaczach): wiersze o mieszkaniu tylko tam, gdzie sąsiedzi mają drzwi mieszkań', () => {
+    const wiersze = (kind: 'dom' | 'blok', near: GovPlace['near']) =>
+      artykul('zombie:halas', ctx(kind, near, true))!.fakty.map((f) => f.id);
+    expect(wiersze('dom', 'domy')).not.toContain('drzwi-mieszkanie');
+    expect(wiersze('dom', 'domy')).not.toContain('drzwi-mieszkanie-lom');
+    expect(wiersze('blok', 'bloki')).toContain('drzwi-mieszkanie');
+    expect(wiersze('blok', 'bloki')).toContain('drzwi-mieszkanie-lom');
+    expect(wiersze('dom', 'bloki')).toContain('drzwi-mieszkanie');
+    // reszta tabeli hałasu zostaje: dom ma wszystkie wiersze poza dwoma o mieszkaniu
+    expect(wiersze('blok', 'bloki').filter((i) => !wiersze('dom', 'domy').includes(i))).toEqual([
+      'drzwi-mieszkanie',
+      'drzwi-mieszkanie-lom',
+    ]);
+    for (const [klucz, v] of Object.entries(HALAS))
+      if (!klucz.startsWith('mieszkanie'))
+        expect(
+          artykul('zombie:halas', ctx('dom', 'domy', true))!.fakty.some((f) => f.v === m(v)),
+          klucz,
+        ).toBe(true);
   });
 });
 
