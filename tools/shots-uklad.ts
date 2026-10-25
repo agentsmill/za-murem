@@ -143,10 +143,11 @@ export const pasekTelefonu = (page: Page): Promise<PasekPomiar> =>
         };
       });
     const stany = document.getElementById('stats')!;
-    const pseudo = getComputedStyle(stany, '::after');
+    const przycisk = document.getElementById('statsToggle')!;
+    const stylPrzycisku = getComputedStyle(przycisk);
     const strzalka =
-      pseudo.content !== 'none' && pseudo.content !== 'normal' && stany.hasAttribute('data-zwiniete') === false
-        ? Number.parseFloat(pseudo.height) + Number.parseFloat(pseudo.marginTop || '0')
+      stylPrzycisku.display !== 'none' && stany.hasAttribute('data-zwiniete') === false
+        ? przycisk.getBoundingClientRect().height + Number.parseFloat(stylPrzycisku.marginTop || '0')
         : 0;
     const nazwa = document.getElementById('osName')!;
     const szyld = document.querySelector('#top .sign')!.getBoundingClientRect();
@@ -154,7 +155,7 @@ export const pasekTelefonu = (page: Page): Promise<PasekPomiar> =>
     const zegar = document.querySelector('#top .clock')!.getBoundingClientRect();
     const wTymSamym = (a: DOMRect, b: DOMRect) => a.top < b.bottom && b.top < a.bottom;
     return {
-      // pasek bez strzałki stanu: rozwinięty pasek stanu ma pod kafelkami pasek ze strzałką (`.stats::after`), który nie jest wierszem
+      // pasek bez strzałki stanu: rozwinięty pasek stanu ma pod kafelkami pas z przyciskiem zwijania (`#statsToggle`), który nie jest wierszem
       pasek: document.getElementById('top')!.getBoundingClientRect().height - strzalka,
       wiersze: new Set(kafelki.map((x) => Math.round(x.box.t))).size,
       kafelki,

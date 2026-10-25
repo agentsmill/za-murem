@@ -23,13 +23,15 @@
    ?lancuchy=0 wyłącza w nowej grze łańcuchy kart i wątki sezonu (src/gov/watki.ts): bez parametru nowa gra ma je włączone
    (`newGov(…, true)`, pole `GovState.lancuchy`). Zapis trzyma to, z czym grę zaczęto (zapis sprzed łańcuchów, bez pola, gra
    dalej bez nich), a parametr nie zmienia wczytanej gry.
-   Na telefonie (okno węższe niż 768 px) pasek stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, wybór
-   w pamięci przeglądarki: src/ui/telefon.ts), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`,
-   `--zapas-dol`).
-   Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami (`przelaczPotrzeby`). Artykuły wiki z kafelków paska
-   i z pasków potrzeb otwierają się tylko z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok
-   i nie otwiera wiki (kafelki zwiniętego paska są `inert`), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera artykuł
-   i niczego nie zwija. */
+   Na telefonie (okno węższe niż 768 px albo niższe niż 501 px, czyli też telefon poziomo; `TELEFON_MQ` w src/ui/telefon.ts) pasek
+   stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, osobny przycisk `#statsToggle`, wybór w pamięci
+   przeglądarki), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`, `--zapas-dol`; poziomo chowa
+   się, gdy karta zostawia mu mniej niż nagłówek). Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami
+   (`przelaczPotrzeby`), a „Więcej” chowa rodzinę, historię i zmianę imienia (`przelaczWiecej`). Ostrzeżenie o zgasłej kozie wisi
+   na telefonie 9 s, potem zostaje czerwona linia stanu. Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
+   z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok i nie otwiera wiki (main.ts przechwytuje
+   kliknięcie i Enter w zwiniętym pasku, kafelki nie biorą dotyku), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera
+   artykuł i niczego nie zwija (pasek zwija przycisk). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -214,7 +216,15 @@ import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
-import { PASEK_KEY, POTRZEBY_KEY, TELEFON_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
+import {
+  PASEK_KEY,
+  POTRZEBY_KEY,
+  TELEFON_MQ,
+  UKLAD_TELEFONU_MQ,
+  WIECEJ_KEY,
+  wczytajWybor,
+  zapiszWybor,
+} from './ui/telefon.ts';
 import { utworzWiki } from './ui/wiki-okno.ts';
 import { wikiCtx } from './ui/wiki-typy.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
@@ -1922,14 +1932,14 @@ function setCard(html: string, key = '') {
       pkNowy.remove();
       card.append(...nowa.content.childNodes);
       cardHtml = html;
-      ariaPotrzeb();
+      ariaKarty();
       return;
     }
   }
   card.innerHTML = html;
   cardHtml = html;
   cardKey = key;
-  ariaPotrzeb();
+  ariaKarty();
 }
 // lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
 $('card').addEventListener('focusout', (e) => {
@@ -1974,6 +1984,10 @@ function tonight(p: SimPerson): string | undefined {
   return undefined;
 }
 
+/** Ile ms na telefonie wisi ostrzeżenie o zgasłej kozie (jednorazowo na epizod; potem sama linia stanu). */
+const ZIMNO_NA_TELEFONIE_MS = 9000;
+let zimnoPokazane = false;
+let zimnoDo = 0;
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
@@ -2000,9 +2014,19 @@ function hud(now: number) {
         `${dying.name} is dying of fever and will get back up after death. Have someone armed standing by to finish the job.`,
       )
     : '';
+  // Na telefonie ostrzeżenie o zgasłej kozie wisi 9 s od chwili, gdy problem się zaczyna, a potem zostaje czerwona linia stanu
+  // (kafelki „koza” i „drewno” zwiniętego paska, src/ui/telefon.ts): stałe dwa wiersze nad atrybucją zjadały cztery do pięciu
+  // punktów procentowych mapy, a samo jedno zdanie ucięte do jednego wiersza gubiłoby polecenie (co zrobić). Na komputerze wisi,
+  // dopóki problem trwa.
+  if (!cold) zimnoPokazane = false;
+  else if (!zimnoPokazane && telefonMq.matches) {
+    zimnoPokazane = true;
+    zimnoDo = now + ZIMNO_NA_TELEFONIE_MS;
+  }
+  const zimnoWidac = cold && (!telefonMq.matches || now < zimnoDo);
   const warn = fever
     ? fever
-    : cold
+    : zimnoWidac
       ? touchUI
         ? L(
             'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).',
@@ -2141,9 +2165,9 @@ function zCelem(s: Sheet, okno: OknoCelu): Sheet {
   return cel ? { ...s, cel } : s;
 }
 /** Czy okienko celów jest rozwinięte. Wybór gracza (klik w nagłówek) wygrywa; bez niego okienko jest rozwinięte na
-    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px, jak w CSS). */
+    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px albo niskie okno, `UKLAD_TELEFONU_MQ`). */
 let celeOtwarte: boolean | null = null;
-const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia('(max-width: 640px)').matches;
+const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia(UKLAD_TELEFONU_MQ).matches;
 /** Okienko celów ze ścieżki: widok z `widokCelow` (otwarty rozdział, a nad nim okazja) albo cele „Bez domu” gry z sąsiadami,
     narysowane przez `celeHtml`; po ostatnim rozdziale bez dróg do zwycięstwa okienko się chowa. */
 function renderGoals(snap: SimSnapshot) {
@@ -2401,8 +2425,8 @@ const wiki = utworzWiki({
     sheetAgain = f;
   },
 });
-// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu (na telefonie tylko z rozwiniętego paska: kafelki zwiniętego są
-// `inert`, patrz `zastosujPasekStanu`)
+// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu (na telefonie tylko z rozwiniętego paska: w zwiniętym main.ts
+// przechwytuje kliknięcie i Enter, patrz „telefon: zwijane bloki stanu”)
 wiki.czipy(() => {
   if (!sim || modal.open || badaniaOtwarta()) return false;
   pauseGame();
@@ -2465,8 +2489,9 @@ function alarmButton(st: SimState) {
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
 $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
-  // linia potrzeb na telefonie rozwija i zwija paski i nastroje; to wybór interfejsu, nie polecenie dla symulacji
+  // linia potrzeb i przycisk „Więcej” na telefonie rozwijają i zwijają blok karty; to wybór interfejsu, nie polecenie dla symulacji
   if (b?.dataset.card === 'potrzeby') return przelaczPotrzeby();
+  if (b?.dataset.card === 'wiecej') return przelaczWiecej();
   if (!b || !sim) return;
   const st = sim.st;
   // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
@@ -3761,6 +3786,10 @@ window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 // wysokość górnego paska, listy celów, karty i atrybucji dla przycisków mapy i podpowiedzi (zawijają się na telefonie)
 const attrib = document.querySelector<HTMLElement>('#app .attrib');
+/** niskie okno od 641 px szerokości (telefon poziomo; reguły `telefon poziomo` w src/style.css) i najmniej tyle pikseli, które okienko
+    celów musi mieć nad kartą osoby, żeby w ogóle się pokazało (nagłówek i trochę treści) */
+const NISKIE_OKNO_MQ = '(min-width: 641px) and (max-height: 500px)';
+const CELE_MIN_PX = 40;
 /** Co `zmierzNakladki` wpisało ostatnio do zmiennych CSS: zmienna dostaje wartość tylko wtedy, gdy się zmieniła, żeby nie
     przeliczać stylów bez potrzeby. */
 const zmienneNakladek = new Map<string, string>();
@@ -3802,6 +3831,19 @@ $('goals').addEventListener('scroll', () => znacznikPrzewijania($('goals')), { p
     celów po zmianie treści (`renderGoals`) i wczytanie czcionek. */
 function zmierzNakladki() {
   ustawZmienna('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+  // telefon poziomo: cele dnia stoją nad kartą osoby w lewej kolumnie, a karta (rozwinięta wyższa niż miejsce) zostawia im mniej niż
+  // nagłówek; wtedy chowają się, dopóki karta stoi (inaczej nachodziłyby na nią paskiem wysokości kilku pikseli)
+  const celeZaMalo =
+    matchMedia(NISKIE_OKNO_MQ).matches &&
+    !$('card').hidden &&
+    window.innerHeight -
+      $('top').getBoundingClientRect().bottom -
+      8 -
+      16 -
+      $('card').getBoundingClientRect().height -
+      48 <
+      CELE_MIN_PX;
+  $('goals').toggleAttribute('data-za-malo', celeZaMalo);
   // atrybucja map i danych mieszkańców na dole: na telefonie dwa wiersze, a karta i podpowiedź stoją nad nią
   if (attrib) ustawZmienna('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
   // pasek trybu stawiania: na telefonie podpowiedź (np. czemu tu nie wolno) idzie nad niego, a nie pod spód
@@ -3853,33 +3895,27 @@ window.addEventListener('resize', () => {
 });
 document.fonts?.addEventListener('loadingdone', dopasujNazwe);
 
-/* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px, src/ui/telefon.ts) ---------- */
+/* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px albo niższe niż 501 px, src/ui/telefon.ts) ---------- */
 const telefonMq = matchMedia(TELEFON_MQ);
 let statyRozwiniete = wczytajWybor(PASEK_KEY) === 'rozwiniete';
 let potrzebyRozwiniete = wczytajWybor(POTRZEBY_KEY) === 'rozwiniete';
+let wiecejRozwiniete = wczytajWybor(WIECEJ_KEY) === 'rozwiniete';
+const przyciskPaska = $('statsToggle');
 /** Pasek stanu na telefonie: zwinięty (atrybut `data-zwiniete` na `#stats`; src/style.css zostawia w nim tylko kafelki z klasą
-    `pilne`) albo rozwinięty; cały pojemnik jest przyciskiem (role, aria-expanded, Enter i Spacja), na komputerze zwykłym pasem. */
+    `pilne`) albo rozwinięty. Zwija i rozwija go osobny przycisk (`#statsToggle`: `aria-expanded`, podpis w obu językach), więc
+    kafelki zostają dla czytników ekranu zwykłymi elementami; na komputerze pasek jest zwykłym pasem, a przycisk schowany. */
 function zastosujPasekStanu() {
-  const el = $('stats');
-  const telefon = telefonMq.matches;
-  const zwiniety = telefon && !statyRozwiniete;
-  el.toggleAttribute('data-zwiniete', zwiniety);
-  // kafelki zwiniętego paska nie biorą klawiatury ani dotyku: Enter i stuknięcie w linię rozwijają pasek, a artykuł wiki
-  // (src/ui/wiki-okno.ts wiąże z nim kafelek po identyfikatorze) otwiera dopiero kafelek rozwiniętego paska
-  for (const k of el.querySelectorAll<HTMLElement>('.stat')) k.inert = zwiniety;
-  if (!telefon) {
-    for (const a of ['role', 'tabindex', 'aria-expanded', 'aria-label']) el.removeAttribute(a);
-    return;
-  }
-  el.setAttribute('role', 'button');
-  el.tabIndex = 0;
-  el.setAttribute('aria-expanded', String(statyRozwiniete));
-  el.setAttribute(
+  const zwiniety = telefonMq.matches && !statyRozwiniete;
+  $('stats').toggleAttribute('data-zwiniete', zwiniety);
+  przyciskPaska.setAttribute('aria-expanded', String(!zwiniety));
+  przyciskPaska.setAttribute(
     'aria-label',
-    statyRozwiniete
-      ? L('Stan osiedla: stuknij, żeby zwinąć do tego, co pilne', 'Estate status: tap to collapse to what is urgent')
-      : L('Stan osiedla: stuknij, żeby pokazać wszystko', 'Estate status: tap to show everything'),
+    zwiniety
+      ? L('Pokaż cały stan osiedla', 'Show the whole estate status')
+      : L('Zwiń stan osiedla do tego, co pilne', 'Collapse the estate status to what is urgent'),
   );
+  const glif = przyciskPaska.firstElementChild;
+  if (glif) glif.textContent = zwiniety ? '▾' : '▴';
 }
 function przelaczPasekStanu() {
   if (!telefonMq.matches) return;
@@ -3887,40 +3923,59 @@ function przelaczPasekStanu() {
   zapiszWybor(PASEK_KEY, statyRozwiniete ? 'rozwiniete' : 'zwiniete');
   zastosujPasekStanu();
 }
-$('stats').addEventListener('click', (e) => {
-  // stuknięcie w kafelek rozwiniętego paska otwiera jego artykuł w wiki, więc go nie zwija (zwija strzałka ▴ i przerwy między
-  // kafelkami); w zwiniętym kafelki nie biorą dotyku (CSS i `inert`), więc cel kliknięcia jest zawsze pojemnikiem
-  if (e.target !== e.currentTarget) return;
-  przelaczPasekStanu();
-  // dotyk i mysz nie zostawiają fokusu na pasku, tak jak na przyciskach paska (src/ui/fokus.ts): spacja ma dalej zatrzymywać grę,
-  // a nie zwijać pasek; z klawiatury (Tab, potem Enter albo Spacja) fokus zostaje
-  if (e.detail > 0) $('stats').blur();
-});
-$('stats').addEventListener('keydown', (e) => {
-  if (e.target !== e.currentTarget || (e.code !== 'Enter' && e.code !== 'Space')) return;
-  e.preventDefault();
-  e.stopPropagation();
-  przelaczPasekStanu();
-});
+// przycisk: zwykłe kliknięcie (mysz, dotyk, Enter, Spacja); po kliknięciu myszą albo stuknięciu oddaje fokus jak reszta przycisków
+// paska (src/ui/fokus.ts), więc spacja dalej zatrzymuje grę
+przyciskPaska.addEventListener('click', przelaczPasekStanu);
+// Zwinięta linia stanu: stuknięcie albo klik w kafelek czy w sam pasek (także kliknięcie wywołane przez czytnik ekranu) rozwija
+// pasek i nie dociera do wiki, która wiąże kafelek z artykułem; Enter i Spacja na kafelku tak samo. W rozwiniętym pasku kafelek
+// otwiera swój artykuł i niczego nie zwija, a pasek zwija przycisk. Faza przechwytywania, żeby być przed obsługą wiki na dokumencie.
+$('stats').addEventListener(
+  'click',
+  (e) => {
+    if (!telefonMq.matches || statyRozwiniete) return;
+    if (e.target instanceof Element && e.target.closest('#statsToggle')) return;
+    e.stopPropagation();
+    przelaczPasekStanu();
+  },
+  true,
+);
+$('stats').addEventListener(
+  'keydown',
+  (e) => {
+    if (!telefonMq.matches || statyRozwiniete || (e.code !== 'Enter' && e.code !== 'Space')) return;
+    if (e.target instanceof Element && e.target.closest('#statsToggle')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    przelaczPasekStanu();
+  },
+  true,
+);
 telefonMq.addEventListener('change', zastosujPasekStanu);
 poZmianieJezyka(zastosujPasekStanu);
 zastosujPasekStanu();
 /** Karta osoby na telefonie: potrzeby zwinięte (klasa `potrzeby-zwiniete` na `#card`) do linii z ostrzeżeniami albo rozwinięte do
-    pasków i nastrojów; klasa żyje na pojemniku, więc przeżywa przepisywanie karty co 200 ms. */
-function ariaPotrzeb() {
-  const linia = $('card').querySelector('.potrzeby-linia');
-  if (linia) linia.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+    pasków i nastrojów, a „Więcej” (klasa `wiecej-zwiniete`) chowa rodzinę, historię i przycisk zmiany imienia; klasy żyją na
+    pojemniku, więc przeżywają przepisywanie karty co 200 ms. */
+function ariaKarty() {
+  $('card').querySelector('.potrzeby-linia')?.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+  $('card').querySelector('.wiecej')?.setAttribute('aria-expanded', String(wiecejRozwiniete));
 }
-function zastosujPotrzeby() {
+function zastosujKarte() {
   $('card').classList.toggle('potrzeby-zwiniete', !potrzebyRozwiniete);
-  ariaPotrzeb();
+  $('card').classList.toggle('wiecej-zwiniete', !wiecejRozwiniete);
+  ariaKarty();
 }
 function przelaczPotrzeby() {
   potrzebyRozwiniete = !potrzebyRozwiniete;
   zapiszWybor(POTRZEBY_KEY, potrzebyRozwiniete ? 'rozwiniete' : 'zwiniete');
-  zastosujPotrzeby();
+  zastosujKarte();
 }
-zastosujPotrzeby();
+function przelaczWiecej() {
+  wiecejRozwiniete = !wiecejRozwiniete;
+  zapiszWybor(WIECEJ_KEY, wiecejRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujKarte();
+}
+zastosujKarte();
 
 /* ---------- start ---------- */
 (async () => {
