@@ -257,22 +257,29 @@ function godzinyRana(): { od: number; do: number } {
 
 /** Odstępy między kartami w sekundach przy ekranie: pierwsza karta, odstęp w pierwszych `EARLY` sekundach i później (`nextGap`). */
 export function odstepyKart(): { pierwsza: [number, number]; wczesny: [number, number]; pozniej: [number, number] } {
-  const zakres = (f: (s: number) => number): [number, number] => {
-    let lo = Number.POSITIVE_INFINITY;
-    let hi = Number.NEGATIVE_INFINITY;
-    for (const s of ZIARNA) {
-      const v = f(s);
-      lo = Math.min(lo, v);
-      hi = Math.max(hi, v);
-    }
-    return [lo, hi];
-  };
-  return {
-    pierwsza: zakres((s) => newGov(s).ev.next),
-    wczesny: zakres((s) => nextGap(newGov(s), 0)),
-    pozniej: zakres((s) => nextGap(newGov(s), EARLY)),
-  };
+  odstepy ??= (() => {
+    const zakres = (f: (s: number) => number): [number, number] => {
+      let lo = Number.POSITIVE_INFINITY;
+      let hi = Number.NEGATIVE_INFINITY;
+      for (let k = 0; k < PROBA_ODSTEPOW; k++) {
+        const v = f(1000 + k * 7919);
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+      return [lo, hi];
+    };
+    return {
+      pierwsza: zakres((s) => newGov(s).ev.next),
+      wczesny: zakres((s) => nextGap(newGov(s), 0)),
+      pozniej: zakres((s) => nextGap(newGov(s), EARLY)),
+    };
+  })();
+  return odstepy;
 }
+
+/** odstępy między kartami liczone raz; próba większa niż przy terminach, bo odstęp „później” ma 91 możliwych wartości */
+const PROBA_ODSTEPOW = 2000;
+let odstepy: ReturnType<typeof odstepyKart> | null = null;
 
 // ---------------------------------------------------------------- gość: rodzaje, prośby, odpowiedzi
 
@@ -473,6 +480,13 @@ function ofertaTekst(d: Deal): string {
 
 /** próbka worka po napaści na wędrowca: zakres jedzenia i czy trafia się część albo lek (z `mugLoot` na próbie ziaren) */
 export function workWedrowca(): { jedzenieOd: number; jedzenieDo: number; czesc: number; lek: number } {
+  worek ??= liczWorekWedrowca();
+  return worek;
+}
+
+let worek: ReturnType<typeof workWedrowca> | null = null;
+
+function liczWorekWedrowca(): { jedzenieOd: number; jedzenieDo: number; czesc: number; lek: number } {
   let od = Number.POSITIVE_INFINITY;
   let doo = Number.NEGATIVE_INFINITY;
   let czesc = 0;
@@ -580,6 +594,13 @@ function opisJak(jak: keyof typeof NASTAWIENIE, c: WikiCtx): string {
 
 /** próbka worka jedzenia od wracającego znajomego (2–4 porcje, z `skladPowrotu`) */
 export function workPowrotu(): { od: number; do: number } {
+  workP ??= liczWorekPowrotu();
+  return workP;
+}
+
+let workP: { od: number; do: number } | null = null;
+
+function liczWorekPowrotu(): { od: number; do: number } {
   let od = Number.POSITIVE_INFINITY;
   let doo = Number.NEGATIVE_INFINITY;
   const z = {
@@ -1432,8 +1453,8 @@ export function definicjeWydarzenia(): Def[] {
               `While the wanderer still stands by the fence after the talk, the menu shows ${wCyt(OBCY.zaprosicBez.en)} with the chance in percent, and in Zombie mode ${wCyt(OBCY.zapytacORege.en)} first.`,
             ),
             L(
-              `Szansa to ${s.baza}%, plus ${s.jedzenie} punktów przy co najmniej ${num(s.prog, 0)} porcjach jedzenia na osobę z ${c.words.zarzad.dk}, plus ${s.lozko} przy wolnym łóżku, minus ${s.napad} po napaści w ostatnich ${Math.round(NAPAD_PAMIEC / 800 / 24)} dobach, a przy wędrowcu, który idzie do rodziny, połowa tego.`,
-              `The chance is ${s.baza}%, plus ${s.jedzenie} points with at least ${num(s.prog, 0)} portions of food per person on ${c.e.krotko}, plus ${s.lozko} with a free bed, minus ${s.napad} after a robbery in the last ${Math.round(NAPAD_PAMIEC / 800 / 24)} days, and half of that for a wanderer who is heading to family.`,
+              `Szansa to ${s.baza}%, plus ${s.jedzenie} punktów przy co najmniej ${num(s.prog, 0)} porcjach jedzenia na osobę z ${c.words.zarzad.dk}, plus ${s.lozko} przy wolnym łóżku, minus ${s.napad} po napaści w ostatnich ${Math.round(NAPAD_PAMIEC / 800 / 24)} dobach.`,
+              `The chance is ${s.baza}%, plus ${s.jedzenie} points with at least ${num(s.prog, 0)} portions of food per person on ${c.e.krotko}, plus ${s.lozko} with a free bed, minus ${s.napad} after a robbery in the last ${Math.round(NAPAD_PAMIEC / 800 / 24)} days.`,
             ),
             dom
               ? L(
