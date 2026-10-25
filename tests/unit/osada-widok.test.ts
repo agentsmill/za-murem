@@ -210,7 +210,7 @@ describe('siedziba osady w świecie kwadratu', () => {
     expect(siedzibaWKwadracie(kw, { ...o, klucz: 'px:0:0:0:0:3', punkt: [90000, 90000] }, d.uklad.kat)).toBeNull();
   });
 
-  it('etykieta leży na górnej krawędzi obrysu (kafelek w górnym rzędzie), a środek w obrysie albo przy nim', () => {
+  it('etykieta leży na górnej krawędzi obrysu: kafelek pod nią należy do siedziby, wyżej w tej kolumnie już nie', () => {
     for (const p of przypadki) {
       const { kw } = swiatKwadratu(p);
       const d = demA[p.demo];
@@ -362,7 +362,7 @@ describe('siedzibaWKwadracie na małym świecie (kawałki jednego budynku, szuka
     }
   });
 
-  it('bez klucza: budynek najbliżej punktu w promieniu szukania, wcześniejszy przy remisie, a dalej null', () => {
+  it('bez klucza: budynek najbliżej punktu w promieniu szukania, a dalej null', () => {
     const kw = malySwiat(SIZE, [
       { x0: 5, y0: 5, x1: 8, y1: 8 },
       { x0: 30, y0: 30, x1: 34, y1: 34 },
