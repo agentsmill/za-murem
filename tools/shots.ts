@@ -25,11 +25,12 @@ import { buildWorld, LOAD_RADIUS } from '../src/world/world.ts';
 import { atrapaBudynki, srodekKafelki } from '../tests/unit/atrapa-budynki.ts';
 import { ADDRESSES, decodedTiles } from '../tests/unit/fixtures.ts';
 import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
-import { openSession, waitIdle, webglRenderer } from './browser.ts';
+import { kafelkiMapy, openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { osadaShots } from './shots-osada.ts';
 import { tekstyShots } from './shots-teksty.ts';
 import { telefonShots } from './shots-telefon.ts';
 import { ukladShots } from './shots-uklad.ts';
@@ -753,6 +754,9 @@ const SHOTS: Shot[] = [
   // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
+  // Osada AI w grze (?osada=1, src/ui/osada.ts): start o 6:00 drugiego dnia i krok w krok, tempo 8×, zapis i „Kontynuuj”, adres bez
+  // sieci i z wolną siecią, tryb zombie, gra bez flagi
+  ...osadaShots(OUT),
   ...ukladShots(OUT),
   ...telefonShots(OUT),
   // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
@@ -12038,24 +12042,6 @@ function siecShots(): Shot[] {
       },
     },
   ];
-}
-
-/** kafelki dla okna mapy miasta: szablon i z=14 z tests/fixtures; inne z=14 puste albo (zerwane) bez sieci; z=12 puste */
-async function kafelkiMapy(page: Page, zerwane = false): Promise<void> {
-  await page.route('https://tiles.openfreemap.org/planet', (r) =>
-    r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
-  );
-  await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
-    const m = r
-      .request()
-      .url()
-      .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
-    const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
-    if (m[1] === '14' && fs.existsSync(f))
-      return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
-    if (m[1] === '14' && zerwane) return r.abort('internetdisconnected');
-    return r.fulfill({ status: 204, body: '' });
-  });
 }
 
 /** Mapa miasta w grze (src/main.ts): po starcie demo zarząd ma stan miasta (`gov.miasto`), a `zm.okolica` miejsca z

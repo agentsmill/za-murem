@@ -2,18 +2,25 @@
    globalna obsługa klawiszy w main.ts celowo przepuszcza Enter i spację na przycisk w fokusie (klawiatura ma działać
    na przyciskach). Bez zdjęcia fokusu spacja po kliknięciu tempa, Budowy, alarmu albo przybliżania klikałaby ten
    przycisk drugi raz zamiast zatrzymać grę. Jedna obsługa na cały dokument: przyciski górnego paska (tempo, alarm,
-   kafelek piętra, Mapa miasta, Budowa, Menu) i przyciski przybliżania. Minimapa (src/ui/minimapa.ts) i kafelek
-   „Piętro” (src/ui/pietra.ts) mają jeszcze własne, takie same zdjęcie fokusu. */
+   kafelek piętra, Mapa miasta, Budowa, Menu), przyciski przybliżania i etykieta osady AI nad mapą (`#osadaMark`, ?osada=1;
+   klik myszą otwiera kartę osady, a spacja ma dalej zatrzymywać grę). Minimapa (src/ui/minimapa.ts) i kafelek „Piętro”
+   (src/ui/pietra.ts) mają jeszcze własne, takie same zdjęcie fokusu. */
 
 /** przyciski, które po kliknięciu myszą oddają fokus: górny pasek i przyciski przybliżania przy mapie */
 export const PRZYCISKI_PASKA = '#top button, .mapctl button';
+
+/** etykieta z nazwą osady AI nad mapą (src/main.ts `placeOsadaMark`): też oddaje fokus po kliknięciu myszą */
+export const ETYKIETA_OSADY = '#osadaMark button';
 
 /** Podpina zdejmowanie fokusu z klikniętego przycisku pasującego do `selektor`. Kliknięcie myszą albo stuknięcie ma
     `detail` większe od zera (liczba kliknięć z rzędu); Enter i spacja z klawiatury oraz `click()` z kodu mają 0, więc
     przycisk, na którym fokus stoi po Tabie, go zachowuje. Faza przechwytywania, żeby fokus zniknął
     przed własnym onclick przycisku: okno (Menu, Mapa miasta) zapamiętuje fokus z chwili otwarcia i oddaje go po
     zamknięciu, więc przy późniejszym zdjęciu wracałby do przycisku, który właśnie otworzył okno. */
-export function oddajFokusPoKliknieciu(root: Document | HTMLElement, selektor: string = PRZYCISKI_PASKA): void {
+export function oddajFokusPoKliknieciu(
+  root: Document | HTMLElement,
+  selektor: string = `${PRZYCISKI_PASKA}, ${ETYKIETA_OSADY}`,
+): void {
   root.addEventListener(
     'click',
     (e: Event) => {

@@ -51,6 +51,10 @@ export interface ShotCele {
   touch?: boolean;
   lang?: 'en' | 'pl';
   run: (page: Page, base: string) => Promise<void>;
+  /** błędy konsoli, których scenariusz się spodziewa (jak `allow` w tools/shots.ts) */
+  allow?: RegExp;
+  /** z allow: błąd jest spodziewany tylko dla zasobu pod tym adresem */
+  allowUrl?: RegExp;
 }
 
 const SAVE = 'za-murem-0.4-zapis';
@@ -74,7 +78,7 @@ const HUD_MS = 200;
 export const poHudzie = (page: Page, okresy = 2): Promise<void> => page.waitForTimeout(okresy * HUD_MS + 50);
 
 /** minuta gry (od początku dnia 1, 0:00) dla dnia, godziny i minuty */
-const minutaGry = (dzien: number, godz: number, min = 0): number => (dzien - 1) * 1440 + godz * 60 + min;
+export const minutaGry = (dzien: number, godz: number, min = 0): number => (dzien - 1) * 1440 + godz * 60 + min;
 
 /** słowa z polskimi literami w tekście po angielsku */
 const polskieLitery = (tekst: string): string[] => [
@@ -126,7 +130,7 @@ export async function start(page: Page, base: string, query: string): Promise<vo
 }
 
 /** samouczek bez klikania: pierwszy z zarządu ścina suche drzewo (jak polecenie z menu) */
-async function chopDryTree(page: Page): Promise<void> {
+export async function chopDryTree(page: Page): Promise<void> {
   await page.evaluate(() => {
     const sim = window.zm!.sim!;
     const who = sim.st.pawns.find((p) => p.kind === 'core')!;

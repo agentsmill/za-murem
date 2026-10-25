@@ -1,22 +1,26 @@
 /* Gra prowadzona przez decydenta (src/ai/gra.ts) i silnik podstawowy (src/ai/silnik.ts), etap 1 osady AI
-   (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2). Pilnuje ośmiu rzeczy:
-   - równoważności: silnik podstawowy w pętli gry daje te same skróty co `playWithGov(..., 'zawsze-warta', ...)`,
-     także z okolicą miasta, obcymi i drogami do zwycięstwa, z łańcuchami kart (opcja `lancuchy`), a na Lanciego (ziarno 18)
-     przez 10 dni oraz na Zielonkach (ziarno 14, mieszkańcy z adresu jak w przeglądarce) przez 10 dni, czyli także po
-     pierwszym przydziale warty na karcie nocy (10. dzień), którego krótkie przebiegi nie dosięgają (obie pętle muszą go mieć
-     po 7 albo 8 dobach, w tej samej sekundzie; ziarna trzeba wybierać od nowa po zmianie, która przesuwa kolejność kart). Każda pętla, każda gra porównywana z inną i każda gra wczytana z zapisu dostaje własny, świeży świat
-     (`swiezySwiat`): gra zmienia siatkę świata w miejscu (`ustawSiatke`, `initFence`, `dociagnijSiatke`), więc druga gra
-     na tym samym obiekcie startuje od innego stanu i skróty rozjeżdżają się bez żadnego błędu silnika;
+   (docs/superpowers/plans/2026-10-21-osada-ai-etap-1.md, zadania 1 i 2; docs/superpowers/plans/2026-10-24-osada-ai-etap-2.md,
+   zadanie 1). Równoważność silnika podstawowego z `playWithGov` jest w tests/unit/ai-rownowaznosc.test.ts, a pomocnik gier-prefiksów
+   (`graPoDniach`) ma testy w tests/unit/ai-pomoc.test.ts. Tu pilnowane jest:
+   - haków decydenta: `start` raz przed pierwszym krokiem, `tura` co sekundę przy ekranie;
    - determinizmu: dwie gry w jednym procesie przeplatane nierówno, zapis i wczytanie w połowie (także w środku
      sekundy) i odtworzenie ruchów rąk z dziennika na świeżej grze dają ten sam przebieg;
    - rąk gry: każde działanie decydenta idzie przez `Rece` i do dziennika, wyprawa dzienna wychodzi przez `wyslij`;
-   - okien zarządu: okno, którego decydent nie zamknie, dostaje odpowiedź domyślną w tej samej sekundzie;
+   - okien zarządu: okno, którego decydent nie zamknie, dostaje odpowiedź domyślną w tej samej sekundzie, a okno nieznanego
+     rodzaju (z innej gałęzi) tylko z opcją `odpowiedzNaNieznane`, bez niej zostaje i idzie do zawieszonych (także u silnika);
    - końca gry: po `gov.over` `krokGry` nie rusza czasu i nie woła decydenta;
-   - okien zawieszonych: okno, którego nie zamknie nawet odpowiedź domyślna (nowy rodzaj z innej gałęzi), zapisuje się
-     w `GraAi.zawieszone` i nie jest ponawiane w tej samej sekundzie;
+   - okien zawieszonych: okno, którego nie zamknie nawet odpowiedź domyślna, zapisuje się w `GraAi.zawieszone` (ostatnie 100
+     wpisów, licznik wszystkich) i nie jest ponawiane w tej samej sekundzie;
+   - błędów decydenta: rzut z `start`, `okno` albo `tura` łapie `krokGry`, zapisuje w `GraAi.bledy` (ostatnie 50, licznik
+     wszystkich, tekst w jednym wierszu i bez stosu) i gra idzie dalej tak samo jak z decydentem, który w tym miejscu nic nie
+     robi (ruchy rąk wykonane przed rzutem zostają);
    - tempa przeglądarki: z opcją `tempoPrzegladarki` potwierdzenie raportu przekazuje wejście jak main.ts;
    - łańcuchów kart: opcja `lancuchy` włącza je jak nowa gra w przeglądarce (bez niej zarząd nie wybiera wątków), a zapis
-     i wczytanie w połowie gry z łańcuchami (wątki, haki, rozpoczęte kroki) nie zmieniają przebiegu. */
+     i wczytanie w połowie gry z łańcuchami (wątki, haki, rozpoczęte kroki) nie zmieniają przebiegu.
+   Gry, które kilka testów zaczyna tak samo, biorą się z pamięci pliku (`graPoDniach`); testy zapisu i wczytania zagrywają
+   jedną grę ciągłą i robią z niej zapisy po drodze, żeby porównanie dotyczyło gry bez przerw. Testy, które grają prawdziwym
+   silnikiem, sprawdzają na końcu `bledy`: `krokGry` łapie każdy wyjątek z haków decydenta (także nieudaną asercję w haku), więc
+   inaczej rzut z silnika przeszedłby bez śladu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,7 +30,10 @@ import {
   type GraAi,
   grajDo,
   krokGry,
+  MAX_BLEDOW,
+  MAX_ZAWIESZONYCH,
   nowaGraAi,
+  type OpcjeGryAi,
   odpowiedzDomyslna,
   type Rece,
   type RuchRak,
@@ -44,9 +51,7 @@ import { QUIET } from '../../src/gov/wspolne.ts';
 import { pending } from '../../src/gov/zarzad.ts';
 import { wygrajDroge } from '../../src/gov/zwyciestwo.ts';
 import { hourOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
-import { przygotujGre } from '../../tools/bot-osada.ts';
-import { swiezySwiat } from './ai-pomoc.ts';
-import { type PlayResult, playWithGov } from './gov-play.ts';
+import { graPoDniach, swiezySwiat, szpieg } from './ai-pomoc.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
@@ -62,9 +67,6 @@ vi.mock('../../src/gov/zarzad.ts', async (importOriginal) => {
 });
 
 const demo = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/przymorze.json'), 'utf8'));
-const demoLanciego = JSON.parse(
-  fs.readFileSync(path.resolve(import.meta.dirname, '../../public/demo/lanciego.json'), 'utf8'),
-);
 
 /** sekundy przy ekranie (przy 1× tick / 20) */
 const sekunda = (g: GraAi): number => Math.floor(g.sim.st.tick / TICKS_PER_SECOND);
@@ -139,126 +141,7 @@ function odtwarzacz(dziennik: readonly RuchRak[]): Decydent {
   };
 }
 
-/** Gałąź przydziału warty na karcie nocy (zdjęcie chorego z warty, najbardziej wypoczęty na pierwszy posterunek) jest naprawdę
-    w przebiegu obu pętli: obie przydzieliły wartę po `dni` dobach od startu i w tej samej sekundzie przy ekranie. Gdy zmiana
-    w grze przesunie trajektorię i gałąź zniknie, test pada tu, a nie na pustym warunku. */
-function sprawdzGalazWarty(g: GraAi, wzor: PlayResult, dni: number): void {
-  const silnikowa = g.dziennik!.find((m) => m.t === 'noc' && m.klucz.startsWith('warta:'));
-  const wzorcowa = wzor.decisions.find((d) => d.kind === 'przydział' && d.text.includes(': warta '));
-  expect(silnikowa).toBeDefined();
-  expect(wzorcowa).toBeDefined();
-  expect(silnikowa!.s * TICKS_PER_SECOND).toBeGreaterThan(dni * TICKS_PER_DAY);
-  expect(wzorcowa!.s * TICKS_PER_SECOND).toBeGreaterThan(dni * TICKS_PER_DAY);
-  expect(wzorcowa!.s).toBe(silnikowa!.s);
-}
-
-describe('równoważność z playWithGov', () => {
-  it('silnik podstawowy daje ten sam skrót co playWithGov zawsze-warta przez 3 dni', () => {
-    const g = nowaGraAi(swiezySwiat('przymorze'), 11);
-    grajDo(g, silnikPodstawowy, 3 * TICKS_PER_DAY);
-    const wzor = playWithGov(swiezySwiat('przymorze'), 11, 'zawsze-warta', 3, 4);
-    expect(g.sim.st.tick).toBe(3 * TICKS_PER_DAY);
-    expect(g.sim.hash()).toBe(wzor.hash);
-    // zarząd ten sam co u wzorca: te same uchwały, karty i wydarzenia
-    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
-  });
-
-  it('z okolicą miasta, obcymi i drogami do zwycięstwa też ten sam skrót co playWithGov z tymi opcjami', () => {
-    const okolica = okolicaZGeo(demo.geo);
-    const g = nowaGraAi(swiezySwiat('przymorze'), 12, { obcy: true, okolica, ludnosc2021: 900 });
-    grajDo(g, silnikPodstawowy, 3 * TICKS_PER_DAY);
-    const wzor = playWithGov(swiezySwiat('przymorze'), 12, 'zawsze-warta', 3, 4, {
-      obcy: true,
-      miasto: { okolica },
-      zwyciestwo: { ludnosc2021: 900 },
-    });
-    expect(g.sim.hash()).toBe(wzor.hash);
-    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
-  });
-
-  it.each([
-    ['zielonki', 12],
-    ['lanciego', 13],
-  ])('na demie %s (ziarno %i) też ten sam skrót co playWithGov przez 2 dni', (demoKlucz, ziarno) => {
-    const g = nowaGraAi(swiezySwiat(demoKlucz), ziarno);
-    grajDo(g, silnikPodstawowy, 2 * TICKS_PER_DAY);
-    const wzor = playWithGov(swiezySwiat(demoKlucz), ziarno, 'zawsze-warta', 2, 4);
-    expect(g.sim.hash()).toBe(wzor.hash);
-    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
-  });
-
-  it('Lanciego, ziarno 18, 10 dni z obcymi i okolicą: ten sam skrót co playWithGov, także po przydziale warty na karcie', () => {
-    // tu pierwsza karta nocy bez warty z propozycji zarządu wypada 10. dnia (sekunda przy ekranie 8840): wtedy wchodzi
-    // gałąź przydziału warty (zdjęcie chorego z warty, najbardziej wypoczęty na pierwszy posterunek), której 2–3-dniowe
-    // przebiegi nie dosięgają. Ziarna, które tu stały, wypadały z tej gałęzi po kolejnych scaleniach, które przesuwały
-    // kolejność kart: 14 po scaleniu nocnego posiłku (zadanie 7, część A; na świeżym świecie skróty były równe, ale gałęzi
-    // w przebiegu nie było), 12 po scaleniu wydarzeń etapów 4–5 (odstęp kart 110–200 s i narrator; część B). Przegląd ziaren
-    // 11–20 na tym scaleniu (12 dni): gałąź ma w 10 dniach tylko Lanciego 18 (sekunda 8840)
-    const okolica = okolicaZGeo(demoLanciego.geo);
-    const g = nowaGraAi(swiezySwiat('lanciego'), 18, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
-    grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
-    const wzor = playWithGov(swiezySwiat('lanciego'), 18, 'zawsze-warta', 10, 4, {
-      obcy: true,
-      miasto: { okolica },
-      zwyciestwo: { ludnosc2021: 900 },
-    });
-    sprawdzGalazWarty(g, wzor, 7);
-    expect(g.sim.st.tick).toBe(10 * TICKS_PER_DAY);
-    expect(g.sim.hash()).toBe(wzor.hash);
-    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
-  });
-
-  it('Zielonki, ziarno 14, 10 dni z mieszkańcami z adresu (jak w przeglądarce): ten sam skrót co playWithGov po przydziale warty', async () => {
-    // z mieszkańcami z generatora przebieg jest inny niż na świecie z `demoWorld`: pierwsza karta nocy bez warty z propozycji
-    // zarządu wypada tu w sekundzie 8840 (10. dzień; ziarno 19, które tu stało, miało 7880 przed scaleniem wydarzeń etapów 4–5
-    // i nie ma tej gałęzi po nim). Każda pętla dostaje własny, świeży świat (`przygotujGre` buduje go od nowa): gra zmienia
-    // siatkę świata, więc druga gra na tym samym obiekcie startuje od innego stanu (Zielonki 11: skróty rozjeżdżają się już
-    // w dniu 2, choć na świeżych światach są równe)
-    const silnikGra = await przygotujGre('zielonki', 14, false);
-    const wzorGra = await przygotujGre('zielonki', 14, false);
-    const g = nowaGraAi(silnikGra.w, 14, {
-      core: 4,
-      obcy: true,
-      mieszkancy: silnikGra.opts.mieszkancy,
-      okolica: silnikGra.opts.okolica,
-      ludnosc2021: silnikGra.opts.ludnosc2021,
-      dziennik: true,
-    });
-    grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
-    const wzor = playWithGov(wzorGra.w, 14, 'zawsze-warta', 10, 4, {
-      obcy: true,
-      mieszkancy: wzorGra.opts.mieszkancy,
-      miasto: { okolica: wzorGra.opts.okolica! },
-      zwyciestwo: { ludnosc2021: wzorGra.opts.ludnosc2021 },
-    });
-    sprawdzGalazWarty(g, wzor, 8);
-    expect(g.sim.st.tick).toBe(10 * TICKS_PER_DAY);
-    expect(g.sim.hash()).toBe(wzor.hash);
-    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
-  }, 120_000);
-
-  it('z łańcuchami kart (opcja lancuchy) ten sam skrót co playWithGov z lancuchy: true, a kroki łańcuchów naprawdę się zaczęły', () => {
-    // gra w przeglądarce ma łańcuchy domyślnie (`newGov(…, true)`): wybór wątków losuje z ziarna zarządu, kroki z gościem
-    // czekają pod bramą, a okna kroków to wydarzenia jak inne, więc odpowiedź domyślna (pierwszy dozwolony wybór) musi dawać
-    // to samo co wzorzec. Przymorze 12 w 6 dób: trzy wątki (Światło w oknie, List, Szczekanie), dwa skończone i trzeci rozpoczęty
-    const okolica = okolicaZGeo(demo.geo);
-    const g = nowaGraAi(swiezySwiat('przymorze'), 12, { obcy: true, okolica, ludnosc2021: 900, lancuchy: true });
-    grajDo(g, silnikPodstawowy, 6 * TICKS_PER_DAY);
-    const wzor = playWithGov(swiezySwiat('przymorze'), 12, 'zawsze-warta', 6, 4, {
-      obcy: true,
-      miasto: { okolica },
-      zwyciestwo: { ludnosc2021: 900 },
-      lancuchy: true,
-    });
-    // łańcuchy naprawdę grały: wątki wybrane i co najmniej trzy kroki rozpoczęte (nie przechodzi na pustym warunku)
-    expect(g.gov.lancuchy).toBe(true);
-    expect(g.gov.watki?.wybrane.length).toBe(3);
-    const kroki = Object.values(g.gov.watki?.krok ?? {}).reduce((a, n) => a + n, 0);
-    expect(kroki).toBeGreaterThanOrEqual(3);
-    expect(g.sim.hash()).toBe(wzor.hash);
-    expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
-  });
-
+describe('haki decydenta', () => {
   it('start woła się raz, przed pierwszym krokiem, a tura co sekundę przy ekranie', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
     const tickiStartu: number[] = [];
@@ -275,13 +158,12 @@ describe('równoważność z playWithGov', () => {
 });
 
 describe('determinizm', () => {
+  // Gry tych testów gra prawdziwy silnik, a `krokGry` łapie błędy decydenta (gra idzie dalej, błąd ląduje w `GraAi.bledy`), więc
+  // wyjątek z silnika, który niczego nie zmienia w skrócie, przeszedłby bez śladu: każdy test sprawdza więc też `bledy`.
   it('dwie gry przeplatane krok po kroku mają te same skróty co każda osobno', () => {
     const doba = TICKS_PER_DAY;
-    const solo = (demoKlucz: string, ziarno: number): string => {
-      const g = nowaGraAi(swiezySwiat(demoKlucz), ziarno);
-      grajDo(g, silnik, doba);
-      return skrotGry(g);
-    };
+    // każda gra osobno: doba gry silnikiem z pamięci (`graPoDniach` oddaje grę niezależną od innych)
+    const solo = (demoKlucz: string, ziarno: number): string => skrotGry(graPoDniach(demoKlucz, ziarno, 1));
     const przymorze = solo('przymorze', 11);
     const zielonki = solo('zielonki', 12);
     const a = nowaGraAi(swiezySwiat('przymorze'), 11);
@@ -293,29 +175,36 @@ describe('determinizm', () => {
     }
     expect(skrotGry(a)).toBe(przymorze);
     expect(skrotGry(b)).toBe(zielonki);
+    expect(a.bledy).toEqual([]);
+    expect(b.bledy).toEqual([]);
   });
 
   it('zapis i wczytanie w połowie nie zmieniają przebiegu', () => {
+    // Jedna gra ciągła mija wszystkie przerwy: zapis w przerwie to odczyt, który jej nie rusza, a gra wczytana z niego ma dojść
+    // do tego samego skrótu co ona. Przerwy: po pierwszej półminucie (pamięć silnika już zapisana), po pełnej dobie i w środku
+    // sekundy; między sekundami decydent nie ma żadnego stanu poza pamięcią w grze (pamięć niepustą sprawdza osobny test silnika
+    // podstawowego).
     const ciagla = nowaGraAi(swiezySwiat('przymorze'), 11);
-    grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
-    // po pierwszej półminucie (pamięć silnika już zapisana), po pełnej dobie i w środku sekundy; między sekundami
-    // decydent nie ma żadnego stanu poza pamięcią w grze (pamięć niepustą sprawdza osobny test silnika podstawowego)
+    const zapisy: { zapis: ZapisGryAi; skrot: string }[] = [];
     for (const przerwa of [700, TICKS_PER_DAY, TICKS_PER_DAY + 7]) {
-      const a = nowaGraAi(swiezySwiat('przymorze'), 11);
-      grajDo(a, silnik, przerwa);
-      const zapis = JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi;
+      grajDo(ciagla, silnik, przerwa);
+      zapisy.push({ zapis: JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi, skrot: skrotGry(ciagla) });
+    }
+    grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
+    expect(ciagla.bledy).toEqual([]);
+    for (const { zapis, skrot } of zapisy) {
       // wczytana gra dostaje świeży świat, jak w przeglądarce (nowy start buduje świat od nowa)
       const b = wczytajGre(swiezySwiat('przymorze'), zapis);
-      expect(b.pamiec).toEqual(a.pamiec);
-      expect(skrotGry(b)).toBe(skrotGry(a));
+      expect(b.pamiec).toEqual(zapis.pamiec);
+      expect(skrotGry(b)).toBe(skrot);
       grajDo(b, silnik, 2 * TICKS_PER_DAY);
-      expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(skrotGry(b), `przerwa w ticku ${zapis.sim.tick}`).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   });
 
   it('zapis jest głęboką kopią: gra po zapisie ani po wczytaniu nie rusza zapisu', () => {
-    const a = nowaGraAi(swiezySwiat('przymorze'), 11);
-    grajDo(a, silnik, TICKS_PER_DAY);
+    const a = graPoDniach('przymorze', 11, 1);
     const zapis = zapiszGre(a);
     const json = JSON.stringify(zapis);
     grajDo(a, silnik, TICKS_PER_DAY + 2000);
@@ -328,6 +217,7 @@ describe('determinizm', () => {
     grajDo(c, silnik, TICKS_PER_DAY + 2000);
     expect(skrotGry(c)).toBe(skrotGry(b));
     expect(skrotGry(b)).toBe(skrotGry(a));
+    for (const gra of [a, b, c]) expect(gra.bledy).toEqual([]);
   });
 
   it('odtworzenie ruchów rąk z dziennika na świeżej grze daje ten sam stan', () => {
@@ -346,6 +236,7 @@ describe('determinizm', () => {
       },
     };
     grajDo(g, zPrzydzialami, 2 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const dziennik = g.dziennik!;
     const rodzaje = new Set(dziennik.map((m) => m.t));
     for (const t of ['polecenie', 'wydarzenie', 'uchwala', 'noc', 'zatwierdz', 'raport'] as const)
@@ -356,6 +247,7 @@ describe('determinizm', () => {
     grajDo(swieza, odtwarzacz(dziennik), 2 * TICKS_PER_DAY);
     expect(swieza.sim.hash()).toBe(g.sim.hash());
     expect(JSON.stringify(swieza.gov)).toBe(JSON.stringify(g.gov));
+    expect(swieza.bledy).toEqual([]);
   });
 });
 
@@ -374,30 +266,38 @@ describe('łańcuchy kart (opcja lancuchy)', () => {
   });
 
   it('bez opcji gra nie wybiera wątków ani nie zakłada stanu łańcuchów nawet po kilku dobach (uprząż sprzed łańcuchów gra tak samo)', () => {
-    const bez = nowaGraAi(swiezySwiat('przymorze'), 12, { ...opcje(), lancuchy: false });
-    grajDo(bez, silnik, 4 * TICKS_PER_DAY);
+    const bez = graPoDniach('przymorze', 12, 4, { ...opcje(), lancuchy: false });
     expect(bez.gov.watki).toBeUndefined();
     expect(bez.gov.lancuchy).toBeUndefined();
     // a z opcją te same cztery doby mają wątki i rozpoczęte kroki
-    const z = nowaGraAi(swiezySwiat('przymorze'), 12, opcje());
-    grajDo(z, silnik, 4 * TICKS_PER_DAY);
+    const z = graPoDniach('przymorze', 12, 4, opcje());
     expect(z.gov.watki?.wybrane.length).toBe(3);
   });
 
   it('z łańcuchami zapis i wczytanie w połowie nie zmieniają przebiegu: wątki, haki i kroki jadą w zapisie', () => {
+    // jedna gra ciągła, zapisy w przerwach jak w teście wyżej
     const ciagla = nowaGraAi(swiezySwiat('przymorze'), 12, opcje());
-    grajDo(ciagla, silnik, 4 * TICKS_PER_DAY);
+    const zapisy: { zapis: ZapisGryAi; watki: unknown; skrot: string }[] = [];
     for (const przerwa of [2 * TICKS_PER_DAY + 7, 3 * TICKS_PER_DAY]) {
-      const a = nowaGraAi(swiezySwiat('przymorze'), 12, opcje());
-      grajDo(a, silnik, przerwa);
+      grajDo(ciagla, silnik, przerwa);
       // do przerwy wątki są wybrane, a jakiś krok rozpoczęty: zapis musi to przenieść (nie przechodzi na pustym warunku)
-      expect(Object.values(a.gov.watki?.krok ?? {}).some((n) => n > 0)).toBe(true);
-      const b = wczytajGre(swiezySwiat('przymorze'), JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
+      expect(Object.values(ciagla.gov.watki?.krok ?? {}).some((n) => n > 0)).toBe(true);
+      zapisy.push({
+        zapis: JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi,
+        watki: structuredClone(ciagla.gov.watki),
+        skrot: skrotGry(ciagla),
+      });
+    }
+    grajDo(ciagla, silnik, 4 * TICKS_PER_DAY);
+    expect(ciagla.bledy).toEqual([]);
+    for (const { zapis, watki, skrot } of zapisy) {
+      const b = wczytajGre(swiezySwiat('przymorze'), zapis);
       expect(b.gov.lancuchy).toBe(true);
-      expect(b.gov.watki).toEqual(a.gov.watki);
-      expect(skrotGry(b)).toBe(skrotGry(a));
+      expect(b.gov.watki).toEqual(watki);
+      expect(skrotGry(b)).toBe(skrot);
       grajDo(b, silnik, 4 * TICKS_PER_DAY);
       expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   });
 });
@@ -429,6 +329,9 @@ describe('pamięć silnika podstawowego', () => {
     expect(g.pamiec.pominieteDrzewa).toEqual([pierwsze, drugie]);
     expect(kopia.pamiec).toEqual(g.pamiec);
     expect(skrotGry(kopia)).toBe(skrotGry(g));
+    // silnik podstawowy nie rzuca (`krokGry` łapie wyjątki decydenta, więc inaczej przeszedłby bez śladu)
+    expect(g.bledy).toEqual([]);
+    expect(kopia.bledy).toEqual([]);
   });
 });
 
@@ -498,31 +401,12 @@ describe('okna zarządu', () => {
   });
 
   describe('odpowiedź domyślna', () => {
-    /** ręce, które tylko zapisują, co zrobiono */
-    function szpieg(): { r: Rece; ruchy: string[] } {
-      const ruchy: string[] = [];
-      const r: Rece = {
-        polecenie: () => ruchy.push('polecenie'),
-        potwierdzRaport: () => ruchy.push('raport'),
-        podpisz: (id) => ruchy.push(`uchwala:${id}`),
-        przydziel: () => {
-          ruchy.push('noc');
-          return true;
-        },
-        zatwierdzNoc: () => ruchy.push('zatwierdz'),
-        wybierz: (k) => ruchy.push(`wydarzenie:${k}`),
-        grajDalej: () => ruchy.push('dalej'),
-        wyslij: () => {
-          ruchy.push('wyprawa');
-          return true;
-        },
-      };
-      return { r, ruchy };
-    }
     const opcja = (id: string, s: LawOption['s']): LawOption => ({ id, s }) as LawOption;
-    const odpowiedz = (p: unknown): string[] => {
+    /** ruchy rąk, którymi odpowiedź domyślna odpowiada na okno; `nieznane` to obowiązkowy trzeci argument (wołający musi zdecydować,
+        co z oknem nieznanego rodzaju); testy znanych rodzajów zostawiają `true`, bo od tej decyzji nie zależą */
+    const odpowiedz = (p: unknown, nieznane = true): string[] => {
       const { r, ruchy } = szpieg();
-      odpowiedzDomyslna(p as Prompt, r);
+      odpowiedzDomyslna(p as Prompt, r, nieznane);
       return ruchy;
     };
 
@@ -551,6 +435,22 @@ describe('okna zarządu', () => {
       expect(odpowiedz({ k: 'nowe_okno', choices: [{ ok: false }] })).toEqual(['wydarzenie:0']);
       expect(odpowiedz({ k: 'nowe_okno' })).toEqual(['wydarzenie:0']);
     });
+
+    it('trzeci argument false: nieznany rodzaj okna nie dostaje odpowiedzi, znane rodzaje zawsze', () => {
+      const nieznane = { k: 'nowe_okno', choices: [{ ok: false }, { ok: true }] };
+      expect(odpowiedz(nieznane, true)).toEqual(['wydarzenie:1']);
+      expect(odpowiedz(nieznane, false)).toEqual([]);
+      expect(odpowiedz({ k: 'nowe_okno' }, false)).toEqual([]);
+      // znane rodzaje nie zależą od tej decyzji
+      for (const nz of [true, false]) {
+        expect(odpowiedz({ k: 'raport', report: { day: 1 } }, nz)).toEqual(['raport']);
+        expect(odpowiedz({ k: 'karta', card: { day: 1 }, assign: {} }, nz)).toEqual(['zatwierdz']);
+        expect(odpowiedz({ k: 'zwyciestwo', droga: 'ludnosc' }, nz)).toEqual(['dalej']);
+        expect(odpowiedz({ k: 'wydarzenie', id: 'x', choices: [{ ok: false }, { ok: true }] }, nz)).toEqual([
+          'wydarzenie:1',
+        ]);
+      }
+    });
   });
 });
 
@@ -559,8 +459,11 @@ describe('okna zawieszone', () => {
   const nowe = { k: 'nowe_okno', id: 'x', choices: [{ ok: true }] } as unknown as Prompt;
 
   it('okno, którego nie zamknie nawet odpowiedź domyślna, zapisuje się i nie jest ponawiane w tej samej sekundzie', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11, { dziennik: true });
+    // z opcją odpowiedzNaNieznane okno nowego rodzaju dostaje odpowiedź domyślną (wybór jak w wydarzeniu), a że `wybierz`
+    // sztucznego okna niczego nie zmienia, zostaje ono zawieszone
+    const g = nowaGraAi(demoWorld('przymorze'), 11, { dziennik: true, odpowiedzNaNieznane: true });
     expect(g.zawieszone).toEqual([]);
+    expect(g.zawieszonychRazem).toBe(0);
     const okna: number[] = [];
     const tury: number[] = [];
     const d: Decydent = {
@@ -583,6 +486,61 @@ describe('okna zawieszone', () => {
     ]);
     // odpowiedź domyślna też raz na sekundę: wydarzenie bez skutku, ale ruch ręki jest w dzienniku
     expect(g.dziennik!.filter((m) => m.t === 'wydarzenie')).toHaveLength(3);
+    expect(g.zawieszonychRazem).toBe(3);
+  });
+
+  it('nieznany rodzaj okna bez odpowiedzNaNieznane zostaje i trafia do zawieszone, z opcją dostaje wybór 0', () => {
+    const graj = (opts: OpcjeGryAi, decydent: Decydent): GraAi => {
+      const g = nowaGraAi(demoWorld('przymorze'), 11, { dziennik: true, ...opts });
+      sztuczne.okno = nowe;
+      try {
+        grajDo(g, decydent, 3 * TICKS_PER_SECOND);
+      } finally {
+        sztuczne.okno = null;
+      }
+      return g;
+    };
+    const wybory = (g: GraAi): RuchRak[] => g.dziennik!.filter((m) => m.t === 'wydarzenie');
+    const zawieszone = [1, 2, 3].map((s) => ({ k: 'nowe_okno', s }));
+    // decydent, który nie rusza okna, i silnik: żaden z nich ani odpowiedź domyślna gry nie odpowiada na nieznany rodzaj okna
+    for (const decydent of [{ okno: () => {}, tura: () => {} }, silnik]) {
+      for (const opts of [{}, { odpowiedzNaNieznane: false }]) {
+        const bez = graj(opts, decydent);
+        expect(bez.zawieszone, JSON.stringify(opts)).toEqual(zawieszone);
+        expect(wybory(bez), JSON.stringify(opts)).toEqual([]);
+      }
+    }
+    // z opcją: pierwszy dozwolony wybór (indeks 0) od odpowiedzi domyślnej gry, a silnik odpowiada tak samo już sam; okno
+    // sztuczne zostaje na miejscu, więc i tak ląduje w zawieszonych
+    const doNothing = graj({ odpowiedzNaNieznane: true }, { okno: () => {}, tura: () => {} });
+    expect(wybory(doNothing)).toEqual([
+      { s: 1, t: 'wydarzenie', k: 0 },
+      { s: 2, t: 'wydarzenie', k: 0 },
+      { s: 3, t: 'wydarzenie', k: 0 },
+    ]);
+    expect(doNothing.zawieszone).toEqual(zawieszone);
+    const zSilnikiem = graj({ odpowiedzNaNieznane: true }, silnik);
+    expect(wybory(zSilnikiem).length).toBeGreaterThanOrEqual(3);
+    for (const m of wybory(zSilnikiem)) expect(m).toMatchObject({ t: 'wydarzenie', k: 0 });
+    // opcja jedzie w zapisie gry jak inne opcje
+    expect(wczytajGre(demoWorld('przymorze'), zapiszGre(doNothing)).opts.odpowiedzNaNieznane).toBe(true);
+  });
+
+  it('1000 sekund z zawieszonym oknem: lista trzyma ostatnie 100 wpisów, a licznik zna wszystkie', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    sztuczne.okno = nowe;
+    try {
+      grajDo(g, { okno: () => {}, tura: () => {} }, 1000 * TICKS_PER_SECOND);
+    } finally {
+      sztuczne.okno = null;
+    }
+    expect(MAX_ZAWIESZONYCH).toBe(100);
+    expect(g.zawieszone).toHaveLength(100);
+    expect(g.zawieszonychRazem).toBe(1000);
+    // ostatnie sto sekund, po kolei
+    expect(g.zawieszone[0]).toEqual({ k: 'nowe_okno', s: 901 });
+    expect(g.zawieszone.at(-1)).toEqual({ k: 'nowe_okno', s: 1000 });
+    expect(g.zawieszone.map((z) => z.s)).toEqual(Array.from({ length: 100 }, (_, n) => 901 + n));
   });
 
   it('zawieszenie nie psuje gry: po zdjęciu okna idą prawdziwe okna, a lista zostaje tylko z tym, co się zawiesiło', () => {
@@ -598,14 +556,218 @@ describe('okna zawieszone', () => {
     grajDo(g, silnik, 6 * TICKS_PER_HOUR);
     expect(g.gov.night?.confirmed).toBe(true);
     expect(g.zawieszone).toHaveLength(2);
+    expect(g.bledy).toEqual([]);
   });
 
-  it('zawieszone nie wchodzi do zapisu ani do skrótu gry: wczytana gra zaczyna z pustą listą', () => {
+  it('zawieszone nie wchodzi do zapisu ani do skrótu gry: wczytana gra zaczyna z pustą listą i zerowym licznikiem', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
     const skrot = skrotGry(g);
     g.zawieszone.push({ k: 'nowe_okno', s: 7 });
+    g.zawieszonychRazem = 1;
     expect(skrotGry(g)).toBe(skrot);
-    expect(wczytajGre(demoWorld('przymorze'), zapiszGre(g)).zawieszone).toEqual([]);
+    const zapis = zapiszGre(g);
+    expect(Object.keys(zapis).sort()).toEqual(['gov', 'opts', 'pamiec', 'seed', 'sim', 'v']);
+    const wczytana = wczytajGre(demoWorld('przymorze'), zapis);
+    expect(wczytana.zawieszone).toEqual([]);
+    expect(wczytana.zawieszonychRazem).toBe(0);
+  });
+});
+
+describe('błędy decydenta', () => {
+  /** decydent, który nic nie robi i nie rzuca: wzorzec skrótu dla decydentów, którzy rzucają zamiast coś zrobić */
+  const nicNieRobi: Decydent = { start: () => {}, okno: () => {}, tura: () => {} };
+  const doba = TICKS_PER_DAY;
+
+  it('decydent rzuca w oknie i w turze: gra idzie dalej, okna zamyka odpowiedź domyślna, błędy mają miejsce, sekundę i tekst bez stosu', () => {
+    const sekundyOkien: number[] = [];
+    const rzuca: Decydent = {
+      okno: (gr) => {
+        sekundyOkien.push(sekunda(gr));
+        throw new Error('rzut w oknie');
+      },
+      tura: (gr) => {
+        if (sekunda(gr) % 100 === 0) throw new Error('rzut w turze');
+      },
+    };
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
+    expect(() => grajDo(a, rzuca, doba)).not.toThrow();
+    expect(a.sim.st.tick).toBe(doba);
+    // błędy: każde okno ma wpis z sekundą, w której decydent je dostał, a tura jeden na każdą setną sekundę
+    expect(sekundyOkien.length).toBeGreaterThanOrEqual(3);
+    expect(a.bledy.length).toBeLessThan(MAX_BLEDOW);
+    expect(a.bledy.filter((b) => b.gdzie === 'okno')).toEqual(
+      sekundyOkien.map((s) => ({ s, gdzie: 'okno', tekst: 'Error: rzut w oknie' })),
+    );
+    expect(a.bledy.filter((b) => b.gdzie === 'tura')).toEqual(
+      Array.from({ length: 9 }, (_, n) => ({ s: (n + 1) * 100, gdzie: 'tura', tekst: 'Error: rzut w turze' })),
+    );
+    expect(a.bledowRazem).toBe(a.bledy.length);
+    // tekst nie niesie stosu
+    for (const b of a.bledy) {
+      expect(b.tekst).not.toContain('\n');
+      expect(b.tekst).not.toContain(' at ');
+    }
+    // okna zamknęła odpowiedź domyślna: nic nie zawisło, a w dzienniku są jej ruchy (raport, uchwała, karta nocy)
+    expect(a.zawieszone).toEqual([]);
+    const rodzaje = new Set(a.dziennik!.map((m) => m.t));
+    for (const t of ['raport', 'uchwala', 'zatwierdz'] as const) expect(rodzaje).toContain(t);
+    // i to samo, co zrobiłby decydent, który zamiast rzutu nic nie robi
+    const b = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
+    grajDo(b, nicNieRobi, doba);
+    expect(b.bledy).toEqual([]);
+    expect(skrotGry(a)).toBe(skrotGry(b));
+    expect(a.dziennik).toEqual(b.dziennik);
+  });
+
+  it('decydent rzuca w starcie: błąd z sekundą 0, gra rusza i idzie tak samo jak z decydentem, który nic nie robi', () => {
+    const rzuca: Decydent = {
+      ...nicNieRobi,
+      start: () => {
+        throw new Error('rzut w starcie');
+      },
+    };
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11);
+    expect(() => grajDo(a, rzuca, 3 * TICKS_PER_SECOND)).not.toThrow();
+    expect(a.sim.st.tick).toBe(3 * TICKS_PER_SECOND);
+    expect(a.bledy).toEqual([{ s: 0, gdzie: 'start', tekst: 'Error: rzut w starcie' }]);
+    const b = nowaGraAi(swiezySwiat('przymorze'), 11);
+    grajDo(b, nicNieRobi, 3 * TICKS_PER_SECOND);
+    expect(skrotGry(a)).toBe(skrotGry(b));
+  });
+
+  it('tekst błędu: nazwa i komunikat bez stosu, każda rzucona wartość daje napis, długi komunikat jest ucięty', () => {
+    const rzutPrzez = (wartosc: unknown): string => {
+      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      grajDo(
+        g,
+        {
+          ...nicNieRobi,
+          tura: () => {
+            throw wartosc;
+          },
+        },
+        TICKS_PER_SECOND,
+      );
+      expect(g.bledy).toHaveLength(1);
+      expect(g.bledy[0]).toMatchObject({ s: 1, gdzie: 'tura' });
+      return g.bledy[0].tekst;
+    };
+    expect(rzutPrzez(new TypeError('zły typ'))).toBe('TypeError: zły typ');
+    expect(rzutPrzez('sam napis')).toBe('sam napis');
+    expect(rzutPrzez(42)).toBe('42');
+    expect(rzutPrzez(null)).toBe('null');
+    expect(rzutPrzez(undefined)).toBe('undefined');
+    // tekst to jeden wiersz: znaki nowej linii (także z komunikatu ze stosem w środku) zamieniają się na pojedyncze spacje
+    expect(rzutPrzez(new Error('pierwszy\nsecond'))).toBe('Error: pierwszy second');
+    expect(rzutPrzez(new Error('a\r\n   b\n\n c\n'))).toBe('Error: a b c');
+    expect(rzutPrzez('wiersz 1\nwiersz 2')).toBe('wiersz 1 wiersz 2');
+    expect(rzutPrzez(new Error('stos\n    at kto (plik.ts:1:2)\n    at kto2 (plik.ts:3:4)'))).toBe(
+      'Error: stos at kto (plik.ts:1:2) at kto2 (plik.ts:3:4)',
+    );
+    // wartość, której nie da się zamienić na napis, nie może wywrócić gry (obsługa błędu sama nie rzuca)
+    const zlosliwa = {
+      toString() {
+        throw new Error('toString rzuca');
+      },
+    };
+    expect(rzutPrzez(zlosliwa)).toBe('błąd bez opisu');
+    // komunikat z całym stanem gry w środku nie może rosnąć bez końca
+    const dlugi = rzutPrzez(new Error('x'.repeat(10_000)));
+    expect(dlugi.startsWith('Error: xxx')).toBe(true);
+    expect(dlugi.length).toBeLessThan(500);
+  });
+
+  it('ruchy rąk wykonane przed rzutem zostają: gra jest taka, jakby decydent nie rzucił, a rzut siedzi w błędach', () => {
+    // dwa takie same decydenty: jeden po ruchu rzuca, drugi nie. Raport rano zamyka sam decydent (potem rzuca), kartę nocy
+    // zmienia (przydział osoby) i zostawia odpowiedzi domyślnej, a w turze wpisuje polecenie do kolejki symulacji.
+    const pionek = nowaGraAi(swiezySwiat('przymorze'), 11).sim.st.pawns.find((p) => p.kind === 'core')!.id;
+    const decydent = (rzuca: boolean): Decydent => ({
+      okno(_gr, p, r) {
+        if (p.k === 'raport') {
+          r.potwierdzRaport();
+          if (rzuca) throw new Error('rzut po raporcie');
+        }
+        if (p.k === 'karta') {
+          r.przydziel(p.card.people[0].id, 'sen');
+          if (rzuca) throw new Error('rzut po przydziale');
+        }
+      },
+      tura(gr, r) {
+        if (sekunda(gr) % 100 !== 50) return;
+        r.polecenie({ t: 'select', ids: [pionek] });
+        if (rzuca) throw new Error('rzut po poleceniu');
+      },
+    });
+    const czas = 12_300; // po 6:00 drugiego dnia (raport) i po karcie nocy pierwszego wieczoru
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
+    grajDo(a, decydent(true), czas);
+    const b = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
+    grajDo(b, decydent(false), czas);
+    expect(b.bledy).toEqual([]);
+    // ruchy sprzed rzutu są w dzienniku i w grze, więc obie gry mają ten sam dziennik i skrót
+    expect(a.dziennik).toEqual(b.dziennik);
+    expect(skrotGry(a)).toBe(skrotGry(b));
+    const rodzaje = new Set(a.dziennik!.map((m) => m.t));
+    for (const t of ['raport', 'noc', 'zatwierdz', 'polecenie'] as const) expect(rodzaje, t).toContain(t);
+    // a rzuty są zapisane: po jednym na każde miejsce (raport, karta nocy, setne pięćdziesiąte sekundy tury)
+    const tekstyPo = (gdzie: 'okno' | 'tura'): string[] => [
+      ...new Set(a.bledy.filter((x) => x.gdzie === gdzie).map((x) => x.tekst)),
+    ];
+    expect(tekstyPo('okno').sort()).toEqual(['Error: rzut po przydziale', 'Error: rzut po raporcie']);
+    expect(tekstyPo('tura')).toEqual(['Error: rzut po poleceniu']);
+    // polecenie z tury, które poprzedziło rzut, czeka w kolejce symulacji do następnego kroku (tick 1000 = sekunda 50)
+    const c = nowaGraAi(swiezySwiat('przymorze'), 11);
+    grajDo(c, decydent(true), 50 * TICKS_PER_SECOND);
+    expect(c.sim.st.cmds).toEqual([{ t: 'select', ids: [pionek] }]);
+    expect(c.bledy).toEqual([{ s: 50, gdzie: 'tura', tekst: 'Error: rzut po poleceniu' }]);
+  });
+
+  it('decydent rzuca co sekundę: lista trzyma ostatnie MAX_BLEDOW błędów, licznik zna wszystkie, a gra idzie jak z decydentem, który nic nie robi', () => {
+    const rzuca: Decydent = {
+      ...nicNieRobi,
+      tura: (gr) => {
+        throw new Error(`sekunda ${sekunda(gr)}`);
+      },
+    };
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11);
+    grajDo(a, rzuca, 120 * TICKS_PER_SECOND);
+    expect(MAX_BLEDOW).toBe(50);
+    expect(a.bledy).toHaveLength(MAX_BLEDOW);
+    expect(a.bledowRazem).toBe(120);
+    expect(a.bledy.map((b) => b.s)).toEqual(Array.from({ length: MAX_BLEDOW }, (_, n) => 71 + n));
+    expect(a.bledy.at(-1)).toEqual({ s: 120, gdzie: 'tura', tekst: 'Error: sekunda 120' });
+    const b = nowaGraAi(swiezySwiat('przymorze'), 11);
+    grajDo(b, nicNieRobi, 120 * TICKS_PER_SECOND);
+    expect(skrotGry(a)).toBe(skrotGry(b));
+  });
+
+  it('błąd w jednym z dwóch przeplatanych decydentów nie dotyka drugiej gry', () => {
+    const rzuca: Decydent = {
+      ...nicNieRobi,
+      tura: () => {
+        throw new Error('rzut');
+      },
+    };
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11);
+    const b = nowaGraAi(swiezySwiat('zielonki'), 12);
+    for (let k = 0; k < 40 * TICKS_PER_SECOND; k++) {
+      krokGry(a, rzuca);
+      krokGry(b, nicNieRobi);
+    }
+    expect(a.bledowRazem).toBe(40);
+    expect(b.bledy).toEqual([]);
+    expect(b.bledowRazem).toBe(0);
+  });
+
+  it('błędy nie wchodzą do zapisu ani do skrótu gry: wczytana gra zaczyna z pustą listą i zerowym licznikiem', () => {
+    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const skrot = skrotGry(g);
+    g.bledy.push({ s: 3, gdzie: 'okno', tekst: 'Error: x' });
+    g.bledowRazem = 1;
+    expect(skrotGry(g)).toBe(skrot);
+    const wczytana = wczytajGre(demoWorld('przymorze'), zapiszGre(g));
+    expect(wczytana.bledy).toEqual([]);
+    expect(wczytana.bledowRazem).toBe(0);
   });
 });
 
@@ -617,7 +779,7 @@ describe('tempo przeglądarki', () => {
     const d: Decydent = {
       okno(gr, p, r) {
         if (p.k !== 'raport') {
-          odpowiedzDomyslna(p, r);
+          odpowiedzDomyslna(p, r, gr.opts.odpowiedzNaNieznane === true);
           return;
         }
         const przed = { decyzje: gr.gov.decisions.length, next: gr.gov.ev.next };
@@ -661,14 +823,15 @@ describe('tempo przeglądarki', () => {
 
   it('opcja jedzie w zapisie gry: wczytana gra potwierdza raporty tak samo jak gra bez przerwy', () => {
     const ciagla = nowaGraAi(swiezySwiat('przymorze'), 11, { tempoPrzegladarki: true });
-    grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
-    const a = nowaGraAi(swiezySwiat('przymorze'), 11, { tempoPrzegladarki: true });
-    grajDo(a, silnik, TICKS_PER_DAY);
-    const b = wczytajGre(swiezySwiat('przymorze'), JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
+    grajDo(ciagla, silnik, TICKS_PER_DAY);
+    const b = wczytajGre(swiezySwiat('przymorze'), JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi);
     expect(b.opts.tempoPrzegladarki).toBe(true);
+    grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
     grajDo(b, silnik, 2 * TICKS_PER_DAY);
     expect(skrotGry(b)).toBe(skrotGry(ciagla));
     expect(ciagla.gov.decisions.some((x) => x.k === 'raport')).toBe(true);
+    expect(ciagla.bledy).toEqual([]);
+    expect(b.bledy).toEqual([]);
   });
 });
 
@@ -773,6 +936,8 @@ describe('ręce gry', () => {
     };
     // do 21:00 pierwszego dnia: karta z 20:00 jest już zatwierdzona, a rano jeszcze jej nie zdjęto
     grajDo(g, d, 6 * TICKS_PER_HOUR);
+    // asercje w haku decydenta łapie `krokGry` jak każdy inny wyjątek, więc ich porażka siedziałaby tylko w `bledy`
+    expect(g.bledy).toEqual([]);
     expect(karty).toBe(1);
     // karta zatwierdzona z przydziałem decydenta
     expect(g.gov.night?.confirmed).toBe(true);
@@ -812,5 +977,6 @@ describe('ręce gry', () => {
     expect(r.wyslij(cel, ids)).toBe(false);
     expect(g.dziennik!).toHaveLength(wpisow + 1);
     expect(g.gov.wyprawy).toHaveLength(1);
+    expect(g.bledy).toEqual([]);
   });
 });

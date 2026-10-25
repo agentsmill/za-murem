@@ -8,8 +8,8 @@
    - tabeli Pracy: priorytet 1 Badań dla osoby z największą umiejętnością w dziedzinie badania i próg drewna 2 × drewno na noc;
    - werbunku: wędrowiec pod bramą dostaje rozmowę, a po niej zaproszenie, gdy starcza jedzenia na przyjęcie (porcje na osobę
      zarządu, bez mieszkańców); wolne łóżko zwiększa szansę zaproszenia w symulacji (+0,15), ale go nie wymaga (zadanie 7);
-   - przebiegu prawdziwej gry (Przymorze, ziarno 11, jak w przeglądarce): wybór wydarzeń na kopii zarządu bez ruszania prawdziwego,
-     pierwszy kamień ludności, budowle, koszt (warstwy najwyżej raz na 30 sekund przy ekranie) i determinizm (zapis i wczytanie).
+   - kosztu (warstwy najwyżej raz na 30 sekund przy ekranie), determinizmu (zapis i wczytanie) i celu etapu (budowle do 12. dnia);
+     przebieg prawdziwej gry (Przymorze, ziarno 11, jak w przeglądarce) jest w tests/unit/ai-rozwoj-przebieg.test.ts.
    Decydent „bez rozwoju” to silnik, któremu ręce nie pozwalają na nic z warstwy rozwoju (budowy jej rodzajów, badania ponad
    kozę, tabela Pracy, rozmowy z wędrowcami): stan sprzed warstwy, na którym ustawia się warunki testów. */
 
@@ -31,23 +31,18 @@ import {
   zrobRece,
 } from '../../src/ai/gra.ts';
 import { miejscaNa, miejsceNa, pokojZarzadu } from '../../src/ai/miejsca.ts';
-import { najlepszyIndeks, ocenSkutki, wyborWydarzenia } from '../../src/ai/okna.ts';
 import { KOLEJKA_BADAN, turaRozwoju } from '../../src/ai/rozwoj.ts';
 import { silnik } from '../../src/ai/silnik.ts';
 import { drewnoNaNoc, zimaWToku } from '../../src/ai/zima.ts';
-import type { Prompt } from '../../src/gov/typy.ts';
-import { chooseEvent } from '../../src/gov/zarzad.ts';
 import { kartka } from '../../src/sim/badania.ts';
 import { BUILDS, canPlace } from '../../src/sim/budowle.ts';
 import { TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { houseOf, inHomeApt } from '../../src/sim/house.ts';
 import { priorytet, progi } from '../../src/sim/praca.ts';
 import { type Command, okazjaWerbunku, STACK } from '../../src/sim/sim.ts';
-import { populacja } from '../../src/sim/snapshot.ts';
 import { modeOf } from '../../src/sim/tryb.ts';
-import { poranekTick, przygotujGre } from '../../tools/bot-osada.ts';
 import { budowleStojace } from '../../tools/osada-ocena.ts';
-import { rzecz, type Szpieg, szpieg, tickDnia } from './ai-pomoc.ts';
+import { graDoTicku, graPoDniach, rzecz, type Szpieg, swiezySwiat, szpieg, tickDnia } from './ai-pomoc.ts';
 import { okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
@@ -140,8 +135,8 @@ describe('turaRozwoju: przygotowanie warunków (Przymorze, ziarno 11, dzień 6, 
   }
 
   beforeAll(() => {
-    podstawa = nowaGraAi(demoWorld('przymorze'), 11, { okolica });
-    grajDo(podstawa, silnikBezRozwoju, tickDnia(6, 10));
+    // z pamięci pliku: tę samą grę (silnik bez rozwoju do 6. dnia, 10:00) przedłuża niżej test „cel etapu”
+    podstawa = graDoTicku('przymorze', 11, tickDnia(6, 10), { okolica }, silnikBezRozwoju);
   }, 120_000);
 
   it('warunki: pracownia i koza z beczki stoją, kozę zbadano, w mieszkaniu zarządu brakuje wolnego łóżka', () => {
@@ -537,6 +532,8 @@ describe('turaRozwoju: Lanciego (sypialnie bez okna, koza z beczki nie ma miejsc
   it('zimaWToku jest fałszem po badaniu kozy, którą nie ma gdzie postawić, więc rozwój buduje', () => {
     const g = nowaGraAi(demoWorld('lanciego'), 11, { okolica });
     grajDo(g, silnikBezRozwoju, tickDnia(7, 10));
+    // `krokGry` łapie błędy decydenta: bez tego sprawdzenia rzut z silnika przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
     const st = g.sim.st;
     expect(st.techDone).toContain('t_kozy');
     expect(st.things.some((t) => t.kind === 'pracownia')).toBe(true);
@@ -565,6 +562,7 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
     while (!jest() && st.tick < tickDnia(4, 0)) krokGry(g, silnikBezRozwoju);
     const t = jest();
     if (!t) throw new Error('żaden wędrowiec nie stanął przy siatce');
+    expect(g.bledy).toEqual([]);
     return { g, id: t.id };
   }
 
@@ -580,6 +578,7 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
       if (!st.pawns.some((p) => p.id === id)) throw new Error('wędrowiec odszedł przed końcem rozmowy');
     }
     expect(t.job?.what).toBe('zagadany');
+    expect(g.bledy).toEqual([]);
     return { g, id };
   }
 
@@ -685,162 +684,9 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
   });
 });
 
-// ---------------------------------------------------------------- przebieg prawdziwej gry
-
-interface OknoWydarzenia {
-  dzien: number;
-  id: string;
-  wybor: number;
-  oczekiwany: number;
-  oceny: (number | null)[];
-  zarzadBezZmian: boolean;
-  wejscieBezZmian: boolean;
-}
-
-/** okno „Pożar od kozy” w przebiegu: czy wybór silnika kończy się pożarem w skutkach (ewakuacja klatki) */
-interface OknoPozaru {
-  dzien: number;
-  ewakuacja: boolean;
-}
-
-describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
-  const okna: OknoWydarzenia[] = [];
-  const pozary: OknoPozaru[] = [];
-  /** poranki: dzień, ludność pod zarządem, osoby zarządu, stojące budowle i zbadane technologie */
-  const poranki: { dzien: number; ludnosc: number; zarzad: number; budowle: number; badania: string[] }[] = [];
-  /** dni gry, w których silnik zlecił zaproszenie wędrowca (polecenie `zapros`) */
-  const zaproszenia: number[] = [];
-  let g: GraAi;
-
-  /** ocena wyboru z pełnego przeglądu na kopiach, niezależnie od `wyborWydarzenia`. Jedna kopia ze stanem prawdziwego generatora:
-      skutki okien z pierwszych dni nie zależą od losowania (jedyny losowy skutek to odejście przegranego w kłótni, a mediacja
-      tam wygrywa zawsze), więc to samo co średnia z kopii o ziarnach pochodnych w `wyborWydarzenia` (reguła 0, zadanie 6) */
-  function przeglad(gr: GraAi, p: Extract<Prompt, { k: 'wydarzenie' }>): (number | null)[] {
-    const i = wejscie(gr);
-    return p.choices.map((c, k) => {
-      if (!c.ok) return null;
-      const kopia = structuredClone(gr.gov);
-      return ocenSkutki(chooseEvent(kopia, i, k), kopia, i);
-    });
-  }
-
-  beforeAll(async () => {
-    g = await przygotujGre('przymorze', 11, false);
-    // jak silnik, ale z pomiarem pierwszych okien wydarzeń: wybór sprawdzony przed odpowiedzią silnika
-    const mierzacy: Decydent = {
-      ...silnik,
-      okno(gr, p, r) {
-        if (p.k === 'wydarzenie' && okna.length < 8) {
-          const i = wejscie(gr);
-          const przedGov = JSON.stringify(gr.gov);
-          const przedWejscie = JSON.stringify(i);
-          const wybor = wyborWydarzenia(gr.gov, i, p);
-          const oceny = przeglad(gr, p);
-          okna.push({
-            dzien: Math.floor(gr.sim.st.tick / TICKS_PER_DAY) + 1,
-            id: p.id,
-            wybor,
-            oczekiwany: najlepszyIndeks(oceny),
-            oceny,
-            zarzadBezZmian: JSON.stringify(gr.gov) === przedGov,
-            wejscieBezZmian: JSON.stringify(i) === przedWejscie,
-          });
-        }
-        if (p.k === 'wydarzenie' && p.id === 'pozar') {
-          const i = wejscie(gr);
-          const kopia = structuredClone(gr.gov);
-          const fx = chooseEvent(kopia, i, wyborWydarzenia(gr.gov, i, p));
-          pozary.push({ dzien: Math.floor(gr.sim.st.tick / TICKS_PER_DAY) + 1, ewakuacja: fx.fire });
-        }
-        silnik.okno(gr, p, r);
-      },
-      tura(gr, r) {
-        silnik.tura(gr, {
-          ...r,
-          polecenie: (c) => {
-            if (c.t === 'zapros') zaproszenia.push(Math.floor(gr.sim.st.tick / TICKS_PER_DAY) + 1);
-            r.polecenie(c);
-          },
-        });
-      },
-    };
-    for (let d = 2; d <= 20 && !g.gov.over; d++) {
-      grajDo(g, mierzacy, poranekTick(d));
-      if (g.gov.over) break;
-      poranki.push({
-        dzien: d,
-        ludnosc: populacja(g.sim.st).razem,
-        zarzad: g.sim.st.pawns.filter((p) => p.kind === 'core').length,
-        budowle: budowleStojace(g.sim.st.things),
-        badania: [...(g.sim.st.techDone ?? [])],
-      });
-    }
-  }, 300_000);
-
-  it('wyborWydarzenia wybiera najlepszą ocenę i nie zmienia prawdziwego zarządu', () => {
-    // w pierwszych dniach przychodzi kilka wydarzeń; każde sprawdzone na prawdziwym zarządzie i wejściu
-    expect(okna.length).toBeGreaterThanOrEqual(3);
-    // pełny przegląd zna ukryte rzuty karty (haczyk gościa, kot za płotem, pomoc z sąsiedztwa), a silnik ich nie zna (reguła
-    // uczciwości, zadanie 7): przy takich kartach jego wybór może się różnić od wyboru z przeglądu, więc sprawdzamy tylko, że jest
-    // dozwolony; przy reszcie wybór jest dokładnie ten z przeglądu
-    const zUkrytymRzutem = new Set(['gosc', 'halas', 'krzyk', 'wedrowiec']);
-    expect(okna.filter((o) => !zUkrytymRzutem.has(o.id)).length).toBeGreaterThanOrEqual(2);
-    for (const o of okna) {
-      if (zUkrytymRzutem.has(o.id))
-        expect(o.oceny[o.wybor], `dzień ${o.dzien}, ${o.id}: wybór dozwolony`).not.toBeNull();
-      else expect(o.wybor, `dzień ${o.dzien}, ${o.id}: ${JSON.stringify(o.oceny)}`).toBe(o.oczekiwany);
-      expect(o.zarzadBezZmian, `dzień ${o.dzien}, ${o.id}: zarząd`).toBe(true);
-      expect(o.wejscieBezZmian, `dzień ${o.dzien}, ${o.id}: wejście`).toBe(true);
-    }
-  });
-
-  it('pożar od kozy: silnik gasi, nie ewakuuje klatki (spalony mebel, strach, gorszy nastrój wszystkich)', () => {
-    // w grze karta wraca co dobę; bez wagi pożaru w ocenie skutków silnik ewakuował za każdym razem i kończył 5 dni wcześniej
-    expect(pozary.length).toBeGreaterThanOrEqual(3);
-    for (const o of pozary) expect(o.ewakuacja, `dzień ${o.dzien}`).toBe(false);
-  });
-
-  it('pracownia nie stoi bez zajęcia: sześć badań z kolejki i t_ambu są zbadane do rana 13. dnia', () => {
-    // Bez t_ambu w kolejce stół pracowni stał pusty od 7. dnia (t_ambu było do wzięcia: Hanna ma medycynę 3), a zdrowie zarządu
-    // spadało od 14. dnia poniżej 45, czyli poniżej progu wyprawy dalekiej. Ten przebieg (z łańcuchami kart, jak w przeglądarce):
-    // wszystkie siedem badań gotowe rano 9. dnia, tak samo jak bez łańcuchów (na starszej bazie gry t_ambu kończyło się w 10.
-    // dniu); granica 13. dnia zostawia cztery dni na przesunięcie trajektorii (było trzy), a brak badania w kolejce i tak ją
-    // przekracza (nie zbadane do końca przebiegu).
-    const rano13 = poranki.find((p) => p.dzien === 13);
-    expect(rano13, 'przebieg dożył 13. dnia').toBeDefined();
-    expect(rano13!.badania).toEqual(
-      expect.arrayContaining(['t_kozy', 't_okna', 't_konserwy', 't_grzyby', 't_zielarstwo', 't_szklarnia', 't_ambu']),
-    );
-  });
-
-  it('werbunek działa: do 10. dnia co najmniej dwa zaproszenia wędrowców, a zarząd rośnie z 4 do co najmniej 8 osób', () => {
-    // Zmierzone w tym przebiegu (z łańcuchami kart): 6 zaproszeń do 10. dnia (w dniach 2, 4, 6, 6, 8, 10) i 9 osób w zarządzie rano
-    // 10. dnia; bez łańcuchów 3 zaproszenia (2, 3, 5) i 8 osób; przed zmianą werbunku 0 zaproszeń w 20 dni przy 15–23 rozmowach
-    // i 7 osobach w zarządzie. Zwerbowani wędrowcy trafiają do zarządu. Większy zarząd to dłuższe przeżycie (średni dzień końca,
-    // żyje = 45; pomiary z uprzęży bez łańcuchów): +2,4 ± 0,8 na ziarnach 11–50 (wariant wybrano na 11–20, więc to liczba
-    // zawyżona) i +1,7 ± 0,8 na ziarnach 31–65 spoza wyboru; Przymorze +3,9 ± 2,5, a Lanciego +0,1 ± 2,8 (około zera) na
-    // zbiorze 51–65.
-    const rano10 = poranki.find((p) => p.dzien === 10);
-    expect(rano10, 'przebieg dożył 10. dnia').toBeDefined();
-    expect(zaproszenia.filter((d) => d <= 10).length).toBeGreaterThanOrEqual(2);
-    expect(rano10!.zarzad).toBeGreaterThanOrEqual(8);
-  });
-
-  it('pierwszy kamień ludności (10 osób) do 5. dnia', () => {
-    // Ten przebieg jest deterministyczny: pierwszy kamień w 4. dniu z łańcuchami kart (bez nich w 3.; przed zadaniem 5, na 40ef252,
-    // w 7.). Pasmo z planu to dzień 15, ale pilnuje go bramka etapu (zadanie 7, `npm run bot:osada`, kolumna „kamień”); tu
-    // pilnujemy pomiaru z marginesem jednego dnia (granica 5 zostaje jak była, a margines skurczył się z dwóch dni, bo kamień
-    // jest dzień później), żeby cofnięcie wzrostu do poziomu bazy nie przeszło niezauważone (z granicą 15 przechodziło).
-    const pierwszy = poranki.find((p) => p.ludnosc >= 10);
-    expect(pierwszy, 'w przebiegu był poranek z co najmniej 10 osobami').toBeDefined();
-    expect(pierwszy!.dzien).toBeLessThanOrEqual(5);
-  });
-});
-
 describe('koszt i determinizm', () => {
   it('warstwy najwyżej raz na 30 sekund przy ekranie: w dobie gry każda z nich rusza najwyżej 33 razy', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11, { okolica });
-    grajDo(g, silnik, TICKS_PER_DAY);
+    const g = graPoDniach('przymorze', 11, 1, { okolica });
     const licznik = g.pamiec.wywolania ?? {};
     for (const warstwa of ['zima', 'jedzenie', 'rozwoj']) {
       expect(licznik[warstwa], warstwa).toBeGreaterThan(0);
@@ -851,16 +697,22 @@ describe('koszt i determinizm', () => {
   });
 
   it('zapis i wczytanie w połowie (po planie, w środku badania) nie zmieniają przebiegu z warstwą rozwoju', () => {
-    const w = demoWorld('przymorze');
-    const ciagla = nowaGraAi(w, 11, { okolica, obcy: true });
-    grajDo(ciagla, silnik, tickDnia(7, 0));
+    // jedna gra ciągła mija obie przerwy: zapis w przerwie to odczyt, który jej nie rusza, a gra wczytana z niego ma dojść do
+    // tego samego skrótu co ona (osobne gry doliczane od zera do przerw kosztowałyby jeszcze 5,3 doby gry z obcymi)
+    const ciagla = nowaGraAi(swiezySwiat('przymorze'), 11, { okolica, obcy: true });
+    const zapisy: ZapisGryAi[] = [];
     for (const przerwa of [tickDnia(3, 12) + 7, tickDnia(5, 2) + 123]) {
-      const a = nowaGraAi(w, 11, { okolica, obcy: true });
-      grajDo(a, silnik, przerwa);
-      const b = wczytajGre(w, JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
-      expect(b.pamiec).toEqual(a.pamiec);
+      grajDo(ciagla, silnik, przerwa);
+      zapisy.push(JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi);
+    }
+    grajDo(ciagla, silnik, tickDnia(7, 0));
+    expect(ciagla.bledy).toEqual([]);
+    for (const zapis of zapisy) {
+      const b = wczytajGre(swiezySwiat('przymorze'), zapis);
+      expect(b.pamiec).toEqual(zapis.pamiec);
       grajDo(b, silnik, tickDnia(7, 0));
       expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   }, 120_000);
 });
@@ -874,11 +726,9 @@ describe('cel etapu: wzrost osady', () => {
   it.todo('cel etapu (bramka zadania 7): w dniu 30 stoi co najmniej 10 budowli');
 
   it('budowle: rozwój dokłada do trzech z bazy (pracownia, koza z beczki, ogródek) co najmniej jedną budowlę do 12. dnia', () => {
-    const budowleDo12 = (decydent: Decydent): number => {
-      const g = nowaGraAi(demoWorld('przymorze'), 11, { okolica });
-      grajDo(g, decydent, tickDnia(12, 6));
-      return budowleStojace(g.sim.st.things);
-    };
+    // z pamięci pliku: silnik bez rozwoju przedłuża grę z początku pliku (6. dzień, 10:00), silnik zaczyna od doby z testu kosztu
+    const budowleDo12 = (decydent: Decydent): number =>
+      budowleStojace(graDoTicku('przymorze', 11, tickDnia(12, 6), { okolica }, decydent).sim.st.things);
     const z = budowleDo12(silnik);
     const bez = budowleDo12(silnikBezRozwoju);
     expect(z).toBeGreaterThan(bez);

@@ -7,7 +7,8 @@
      zastawiony ze wszystkich stron stałby w grze do końca: Zielonki, ziarno 14) i z pomijaniem miejsc, które ktoś jeszcze
      zajmie (pracownia nie zabiera kozie okna);
    - drogi do kozy: pracownia, badanie `t_kozy`, koza z beczki w pokoju zarządu do 9. dnia, także w domu jednorodzinnym
-     (Zielonki: zarząd w dwóch pokojach, bez klatki; w grze jak w przeglądarce, bo świat z adresu nie ma desek na pracownię);
+     (Zielonki: zarząd w dwóch pokojach, bez klatki; w grze jak w przeglądarce, bo świat z adresu nie ma desek na pracownię:
+     te dwa testy, najdłuższe z pliku, są w tests/unit/ai-zima-przegladarka.test.ts);
    - materiału: plan, któremu brakuje desek, dostaje rozbiórkę gruzu i śmieci, a sterta, do której nikt nie dojdzie, nie
      jest zlecana w kółko;
    - drewna: `drewnoNaNoc` liczy jak karta nocy, a ścinanie na opał rusza już poniżej dwóch nocy (nie dopiero poniżej 6);
@@ -44,8 +45,7 @@ import { canPlace } from '../../src/sim/budowle.ts';
 import { dayOf, hourOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
 import type { Command, Pawn, Thing } from '../../src/sim/sim.ts';
-import { przygotujGre } from '../../tools/bot-osada.ts';
-import { rzecz, szpieg, tickDnia } from './ai-pomoc.ts';
+import { graDoTicku, graPoDniach, kozaWPokoju, rzecz, swiezySwiat, szpieg, tickDnia } from './ai-pomoc.ts';
 import { najblizszeMiejsce, okolicaZGeo } from './miasto-play.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
@@ -57,13 +57,6 @@ type Karta = Extract<Prompt, { k: 'karta' }>;
 
 /** łóżka z kontraktu wnętrza (te same rodzaje co w symulacji) */
 const LOZKA = new Set(['lozko', 'wersalka', 'lozka_pietrowe']);
-
-/** czy koza z beczki stoi w pokoju, w którym śpi zarząd */
-function kozaWPokoju(g: GraAi): boolean {
-  const pokoj = pokojZarzadu(g.sim.st, g.w);
-  const h = houseOf(g.w)!;
-  return pokoj >= 0 && g.sim.st.things.some((t) => t.kind === 'koza_beczka' && h.room[t.y * g.w.size + t.x] === pokoj);
-}
 
 /** dużo drewna w składzie: zapas na noc bez względu na to, co gra zdążyła zebrać */
 function dorzucDrewno(g: GraAi, ile = 80): void {
@@ -110,6 +103,8 @@ function dyzurNaPierwszejKarcie(
   };
   while (!wynik && !g.gov.over && g.sim.st.tick < od + 3 * TICKS_PER_DAY) krokGry(g, d);
   if (!wynik) throw new Error('nie doszło do karty nocy');
+  // `krokGry` łapie błędy decydenta (silnika albo ręki-szpiega w tym teście): bez tego sprawdzenia rzut przeszedłby bez śladu
+  expect(g.bledy).toEqual([]);
   return wynik;
 }
 
@@ -132,6 +127,8 @@ function przydzialPoOknie(g: GraAi, od: number, przed: (g: GraAi, p: Karta) => v
   };
   while (!wynik && !g.gov.over && g.sim.st.tick < od + 3 * TICKS_PER_DAY) krokGry(g, d);
   if (!wynik) throw new Error('nie doszło do karty nocy');
+  // `krokGry` łapie błędy decydenta (silnika albo ręki-szpiega w tym teście): bez tego sprawdzenia rzut przeszedłby bez śladu
+  expect(g.bledy).toEqual([]);
   return wynik;
 }
 
@@ -332,8 +329,7 @@ describe('miejsceNa: dostęp do budowli', () => {
 describe('rozbiórka śmieci na materiał do planu', () => {
   /** gra tuż po pierwszej turze warstwy (plan pracowni stoi), dzień 2, 9:00; bez sterty rozbieralnej poza podaną */
   function graZPlanem(): GraAi {
-    const g = nowaGraAi(demoWorld('zielonki'), 12);
-    grajDo(g, silnik, tickDnia(2, 9));
+    const g = graDoTicku('zielonki', 12, tickDnia(2, 9));
     const st = g.sim.st;
     expect(st.builds.some((b) => b.kind === 'pracownia')).toBe(true);
     // materiałów brakuje (planu nie da się zacząć), a rozbieralnych stert nie ma, dopóki test jakiejś nie doda
@@ -409,9 +405,8 @@ describe('drewno na noc', () => {
 
   it('ścinanie na opał rusza poniżej dwóch nocy (nie dopiero poniżej 6), a silnik podstawowy zostaje przy 6', () => {
     const polecenia = (decydent: Decydent, drewno: number): string[] => {
-      const g = nowaGraAi(demoWorld('przymorze'), 11);
       // dzień 2, 10:00: pora na ścinanie; nikt nie ścina, w składzie dokładnie `drewno` sztuk
-      grajDo(g, decydent, tickDnia(2, 10));
+      const g = graDoTicku('przymorze', 11, tickDnia(2, 10), {}, decydent);
       expect(hourOf(g.sim.st.tick)).toBe(10);
       for (const p of g.sim.st.pawns) if (p.job?.t === 'chop') p.job = null;
       g.sim.st.things = g.sim.st.things.filter((t) => t.kind !== 'drewno');
@@ -437,36 +432,20 @@ describe('drewno na noc', () => {
 
 describe('droga do kozy z beczki w pokoju zarządu', () => {
   it('Przymorze, ziarno 11: do 9. dnia koza z beczki stoi w pokoju, w którym śpi zarząd', () => {
-    const w = demoWorld('przymorze');
-    const g = nowaGraAi(w, 11);
-    grajDo(g, silnik, 1 * TICKS_PER_DAY);
-    expect(kozaWPokoju(g)).toBe(false);
-    grajDo(g, silnik, 9 * TICKS_PER_DAY);
+    expect(kozaWPokoju(graPoDniach('przymorze', 11, 1))).toBe(false);
+    const g = graPoDniach('przymorze', 11, 9);
     expect(g.sim.st.techDone).toContain('t_kozy');
     expect(kozaWPokoju(g)).toBe(true);
     // pracownia stoi (bez niej nie ma badań)
     expect(g.sim.st.things.some((t) => t.kind === 'pracownia')).toBe(true);
   });
 
-  it('Zielonki (dom jednorodzinny, bez klatki), ziarno 12, gra jak w przeglądarce: tak samo do 9. dnia', async () => {
-    // w grze świat Zielonek ma na podwórku gruz, z którego rozbiórki wychodzą brakujące deski na pracownię (14 desek)
-    const g = await przygotujGre('zielonki', 12, false);
-    grajDo(g, silnik, 1 * TICKS_PER_DAY);
-    expect(kozaWPokoju(g)).toBe(false);
-    grajDo(g, silnik, 9 * TICKS_PER_DAY);
-    expect(g.sim.st.techDone).toContain('t_kozy');
-    expect(kozaWPokoju(g)).toBe(true);
-    // dom jednorodzinny: pokój zarządu to zwykły pokój jego mieszkania, bez klatki i bloku
-    const h = houseOf(g.w)!;
-    expect(h.rooms[pokojZarzadu(g.sim.st, g.w)]).toMatchObject({ kind: 'pokoj', apt: h.home });
-    expect(g.gov.over).toBeNull();
-  }, 120_000);
-
   it('Zielonki bez gruzu (świat z adresu): pracownia czeka na brakujące deski, a warstwa nie sypie poleceniami', () => {
     // świat z adresu ma tylko 10–12 desek i garstkę śmieci do rozbiórki: do pracowni (14) brakuje, więc nie ma badań
     // i kozy, ale gra toczy się dalej, a plan pracowni jest jeden i nikt nie rozbiera cudzych mebli
     const g = nowaGraAi(demoWorld('zielonki'), 12, { dziennik: true });
     grajDo(g, silnik, 6 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const st = g.sim.st;
     expect(st.things.some((t) => t.kind === 'pracownia')).toBe(false);
     expect(st.builds.filter((b) => b.kind === 'pracownia')).toHaveLength(1);
@@ -483,6 +462,7 @@ describe('droga do kozy z beczki w pokoju zarządu', () => {
     const { w } = g;
     const st = g.sim.st;
     grajDo(g, silnik, 700);
+    expect(g.bledy).toEqual([]);
     const plan = st.builds.find((b) => b.kind === 'pracownia')!;
     expect(plan).toBeDefined();
     // kafelki, na których koza z beczki mogłaby stanąć po badaniu
@@ -495,15 +475,6 @@ describe('droga do kozy z beczki w pokoju zarządu', () => {
         : [plan.y * w.size + plan.x, plan.y * w.size + plan.x + 1];
     for (const i of obrys) expect(kozy, `pracownia na kafelku ${i}`).not.toContain(i);
   });
-
-  it('Zielonki, ziarno 14, gra jak w przeglądarce: koza z beczki ma skąd być zbudowana i stoi do 9. dnia', async () => {
-    // tu pierwsze miejsce na kozę zasłaniały pracownia i łóżka ze wszystkich stron: plan stał do końca gry
-    const g = await przygotujGre('zielonki', 14, false);
-    grajDo(g, silnik, 9 * TICKS_PER_DAY);
-    expect(g.sim.st.techDone).toContain('t_kozy');
-    expect(kozaWPokoju(g)).toBe(true);
-    expect(g.sim.st.builds.filter((b) => b.kind === 'koza_beczka')).toHaveLength(0);
-  }, 120_000);
 
   it('t_kozy zbadane z góry (bez pracowni): plan kozy w pokoju zarządu idzie przed pracownią', () => {
     // gra z gotowymi badaniami (scenariusz, zapis z innego silnika) nie ma pracowni, a koza ma stanąć od razu
@@ -518,21 +489,25 @@ describe('droga do kozy z beczki w pokoju zarządu', () => {
   });
 
   it('jedna koza z beczki w pokoju: warstwa nie stawia drugiej, gdy pierwsza już stoi', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
-    grajDo(g, silnik, 11 * TICKS_PER_DAY);
+    const g = graPoDniach('przymorze', 11, 11);
     expect(kozaWPokoju(g)).toBe(true);
     expect(g.sim.st.things.filter((t) => t.kind === 'koza_beczka')).toHaveLength(1);
     expect(g.sim.st.builds.filter((b) => b.kind === 'koza_beczka')).toHaveLength(0);
   });
 });
 
+/** Gra silnikiem (Przymorze, ziarno 11) tuż przed kartą nocy dnia 6, czyli o 19:00: wszystkie karty wcześniejsze są już za zarządem,
+    a karta z 20:00 jest pierwszą po `tickDnia(6, 0)`, na której dyżur i wartę ustawiają testy niżej. Decydent z `dyzurNaPierwszejKarcie`
+    i `przydzialPoOknie` odpowiada na wcześniejsze okna jak `silnik`, więc ta sama gra z pamięci (`graDoTicku`) jest dla nich
+    wiernym początkiem, a nie pięć dni gry od zera przy każdym teście. */
+const przedKartaDnia6 = (): GraAi => graDoTicku('przymorze', 11, tickDnia(6, 19));
+
 describe('dyżur przy kozie na karcie nocy', () => {
   it('od 6. nocy przy drewnie na noc ktoś ma dyżur przy kozie (o 21:00 stoi na posterunku „koza”)', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
     const kontrola: { noc: number; drewno: number; potrzeba: number; dyzur: boolean }[] = [];
     // noce 6–8: o 21:00 karta z 20:00 jest już zatwierdzona
     for (const dzien of [6, 7, 8]) {
-      grajDo(g, silnik, tickDnia(dzien, 21));
+      const g = graDoTicku('przymorze', 11, tickDnia(dzien, 21));
       expect(hourOf(g.sim.st.tick)).toBe(21);
       expect(dayOf(g.sim.st.tick)).toBe(dzien);
       const i = wejscie(g);
@@ -550,7 +525,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('wybiera najbardziej wypoczętą osobę ze zdrowiem co najmniej 40', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const g = przedKartaDnia6();
     const { ruchy, karta } = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
       dorzucDrewno(gr);
       // wypoczęcie: pierwsza osoba najwyższe, ale chora (30), druga drugie, reszta mniej
@@ -560,7 +535,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('osoba już na warcie przy siatce nie dostaje drugiego przydziału, na wyprawie też nie', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const g = przedKartaDnia6();
     const { ruchy, karta } = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
       dorzucDrewno(gr);
       ustawKarte(gr, p, [95, 90, 80, 70]);
@@ -571,7 +546,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('bez drewna na noc nie ma dyżuru, z drewnem jest', () => {
-    const bezDrewna = nowaGraAi(demoWorld('przymorze'), 11);
+    const bezDrewna = przedKartaDnia6();
     const brak = dyzurNaPierwszejKarcie(bezDrewna, tickDnia(6, 0), (gr, p) => {
       gr.sim.st.things = gr.sim.st.things.filter((t) => t.kind !== 'drewno');
       for (const q of gr.sim.st.pawns) q.carry = 0;
@@ -581,7 +556,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
     });
     expect(brak.ruchy).toEqual([]);
 
-    const zDrewnem = nowaGraAi(demoWorld('przymorze'), 11);
+    const zDrewnem = przedKartaDnia6();
     const jest = dyzurNaPierwszejKarcie(zDrewnem, tickDnia(6, 0), (gr, p) => {
       dorzucDrewno(gr);
       ustawKarte(gr, p, [90, 80, 70, 60]);
@@ -603,7 +578,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('nikt ze zdrowiem co najmniej 40: nie ma dyżuru', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const g = przedKartaDnia6();
     const nikt = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
       dorzucDrewno(gr);
       ustawKarte(gr, p, [90, 80, 70, 60], 39);
@@ -612,7 +587,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('gdy tylko strażnik przy siatce jest zdrowy, dyżur przy kozie ma pierwszeństwo przed strażą', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const g = przedKartaDnia6();
     const { ruchy, karta } = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
       dorzucDrewno(gr);
       ustawKarte(gr, p, [95, 80, 70, 60], zdroweTylko(p, 0));
@@ -632,7 +607,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
         .map(([id]) => id);
 
     it('jedna zdrowa osoba: staje przy kozie, a siatka zostaje bez warty', () => {
-      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      const g = przedKartaDnia6();
       let ludzie: string[] = [];
       const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
         dorzucDrewno(gr);
@@ -645,7 +620,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
     });
 
     it('dwie zdrowe osoby: jedna przy kozie, druga na warcie przy siatce', () => {
-      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      const g = przedKartaDnia6();
       let ludzie: string[] = [];
       const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
         dorzucDrewno(gr);
@@ -660,7 +635,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
     });
 
     it('osoba na wyprawie nie zostaje strażnikiem przy siatce, nawet gdy jest najbardziej wypoczęta', () => {
-      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      const g = przedKartaDnia6();
       let ludzie: string[] = [];
       const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
         dorzucDrewno(gr);
@@ -674,7 +649,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
     });
 
     it('wszyscy zdrowi: dyżur i warta przy siatce, reszta śpi', () => {
-      const g = nowaGraAi(demoWorld('przymorze'), 11);
+      const g = przedKartaDnia6();
       const a = przydzialPoOknie(g, tickDnia(6, 0), (gr, p) => {
         dorzucDrewno(gr);
         ustawKarte(gr, p, [90, 80, 70, 60]);
@@ -685,7 +660,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('karta bez opcji dyżuru przy kozie: polecenie guard na posterunku „koza” dla pionka tej osoby', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const g = przedKartaDnia6();
     const { ruchy, karta } = dyzurNaPierwszejKarcie(
       g,
       tickDnia(6, 0),
@@ -702,7 +677,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('osoba na wyprawie ma na karcie tylko sen: dyżur dostaje następna z opcją przy kozie, choćby tamta była najbardziej wypoczęta', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
+    const g = przedKartaDnia6();
     const { ruchy, karta } = dyzurNaPierwszejKarcie(g, tickDnia(6, 0), (gr, p) => {
       dorzucDrewno(gr);
       ustawKarte(gr, p, [99, 90, 80, 70]);
@@ -716,6 +691,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   it('osoba wysłana na wyprawę o 19:00 jest o 20:00 poza domem: karta daje jej tylko sen, a dyżur idzie do innej', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11, { okolica: okolicaZGeo(demoPrzymorze.geo) });
     grajDo(g, silnik, tickDnia(6, 19));
+    expect(g.bledy).toEqual([]);
     expect(hourOf(g.sim.st.tick)).toBe(19);
     const i = wejscie(g);
     const cel = najblizszeMiejsce(g.gov, i, 'spozywczy')!;
@@ -744,8 +720,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   });
 
   it('w prawdziwej grze dyżur trzyma ogień: koza z beczki pali się przez całą noc 10., a wartownik przy bramie dalej stoi', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
-    grajDo(g, silnik, tickDnia(10, 19));
+    const g = graDoTicku('przymorze', 11, tickDnia(10, 19));
     expect(kozaWPokoju(g)).toBe(true);
     const beczka = g.sim.st.things.find((t) => t.kind === 'koza_beczka')!;
     let zapalona = 0;
@@ -760,6 +735,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
     expect(probek).toBeGreaterThan(20);
     expect(zapalona / probek).toBeGreaterThan(0.9);
     expect(wejscie(g).people.some((p) => p.post === 'koza' || p.post === 'brama')).toBe(true);
+    expect(g.bledy).toEqual([]);
   });
 });
 
@@ -768,17 +744,13 @@ describe('ścinanie drewna nie odbiera polecenia z karty nocy (bezPoleceniaZKart
   // samej sekundzie nadpisywało je: w nocy 8 w Przymorzu 11 dyżur przy kozie zamieniał się na ścinanie drzewa, bo drewna było 38
   // z progu 40. Test woła turę silnika w sekundzie 20:00 dnia 6, tuż po zatwierdzeniu karty, z przydziałem nocy ustawionym ręcznie.
 
-  /** Gra silnikiem do 20:00 dnia 6 (silnik zatwierdził kartę w tej sekundzie); zapis do rozgałęziania przypadków. */
-  let zapis: ZapisGryAi | undefined;
-  function grajDoKarty(): ZapisGryAi {
-    if (zapis) return zapis;
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
-    grajDo(g, silnik, tickDnia(6, 20));
+  /** Gra silnikiem do 20:00 dnia 6 (silnik zatwierdził kartę w tej sekundzie), z pamięci: osobna gra do rozgałęziania przypadków. */
+  function grajDoKarty(): GraAi {
+    const g = graDoTicku('przymorze', 11, tickDnia(6, 20));
     expect(hourOf(g.sim.st.tick)).toBe(20);
     expect(g.gov.night?.confirmed).toBe(true);
     expect(g.gov.night?.day).toBe(6);
-    zapis = zapiszGre(g);
-    return zapis;
+    return g;
   }
 
   /** Jedna tura silnika na ręce-szpiegu w sekundzie 20:00: przydział nocy dla osób zarządu w kolejności pionków (`przydzial`),
@@ -788,7 +760,7 @@ describe('ścinanie drewna nie odbiera polecenia z karty nocy (bezPoleceniaZKart
     przydzial: readonly string[],
     karta: { confirmed?: boolean; day?: number } = {},
   ): { chop: Extract<Command, { t: 'chop' }>[]; pionki: Pawn[] } {
-    const g = wczytajGre(demoWorld('przymorze'), grajDoKarty());
+    const g = grajDoKarty();
     const st = g.sim.st;
     const pionki = st.pawns.filter((p) => p.kind === 'core');
     expect(pionki).toHaveLength(przydzial.length);
@@ -832,22 +804,27 @@ describe('ścinanie drewna nie odbiera polecenia z karty nocy (bezPoleceniaZKart
 
 describe('determinizm i koszt warstwy', () => {
   it('zapis i wczytanie w połowie (po planie pracowni i w środku budowy kozy) nie zmieniają przebiegu', () => {
-    const w = demoWorld('przymorze');
-    const ciagla = nowaGraAi(w, 11);
-    grajDo(ciagla, silnik, 7 * TICKS_PER_DAY);
+    // jedna gra ciągła mija obie przerwy: zapis w przerwie to odczyt, który jej nie rusza, a gra wczytana z niego ma dojść do
+    // tego samego skrótu co ona (dwie osobne gry doliczane od zera do przerwy kosztowałyby dodatkowe 6,6 doby)
+    const ciagla = nowaGraAi(swiezySwiat('przymorze'), 11);
+    const zapisy: ZapisGryAi[] = [];
     for (const przerwa of [2 * TICKS_PER_DAY + 4000, 4 * TICKS_PER_DAY + 9100]) {
-      const a = nowaGraAi(w, 11);
-      grajDo(a, silnik, przerwa);
-      const b = wczytajGre(w, JSON.parse(JSON.stringify(zapiszGre(a))) as ZapisGryAi);
-      expect(b.pamiec).toEqual(a.pamiec);
+      grajDo(ciagla, silnik, przerwa);
+      zapisy.push(JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi);
+    }
+    grajDo(ciagla, silnik, 7 * TICKS_PER_DAY);
+    expect(ciagla.bledy).toEqual([]);
+    for (const zapis of zapisy) {
+      const b = wczytajGre(swiezySwiat('przymorze'), zapis);
+      expect(b.pamiec).toEqual(zapis.pamiec);
       grajDo(b, silnik, 7 * TICKS_PER_DAY);
       expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   });
 
   it('warstwa zimy rusza tylko co 30 sekund przy ekranie (600 ticków): polecenia budowy i badań tylko na tych sekundach', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11, { dziennik: true });
-    grajDo(g, silnik, 9 * TICKS_PER_DAY);
+    const g = graPoDniach('przymorze', 11, 9, { dziennik: true });
     const warstwy = g.dziennik!.filter((m) => m.t === 'polecenie' && (m.c.t === 'build' || m.c.t === 'research'));
     // pracownia, wybór badania, koza z beczki
     expect(warstwy.length).toBeGreaterThanOrEqual(3);
@@ -859,8 +836,7 @@ describe('determinizm i koszt warstwy', () => {
   });
 
   it('turaZimy bez zadań (koza stoi, nic do badania) nie wydaje żadnego polecenia', () => {
-    const g = nowaGraAi(demoWorld('przymorze'), 11);
-    grajDo(g, silnik, 11 * TICKS_PER_DAY);
+    const g = graPoDniach('przymorze', 11, 11);
     expect(kozaWPokoju(g)).toBe(true);
     const s = szpieg();
     turaZimy(g, s.r);

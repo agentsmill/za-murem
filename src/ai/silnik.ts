@@ -2,11 +2,12 @@
    którzy prowadzą grę z src/ai/gra.ts przez jej ręce (`Rece`).
 
    `silnikPodstawowy` robi dokładnie to, co `playWithGov(w, seed, 'zawsze-warta', dni, 4)` z tests/unit/gov-play.ts bez
-   opcji, więc obie pętle dają ten sam skrót (pilnuje tego tests/unit/ai-gra.test.ts):
+   opcji, więc obie pętle dają ten sam skrót (pilnuje tego tests/unit/ai-rownowaznosc.test.ts):
    - start: samouczek, czyli zaznaczenie kogoś z zarządu i ścięcie suchego drzewa;
    - okna zarządu: uchwała `u_warty`, a gdy jej nie ma, pierwsza dozwolona; karta nocy z wartą (na wartę tylko zdrowie
      co najmniej 40, a gdy nikt nie stoi, najbardziej wypoczęty zdrowy na pierwszy posterunek); reszta jak
-     `odpowiedzDomyslna` (raport, epilog zwycięstwa, wydarzenie pierwszym dozwolonym wyborem);
+     `odpowiedzDomyslna` (raport, epilog zwycięstwa, wydarzenie pierwszym dozwolonym wyborem; okno nieznanego rodzaju tylko z opcją
+     gry `odpowiedzNaNieznane`, inaczej zostaje i idzie do zawieszonych);
    - tura: co 10 sekund przy ekranie od 7:00 do 21:00, gdy drewna jest poniżej 6 i nikt nie ścina, polecenie ścięcia
      drzewa najbliższego drzwiom siedziby (drzewa, do których nikt nie doszedł, idą do `pamiec.pominieteDrzewa`).
 
@@ -32,7 +33,8 @@
      blokuje go do końca gry, a kocioł blokuje wartę i bramę na kłódkę), potem tylko według potrzeby (głód: kocioł, o ile jest
      jeszcze dozwolony), a bez potrzeby nic: ani racje głodowe, ani zebrania i meble na opał (każda uchwała kosztuje wkurzenie
      albo pracę);
-   - raport i epilog zwycięstwa: odpowiedź domyślna (`odpowiedzDomyslna`).
+   - raport i epilog zwycięstwa: odpowiedź domyślna (`odpowiedzDomyslna`), a okna nowych rodzajów też, ale tylko z opcją gry
+     `odpowiedzNaNieznane` (uprząż pomiarowa ją wyłącza, żeby nowy rodzaj okna było widać jako błąd przebiegu).
    Warstwy idą w kolejności dopisywania (zima, jedzenie, rozwój) i najwyżej raz na 30 sekund przy ekranie, poza oknami zarządu,
    które dostają odpowiedź od razu. Silnik podstawowy niczego z warstw i okien nie używa i dalej odtwarza `playWithGov` co do
    skrótu.
@@ -192,13 +194,14 @@ function kartaZWarta(g: GraAi, p: Extract<Prompt, { k: 'karta' }>, r: Rece): voi
   r.zatwierdzNoc();
 }
 
-/** odpowiedzi na okna zarządu jak bot `zawsze-warta` */
+/** odpowiedzi na okna zarządu jak bot `zawsze-warta`; okno nieznanego rodzaju dostaje odpowiedź domyślną tylko z opcją gry
+    `odpowiedzNaNieznane` (bez niej zostaje i idzie do zawieszonych w `krokGry`) */
 function oknoPodstawowe(g: GraAi, p: Prompt, r: Rece): void {
   if (p.k === 'uchwala') {
     const mozna = p.options.filter((o) => o.s === 'ok');
     r.podpisz(mozna.find((o) => o.id === 'u_warty')?.id ?? mozna[0]?.id ?? null);
   } else if (p.k === 'karta') kartaZWarta(g, p, r);
-  else odpowiedzDomyslna(p, r);
+  else odpowiedzDomyslna(p, r, g.opts.odpowiedzNaNieznane === true);
 }
 
 /** Silnik podstawowy: gra jak bot `zawsze-warta` z tests/unit/gov-play.ts, bez żadnych własnych celów. */
@@ -224,7 +227,7 @@ function progDrewnaZimy(g: GraAi): number {
 
 /** okno zarządu silnika z warstwami: uchwała według potrzeb (`wyborUchwaly`), wydarzenie wybrane na kopii zarządu
     (`odpowiedzNaWydarzenie`, z kolejnymi krokami okna wieloetapowego), karta nocy z dyżurem przy kozie, reszta jak w silniku
-    podstawowym (raport, epilog zwycięstwa, okna nowych rodzajów: odpowiedź domyślna). Dyżur ma pierwszeństwo przed wartą
+    podstawowym (raport, epilog zwycięstwa, okna nowych rodzajów: odpowiedź domyślna, jeśli gra tego chce). Dyżur ma pierwszeństwo przed wartą
     przy siatce: gdy zdrowych jest mało (głód rozkłada zdrowie od około 9. dnia), ogień w pokoju zarządu trzyma ciepło do rana,
     a bez niego rano marznie cały zarząd i wkurzenie rośnie o 6 punktów na dobę, podczas gdy brak warty kosztuje najwyżej
     napad na zapasy, których wtedy już nie ma. */

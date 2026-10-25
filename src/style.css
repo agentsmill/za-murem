@@ -1057,6 +1057,55 @@ a.btn {
   border-top-color: transparent;
   border-bottom-color: var(--lamp);
 }
+/* etykieta z nazwą osady AI nad jej siedzibą (po odkryciu, src/main.ts `placeOsadaMark`): ten sam napis co „Suche drzewo”, a klik w
+   niego otwiera kartę osady. Wskaźnik przechodzi przez napis do mapy (kółko, przeciąganie i szczypanie działają nad nim jak obok), a
+   klik rozstrzyga mapa po prostokącie napisu (`kliknijOsade`); z klawiatury to zwykły przycisk (Tab, Enter) */
+.treemark.osada-mark .treemark-t {
+  border: 0;
+  pointer-events: none;
+}
+/* ogonek zostaje przy kotwicy (nad siedzibą), gdy napis jedzie do środka ekranu przy brzegu: środek napisu minus przesunięcie
+   (--shift z main.ts), a gdyby kotwica wypadła poza napis, przy najbliższym miejscu 12 px od jego krawędzi */
+.treemark.osada-mark .treemark-t::after {
+  left: clamp(12px, calc(50% - var(--shift, 0px)), calc(100% - 12px));
+}
+/* karta osady (src/ui/kartaOsady.ts): nagłówek z nazwą i przyciskiem zamknięcia, zdanie o kierunku nad liczbami z kontaktu */
+.osada-glowa {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.osada-glowa h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.card-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font: 700 22px / 1 var(--f-sign);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-x:hover {
+  color: var(--ink);
+}
+@media (pointer: coarse) {
+  .card-x {
+    width: 40px;
+    height: 40px;
+    margin: -8px -10px 0 0;
+  }
+}
+.osada-kierunek {
+  margin: 2px 0 8px;
+  color: var(--ink-dim);
+}
 
 .needs {
   display: grid;
