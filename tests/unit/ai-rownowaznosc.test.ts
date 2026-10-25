@@ -9,7 +9,8 @@
    przesuwa kolejność kart). Każda pętla dostaje własny, świeży świat (`swiezySwiat`): gra zmienia siatkę świata w miejscu
    (`ustawSiatke`, `initFence`, `dociagnijSiatke`), więc druga gra na tym samym obiekcie startuje od innego stanu i skróty
    rozjeżdżają się bez żadnego błędu silnika. Tych gier nie bierze się z pamięci pliku (`graPoDniach`): porównanie ma dotyczyć
-   gry ciągłej, bez zapisów po drodze. */
+   gry ciągłej, bez zapisów po drodze. Po każdej grze test sprawdza też `bledy`: `krokGry` łapie wyjątki decydenta i gra idzie dalej,
+   więc rzut, który niczego nie zmienia w skrócie, przeszedłby bez śladu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,6 +45,7 @@ describe('równoważność z playWithGov', () => {
   it('silnik podstawowy daje ten sam skrót co playWithGov zawsze-warta przez 3 dni', () => {
     const g = nowaGraAi(swiezySwiat('przymorze'), 11);
     grajDo(g, silnikPodstawowy, 3 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const wzor = playWithGov(swiezySwiat('przymorze'), 11, 'zawsze-warta', 3, 4);
     expect(g.sim.st.tick).toBe(3 * TICKS_PER_DAY);
     expect(g.sim.hash()).toBe(wzor.hash);
@@ -55,6 +57,7 @@ describe('równoważność z playWithGov', () => {
     const okolica = okolicaZGeo(demo.geo);
     const g = nowaGraAi(swiezySwiat('przymorze'), 12, { obcy: true, okolica, ludnosc2021: 900 });
     grajDo(g, silnikPodstawowy, 3 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const wzor = playWithGov(swiezySwiat('przymorze'), 12, 'zawsze-warta', 3, 4, {
       obcy: true,
       miasto: { okolica },
@@ -70,6 +73,7 @@ describe('równoważność z playWithGov', () => {
   ])('na demie %s (ziarno %i) też ten sam skrót co playWithGov przez 2 dni', (demoKlucz, ziarno) => {
     const g = nowaGraAi(swiezySwiat(demoKlucz), ziarno);
     grajDo(g, silnikPodstawowy, 2 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const wzor = playWithGov(swiezySwiat(demoKlucz), ziarno, 'zawsze-warta', 2, 4);
     expect(g.sim.hash()).toBe(wzor.hash);
     expect(JSON.stringify(g.gov)).toBe(JSON.stringify(wzor.gov));
@@ -85,6 +89,7 @@ describe('równoważność z playWithGov', () => {
     const okolica = okolicaZGeo(demoLanciego.geo);
     const g = nowaGraAi(swiezySwiat('lanciego'), 18, { obcy: true, okolica, ludnosc2021: 900, dziennik: true });
     grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const wzor = playWithGov(swiezySwiat('lanciego'), 18, 'zawsze-warta', 10, 4, {
       obcy: true,
       miasto: { okolica },
@@ -113,6 +118,7 @@ describe('równoważność z playWithGov', () => {
       dziennik: true,
     });
     grajDo(g, silnikPodstawowy, 10 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const wzor = playWithGov(wzorGra.w, 14, 'zawsze-warta', 10, 4, {
       obcy: true,
       mieszkancy: wzorGra.opts.mieszkancy,
@@ -132,6 +138,7 @@ describe('równoważność z playWithGov', () => {
     const okolica = okolicaZGeo(demo.geo);
     const g = nowaGraAi(swiezySwiat('przymorze'), 12, { obcy: true, okolica, ludnosc2021: 900, lancuchy: true });
     grajDo(g, silnikPodstawowy, 6 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const wzor = playWithGov(swiezySwiat('przymorze'), 12, 'zawsze-warta', 6, 4, {
       obcy: true,
       miasto: { okolica },

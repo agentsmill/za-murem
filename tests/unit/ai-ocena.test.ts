@@ -795,6 +795,7 @@ describe('uprząż bot:osada: jedna gra', () => {
     expect(rano.zarzad).toBeGreaterThanOrEqual(1);
     expect(rano.ludnosc).toBeGreaterThan(rano.zarzad);
     expect(wynik.zawieszone).toEqual([]);
+    expect(wynik.bledy).toEqual([]);
   }, 120_000);
 
   it('zagraj bez łańcuchów (szósty argument false) to ta sama gra co przygotujGre bez łańcuchów', async () => {
@@ -804,6 +805,8 @@ describe('uprząż bot:osada: jedna gra', () => {
     expect(g.gov.lancuchy).toBeUndefined();
     grajDo(g, silnik, TICKS_PER_DAY);
     expect(bez.skrot).toBe(skrotGry(g));
+    expect(bez.bledy).toEqual([]);
+    expect(g.bledy).toEqual([]);
   }, 120_000);
 
   it('zagraj: błąd decydenta nie przerywa przebiegu, ale wychodzi w wyniku z licznikiem (uprząż liczy to jako błędny przebieg)', async () => {

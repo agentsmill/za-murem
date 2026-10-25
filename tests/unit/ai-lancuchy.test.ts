@@ -203,6 +203,8 @@ describe('wybór silnika na kartach łańcuchów nie zależy od tego, czego grac
     expect(Object.keys(przerzucone)).toEqual(expect.arrayContaining(['halas.cat', 'krzyk.help']));
     expect(zmiany).toEqual([]);
     expect(g.zawieszone).toEqual([]);
+    // `krokGry` łapie błędy decydenta (silnika albo audytu w tym teście): bez tego sprawdzenia rzut przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
   }, 120_000);
 });
 

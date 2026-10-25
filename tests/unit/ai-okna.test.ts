@@ -1102,6 +1102,8 @@ describe('uchwały silnika w prawdziwej grze (Przymorze, ziarno 11, jak w przegl
       },
     };
     grajDo(g, rejestrujacy, 8 * TICKS_PER_DAY);
+    // `krokGry` łapie błędy decydenta (silnika albo rejestratora w tym teście): bez tego sprawdzenia rzut przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
     expect(g.gov.laws.signed.u_racje).toBeFalsy();
     expect(g.sim.st.laws.foodMult).toBeGreaterThanOrEqual(1);
     // racje były do wzięcia w kolejnych oknach (po pierwszym wieczorze co dobę: odnowienie 36 godzin gry już minęło, a nic nowego

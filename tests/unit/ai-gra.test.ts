@@ -12,12 +12,15 @@
    - okien zawieszonych: okno, którego nie zamknie nawet odpowiedź domyślna, zapisuje się w `GraAi.zawieszone` (ostatnie 100
      wpisów, licznik wszystkich) i nie jest ponawiane w tej samej sekundzie;
    - błędów decydenta: rzut z `start`, `okno` albo `tura` łapie `krokGry`, zapisuje w `GraAi.bledy` (ostatnie 50, licznik
-     wszystkich, tekst bez stosu) i gra idzie dalej tak samo jak z decydentem, który w tym miejscu nic nie robi;
+     wszystkich, tekst w jednym wierszu i bez stosu) i gra idzie dalej tak samo jak z decydentem, który w tym miejscu nic nie
+     robi (ruchy rąk wykonane przed rzutem zostają);
    - tempa przeglądarki: z opcją `tempoPrzegladarki` potwierdzenie raportu przekazuje wejście jak main.ts;
    - łańcuchów kart: opcja `lancuchy` włącza je jak nowa gra w przeglądarce (bez niej zarząd nie wybiera wątków), a zapis
      i wczytanie w połowie gry z łańcuchami (wątki, haki, rozpoczęte kroki) nie zmieniają przebiegu.
    Gry, które kilka testów zaczyna tak samo, biorą się z pamięci pliku (`graPoDniach`); testy zapisu i wczytania zagrywają
-   jedną grę ciągłą i robią z niej zapisy po drodze, żeby porównanie dotyczyło gry bez przerw. */
+   jedną grę ciągłą i robią z niej zapisy po drodze, żeby porównanie dotyczyło gry bez przerw. Testy, które grają prawdziwym
+   silnikiem, sprawdzają na końcu `bledy`: `krokGry` łapie każdy wyjątek z haków decydenta (także nieudaną asercję w haku), więc
+   inaczej rzut z silnika przeszedłby bez śladu. */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -155,6 +158,8 @@ describe('haki decydenta', () => {
 });
 
 describe('determinizm', () => {
+  // Gry tych testów gra prawdziwy silnik, a `krokGry` łapie błędy decydenta (gra idzie dalej, błąd ląduje w `GraAi.bledy`), więc
+  // wyjątek z silnika, który niczego nie zmienia w skrócie, przeszedłby bez śladu: każdy test sprawdza więc też `bledy`.
   it('dwie gry przeplatane krok po kroku mają te same skróty co każda osobno', () => {
     const doba = TICKS_PER_DAY;
     // każda gra osobno: doba gry silnikiem z pamięci (`graPoDniach` oddaje grę niezależną od innych)
@@ -170,6 +175,8 @@ describe('determinizm', () => {
     }
     expect(skrotGry(a)).toBe(przymorze);
     expect(skrotGry(b)).toBe(zielonki);
+    expect(a.bledy).toEqual([]);
+    expect(b.bledy).toEqual([]);
   });
 
   it('zapis i wczytanie w połowie nie zmieniają przebiegu', () => {
@@ -184,6 +191,7 @@ describe('determinizm', () => {
       zapisy.push({ zapis: JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi, skrot: skrotGry(ciagla) });
     }
     grajDo(ciagla, silnik, 2 * TICKS_PER_DAY);
+    expect(ciagla.bledy).toEqual([]);
     for (const { zapis, skrot } of zapisy) {
       // wczytana gra dostaje świeży świat, jak w przeglądarce (nowy start buduje świat od nowa)
       const b = wczytajGre(swiezySwiat('przymorze'), zapis);
@@ -191,6 +199,7 @@ describe('determinizm', () => {
       expect(skrotGry(b)).toBe(skrot);
       grajDo(b, silnik, 2 * TICKS_PER_DAY);
       expect(skrotGry(b), `przerwa w ticku ${zapis.sim.tick}`).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   });
 
@@ -208,6 +217,7 @@ describe('determinizm', () => {
     grajDo(c, silnik, TICKS_PER_DAY + 2000);
     expect(skrotGry(c)).toBe(skrotGry(b));
     expect(skrotGry(b)).toBe(skrotGry(a));
+    for (const gra of [a, b, c]) expect(gra.bledy).toEqual([]);
   });
 
   it('odtworzenie ruchów rąk z dziennika na świeżej grze daje ten sam stan', () => {
@@ -226,6 +236,7 @@ describe('determinizm', () => {
       },
     };
     grajDo(g, zPrzydzialami, 2 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const dziennik = g.dziennik!;
     const rodzaje = new Set(dziennik.map((m) => m.t));
     for (const t of ['polecenie', 'wydarzenie', 'uchwala', 'noc', 'zatwierdz', 'raport'] as const)
@@ -236,6 +247,7 @@ describe('determinizm', () => {
     grajDo(swieza, odtwarzacz(dziennik), 2 * TICKS_PER_DAY);
     expect(swieza.sim.hash()).toBe(g.sim.hash());
     expect(JSON.stringify(swieza.gov)).toBe(JSON.stringify(g.gov));
+    expect(swieza.bledy).toEqual([]);
   });
 });
 
@@ -277,6 +289,7 @@ describe('łańcuchy kart (opcja lancuchy)', () => {
       });
     }
     grajDo(ciagla, silnik, 4 * TICKS_PER_DAY);
+    expect(ciagla.bledy).toEqual([]);
     for (const { zapis, watki, skrot } of zapisy) {
       const b = wczytajGre(swiezySwiat('przymorze'), zapis);
       expect(b.gov.lancuchy).toBe(true);
@@ -284,6 +297,7 @@ describe('łańcuchy kart (opcja lancuchy)', () => {
       expect(skrotGry(b)).toBe(skrot);
       grajDo(b, silnik, 4 * TICKS_PER_DAY);
       expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   });
 });
@@ -315,6 +329,9 @@ describe('pamięć silnika podstawowego', () => {
     expect(g.pamiec.pominieteDrzewa).toEqual([pierwsze, drugie]);
     expect(kopia.pamiec).toEqual(g.pamiec);
     expect(skrotGry(kopia)).toBe(skrotGry(g));
+    // silnik podstawowy nie rzuca (`krokGry` łapie wyjątki decydenta, więc inaczej przeszedłby bez śladu)
+    expect(g.bledy).toEqual([]);
+    expect(kopia.bledy).toEqual([]);
   });
 });
 
@@ -385,8 +402,9 @@ describe('okna zarządu', () => {
 
   describe('odpowiedź domyślna', () => {
     const opcja = (id: string, s: LawOption['s']): LawOption => ({ id, s }) as LawOption;
-    /** ruchy rąk, którymi odpowiedź domyślna odpowiada na okno; `nieznane` to trzeci argument (bez niego jak dawniej) */
-    const odpowiedz = (p: unknown, nieznane?: boolean): string[] => {
+    /** ruchy rąk, którymi odpowiedź domyślna odpowiada na okno; `nieznane` to obowiązkowy trzeci argument (wołający musi zdecydować,
+        co z oknem nieznanego rodzaju); testy znanych rodzajów zostawiają `true`, bo od tej decyzji nie zależą */
+    const odpowiedz = (p: unknown, nieznane = true): string[] => {
       const { r, ruchy } = szpieg();
       odpowiedzDomyslna(p as Prompt, r, nieznane);
       return ruchy;
@@ -423,8 +441,6 @@ describe('okna zarządu', () => {
       expect(odpowiedz(nieznane, true)).toEqual(['wydarzenie:1']);
       expect(odpowiedz(nieznane, false)).toEqual([]);
       expect(odpowiedz({ k: 'nowe_okno' }, false)).toEqual([]);
-      // bez trzeciego argumentu jak dawniej: odpowiedź jak na wydarzenie
-      expect(odpowiedz(nieznane)).toEqual(['wydarzenie:1']);
       // znane rodzaje nie zależą od tej decyzji
       for (const nz of [true, false]) {
         expect(odpowiedz({ k: 'raport', report: { day: 1 } }, nz)).toEqual(['raport']);
@@ -540,6 +556,7 @@ describe('okna zawieszone', () => {
     grajDo(g, silnik, 6 * TICKS_PER_HOUR);
     expect(g.gov.night?.confirmed).toBe(true);
     expect(g.zawieszone).toHaveLength(2);
+    expect(g.bledy).toEqual([]);
   });
 
   it('zawieszone nie wchodzi do zapisu ani do skrótu gry: wczytana gra zaczyna z pustą listą i zerowym licznikiem', () => {
@@ -640,17 +657,69 @@ describe('błędy decydenta', () => {
     expect(rzutPrzez(42)).toBe('42');
     expect(rzutPrzez(null)).toBe('null');
     expect(rzutPrzez(undefined)).toBe('undefined');
+    // tekst to jeden wiersz: znaki nowej linii (także z komunikatu ze stosem w środku) zamieniają się na pojedyncze spacje
+    expect(rzutPrzez(new Error('pierwszy\nsecond'))).toBe('Error: pierwszy second');
+    expect(rzutPrzez(new Error('a\r\n   b\n\n c\n'))).toBe('Error: a b c');
+    expect(rzutPrzez('wiersz 1\nwiersz 2')).toBe('wiersz 1 wiersz 2');
+    expect(rzutPrzez(new Error('stos\n    at kto (plik.ts:1:2)\n    at kto2 (plik.ts:3:4)'))).toBe(
+      'Error: stos at kto (plik.ts:1:2) at kto2 (plik.ts:3:4)',
+    );
     // wartość, której nie da się zamienić na napis, nie może wywrócić gry (obsługa błędu sama nie rzuca)
     const zlosliwa = {
       toString() {
         throw new Error('toString rzuca');
       },
     };
-    expect(rzutPrzez(zlosliwa)).toEqual(expect.any(String));
+    expect(rzutPrzez(zlosliwa)).toBe('błąd bez opisu');
     // komunikat z całym stanem gry w środku nie może rosnąć bez końca
     const dlugi = rzutPrzez(new Error('x'.repeat(10_000)));
     expect(dlugi.startsWith('Error: xxx')).toBe(true);
     expect(dlugi.length).toBeLessThan(500);
+  });
+
+  it('ruchy rąk wykonane przed rzutem zostają: gra jest taka, jakby decydent nie rzucił, a rzut siedzi w błędach', () => {
+    // dwa takie same decydenty: jeden po ruchu rzuca, drugi nie. Raport rano zamyka sam decydent (potem rzuca), kartę nocy
+    // zmienia (przydział osoby) i zostawia odpowiedzi domyślnej, a w turze wpisuje polecenie do kolejki symulacji.
+    const pionek = nowaGraAi(swiezySwiat('przymorze'), 11).sim.st.pawns.find((p) => p.kind === 'core')!.id;
+    const decydent = (rzuca: boolean): Decydent => ({
+      okno(_gr, p, r) {
+        if (p.k === 'raport') {
+          r.potwierdzRaport();
+          if (rzuca) throw new Error('rzut po raporcie');
+        }
+        if (p.k === 'karta') {
+          r.przydziel(p.card.people[0].id, 'sen');
+          if (rzuca) throw new Error('rzut po przydziale');
+        }
+      },
+      tura(gr, r) {
+        if (sekunda(gr) % 100 !== 50) return;
+        r.polecenie({ t: 'select', ids: [pionek] });
+        if (rzuca) throw new Error('rzut po poleceniu');
+      },
+    });
+    const czas = 12_300; // po 6:00 drugiego dnia (raport) i po karcie nocy pierwszego wieczoru
+    const a = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
+    grajDo(a, decydent(true), czas);
+    const b = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
+    grajDo(b, decydent(false), czas);
+    expect(b.bledy).toEqual([]);
+    // ruchy sprzed rzutu są w dzienniku i w grze, więc obie gry mają ten sam dziennik i skrót
+    expect(a.dziennik).toEqual(b.dziennik);
+    expect(skrotGry(a)).toBe(skrotGry(b));
+    const rodzaje = new Set(a.dziennik!.map((m) => m.t));
+    for (const t of ['raport', 'noc', 'zatwierdz', 'polecenie'] as const) expect(rodzaje, t).toContain(t);
+    // a rzuty są zapisane: po jednym na każde miejsce (raport, karta nocy, setne pięćdziesiąte sekundy tury)
+    const tekstyPo = (gdzie: 'okno' | 'tura'): string[] => [
+      ...new Set(a.bledy.filter((x) => x.gdzie === gdzie).map((x) => x.tekst)),
+    ];
+    expect(tekstyPo('okno').sort()).toEqual(['Error: rzut po przydziale', 'Error: rzut po raporcie']);
+    expect(tekstyPo('tura')).toEqual(['Error: rzut po poleceniu']);
+    // polecenie z tury, które poprzedziło rzut, czeka w kolejce symulacji do następnego kroku (tick 1000 = sekunda 50)
+    const c = nowaGraAi(swiezySwiat('przymorze'), 11);
+    grajDo(c, decydent(true), 50 * TICKS_PER_SECOND);
+    expect(c.sim.st.cmds).toEqual([{ t: 'select', ids: [pionek] }]);
+    expect(c.bledy).toEqual([{ s: 50, gdzie: 'tura', tekst: 'Error: rzut po poleceniu' }]);
   });
 
   it('decydent rzuca co sekundę: lista trzyma ostatnie MAX_BLEDOW błędów, licznik zna wszystkie, a gra idzie jak z decydentem, który nic nie robi', () => {
@@ -710,7 +779,7 @@ describe('tempo przeglądarki', () => {
     const d: Decydent = {
       okno(gr, p, r) {
         if (p.k !== 'raport') {
-          odpowiedzDomyslna(p, r);
+          odpowiedzDomyslna(p, r, gr.opts.odpowiedzNaNieznane === true);
           return;
         }
         const przed = { decyzje: gr.gov.decisions.length, next: gr.gov.ev.next };
@@ -761,6 +830,8 @@ describe('tempo przeglądarki', () => {
     grajDo(b, silnik, 2 * TICKS_PER_DAY);
     expect(skrotGry(b)).toBe(skrotGry(ciagla));
     expect(ciagla.gov.decisions.some((x) => x.k === 'raport')).toBe(true);
+    expect(ciagla.bledy).toEqual([]);
+    expect(b.bledy).toEqual([]);
   });
 });
 
@@ -865,6 +936,8 @@ describe('ręce gry', () => {
     };
     // do 21:00 pierwszego dnia: karta z 20:00 jest już zatwierdzona, a rano jeszcze jej nie zdjęto
     grajDo(g, d, 6 * TICKS_PER_HOUR);
+    // asercje w haku decydenta łapie `krokGry` jak każdy inny wyjątek, więc ich porażka siedziałaby tylko w `bledy`
+    expect(g.bledy).toEqual([]);
     expect(karty).toBe(1);
     // karta zatwierdzona z przydziałem decydenta
     expect(g.gov.night?.confirmed).toBe(true);
@@ -904,5 +977,6 @@ describe('ręce gry', () => {
     expect(r.wyslij(cel, ids)).toBe(false);
     expect(g.dziennik!).toHaveLength(wpisow + 1);
     expect(g.gov.wyprawy).toHaveLength(1);
+    expect(g.bledy).toEqual([]);
   });
 });

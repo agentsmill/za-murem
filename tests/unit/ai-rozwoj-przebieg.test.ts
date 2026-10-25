@@ -105,6 +105,8 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
         badania: [...(g.sim.st.techDone ?? [])],
       });
     }
+    // `krokGry` łapie błędy decydenta (silnika albo pomiaru w tym teście): bez tego sprawdzenia rzut z całej gry przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
   }, 300_000);
 
   it('wyborWydarzenia wybiera najlepszą ocenę i nie zmienia prawdziwego zarządu', () => {

@@ -10,7 +10,12 @@
    i zostawiają punkt na każdej granicy doby, a testowi oddają zawsze nową, niezależną grę wczytaną z zapisu (`zapiszGre` i
    `wczytajGre`, świeży świat), więc to, co test z nią zrobi, nie wraca do pamięci. Wczytana gra idzie dalej tak samo jak ta bez
    przerwy (pilnują tego testy determinizmu, a `graPoDniach` ma własny test w ai-pomoc.test.ts). Nie nadaje się do testów, które
-   porównują grę ciągłą z wczytaną (tę ciągłą trzeba zagrać bez przerw). Dziennik ruchów (opcja `dziennik`) nie wchodzi do zapisu
+   porównują grę ciągłą z wczytaną (tę ciągłą trzeba zagrać bez przerw). `krokGry` łapie błędy decydenta (gra idzie dalej, błąd jest
+   tylko w `GraAi.bledy`, który nie wchodzi do zapisu), więc test całej gry nie widziałby wyjątku z silnika; dlatego pomocnik
+   sprawdza każdy odcinek, zanim zrobi z niego punkt kontrolny, i rzuca z pierwszym zachowanym błędem. To samo dotyczy każdej
+   gry zagranej w teście wprost (`grajDo`, `krokGry`): `krokGry` łapie też nieudaną asercję w haku decydenta (np. w `przed` testów
+   dyżuru), więc po takiej grze test sprawdza `expect(g.bledy).toEqual([])`. Gry, które same grają z decydentem rzucającym (testy
+   w ai-gra.test.ts), nie idą przez pomocnika. Dziennik ruchów (opcja `dziennik`) nie wchodzi do zapisu
    gry, więc pomocnik trzyma go osobno przy punkcie kontrolnym i wstawia do wczytanej gry. Plik nie jest testem (nazwa bez
    `.test`) i niczego nie sprawdza. */
 
@@ -160,6 +165,13 @@ export function graDoTicku(
   if (punkt?.tick !== tick) {
     const g = punkt ? zPunktu(punkt) : nowaGraAi(swiezySwiat(demo), ziarno, { ...opcje });
     const zapamietaj = (): PunktGry => {
+      // odcinek z błędem decydenta nie staje się punktem: wczytana z niego gra miałaby pustą listę błędów i test niczego by nie zauważył
+      if (g.bledowRazem > 0) {
+        const razy = `${g.bledowRazem} ${g.bledowRazem === 1 ? 'raz' : 'razy'}`;
+        throw new Error(
+          `graDoTicku: decydent rzucił błąd w grze (${razy}, w pamięci ostatnie ${g.bledy.length}); najwcześniejszy zachowany: ${JSON.stringify(g.bledy[0])}`,
+        );
+      }
       const nowy: PunktGry = { tick: g.sim.st.tick, zapis: zapiszGre(g) };
       if (g.dziennik) nowy.dziennik = structuredClone(g.dziennik);
       if (!punkty.some((p) => p.tick === nowy.tick)) punkty.push(nowy);

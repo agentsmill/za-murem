@@ -90,6 +90,8 @@ describe('przebieg: Przymorze, ziarno 11, jak w przeglądarce', () => {
       const wpisy = g.dziennik!.filter((m) => m.t === 'wyprawa' && m.s >= od && m.s < doSek);
       dni.push({ dzien: d, przed9, wyprawy: wpisy.length, rano });
     }
+    // `krokGry` łapie błędy decydenta (silnika albo pomiaru w tym teście): bez tego sprawdzenia rzut z całej gry przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
   }, 300_000);
 
   it('przy jedzeniu poniżej 2 porcji na głowę za dnia wychodzi wyprawa po jedzenie', () => {

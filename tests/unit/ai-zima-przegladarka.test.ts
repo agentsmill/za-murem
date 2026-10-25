@@ -27,6 +27,8 @@ describe('droga do kozy z beczki w pokoju zarządu: Zielonki, gra jak w przeglą
     const h = houseOf(g.w)!;
     expect(h.rooms[pokojZarzadu(g.sim.st, g.w)]).toMatchObject({ kind: 'pokoj', apt: h.home });
     expect(g.gov.over).toBeNull();
+    // `krokGry` łapie błędy decydenta: bez tego sprawdzenia rzut z silnika przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
   }, 120_000);
 
   it('Zielonki, ziarno 14, gra jak w przeglądarce: koza z beczki ma skąd być zbudowana i stoi do 9. dnia', async () => {
@@ -36,5 +38,6 @@ describe('droga do kozy z beczki w pokoju zarządu: Zielonki, gra jak w przeglą
     expect(g.sim.st.techDone).toContain('t_kozy');
     expect(kozaWPokoju(g)).toBe(true);
     expect(g.sim.st.builds.filter((b) => b.kind === 'koza_beczka')).toHaveLength(0);
+    expect(g.bledy).toEqual([]);
   }, 120_000);
 });

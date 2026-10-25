@@ -188,6 +188,8 @@ describe('wyprawa dzienna po jedzenie', () => {
     expect(wGodzinie(15, 0)).toBe(0);
     expect(wGodzinie(19, 30)).toBe(0);
     expect(wGodzinie(23, 0)).toBe(0);
+    // `krokGry` łapie błędy decydenta: bez tego sprawdzenia rzut z silnika podstawowego przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
   });
 
   it('nie wysyła drugiej wyprawy, gdy jedna jest w drodze', () => {
@@ -236,6 +238,7 @@ describe('wyprawa dzienna po jedzenie', () => {
   it('gra bez mapy miasta (bez okolicy) nie wysyła nikogo i nie rzuca', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11);
     grajDo(g, silnikPodstawowy, tickDnia(3, 9));
+    expect(g.bledy).toEqual([]);
     ustawJedzenie(g, 0);
     const s = szpieg();
     expect(() => turaJedzenia(g, s.r)).not.toThrow();
@@ -346,6 +349,7 @@ describe('ogródek i deski pracowni', () => {
     expect(st.things.some((t) => t.kind === 'koza_beczka')).toBe(true);
     // ogródek w domu jednorodzinnym (bez klatki i bloku) dostaje miejsce na podwórku, gdy tylko pracownia przestaje czekać
     expect(st.things.some((t) => t.kind === 'ogrodek') || st.builds.some((b) => b.kind === 'ogrodek')).toBe(true);
+    expect(g.bledy).toEqual([]);
   }, 120_000);
 
   it('plan ogródka czeka na pracownię: dopóki jest jej plan, ogródka nie ma, potem jest jeden', () => {
@@ -359,6 +363,7 @@ describe('ogródek i deski pracowni', () => {
     expect(planOgrodka() || st.things.some((t) => t.kind === 'ogrodek')).toBe(true);
     const plany = g.dziennik!.filter((m) => m.t === 'polecenie' && m.c.t === 'build' && m.c.kind === 'ogrodek');
     expect(plany).toHaveLength(1);
+    expect(g.bledy).toEqual([]);
   });
 
   it('ogródek bez pracowni w ogóle (gotowe badania, świat bez planu pracowni) nie czeka w nieskończoność', () => {
@@ -459,6 +464,7 @@ describe('determinizm i koszt warstwy', () => {
     while (!g.gov.wyprawy?.length && g.sim.st.tick < tickDnia(3, 15)) grajDo(g, silnik, g.sim.st.tick + 20);
     expect(g.gov.wyprawy).toHaveLength(1);
     grajDo(g, silnik, g.sim.st.tick + 400);
+    expect(g.bledy).toEqual([]);
     return g;
   }
 
@@ -472,6 +478,8 @@ describe('determinizm i koszt warstwy', () => {
     grajDo(ciagla, silnik, koniec);
     grajDo(wczytana, silnik, koniec);
     expect(skrotGry(wczytana)).toBe(skrotGry(ciagla));
+    expect(ciagla.bledy).toEqual([]);
+    expect(wczytana.bledy).toEqual([]);
     // wyprawa, która była w drodze przy zapisie, wróciła (zarząd zapisał wizytę w mieście) i po wczytaniu, i bez przerwy
     for (const gra of [ciagla, wczytana]) {
       const wizyty = Object.values(gra.gov.miasto?.wizyty ?? {}).reduce((a, n) => a + n, 0);

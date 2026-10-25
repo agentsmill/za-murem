@@ -21,8 +21,9 @@
    `odpowiedzNaNieznane`: gra w przeglądarce włącza ją, żeby osada nigdy nie stała, a uprząż pomiarowa (`npm run bot:osada`)
    zostawia wyłączoną, bo odpowiedź „na ślepo” (pierwszy dozwolony wybór) cicho udałaby się choćby na oknie dyplomacji. Bez opcji
    nieznane okno zostaje na miejscu i idzie do zawieszonych, a decydent, który chce je znać, odpowiada na nie sam. Opcję czyta
-   `krokGry` i decydent podstawowy (`oknoPodstawowe` w src/ai/silnik.ts) przez trzeci argument `odpowiedzDomyslna`; zapis ją
-   zachowuje (`ZapisGryAi.opts`).
+   `krokGry` i decydent podstawowy (`oknoPodstawowe` w src/ai/silnik.ts) i podają ją jako trzeci argument `odpowiedzDomyslna`.
+   Argument jest obowiązkowy (bez wartości domyślnej), żeby decydent wołający odpowiedź domyślną musiał o oknie nieznanego
+   rodzaju zdecydować, a nie ominął opcji gry po cichu; zapis zachowuje opcję (`ZapisGryAi.opts`).
 
    Okno, które zarząd trzyma także po odpowiedzi domyślnej (to samo okno), jest zawieszone: `krokGry` zapisuje je w
    `GraAi.zawieszone` (rodzaj i sekunda przy ekranie), nie ponawia go do końca tej sekundy i idzie dalej do tury decydenta;
@@ -33,11 +34,13 @@
 
    Błąd decydenta nie zatrzymuje gry: `start`, `okno` i `tura` są wołane w `try/catch` (w przeglądarce rzut z decydenta
    zabiłby pętlę gracza). Złapany błąd idzie do `GraAi.bledy` (sekunda przy ekranie, miejsce wołania `start`, `okno` albo
-   `tura` i tekst: nazwa błędu i komunikat, bez stosu, ucięty do 300 znaków), a gra toczy się dalej tak, jakby decydent w tym
-   wywołaniu nic nie zrobił: ruchy rąk wykonane przed rzutem zostają, okno, którego nie zamknął, zamyka odpowiedź domyślna,
-   a następne wywołania idą normalnie. Lista trzyma najwyżej `MAX_BLEDOW` (50) ostatnich błędów, `bledowRazem` liczy wszystkie,
-   i podobnie jak zawieszone jest poza zapisem i skrótem. Błędy samej gry (symulacja, zarząd, ręce wołane przez odpowiedź domyślną)
-   nie są łapane: to błędy gry, nie decydenta. Uprząż liczy błąd decydenta jak zawieszone okno: przebieg jest wtedy błędny.
+   `tura` i tekst: nazwa błędu i komunikat, bez stosu, w jednym wierszu i ucięty do 300 znaków), a gra toczy się dalej tak,
+   jakby decydent w tym wywołaniu nic nie zrobił: ruchy rąk wykonane przed rzutem zostają, okno, którego nie zamknął, zamyka
+   odpowiedź domyślna, a następne wywołania idą normalnie. Lista trzyma najwyżej `MAX_BLEDOW` (50) ostatnich błędów,
+   `bledowRazem` liczy wszystkie, i podobnie jak zawieszone jest poza zapisem i skrótem. Błędy samej gry (symulacja, zarząd,
+   ręce wołane przez odpowiedź domyślną) nie są łapane: to błędy gry, nie decydenta. Uprząż liczy błąd decydenta jak zawieszone
+   okno: przebieg jest wtedy błędny. Test całej gry musi sam sprawdzić `bledy` (także nieudana asercja w haku decydenta ląduje
+   tam, a nie w teście).
 
    Tempo przeglądarki (opcja `tempoPrzegladarki`): raport rano potwierdza się tak jak w src/main.ts, czyli z wejściem
    (`ackReport(gov, wejscie)`), więc wpada do decyzji zarządu (`GovState.decisions`) i najbliższe wydarzenie czeka okno
@@ -249,10 +252,13 @@ export function nowaGraAi(w: World, seed: number, opts: OpcjeGryAi = {}): GraAi 
   return zloz(w, seed, { ...opts }, new Sim(w, st), gov, nowaPamiec());
 }
 
+/** sekunda przy ekranie bieżącego kroku (tick / 20 w dół): czas wpisów dziennika ruchów, wejścia zarządu i dzienników błędów */
+const sekundaGry = (g: GraAi): number => Math.floor(g.sim.st.tick / TICKS_PER_SECOND);
+
 /** Wejście dla zarządu z bieżącego stanu gry: `govInput` z sekundą przy ekranie (przy 1× tick / 20), z okolicą miasta
     i ludnością 2021, gdy gra je ma, jak `input` w `playWithGov` i w main.ts. */
 export function wejscie(g: GraAi): GovInput {
-  const i = govInput(g.sim.st, g.w, Math.floor(g.sim.st.tick / TICKS_PER_SECOND));
+  const i = govInput(g.sim.st, g.w, sekundaGry(g));
   if (g.opts.okolica) i.okolica = g.opts.okolica;
   if (g.opts.ludnosc2021 !== undefined) i.ludnosc2021 = g.opts.ludnosc2021;
   return i;
@@ -264,7 +270,7 @@ export function wejscie(g: GraAi): GovInput {
 export function zrobRece(g: GraAi): Rece {
   const { sim, gov, w } = g;
   const st = sim.st;
-  const sekunda = (): number => Math.floor(st.tick / TICKS_PER_SECOND);
+  const sekunda = (): number => sekundaGry(g);
   return {
     polecenie(c) {
       sim.push(c);
@@ -317,10 +323,10 @@ function kluczOkna(p: Prompt): string {
 /** Odpowiedź domyślna na okno zarządu, tymi samymi rękami co decydent: raport potwierdzony, uchwała pierwsza z `s === 'ok'`
     albo odłożona (`null`), karta zatwierdzona z propozycjami zarządu i zmianami decydenta, epilog „graj dalej”, wydarzenie
     pierwszym dozwolonym wyborem (indeks 0, gdy żadnego). Okno rodzaju, którego moduł nie zna (nowe okno z innej gałęzi), dostaje
-    odpowiedź jak wydarzenie tylko przy `nieznane` (domyślnie tak, jak dawniej); bez niego zostaje bez odpowiedzi. Gra podaje tu
-    swoją opcję `odpowiedzNaNieznane`: wołają ją `krokGry` (gdy decydent nie zamknął okna) i decydenci, którzy nie mają własnej
-    odpowiedzi na dany rodzaj, i oni też mają przekazać opcję gry, żeby nie obejść jej cicho. */
-export function odpowiedzDomyslna(p: Prompt, r: Rece, nieznane = true): void {
+    odpowiedź jak wydarzenie tylko przy `nieznane` true; przy false zostaje bez odpowiedzi. Argument jest obowiązkowy: wołający
+    (`krokGry`, gdy decydent nie zamknął okna, i decydenci, którzy nie mają własnej odpowiedzi na dany rodzaj) podaje opcję gry
+    `odpowiedzNaNieznane`, więc nie da się jej ominąć przez pomyłkę. */
+export function odpowiedzDomyslna(p: Prompt, r: Rece, nieznane: boolean): void {
   switch (p.k) {
     case 'raport':
       r.potwierdzRaport();
@@ -349,8 +355,9 @@ function wybierzPierwszyDozwolony(p: unknown, r: Rece): void {
   r.wybierz(Math.max(0, pierwszy));
 }
 
-/** Tekst błędu rzuconego przez decydenta: nazwa i komunikat bez stosu (`Error: …`), dla innych wartości ich napis; ucięty do
-    `MAX_TEKSTU_BLEDU` znaków. Sama obsługa błędu nie może rzucić, więc wartość bez napisu (zły `toString`) dostaje opis zastępczy. */
+/** Tekst błędu rzuconego przez decydenta: nazwa i komunikat bez stosu (`Error: …`), dla innych wartości ich napis; w jednym
+    wierszu (znaki nowej linii z wieloliniowego komunikatu zamieniają się na pojedyncze spacje) i ucięty do `MAX_TEKSTU_BLEDU`
+    znaków. Sama obsługa błędu nie może rzucić, więc wartość bez napisu (zły `toString`) dostaje opis zastępczy. */
 function tekstBledu(e: unknown): string {
   let tekst: string;
   try {
@@ -358,24 +365,31 @@ function tekstBledu(e: unknown): string {
   } catch {
     tekst = 'błąd bez opisu';
   }
+  // wiersze po przycięciu, bez pustych, sklejone spacją (liniowo także dla długich ciągów spacji)
+  tekst = tekst
+    .split(/[\r\n\u2028\u2029]+/)
+    .map((wiersz) => wiersz.trim())
+    .filter(Boolean)
+    .join(' ');
   return tekst.length > MAX_TEKSTU_BLEDU ? `${tekst.slice(0, MAX_TEKSTU_BLEDU)}…` : tekst;
 }
 
-/** sekunda przy ekranie bieżącego kroku (tick / 20 w dół) */
-const sekundaGry = (g: GraAi): number => Math.floor(g.sim.st.tick / TICKS_PER_SECOND);
+/** Dopisuje wpis do dziennika diagnostycznego, który trzyma najwyżej `max` ostatnich wpisów (starsze wypadają). */
+function dopiszOstatnie<T>(lista: T[], wpis: T, max: number): void {
+  lista.push(wpis);
+  if (lista.length > max) lista.splice(0, lista.length - max);
+}
 
 /** Wpis o złapanym błędzie decydenta do `GraAi.bledy` (lista trzyma ostatnie `MAX_BLEDOW`, licznik wszystkie). */
 function zapiszBlad(g: GraAi, gdzie: BladDecydenta['gdzie'], e: unknown): void {
   g.bledowRazem++;
-  g.bledy.push({ s: sekundaGry(g), gdzie, tekst: tekstBledu(e) });
-  if (g.bledy.length > MAX_BLEDOW) g.bledy.splice(0, g.bledy.length - MAX_BLEDOW);
+  dopiszOstatnie(g.bledy, { s: sekundaGry(g), gdzie, tekst: tekstBledu(e) }, MAX_BLEDOW);
 }
 
 /** Wpis o oknie zawieszonym w tej sekundzie do `GraAi.zawieszone` (lista trzyma ostatnie `MAX_ZAWIESZONYCH`, licznik wszystkie). */
 function zapiszZawieszone(g: GraAi, rodzaj: string): void {
   g.zawieszonychRazem++;
-  g.zawieszone.push({ k: rodzaj, s: sekundaGry(g) });
-  if (g.zawieszone.length > MAX_ZAWIESZONYCH) g.zawieszone.splice(0, g.zawieszone.length - MAX_ZAWIESZONYCH);
+  dopiszOstatnie(g.zawieszone, { k: rodzaj, s: sekundaGry(g) }, MAX_ZAWIESZONYCH);
 }
 
 /** Jeden krok gry: czas płynie o tick, a w pełnej sekundzie przy ekranie zarząd, okna i tura decydenta. Po końcu gry

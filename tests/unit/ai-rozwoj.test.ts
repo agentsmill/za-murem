@@ -532,6 +532,8 @@ describe('turaRozwoju: Lanciego (sypialnie bez okna, koza z beczki nie ma miejsc
   it('zimaWToku jest fałszem po badaniu kozy, którą nie ma gdzie postawić, więc rozwój buduje', () => {
     const g = nowaGraAi(demoWorld('lanciego'), 11, { okolica });
     grajDo(g, silnikBezRozwoju, tickDnia(7, 10));
+    // `krokGry` łapie błędy decydenta: bez tego sprawdzenia rzut z silnika przeszedłby bez śladu
+    expect(g.bledy).toEqual([]);
     const st = g.sim.st;
     expect(st.techDone).toContain('t_kozy');
     expect(st.things.some((t) => t.kind === 'pracownia')).toBe(true);
@@ -560,6 +562,7 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
     while (!jest() && st.tick < tickDnia(4, 0)) krokGry(g, silnikBezRozwoju);
     const t = jest();
     if (!t) throw new Error('żaden wędrowiec nie stanął przy siatce');
+    expect(g.bledy).toEqual([]);
     return { g, id: t.id };
   }
 
@@ -575,6 +578,7 @@ describe('turaRozwoju: wędrowiec pod bramą', () => {
       if (!st.pawns.some((p) => p.id === id)) throw new Error('wędrowiec odszedł przed końcem rozmowy');
     }
     expect(t.job?.what).toBe('zagadany');
+    expect(g.bledy).toEqual([]);
     return { g, id };
   }
 
@@ -702,11 +706,13 @@ describe('koszt i determinizm', () => {
       zapisy.push(JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi);
     }
     grajDo(ciagla, silnik, tickDnia(7, 0));
+    expect(ciagla.bledy).toEqual([]);
     for (const zapis of zapisy) {
       const b = wczytajGre(swiezySwiat('przymorze'), zapis);
       expect(b.pamiec).toEqual(zapis.pamiec);
       grajDo(b, silnik, tickDnia(7, 0));
       expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   }, 120_000);
 });

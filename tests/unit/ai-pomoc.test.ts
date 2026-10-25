@@ -78,6 +78,35 @@ describe('graPoDniach i graDoTicku: wspólne gry-prefiksy testów', () => {
     expect(graPoDniach('przymorze', 11, 1, {}, konczy).sim.st.tick).toBe(5 * TICKS_PER_SECOND);
   });
 
+  it('gra, w której decydent rzucił błąd, nie trafia do pamięci: pomocnik rzuca z pierwszym zachowanym błędem, także gdy błąd wypadł w dalszym odcinku', () => {
+    // `krokGry` łapie błędy decydenta (gra idzie dalej), a gra wczytana z punktu zaczyna z pustą listą `bledy`, więc bez tej straży
+    // test całej gry nie zauważyłby wyjątku z silnika: pomocnik sprawdza każdy odcinek, zanim zrobi z niego punkt kontrolny
+    const rzucaRaz: Decydent = {
+      okno: () => {},
+      tura: (g) => {
+        if (g.sim.st.tick === 100 * TICKS_PER_SECOND) throw new Error('rzut testowy');
+      },
+    };
+    // do sekundy 48 czysto; błąd w sekundzie 100 wypada w dalszym odcinku, który nie staje się punktem
+    expect(graPoDniach('przymorze', 11, 0.05, {}, rzucaRaz).sim.st.tick).toBe(dni(0.05));
+    const pierwszy = { s: 100, gdzie: 'tura', tekst: 'Error: rzut testowy' };
+    expect(() => graPoDniach('przymorze', 11, 0.2, {}, rzucaRaz)).toThrow(JSON.stringify(pierwszy));
+    expect(() => graPoDniach('przymorze', 11, 0.2, {}, rzucaRaz)).toThrow(/\(1 raz, w pamięci ostatnie 1\)/);
+    // nieudana próba nie zostawia punktu: następna znów rzuca, a czysty odcinek sprzed błędu dalej działa
+    expect(() => graPoDniach('przymorze', 11, 0.2, {}, rzucaRaz)).toThrow(/rzut testowy/);
+    expect(graPoDniach('przymorze', 11, 0.05, {}, rzucaRaz).bledy).toEqual([]);
+    // przy wielu błędach komunikat podaje, ile ich było, i najwcześniejszy z zachowanych (lista trzyma ostatnie MAX_BLEDOW)
+    const rzuca: Decydent = {
+      okno: () => {},
+      tura: (g) => {
+        if (g.sim.st.tick >= 100 * TICKS_PER_SECOND) throw new Error('rzut testowy');
+      },
+    };
+    const najwczesniejszy = { s: 143, gdzie: 'tura', tekst: 'Error: rzut testowy' };
+    expect(() => graPoDniach('przymorze', 11, 0.2, {}, rzuca)).toThrow(/\(93 razy, w pamięci ostatnie 50\)/);
+    expect(() => graPoDniach('przymorze', 11, 0.2, {}, rzuca)).toThrow(JSON.stringify(najwczesniejszy));
+  });
+
   it('z opcją dziennik gra ma dziennik ruchów od ticku 0, jak gra zagrana od zera, także po wczytaniu z punktu', () => {
     const odZera = nowaGraAi(swiezySwiat('przymorze'), 11, { dziennik: true });
     grajDo(odZera, silnik, dni(0.3));

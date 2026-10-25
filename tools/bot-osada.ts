@@ -536,7 +536,7 @@ async function glowny(o: Opcje): Promise<number> {
 
   const przebiegi: Przebieg[] = [];
   const bledyPrzebiegow: string[] = [];
-  /** przebiegi, które się nie udały (proces padł, limit czasu, zawieszone okno): ich dema werdykt pomija */
+  /** przebiegi, które się nie udały (proces padł, limit czasu, zawieszone okno, błąd decydenta): ich dema werdykt pomija */
   const bledne: BlednyPrzebieg[] = [];
   for (const demo of o.dema) {
     console.log(`\n${demo}`);

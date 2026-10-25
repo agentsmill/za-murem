@@ -103,6 +103,8 @@ function dyzurNaPierwszejKarcie(
   };
   while (!wynik && !g.gov.over && g.sim.st.tick < od + 3 * TICKS_PER_DAY) krokGry(g, d);
   if (!wynik) throw new Error('nie doszło do karty nocy');
+  // `krokGry` łapie błędy decydenta (silnika albo ręki-szpiega w tym teście): bez tego sprawdzenia rzut przeszedłby bez śladu
+  expect(g.bledy).toEqual([]);
   return wynik;
 }
 
@@ -125,6 +127,8 @@ function przydzialPoOknie(g: GraAi, od: number, przed: (g: GraAi, p: Karta) => v
   };
   while (!wynik && !g.gov.over && g.sim.st.tick < od + 3 * TICKS_PER_DAY) krokGry(g, d);
   if (!wynik) throw new Error('nie doszło do karty nocy');
+  // `krokGry` łapie błędy decydenta (silnika albo ręki-szpiega w tym teście): bez tego sprawdzenia rzut przeszedłby bez śladu
+  expect(g.bledy).toEqual([]);
   return wynik;
 }
 
@@ -441,6 +445,7 @@ describe('droga do kozy z beczki w pokoju zarządu', () => {
     // i kozy, ale gra toczy się dalej, a plan pracowni jest jeden i nikt nie rozbiera cudzych mebli
     const g = nowaGraAi(demoWorld('zielonki'), 12, { dziennik: true });
     grajDo(g, silnik, 6 * TICKS_PER_DAY);
+    expect(g.bledy).toEqual([]);
     const st = g.sim.st;
     expect(st.things.some((t) => t.kind === 'pracownia')).toBe(false);
     expect(st.builds.filter((b) => b.kind === 'pracownia')).toHaveLength(1);
@@ -457,6 +462,7 @@ describe('droga do kozy z beczki w pokoju zarządu', () => {
     const { w } = g;
     const st = g.sim.st;
     grajDo(g, silnik, 700);
+    expect(g.bledy).toEqual([]);
     const plan = st.builds.find((b) => b.kind === 'pracownia')!;
     expect(plan).toBeDefined();
     // kafelki, na których koza z beczki mogłaby stanąć po badaniu
@@ -685,6 +691,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
   it('osoba wysłana na wyprawę o 19:00 jest o 20:00 poza domem: karta daje jej tylko sen, a dyżur idzie do innej', () => {
     const g = nowaGraAi(demoWorld('przymorze'), 11, { okolica: okolicaZGeo(demoPrzymorze.geo) });
     grajDo(g, silnik, tickDnia(6, 19));
+    expect(g.bledy).toEqual([]);
     expect(hourOf(g.sim.st.tick)).toBe(19);
     const i = wejscie(g);
     const cel = najblizszeMiejsce(g.gov, i, 'spozywczy')!;
@@ -728,6 +735,7 @@ describe('dyżur przy kozie na karcie nocy', () => {
     expect(probek).toBeGreaterThan(20);
     expect(zapalona / probek).toBeGreaterThan(0.9);
     expect(wejscie(g).people.some((p) => p.post === 'koza' || p.post === 'brama')).toBe(true);
+    expect(g.bledy).toEqual([]);
   });
 });
 
@@ -805,11 +813,13 @@ describe('determinizm i koszt warstwy', () => {
       zapisy.push(JSON.parse(JSON.stringify(zapiszGre(ciagla))) as ZapisGryAi);
     }
     grajDo(ciagla, silnik, 7 * TICKS_PER_DAY);
+    expect(ciagla.bledy).toEqual([]);
     for (const zapis of zapisy) {
       const b = wczytajGre(swiezySwiat('przymorze'), zapis);
       expect(b.pamiec).toEqual(zapis.pamiec);
       grajDo(b, silnik, 7 * TICKS_PER_DAY);
       expect(skrotGry(b)).toBe(skrotGry(ciagla));
+      expect(b.bledy).toEqual([]);
     }
   });
 
