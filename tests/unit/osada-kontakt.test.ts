@@ -28,13 +28,14 @@ import type { GovInput, GovPlace, GovState, OdkrycieOsady, WejscieOsady } from '
 import { emptyEffects, QUIET } from '../../src/gov/wspolne.ts';
 import { GAP_PO, GAP_ROZRZUT, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, govUpdate, lawEffects, loadGov, newGov, pending, saveGov } from '../../src/gov/zarzad.ts';
+import { budowleStojace } from '../../src/sim/budowle.ts';
 import { dayOf, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { populacja } from '../../src/sim/snapshot.ts';
-import { budowleOsady, nowaOsadaGry, type OsadaGry, osadaZZapisu, TICK_STARTU_OSADY } from '../../src/ui/osada.ts';
+import { nowaOsadaGry, type OsadaGry, osadaZZapisu, TICK_STARTU_OSADY } from '../../src/ui/osada.ts';
 import { osadaBezKodu } from '../../src/ui/osada-brak.ts';
 import { type Uklad, ukladZGeo } from '../../src/world/kwadraty.ts';
 import { daneDema, wczytajDemo } from '../../tools/osada-kwadraty.ts';
-import { budowleStojace } from '../../tools/osada-ocena.ts';
+import { budowleStojace as budowleUprzezy } from '../../tools/osada-ocena.ts';
 import { Atrapa, answer, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { pl, polskieSlowa } from './po-angielsku.ts';
@@ -961,7 +962,7 @@ describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', (
     expect(wyniki.filter((r) => r.mieszkancy > 0).length, 'osada z mieszkańcami siedziby').toBeGreaterThanOrEqual(1);
   });
 
-  it('budowle to stojące budowle poza obwodem: ta sama miara co w uprzęży (budowleStojace), nie meble ani zasieki', () => {
+  it('budowle to stojące budowle poza obwodem (jedna miara dla zarządu i uprzęży): nie meble ani zasieki', () => {
     const rzeczy = [
       { kind: 'warsztat' },
       { kind: 'koza_beczka' },
@@ -971,10 +972,11 @@ describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', (
       { kind: 'drewno' },
       { kind: 'magazyn' },
     ];
-    expect(budowleOsady(rzeczy)).toBe(3);
-    expect(budowleOsady(rzeczy)).toBe(budowleStojace(rzeczy));
-    expect(budowleOsady([])).toBe(0);
-    // na żywej grze po trzech dobach (więcej budowli niż zero) obie miary się zgadzają
+    expect(budowleStojace(rzeczy)).toBe(3);
+    expect(budowleStojace([])).toBe(0);
+    // jedna definicja (src/sim/budowle.ts): uprząż pomiarowa osady (tools/osada-ocena.ts) wystawia tę samą funkcję, nie jej kopię
+    expect(budowleUprzezy).toBe(budowleStojace);
+    // na żywej grze po trzech dobach (więcej budowli niż zero) wejście zarządu liczy to samo, co zostaje w stanie jej gry
     const osada = poStarcie();
     naprzod(osada, 3 * 24 * 800);
     expect(osada.dlaZarzadu()!.budowle).toBe(budowleStojace(osada.gra!.sim.st.things));

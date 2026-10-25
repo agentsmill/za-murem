@@ -34,7 +34,12 @@
      pomijane z uwagą, bo przebieg nie dociera do dnia, w którym kamień ma już być; przy przebiegu krótszym niż
      `odwolanieOdDnia` kryterium odwołania sprawdza tylko dni przebiegu, co mówi uwaga. */
 
-import { BUILDS, naObwodzie } from '../src/sim/budowle.ts';
+import { budowleStojace } from '../src/sim/budowle.ts';
+
+/** Stojące budowle osady (rodzaje z `BUILDS` poza obwodem: bez zasieków i barykady): jedna miara „budowli” w uprzęży, ta sama
+    funkcja z src/sim/budowle.ts, której używa gra do tego, co zarząd widzi o osadzie (`OsadaGry.dlaZarzadu`). Liczba idzie do tabeli i
+    poranków, a do werdyktu nie wchodzi (decyzja 2). Wystawiona stąd, żeby uprząż i jej testy importowały ją po staremu. */
+export { budowleStojace };
 
 /** Stan osady o 6:00 jednego dnia. Zarząd i ludność liczone jak `populacja` (src/sim/snapshot.ts), `jedzenie` to porcje
     surowe i ugotowane, `drewno` całe drewno w sztukach (z ogniem w paleniskach), `zimni` i `glodni` to osoby zarządu
@@ -74,13 +79,6 @@ export interface Progi {
 }
 
 export const PROGI: Progi = { przezyc: 4, zZiaren: 5, kamien: [8, 15], odwolanieOdDnia: 30 };
-
-/** Stojące budowle osady z rzeczy gry (`SimState.things`): rodzaje z `BUILDS` poza tymi na obwodzie (zasieki, barykada).
-    Meble, drewno, sterty i inne rzeczy to nie budowle. To jedyna miara „budowli” w uprzęży; liczba idzie do tabeli i poranków,
-    a do werdyktu nie wchodzi (decyzja 2). */
-export function budowleStojace(rzeczy: readonly { kind: string }[]): number {
-  return rzeczy.filter((t) => Object.hasOwn(BUILDS, t.kind) && !naObwodzie(t.kind)).length;
-}
 
 /** Przebieg, który się nie udał (proces padł, przekroczył limit czasu, zostawił zawieszone okno zarządu albo decydent rzucił
     błąd, który `krokGry` złapał): demo, ziarno i powód po polsku. Dema z takim przebiegiem werdykt pomija. */

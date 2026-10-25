@@ -267,6 +267,12 @@ export function isUnlocked(st: Pick<SimState, 'techDone'>, kind: BuildKind): boo
     (sterty, meble) nie są ani budowlami, ani na obwodzie */
 export const naObwodzie = (kind: string): boolean => BUILDS[kind as BuildKind]?.place === 'obwod';
 
+/** Stojące budowle z rzeczy gry (`SimState.things`): rodzaje z `BUILDS` poza tymi na obwodzie (zasieki, barykada). Meble, drewno,
+    sterty i inne rzeczy to nie budowle. Jedna miara dla gry osady AI: uprząż pomiarowa (tools/osada-ocena.ts: tabela i poranki
+    `npm run bot:osada`) i to, co zarząd widzi o osadzie (`OsadaGry.dlaZarzadu`, src/ui/osada.ts). */
+export const budowleStojace = (rzeczy: readonly { kind: string }[]): number =>
+  rzeczy.filter((t) => Object.hasOwn(BUILDS, t.kind) && !naObwodzie(t.kind)).length;
+
 /** rozmiar budowli przy danym obrocie */
 export function footprint(kind: BuildKind, rot: number): { w: number; h: number } {
   const d = BUILDS[kind];
