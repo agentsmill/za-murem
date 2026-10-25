@@ -9,6 +9,7 @@
 
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { DROGI } from '../src/gov/zwyciestwo.ts';
 import { waitIdle } from './browser.ts';
 
 /** scenariusz w kształcie, który przyjmuje tools/shots.ts (jego `Shot` nie jest wyeksportowany) */
@@ -41,6 +42,9 @@ const NAZWY_WLASNE = [
   'Estate mesh network',
   'Mushrooms in the basements',
 ];
+
+/** nazwy dróg do zwycięstwa („Nowe osiedle”, „A new estate”) to nazwy własne jak nazwy badań: wypadają przed szukaniem słów z bloku (jak w tests/unit/wiki-tresc.test.ts) */
+const NAZWY_DROG: readonly string[] = Object.values(DROGI).flatMap((d) => [d.nazwa.pl, d.nazwa.en]);
 
 const polskieLitery = (tekst: string): string[] => [
   ...new Set(tekst.split(/[^\p{L}]+/u).filter((s) => /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(s))),
@@ -184,7 +188,7 @@ const tekstOkna = (page: Page): Promise<string> =>
 /** wiki w domu nie mówi o bloku, a po angielsku nie ma polskich liter */
 function sprawdzJezyk(opis: string, tekst: string, o: { dom?: boolean; en?: boolean }): void {
   let t = tekst;
-  for (const n of NAZWY_WLASNE) t = t.replaceAll(n, ' ');
+  for (const n of [...NAZWY_WLASNE, ...NAZWY_DROG]) t = t.replaceAll(n, ' ');
   if (o.dom) {
     const re = o.en ? BLOKOWE_EN : BLOKOWE_PL;
     const trafienia = t.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`));
@@ -621,6 +625,71 @@ export function wikiShots(out: string): ShotWiki[] {
         const tytul = await page.$eval('#sheet .wiki-tytul', (e) => (e as HTMLElement).innerText);
         if (tytul !== 'Gość pod furtką') throw new Error(`tytuł artykułu o gościu w domu: ${tytul}`);
         await zapisz(page, 'wiki-dom-wydarzenia-goscie');
+      },
+    },
+    // dom (Zielonki), sąsiedzi stoją w domach: artykuły o drzwiach, pukaniu, wyważaniu, przeszukiwaniu, ludziach za drzwiami i
+    // nocnych gościach oraz hałas w trybie zombie mówią o domu: bez drzwi mieszkań, pięter, klatek i lokatorów
+    {
+      name: 'wiki-dom-sasiedzi',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, GRA_DOM);
+        await otworzZMenu(page, false);
+        const fakty = async () =>
+          page.$$eval('#sheet .wiki-fakt', (l) => l.map((e) => (e as HTMLElement).dataset.fakt));
+        for (const id of [
+          'sasiedzi:budynki',
+          'sasiedzi:drzwi',
+          'sasiedzi:pukanie',
+          'sasiedzi:wywazanie',
+          'sasiedzi:przeszukiwanie',
+          'sasiedzi:lokatorzy',
+          'sasiedzi:noc',
+          'zombie:halas',
+        ]) {
+          await otworzArtykul(page, id, false);
+          sprawdzJezyk(`artykuł ${id} w domu`, await tekstOkna(page), { dom: true });
+          await sprawdzUklad(page, `artykuł ${id} w domu`);
+          const f = await fakty();
+          for (const zakazany of [
+            'czas-mieszkanie',
+            'halas-mieszkanie',
+            'pietro',
+            'pietro-lokatorzy',
+            'drzwi-mieszkanie',
+          ])
+            if (f.includes(zakazany)) throw new Error(`${id} w domu ma fakt ${zakazany}`);
+        }
+        await otworzArtykul(page, 'sasiedzi:wywazanie', false);
+        const wywazanie = await fakty();
+        for (const f of ['czas-budynek', 'halas-budynek', 'halas-budynek-lom'])
+          if (!wywazanie.includes(f)) throw new Error(`brak faktu ${f} w artykule o wyważaniu w domu`);
+        await otworzArtykul(page, 'sasiedzi:lokatorzy', false);
+        const tytul = await page.$eval('#sheet .wiki-tytul', (e) => (e as HTMLElement).innerText);
+        if (tytul !== 'Sąsiedzi za drzwiami') throw new Error(`tytuł artykułu o ludziach za drzwiami w domu: ${tytul}`);
+        await otworzArtykul(page, 'sasiedzi:przeszukiwanie', false);
+        const t = await tekstOkna(page);
+        if (!/Okraść …/.test(t)) throw new Error('artykuł o przeszukiwaniu w domu nie mówi o poleceniu „Okraść …”');
+        await zapisz(page, 'wiki-dom-sasiedzi-przeszukiwanie');
+      },
+    },
+    // to samo po angielsku na telefonie: „houses”, „neighbours”, bez „flat”, „floor”, „stairs” i „residents”
+    {
+      name: 'wiki-dom-sasiedzi-telefon-en',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await start(page, base, GRA_DOM);
+        await otworzZMenu(page, true);
+        for (const id of ['sasiedzi:przeszukiwanie', 'sasiedzi:wywazanie', 'sasiedzi:noc']) {
+          await otworzArtykul(page, id, true);
+          sprawdzJezyk(`artykuł ${id} w domu po angielsku`, await tekstOkna(page), { dom: true, en: true });
+          await sprawdzUklad(page, `artykuł ${id} w domu na telefonie`);
+          await zapisz(page, `wiki-dom-sasiedzi-telefon-en-${id.split(':')[1]}`);
+          await page.tap('#sheet .wiki-wstecz');
+        }
       },
     },
   ];
