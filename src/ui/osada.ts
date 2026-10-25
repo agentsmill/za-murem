@@ -86,8 +86,9 @@ export const TICK_STARTU_OSADY: number = tickAt(2, 6);
 /** Ile ticków gry osady nadrabia jedno `przygotuj()` (jedno wywołanie na klatkę). Stała liczba, a nie budżet czasu: moduł nie czyta
     zegara, a liczba klatek do końca nadrabiania wynika tylko z niej (`TICK_STARTU_OSADY / KAWALEK_NADRABIANIA` = 120, czyli 2 s przy
     60 klatkach na sekundę, a do startu osady jest co najmniej 10 minut gry). Koszt kawałka zmierzony w Node (Przymorze i Lanciego,
-    po rozgrzewce `doOtoczenia`): średnio 0,7 do 1,6 ms, 95. percentyl 3,8 do 5,8 ms, najdroższy kawałek 6,7 do 11,6 ms (jego koszt
-    robi pojedynczy tick zarządu osady, więc mniejsze kawałki go nie zbijają, a większe go tylko podnoszą). */
+    po rozgrzewce `doOtoczenia`): średnio 0,7 do 1,6 ms, 95. percentyl 3,8 do 5,8 ms, najdroższy kawałek 6,7 do 11,6 ms; w Chromium
+    w grze (`przygotuj()` mierzone w `frame()`): średnio ok. 2 ms, najdroższy 9 do 11 ms. Najdroższy kawałek robi pojedynczy tick
+    zarządu osady (do ok. 8 ms), więc mniejsze kawałki go nie zbijają, a większe go tylko podnoszą. */
 export const KAWALEK_NADRABIANIA = 100;
 
 /** Dlaczego osady nie ma: `dane` (do ticku startu nie przyszły wszystkie osiem pobrań albo żadne się nie udało), `regula` (żaden
