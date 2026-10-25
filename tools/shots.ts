@@ -30,6 +30,7 @@ import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './k
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { telefonShots } from './shots-telefon.ts';
 import { ukladShots } from './shots-uklad.ts';
 
 const KOD = process.argv.includes('--kod');
@@ -751,6 +752,7 @@ const SHOTS: Shot[] = [
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
   ...ukladShots(OUT),
+  ...telefonShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
   {
@@ -10130,7 +10132,7 @@ async function zrzut(shot: Shot): Promise<void> {
   }, shot.lang ?? 'pl');
   // błędy okna „ResizeObserver loop completed with undelivered notifications” nie są wyjątkami, więc Playwright ich nie zgłasza
   // (`pageerror`), a serwer Vite pisze je tylko jako „[Unhandled error]”: liczy je słuchacz zdarzenia `error` z początku strony,
-  // a scenariusz z choć jednym pada (pomiar nakładek w src/main.ts ustawia wymiary w następnej klatce, nie w obserwatorze)
+  // a scenariusz z choć jednym pada (src/main.ts nie obserwuje okienka celów, tylko mierzy je przy przepisywaniu treści)
   await page.addInitScript(() => {
     const okno = window as unknown as { __zmRo: string[] };
     okno.__zmRo = [];
@@ -10605,6 +10607,9 @@ function druzynaShots(): Shot[] {
     żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
     z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
     prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
+/** przyciski karty mieszkańca tylko do odczytu, które nie wydają poleceń: historia, imię i (na telefonie) rozwijanie potrzeb */
+const PRZYCISKI_BEZ_ROZKAZU: readonly (string | undefined)[] = ['story', 'imie', 'potrzeby'];
+
 function kartaShots(): Shot[] {
   const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
   const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
@@ -10913,7 +10918,7 @@ function kartaShots(): Shot[] {
     if (tap) await page.touchscreen.tap(b.x, b.y);
     else await page.mouse.click(b.x, b.y);
     const m = await sprawdz(page, r.name);
-    if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+    if (m.buttons.some((x) => !PRZYCISKI_BEZ_ROZKAZU.includes(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
     console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
     await historia(page, nazwa, tap);
     if (!tap) await page.mouse.move(b.x + 400, b.y - 250);
@@ -11243,7 +11248,8 @@ function kartaShots(): Shot[] {
         const b = await ekran(page, r.id);
         await page.mouse.click(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !PRZYCISKI_BEZ_ROZKAZU.includes(x)))
+          throw new Error(`rozkazy na karcie: ${m.buttons}`);
         if ((await cmds(page)) !== przed) throw new Error('kliknięcie mieszkańca wysłało polecenie');
         // zaznaczenie zostało: prawy przycisk na ziemi daje polecenie, a nie „Najpierw zaznaczcie”
         await page.mouse.click(b.x + 120, b.y + 90, { button: 'right' });
@@ -11383,7 +11389,8 @@ function kartaShots(): Shot[] {
         const b = await naPionku(r.id);
         await page.touchscreen.tap(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !PRZYCISKI_BEZ_ROZKAZU.includes(x)))
+          throw new Error(`rozkazy na karcie: ${m.buttons}`);
         await historia(page, 'karta-mieszkanca-telefon', true);
       },
     },

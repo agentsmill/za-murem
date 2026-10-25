@@ -73,7 +73,7 @@ interface Prosty {
 }
 
 /** klatki animacji (układ po zmianie okna dochodzi w następnej) */
-const klatki = (page: Page, n = 3): Promise<void> =>
+export const klatki = (page: Page, n = 3): Promise<void> =>
   page.evaluate(
     (k) =>
       new Promise<void>((resolve) => {
@@ -84,8 +84,16 @@ const klatki = (page: Page, n = 3): Promise<void> =>
     n,
   );
 
+/** Rozwija zwinięty pasek stanu (telefon: stuknięcie w linię); gdy pasek nie jest zwinięty (komputer, wersja bez zwijania), nic nie robi. */
+export async function rozwinPasek(page: Page): Promise<void> {
+  const zwiniety = await page.evaluate(() => document.getElementById('stats')!.hasAttribute('data-zwiniete'));
+  if (!zwiniety) return;
+  await kliknij(page, '#stats', true);
+  await poHudzie(page);
+}
+
 /** zmiana rozmiaru okna i czekanie, aż układ i nazwa osiedla na szyldzie (liczona w następnej klatce) dojdą */
-async function rozmiar(page: Page, w: number, h: number): Promise<void> {
+export async function rozmiar(page: Page, w: number, h: number): Promise<void> {
   await page.setViewportSize({ width: w, height: h });
   await klatki(page, 4);
   await poHudzie(page);
@@ -102,7 +110,7 @@ interface KafelekPomiar {
   box: Prosty;
 }
 
-interface PasekPomiar {
+export interface PasekPomiar {
   pasek: number;
   /** liczba wierszy kafelków stanu (po pionowym położeniu kafelków) */
   wiersze: number;
@@ -112,7 +120,7 @@ interface PasekPomiar {
   pierwszyWiersz: boolean;
 }
 
-const pasekTelefonu = (page: Page): Promise<PasekPomiar> =>
+export const pasekTelefonu = (page: Page): Promise<PasekPomiar> =>
   page.evaluate(() => {
     const prosty = (r: DOMRect) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom });
     const rg = document.createRange();
@@ -134,13 +142,20 @@ const pasekTelefonu = (page: Page): Promise<PasekPomiar> =>
           box: prosty(e.getBoundingClientRect()),
         };
       });
+    const stany = document.getElementById('stats')!;
+    const pseudo = getComputedStyle(stany, '::after');
+    const strzalka =
+      pseudo.content !== 'none' && pseudo.content !== 'normal' && stany.hasAttribute('data-zwiniete') === false
+        ? Number.parseFloat(pseudo.height) + Number.parseFloat(pseudo.marginTop || '0')
+        : 0;
     const nazwa = document.getElementById('osName')!;
     const szyld = document.querySelector('#top .sign')!.getBoundingClientRect();
     const mapa = document.getElementById('btnMiasto')!.getBoundingClientRect();
     const zegar = document.querySelector('#top .clock')!.getBoundingClientRect();
     const wTymSamym = (a: DOMRect, b: DOMRect) => a.top < b.bottom && b.top < a.bottom;
     return {
-      pasek: document.getElementById('top')!.getBoundingClientRect().height,
+      // pasek bez strzałki stanu: rozwinięty pasek stanu ma pod kafelkami pasek ze strzałką (`.stats::after`), który nie jest wierszem
+      pasek: document.getElementById('top')!.getBoundingClientRect().height - strzalka,
       wiersze: new Set(kafelki.map((x) => Math.round(x.box.t))).size,
       kafelki,
       nazwa: {
@@ -175,7 +190,7 @@ function odstepy(p: PasekPomiar): { etykiety: number; wartosci: number; wystaje:
 
 /** Sprawdza pasek telefonu przy bieżącej szerokości okna: odstępy, wiersze, wysokość paska i szyld z nazwą osiedla. Zwraca
     opis do dziennika. */
-function sprawdzPasek(opis: string, p: PasekPomiar, o: { jedenWiersz: boolean; nazwa: boolean }): string {
+export function sprawdzPasek(opis: string, p: PasekPomiar, o: { jedenWiersz: boolean; nazwa: boolean }): string {
   const o1 = odstepy(p);
   const zle: string[] = [];
   if (o1.etykiety < MIN_LUKA_ETYKIET)
@@ -207,6 +222,7 @@ const pasekTelefon = (name: string, lang: 'pl' | 'en', zombie: boolean, out: str
   lang,
   run: async (page, base) => {
     await start(page, base, `demo=przymorze${zombie ? '&tryb=zombie' : ''}&${GRA}`);
+    await rozwinPasek(page);
     for (const w of SZEROKOSCI_TELEFONU) {
       await rozmiar(page, w, 844);
       sprawdzPasek(`${name} ${w} px`, await pasekTelefonu(page), { jedenWiersz: true, nazwa: true });
@@ -243,6 +259,7 @@ const nazwaTelefon = (name: string): ShotUklad => ({
   run: async (page, base) => {
     for (const demo of ['lanciego', 'zielonki'] as const) {
       await start(page, base, `demo=${demo}&${GRA}`);
+      await rozwinPasek(page);
       for (const w of SZEROKOSCI_TELEFONU) {
         await rozmiar(page, w, 844);
         sprawdzPasek(`${name} ${demo} ${w} px`, await pasekTelefonu(page), { jedenWiersz: true, nazwa: true });
@@ -548,7 +565,7 @@ const resizeObserver = (name: string, w: number, h: number): ShotUklad => ({
 
 /* ---------------------------------------------------------------- stos nakładek na telefonie */
 
-interface Stos {
+export interface Stos {
   szyld: Prosty | null;
   cele: Prosty | null;
   lista: Prosty | null;
@@ -565,7 +582,7 @@ interface Stos {
   bieznyCel: Prosty | null;
 }
 
-const stos = (page: Page): Promise<Stos> =>
+export const stos = (page: Page): Promise<Stos> =>
   page.evaluate(() => {
     const widoczny = (e: Element | null): e is HTMLElement => {
       if (!(e instanceof HTMLElement) || e.hidden || getComputedStyle(e).display === 'none') return false;
@@ -627,7 +644,7 @@ const przeciecie = (a: Prosty | null, b: Prosty | null): number => {
 
 /** wszystkie pary nakładek, które na siebie nachodzą (karta i szuflada: dozwolone to szuflada na okienku celów, bo szuflada
     leży z zamysłu nad rozwiniętą listą) */
-function nachodzenia(s: Stos, o: { szufladaNaCelach: boolean }): string[] {
+export function nachodzenia(s: Stos, o: { szufladaNaCelach: boolean }): string[] {
   const pary: [string, Prosty | null, string, Prosty | null][] = [
     ['okienko celów', s.cele, 'lista ludzi', s.lista],
     ['okienko celów', s.cele, 'karta osoby', s.karta],

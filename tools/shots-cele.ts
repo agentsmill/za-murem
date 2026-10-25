@@ -2476,9 +2476,7 @@ export function celeShots(out: string): ShotCele[] {
     drogi('cele-drogi', 1440, 900),
     drogi('cele-drogi-telefon', 390, 844),
     telefon('cele-telefon', 390, 844),
-    // 360×800 (Galaxy A/S): przy 360×780 z kartą osoby (323 px), listą ludzi i ostrzeżeniem o zgasłej kozie (podpowiedź u dołu, 3 wiersze)
-    // na zwinięte okienko zostaje 130 px zamiast 142 i dół podpowiedzi bieżącego celu trzeba dosunąć palcem (okienko przewija się)
-    telefon('cele-telefon-360', 360, 800),
+    telefon('cele-telefon-360', 360, 780),
     angielski('en-cele-r1'),
     angielski('en-cele-r1-telefon', 390, 844),
     przewijanie('cele-przewijanie'),
