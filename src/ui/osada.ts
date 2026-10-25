@@ -1,7 +1,10 @@
 /* Osada AI w grze w przeglądarce: druga gra obok naszej, etap 2 osady AI (docs/superpowers/plans/2026-10-24-osada-ai-etap-2.md,
    zadanie 3; projekt docs/superpowers/specs/2026-10-20-osada-ai-design.md, „Druga gra obok naszej” i „Start osady i dane
-   kwadratu”). Moduł jest po stronie gry, ale bez PixiJS i bez DOM: sieć i pamięć przeglądarki dochodzą tylko przez to, co poda
-   gospodarz (src/main.ts: dane kandydatów, układ domu, tryb gry), więc całość chodzi w Node i ma testy (tests/unit/osada-gra.test.ts).
+   kwadratu”). Moduł jest po stronie gry, ale bez PixiJS i bez DOM, a pamięci przeglądarki nie dotyka (zapis robi gospodarz:
+   src/main.ts składa go przez `poleOsady` z zapis.ts). Sieć wchodzi tylko przez `daneKandydatow`: jej domyślne źródła to
+   `loadDemoKwadraty` (plik dema) i `geoKwadratu` (kafelki adresu) z src/world/load.ts, których main.ts nie podmienia, a testy
+   podstawiają własne (`ZrodlaKandydatow`). Reszta (`nowaOsadaGry`, `osadaZZapisu`, stan osady) dostaje od gospodarza tylko ziarno,
+   tabele mieszkańców, układ domu i tryb gry i niczego nie pobiera, więc chodzi w Node i ma testy (tests/unit/osada-gra.test.ts).
    Wszystko za flagą `?osada=1`: gra bez flagi nie tworzy osady, a jej zapis nie ma pola `osada` (`poleOsady`). Kod osady main.ts
    ładuje dopiero przy fladze (`import()`), więc gra bez flagi nie niesie silnika AI.
 
@@ -105,7 +108,8 @@ export const TICK_STARTU_OSADY: number = tickAt(2, 6);
 
 /** Ile ticków gry osady nadrabia jedno `przygotuj()` (jedno wywołanie na klatkę). Stała liczba, a nie budżet czasu: moduł nie czyta
     zegara, a liczba klatek do końca nadrabiania wynika tylko z niej (`TICK_STARTU_OSADY / KAWALEK_NADRABIANIA` = 120, czyli 2 s przy
-    60 klatkach na sekundę, a do startu osady jest co najmniej 10 minut gry). Koszt kawałka zmierzony w Node (Przymorze i Lanciego,
+    60 klatkach na sekundę, a do startu osady jest co najmniej 75 s przy ekranie: 12000 ticków to 10 minut w tempie 1× i 75 s w 8×
+    (20 ticków na sekundę razy tempo), więc zapas jest wielokrotny, ponad 30×). Koszt kawałka zmierzony w Node (Przymorze i Lanciego,
     po rozgrzewce `doOtoczenia`): średnio 0,7 do 1,6 ms, 95. percentyl 3,8 do 5,8 ms, najdroższy kawałek 6,7 do 11,6 ms; w Chromium
     w grze (`przygotuj()` mierzone w `frame()`): średnio ok. 2 ms, najdroższy 9 do 11 ms. Najdroższy kawałek robi pojedynczy tick
     zarządu osady (do ok. 8 ms), więc mniejsze kawałki go nie zbijają, a większe go tylko podnoszą. */

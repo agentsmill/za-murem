@@ -11,7 +11,8 @@
    `.tsx`, `.jsx`; także nowe pliki katalogu i podkatalogi, bez listy w teście), usuwa komentarze
    (nagłówki modułów wymieniają tests/ i tools/ jako to, czego moduł nie importuje) i sprawdza resztę. Sam skaner ma testy na
    sztucznych źródłach, żeby nie przechodził na pustym warunku. Test nie jest dowodem czystości przechodniej (moduły z src/sim,
-   src/gov i src/world, które silnik importuje): tę pilnują ich własne testy i determinizm (`npm run determinizm`). */
+   src/gov, src/world, src/mieszkancy i src/core, które silnik importuje): tę pilnują ich własne testy i determinizm
+   (`npm run determinizm`). */
 
 import fs from 'node:fs';
 import path from 'node:path';
