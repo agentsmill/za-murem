@@ -287,7 +287,7 @@ export const ZIMA = SEASONS.indexOf('zima');
 /** poziom umiejętności, od którego zawód gościa liczy się jako fach (`ma: fach`) */
 export const PROG_FACHU = 2;
 
-const BAZA_KTO: Record<KtoId, number> = {
+export const BAZA_KTO: Record<KtoId, number> = {
   wedrowiec: 5,
   rodzina: 3,
   dezerter: 1.5,
@@ -309,7 +309,7 @@ function wagiKto(ctx: KontekstGoscia): Opcje<KtoId> {
   });
 }
 
-const BAZA_HACZYK: Record<HaczykId, number> = { prawda: 4, klamie: 1.4, chory: 1, poscig: 1, ugryziony: 1.4 };
+export const BAZA_HACZYK: Record<HaczykId, number> = { prawda: 4, klamie: 1.4, chory: 1, poscig: 1, ugryziony: 1.4 };
 
 function wagiHaczyka(ctx: KontekstGoscia, kto: KtoId): Opcje<HaczykId> {
   return haczykiMozliwe(kto, ctx.mode).map((h) => {

@@ -8,6 +8,7 @@ import { definicjeMiasto } from './wiki-miasto.ts';
 import { definicjeSasiedzi } from './wiki-sasiedzi.ts';
 import { definicjeStart } from './wiki-start.ts';
 import type { Def } from './wiki-typy.ts';
+import { definicjeWydarzenia } from './wiki-wydarzenia.ts';
 import { definicjeZasoby } from './wiki-zasoby.ts';
 import { definicjeZombie } from './wiki-zombie.ts';
 
@@ -16,6 +17,7 @@ export function definicjeTresc(): Def[] {
     ...definicjeStart(),
     ...definicjeZasoby(),
     ...definicjeBudowle(),
+    ...definicjeWydarzenia(),
     ...definicjeMiasto(),
     ...definicjeSasiedzi(),
     ...definicjeDrogi(),
