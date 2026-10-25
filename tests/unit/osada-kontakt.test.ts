@@ -473,10 +473,11 @@ describe('poseł z osady: wybory', () => {
   });
 
   it('wybory ruszają tylko zaufanie, wkurzenie i kronikę: ani zapasów, ani ludzi, ani nastrojów, ani napadu', () => {
+    // trzy wybory na różnych miarach: (+1, 0) bez ryzyka, (+2, +1) więcej zaufania za cenę wkurzenia, (0, −1) ulga, gdy wkurzenie jest wysokie
     const skutki = [
       { trust: +1, anger: 0 },
       { trust: +2, anger: +1 },
-      { trust: -1, anger: 0 },
+      { trust: 0, anger: -1 },
     ];
     skutki.forEach((s, k) => {
       const { gov, i } = zKarta();
@@ -508,6 +509,22 @@ describe('poseł z osady: wybory', () => {
     });
   });
 
+  it('żaden wybór nie jest gorszy od innego na obu miarach naraz: każdy ma własny powód, żeby go wziąć', () => {
+    const zmiany = [0, 1, 2].map((k) => {
+      const { gov, i } = zKarta();
+      const t0 = gov.trust;
+      const a0 = gov.anger;
+      chooseEvent(gov, i, k);
+      return { trust: gov.trust - t0, anger: gov.anger - a0 };
+    });
+    for (const [a, x] of zmiany.entries())
+      for (const [b, y] of zmiany.entries()) {
+        if (a === b) continue;
+        // x nie gorszy od y na obu miarach (co najmniej tyle zaufania, najwyżej tyle wkurzenia) oznacza, że y nie ma sensu
+        expect(x.trust >= y.trust && x.anger <= y.anger, `wybór ${b} jest zdominowany przez wybór ${a}`).toBe(false);
+      }
+  });
+
   it('kronika: wpis o wyborze z tytułem karty i wpis o tym, co się stało, z nazwą osady i kierunkiem', () => {
     const logi = [0, 1, 2].map((k) => {
       const { gov, i } = zKarta();
@@ -525,8 +542,10 @@ describe('poseł z osady: wybory', () => {
     expect(logi[0][1].pl).toContain('Teraz wiecie, co leży na północ od was.');
     expect(logi[0][1].en).toContain('Now you know what lies to the north of you.');
     expect(logi[1][1].pl).toContain('herbaty z pokrzyw');
+    expect(logi[2][1].pl).toContain('Część ludzi odetchnęła z ulgą');
     expect(logi[2][1].pl).toContain('wiecie już, co leży na północ od was');
     expect(logi[2][1].en).toContain('left without his tea');
+    expect(logi[2][1].en).toContain('breathed a sigh of relief');
   });
 
   it('po odpowiedzi odstęp do następnej karty liczy się jak po każdej decyzji: wpis o decyzji i zwykły odstęp między kartami', () => {
@@ -693,13 +712,15 @@ describe('poseł z osady: tekst', () => {
     expect(polskaKarta(o(3)).text).toContain('Dodaje, że ich zarząd odwołano już 3 razy.');
     expect(polskaKarta(o(0)).text).not.toContain('odwołano');
     expect(angielskaKarta(o(1)).text.split('\n')[1]).toBe(
-      'He says their settlement lies to the north of you, with 23 people living there and 6 buildings standing. He adds that their board has already been recalled once.',
+      'He says their settlement lies to the north of you, with 23 people living there and 6 buildings standing. He adds that the board there has already been recalled once.',
     );
     expect(angielskaKarta(o(2)).text).toContain('has already been recalled twice.');
     expect(angielskaKarta(o(3)).text).toContain('has already been recalled 3 times.');
     // w domu ich organ nazywa się tak jak nasz: komitet
     expect(polskaKarta({ ...o(1), place: DOM }).text).toContain('ich komitet odwołano już raz');
-    expect(angielskaKarta({ ...o(1), place: DOM }).text).toContain('their committee has already been recalled once');
+    expect(angielskaKarta({ ...o(1), place: DOM }).text).toContain(
+      'the committee there has already been recalled once',
+    );
   });
 
   it('osada upadła: poseł mówi o upadku w dniu i z powodu, bez liczb ludności i budowli', () => {

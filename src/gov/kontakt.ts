@@ -24,7 +24,9 @@
 
    Wybory (wszystkie dostępne) ruszają tylko nas: zaufanie, wkurzenie i kronikę. Silnik osady o nas nie wie (decyzja 6 ze
    specyfikacji), więc nic z karty nie wchodzi do jej gry. Każdy wybór odsłania osadę: `GovEffects.odkryjOsade` z dniem, ludnością
-   i budowlami, które poseł podał (z danych karty, nie z chwili odpowiedzi), a gospodarz woła `OsadaGry.odkryj` (src/main.ts). */
+   i budowlami, które poseł podał (z danych karty, nie z chwili odpowiedzi), a gospodarz woła `OsadaGry.odkryj` (src/main.ts).
+   Trzy wybory mają trzy różne powody i żaden nie jest gorszy od innego na obu miarach naraz (pilnuje tego test): (+1 zaufania, 0)
+   bez ryzyka, (+2, +1 wkurzenia) więcej zaufania za cenę wkurzenia, (0, −1) ulga, gdy wkurzenie jest wysokie. */
 
 import { liczba, mnogaPl, type Tx, tx, wielka } from '../core/jezyk.ts';
 import type { Words, WordsEn } from './miejsce.ts';
@@ -116,7 +118,7 @@ function oOsadzie(d: DanePosla, s: Words, e: WordsEn): Tx {
     d.odwolania > 0
       ? tx(
           ` Dodaje, że ich ${s.zarzad.krotko} odwołano już ${razyPl(d.odwolania)}.`,
-          ` He adds that ${e.krotko.replace(/^the /, 'their ')} has already been recalled ${razyEn(d.odwolania)}.`,
+          ` He adds that ${e.krotko} there has already been recalled ${razyEn(d.odwolania)}.`,
         )
       : tx('', '');
   return tx(
@@ -128,13 +130,19 @@ function oOsadzie(d: DanePosla, s: Words, e: WordsEn): Tx {
 /** Skutek wyboru dla gospodarza: osada odsłonięta z tym, co poseł podał. */
 const odkrycie = (d: DanePosla): OdkrycieOsady => ({ dzien: d.dzien, ludnosc: d.ludnosc, budowle: d.budowle });
 
+/** Skutek wyboru na dwóch miarach zarządu: o ile zmienia się zaufanie i wkurzenie (`GovHost.mood`). */
+interface SkutekNastroju {
+  zaufanie: number;
+  wkurzenie: number;
+}
+
 /** Wybór karty: zaufanie i wkurzenie, wpis do kroniki (z nazwą osady) i odsłonięcie osady. */
-function wybor(h: GovHost, d: DanePosla, label: Tx, dT: number, dA: number, wpis: Tx): GChoice {
+function wybor(h: GovHost, d: DanePosla, label: Tx, skutek: SkutekNastroju, wpis: Tx): GChoice {
   return {
     label,
     ok: true,
     run: () => {
-      h.mood(dT, dA);
+      h.mood(skutek.zaufanie, skutek.wkurzenie);
       h.log(tx(`${d.nazwa.pl}: ${wpis.pl}`, `${d.nazwa.en}: ${wpis.en}`));
       h.odkryjOsade(odkrycie(d));
     },
@@ -176,37 +184,38 @@ export const POSEL_EVENT: GEventDef<DanePosla> = {
     const e = h.wordsEn();
     const k = d.kierunek;
     return [
+      // bez ryzyka: obcy zostaje za bramą, ludzie nic nie mają przeciw, zaufanie rośnie o 1
       wybor(
         h,
         d,
         tx(`Wysłuchać go ${s.brama.przy}`, `Hear him out at ${e.brama}`),
-        1,
-        0,
+        { zaufanie: 1, wkurzenie: 0 },
         tx(
           `poseł wypił łyk wody i opowiedział wszystko, co wiedział. Teraz wiecie, co leży ${k.pl} od was.`,
           `the envoy had a sip of water and told you everything he knew. Now you know what lies ${k.en} of you.`,
         ),
       ),
+      // gościnność ma cenę: zaufanie rośnie o 2, ale część ludzi nie chce obcego pod dachem, więc wkurzenie rośnie o 1
       wybor(
         h,
         d,
         tx('Zaprosić do środka na herbatę z pokrzyw', 'Invite him in for nettle tea'),
-        2,
-        1,
+        { zaufanie: 2, wkurzenie: 1 },
         tx(
           'poseł przesiedział godzinę przy kozie z kubkiem herbaty z pokrzyw. Część ludzi patrzyła na obcego spode łba, ale rozmowa wyszła dobra.',
           'the envoy spent an hour by the stove with a mug of nettle tea. Some of your people eyed the stranger with suspicion, but the talk went well.',
         ),
       ),
+      // ulga: ludzie odetchnęli, że obcy poszedł, więc wkurzenie spada o 1, a zaufanie stoi; jedyny wybór, który obniża wkurzenie,
+      // czyli powód, żeby go wziąć, gdy wkurzenie jest wysokie (z wyborem pierwszym nie da się go porównać: inna miara)
       wybor(
         h,
         d,
         tx('Podziękować i odprawić', 'Thank him and send him away'),
-        -1,
-        0,
+        { zaufanie: 0, wkurzenie: -1 },
         tx(
-          `poseł odszedł bez herbaty, ale wiecie już, co leży ${k.pl} od was.`,
-          `the envoy left without his tea, but you now know what lies ${k.en} of you.`,
+          `poseł odszedł bez herbaty. Część ludzi odetchnęła z ulgą, a wy wiecie już, co leży ${k.pl} od was.`,
+          `the envoy left without his tea. Some of your people breathed a sigh of relief, and you now know what lies ${k.en} of you.`,
         ),
       ),
     ];
