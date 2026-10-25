@@ -17,8 +17,8 @@
    (`zaslaniaNakladki`: pasek, cele, lista ludzi, karta, podpowiedź, przyciski, atrybucja; etykieta wtedy znika) to też czyste
    funkcje, żeby dało się je sprawdzić bez przeglądarki; `placeOsadaMark` w src/main.ts tylko mierzy nakładki i ustawia element.
    `wProstokacie` rozstrzyga klik w napis etykiety (etykieta przepuszcza wskaźnik do mapy). `obrysKwadratu` daje rogi kwadratu osady dla
-   mapy miasta. Prostokąty ekranu mają kształt `DOMRect` (`Prostokat` z src/ui/pietra.ts:
-   left, top, right, bottom), więc nakładki idą prosto z `getBoundingClientRect()`. */
+   mapy miasta. Prostokąty ekranu mają kształt `DOMRect` (`Prostokat` z src/ui/pietra.ts: left, top, right, bottom), więc nakładki
+   idą prosto z `getBoundingClientRect()`. */
 
 import type { Pt } from '../world/geo.ts';
 import { kluczBudynku } from '../world/klucze.ts';
