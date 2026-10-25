@@ -141,13 +141,13 @@ describe('kartaOsadyHtml: upadek i odwołanie zarządu', () => {
 
   it('zarząd był odwoływany: jedno zdanie bez liczby, ze słowem miejsca', () => {
     expect(tekst(kartaOsadyHtml(dane({ odwolana: true })))).toContain('Ich zarząd był już odwoływany.');
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true, zarzad: tx('komitet', 'committee') })))).toContain(
+    expect(tekst(kartaOsadyHtml(dane({ odwolana: true, zarzad: tx('komitet', 'the committee') })))).toContain(
       'Ich komitet był już odwoływany.',
     );
     ustawJezyk('en');
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true })))).toContain('Their board has already been recalled.');
-    expect(tekst(kartaOsadyHtml(dane({ odwolana: true, zarzad: tx('komitet', 'committee') })))).toContain(
-      'Their committee has already been recalled.',
+    expect(tekst(kartaOsadyHtml(dane({ odwolana: true })))).toContain('The board there has already been recalled.');
+    expect(tekst(kartaOsadyHtml(dane({ odwolana: true, zarzad: tx('komitet', 'the committee') })))).toContain(
+      'The committee there has already been recalled.',
     );
   });
 
@@ -227,7 +227,7 @@ describe('daneKartyOsady', () => {
 
   it('słowo zarządu bierze od wołającego', () => {
     const kontakt = { dzien: 4, ludnosc: 4, budowle: 1 };
-    const d = daneKartyOsady(osadaBezGry({ odkryta: true, kontakt, odwolania: 1 }), tx('komitet', 'committee'))!;
+    const d = daneKartyOsady(osadaBezGry({ odkryta: true, kontakt, odwolania: 1 }), tx('komitet', 'the committee'))!;
     expect(tekst(kartaOsadyHtml(d))).toContain('Ich komitet był już odwoływany.');
   });
 });

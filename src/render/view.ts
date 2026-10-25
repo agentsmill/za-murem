@@ -16,7 +16,8 @@
    PixelLab, broni i zaznaczenia; nad szczekającym psem napis „Hau!” rysuje zwierzetaLayer.ts.
    Kwadraty miasta obok domu (src/world/kwadraty.ts) dokłada dodajKwadrat: każdy ma własną scenę, kawałki w układzie
    miasta (kwadrat (sx, sy) zaczyna się w (sx·bok, sy·bok) pikseli), szwy z sąsiadami (szew.ts), drzewa i mgłę nad
-   nieodkrytymi kwadratami (mglaLayer.ts). Tekstury kawałków mają budżety (chunks.ts, budzety): z bliska najwyżej kilkadziesiąt
+   nieodkrytymi kwadratami (mglaLayer.ts; gra z osadą ma ją też wokół samego domu, dopóki jej kwadrat nie jest odkryty:
+   `ustawMgleDomu`). Tekstury kawałków mają budżety (chunks.ts, budzety): z bliska najwyżej kilkadziesiąt
    (4 MiB sztuka), z daleka kilkaset (256 KiB), a poniżej zoomu 0,125 poziom „bardzo daleko” (2 px na metr, 16 KiB). Dom jest
    kwadratem 0 i rysuje się jak zawsze, także bez żadnych kwadratów obok; pionki, rzeczy, światła i budowa są tylko w domu. */
 
@@ -287,6 +288,9 @@ export class GameView {
   private nastepnyQ = 1;
   /** kwadraty, o które poproszono (?kwadraty=), a danych dla nich nie ma: mgła z napisem „brak danych” */
   private brakDanych: Array<{ sx: number; sy: number }> = [];
+  /** mgła wokół domu bez żadnych kwadratów obok (gra z osadą, ?osada=1): ośmiu sąsiadów domu jest nieodkrytych i żaden nie zdradza,
+      który kryje osadę; kliknięcia poza domem są wtedy ignorowane jak przy kwadratach obok (`maKwadraty`) */
+  private mglaDomu = false;
   /** mgła nad nieodkrytymi kwadratami przy odkrytych */
   readonly mgla = new MglaLayer();
   /** prostokąt wszystkich kwadratów i próśb bez danych w pikselach grafiki: w nim mieści się kamera */
@@ -464,6 +468,7 @@ export class GameView {
     this.kwMapa.clear();
     this.nastepnyQ = 1;
     this.brakDanych = [];
+    this.mglaDomu = false;
     this.tloPamiec = null;
     this.tloDom = null;
     for (const s of this.slots) {
@@ -541,9 +546,19 @@ export class GameView {
     return [{ q: 0, sx: 0, sy: 0 }, ...this.kw.map((k) => ({ q: k.q, sx: k.sx, sy: k.sy }))];
   }
 
-  /** czy w widoku są kwadraty obok domu albo prośby bez danych (wtedy kliknięcie poza domem nic nie znaczy) */
+  /** czy w widoku są kwadraty obok domu, prośby bez danych albo mgła wokół domu (wtedy kliknięcie poza domem nic nie znaczy) */
   get maKwadraty(): boolean {
-    return this.kw.length > 0 || this.brakDanych.length > 0;
+    return this.kw.length > 0 || this.brakDanych.length > 0 || this.mglaDomu;
+  }
+
+  /** Włącza albo wyłącza mgłę „?” na ośmiu sąsiadach domu bez dokładania kwadratów (gra z osadą przed odkryciem: sąsiedzi są
+      nieodkryci, a który kryje osadę, nie widać). Nic nie zmienia dla kamery: dopóki nie ma kwadratów obok, mieści się w niej sam
+      dom, jak dawniej. */
+  ustawMgleDomu(wlacz: boolean): void {
+    if (wlacz === this.mglaDomu) return;
+    this.mglaDomu = wlacz;
+    this.przeliczZakres();
+    this.odswiezMgle();
   }
 
   /** środek prostokąta wszystkich kwadratów w pikselach grafiki (dla `cam=all`) */

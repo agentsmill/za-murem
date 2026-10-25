@@ -17,7 +17,7 @@
    samo). Teksty w obu językach przez `L` i `tr` w chwili wywołania, nazwa i kierunek jako `Tx` z osady, ucieczka HTML przez `esc`.
    Słowo zarządu w zdaniu o odwołaniu daje wołający (`zarzad`: w bloku „zarząd”, w domu „komitet”, jak w karcie posła). */
 
-import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { L, type Tx, tr, tx, wielka } from '../core/jezyk.ts';
 import type { OsadaGry } from './osada.ts';
 import { esc, num } from './tekst.ts';
 
@@ -32,7 +32,8 @@ export interface DaneKartyOsady {
   upadla?: { dzien: number; powod: 'pustka' | 'exodus' };
   /** zarząd osady był już odwoływany (bez licznika) */
   odwolana?: true;
-  /** słowo zarządu w zdaniu o odwołaniu (domyślnie „zarząd”, w domu „komitet”) */
+  /** słowo zarządu w zdaniu o odwołaniu, po polsku bez przedimka, po angielsku z nim, jak `Words.zarzad.krotko` i
+      `WordsEn.krotko` (w bloku „zarząd” i “the board”, w domu „komitet” i “the committee”); domyślnie blok */
   zarzad?: Tx;
 }
 
@@ -54,7 +55,7 @@ function zdanieUpadku(u: NonNullable<DaneKartyOsady['upadla']>): string {
 /** HTML karty osady w bieżącym języku. Jeden przycisk (zamknięcie), reszta to tekst. */
 export function kartaOsadyHtml(o: DaneKartyOsady): string {
   const k = o.kontakt;
-  const zarzad = o.zarzad ?? tx('zarząd', 'board');
+  const zarzad = o.zarzad ?? tx('zarząd', 'the board');
   const zamknij = L('Zamknij kartę', 'Close the card');
   return [
     `<header class="osada-glowa"><h2>${esc(tr(o.nazwa))}</h2><button type="button" class="card-x" data-card="osada-zamknij" aria-label="${esc(zamknij)}" title="${esc(`${zamknij} (Esc)`)}">×</button></header>`,
@@ -63,7 +64,7 @@ export function kartaOsadyHtml(o: DaneKartyOsady): string {
     `<ul class="apt-list"><li class="apt-i"><span>${L('Mieszkańcy', 'Population')}</span><b class="apt-c">${num(k.ludnosc, 0)}</b></li><li class="apt-i"><span>${L('Budowle', 'Buildings')}</span><b class="apt-c">${num(k.budowle, 0)}</b></li></ul>`,
     o.upadla ? `<p class="apt-why">${esc(zdanieUpadku(o.upadla))}</p>` : '',
     o.odwolana
-      ? `<p class="apt-why">${esc(L(`Ich ${zarzad.pl} był już odwoływany.`, `Their ${zarzad.en} has already been recalled.`))}</p>`
+      ? `<p class="apt-why">${esc(L(`Ich ${zarzad.pl} był już odwoływany.`, `${wielka(zarzad.en)} there has already been recalled.`))}</p>`
       : '',
     `<p class="doing">${esc(L('To wszystko, co o nich wiecie.', 'That is all you know about them.'))}</p>`,
   ].join('');

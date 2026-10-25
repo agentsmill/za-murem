@@ -35,6 +35,9 @@
      jedną linią („nietknięte”, „ktoś tu był”, „wybrane do cna”, a miejsce puste od początku „wybrane do cna, zanim tu
      dotarliście”), więc powód odmowy o tym samym (`POWOD_WYBRANE`) nie wraca pod listą; przycisk jest wtedy wyszarzony.
      Atrybucja map jest w stopce okna zawsze.
+   - Znaczniki spoza okolicy (`ZrodloMapy.znaczniki`, osada AI po odkryciu): znak (`OSADA`) z napisem pod nim i opcjonalny obrys
+     kwadratu, rysowane nad miejscami i siedzibą; nie da się w nie trafić i nie są celem wypraw. Bez źródła albo z pustą listą mapa
+     rysuje się jak dotąd.
    Liczby w napisach po polsku z przecinkiem, po angielsku z kropką (`liczba`), z twardą spacją przed jednostką. Bez
    hypot, sin i cos (odległość palców przez Math.sqrt); nic stąd nie trafia do stanu. */
 
@@ -538,6 +541,13 @@ export const SIEDZIBA: Ikona = {
   znak: css(0xf4f3ee),
 };
 
+/** osada AI po odkryciu (znacznik z `ZrodloMapy.znaczniki`): namiot na tle w kolorze lampy, czytelny obok niebieskiej siedziby */
+export const OSADA: Ikona = {
+  wzor: ['...#...', '..###..', '.#####.', '#######', '#.....#', '#..#..#', '#..#..#'],
+  tlo: '#e6a540',
+  znak: css(0x1d1a14),
+};
+
 /** Ikona kategorii miejsca; nieznana kategoria (i `mieszkania` z 0.3) to sklep, jak w `celZMiejsca`. */
 export function ikonaKategorii(kat: string): Ikona {
   return Object.hasOwn(IKONY, kat) ? IKONY[kat] : IKONY.sklep;
@@ -608,6 +618,17 @@ function rysunekKafelka(T: DecodedTile, r: ReturnType<typeof rzutKafelkaZ>): Rys
   return { z: T.z ?? 14, x0, y0, x1, y1, pola, linie };
 }
 
+/** Znacznik na mapie miasta spoza okolicy z OSM (osada AI po odkryciu, zadanie 5 etapu 2 osady AI): miejsce w metrach od adresu (x na
+    wschód, y na południe, bez obrotu, jak `Miejsce`), napis pod znakiem i opcjonalny obrys jej kwadratu (rogi w tych samych metrach:
+    kwadraty leżą obrócone do ścian domu, więc na mapie z północą u góry to obrócony kwadrat). Mapa rysuje je nad miejscami i niczego
+    z nimi nie robi: nie trafia się w nie, nie ma celu wypraw. */
+export interface ZnacznikMapy {
+  x: number;
+  y: number;
+  napis: string;
+  obrys?: readonly Pt[];
+}
+
 /** Skąd okno bierze dane: środek mapy, okolica (po filtrze nazw), kafelki i filtr nazw dla miejsc z kafelków. */
 export interface ZrodloMapy {
   /** adres: szerokość i długość geograficzna (`geo.c`) */
@@ -617,6 +638,8 @@ export interface ZrodloMapy {
   kafelki: KafelkiMiasta | null;
   /** filtr nazw dla punktów z kafelków (w grze `nazwaDoOkolicy`, ten sam co dla okolicy) */
   nazwa: (p: GeoPoi) => string;
+  /** znaczniki spoza okolicy (osada AI po odkryciu), pytane przy każdym rysowaniu; bez nich lub pusta lista nic się nie zmienia */
+  znaczniki?: () => readonly ZnacznikMapy[];
 }
 
 /** Co okno dostaje przy otwarciu: dotyk, odczyt zarządu (stan co klatkę do przygaszania wybranych miejsc, wejście
@@ -640,6 +663,8 @@ export interface StanMapy {
   miejsca: number;
   znaki: number;
   kropki: number;
+  /** ile znaczników spoza okolicy (`ZrodloMapy.znaczniki`) narysowano w ostatniej klatce */
+  znaczniki: number;
   wybrane: string | null;
   napis: string;
 }
@@ -659,6 +684,7 @@ export class MapaMiasta {
   private widoczne: Miejsce[] = [];
   private znaki = 0;
   private kropki = 0;
+  private znacznikowRys = 0;
   // okno (tylko gdy otwarte)
   private el: HTMLElement | null = null;
   private cv: HTMLCanvasElement | null = null;
@@ -790,6 +816,7 @@ export class MapaMiasta {
       miejsca: this.miejsca.size,
       znaki: this.znaki,
       kropki: this.kropki,
+      znaczniki: this.znacznikowRys,
       wybrane: this.wybrane,
       napis: this.stanEl?.hidden ? '' : (this.stanEl?.textContent ?? ''),
     };
@@ -1071,6 +1098,8 @@ export class MapaMiasta {
       } else if (kropkiWidac) kropki.push(v);
     }
     const przygas = (v: (typeof widoczne)[number]) => v.lok || this.wybraneDoCna(v.m, st);
+    const dodatki = this.zr.znaczniki?.() ?? [];
+    this.obrysyDodatkow(ctx, w, dodatki);
     for (const v of kropki) {
       ctx.globalAlpha = przygas(v) ? 0.45 : 0.95;
       ctx.fillStyle = CIEMNY;
@@ -1105,6 +1134,43 @@ export class MapaMiasta {
     const d = ZNAK_PX + 4;
     ctx.drawImage(this.obrazZnaku(SIEDZIBA), Math.round(ox - d / 2), Math.round(oy - d / 2), d, d);
     this.napis(ctx, L('Siedziba', 'HQ'), ox, oy + d / 2 + 2);
+    this.znacznikiDodatkow(ctx, w, dodatki);
+  }
+
+  /** obrysy kwadratów znaczników (przerywana linia w kolorze lampy, lekka wypełniona plama): pod znakami miejsc */
+  private obrysyDodatkow(ctx: CanvasRenderingContext2D, w: Widok, dodatki: readonly ZnacznikMapy[]): void {
+    for (const z of dodatki) {
+      const o = z.obrys;
+      if (!o || o.length < 3) continue;
+      ctx.save();
+      ctx.beginPath();
+      o.forEach(([x, y], k) => {
+        const [px, py] = rzut(w, this.szer, this.wys, x, y);
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+      ctx.fillStyle = 'rgb(230 165 64 / 0.1)';
+      ctx.fill();
+      ctx.setLineDash([6, 5]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgb(230 165 64 / 0.75)';
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /** znaki znaczników spoza okolicy z napisem pod nimi, nad miejscami i siedzibą (poza oknem widoku nic) */
+  private znacznikiDodatkow(ctx: CanvasRenderingContext2D, w: Widok, dodatki: readonly ZnacznikMapy[]): void {
+    this.znacznikowRys = 0;
+    const d = ZNAK_PX + 4;
+    for (const z of dodatki) {
+      const [px, py] = rzut(w, this.szer, this.wys, z.x, z.y);
+      if (px < -d || py < -d || px > this.szer + d || py > this.wys + d) continue;
+      ctx.drawImage(this.obrazZnaku(OSADA), Math.round(px - d / 2), Math.round(py - d / 2), d, d);
+      this.napis(ctx, z.napis, px, py + d / 2 + 2);
+      this.znacznikowRys++;
+    }
   }
 
   // ------------------------------------------------ mysz i palce

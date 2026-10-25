@@ -45,7 +45,17 @@
    bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero przy fladze), a
    zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z `?siec=1` (jedno ostrzeżenie w konsoli); gdy kod osady się
    nie załaduje, nowa gra rusza bez niej (`osadaBezKodu`), a gra z zapisu z osadą kończy się błędem wczytania.
-   `window.zm.osada()` pokazuje stan osady (null bez flagi). */
+   `window.zm.osada()` pokazuje stan osady (null bez flagi) i `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem).
+   Widok ich kwadratu (zadanie 5 etapu 2): przed odkryciem ośmiu sąsiadów domu leży pod mgłą „?” (`view.ustawMgleDomu`, osada czeka albo
+   jest; nie zdradza, który kryje osadę); po odkryciu (karta posła, `applyFx`) ich kwadrat staje w widoku jak kwadrat z `?kwadraty=`
+   (`pokazOsade`: `OsadaGry.kwadrat()`, `swiatKwadratu`, `scenaKwadratu`, `view.dodajKwadrat`, kawałki rysują workery), a budowa
+   zaczyna się już przy otwarciu karty posła (`budujKwadratOsady` w `showPrompt`), więc odpowiedź niesie tylko dołożenie do widoku;
+   odkryta osada z zapisu staje w widoku pod ekranem ładowania. Nad ich siedzibą stoi etykieta z nazwą w stylu „Suche drzewo”
+   (`placeOsadaMark`: znika, gdy zasłaniałaby pasek, cele, listę ludzi, kartę, podpowiedź albo przyciski), kliknięcie w siedzibę albo
+   etykietę otwiera kartę osady w miejscu karty osoby (`kliknijOsade`, src/ui/kartaOsady.ts: liczby z ostatniego kontaktu, nigdy z gry
+   osady; zamyka ją „×”, Esc, zaznaczenie kogoś i klik w dom), a mapa miasta ma znacznik z jej nazwą i obrysem kwadratu
+   (`znacznikiMapy`). Reszta ich kwadratu jest tylko do oglądania, jak kwadraty z `?kwadraty=`. `window.zm.odkryjOsade()` odsłania osadę
+   bez karty (tylko do zrzutów i pomiarów). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -170,9 +180,10 @@ import {
 } from './ui/imiona.ts';
 import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
+import { daneKartyOsady, kartaOsadyHtml } from './ui/kartaOsady.ts';
 import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
-import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
+import { MapaMiasta, mapaMiastaSheet, type ZnacznikMapy } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
 import { Minimapa } from './ui/minimapa.ts';
@@ -195,8 +206,9 @@ import {
   siecSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
-import type { OsadaGry, PodgladOsady } from './ui/osada.ts';
+import type { KwadratOsady, OsadaGry, PodgladOsady } from './ui/osada.ts';
 import { osadaBezKodu } from './ui/osada-brak.ts';
+import { naSiedzibie, obrysKwadratu, type SiedzibaWidoku, siedzibaWKwadracie } from './ui/osadaWidok.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
 import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
@@ -260,7 +272,7 @@ import {
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import type { Geo } from './world/geo.ts';
-import { czytajKwadraty, kluczKwadratu, ukladDomu } from './world/kwadraty.ts';
+import { czytajKwadraty, kluczKwadratu, type Uklad, ukladDomu } from './world/kwadraty.ts';
 import { demoList, type Loaded, loadAddress, loadDemo, loadDemoKwadraty } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
@@ -364,8 +376,13 @@ declare global {
           i sceny w ms; q −1 i brakDanych dla kwadratu bez danych (prawdziwy adres, brzeg danych dema) */
       kwadraty: readonly KwadratGry[];
       /** osada AI (?osada=1, src/ui/osada.ts): stan drugiej gry, jej klucz kwadratu, skrót, tick (równy naszemu), licznik odwołań i
-          błędów; null w grze bez flagi */
-      osada: () => PodgladOsady | null;
+          błędów oraz `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem, w grze bez jej kwadratu i gdy się nie zbudował), i
+          `siedziba`, jej siedziba w tym kwadracie (kotwica etykiety i środek w kafelkach układu miasta; null, gdy się nie znalazła);
+          null w grze bez flagi */
+      osada: () => (PodgladOsady & { kwadrat: number; siedziba: SiedzibaWidoku | null }) | null;
+      /** tylko do zrzutów i pomiarów: odsłania osadę teraz, jakby poseł podał jej liczby w tej chwili (bez karty), i czeka, aż jej
+          kwadrat stanie w widoku; false, gdy osady nie ma, jeszcze nie powstała albo jest już odkryta */
+      odkryjOsade: () => Promise<boolean>;
     };
   }
 }
@@ -385,6 +402,44 @@ let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
 /** druga gra na sąsiednim kwadracie (?osada=1; null w grze bez flagi): `krokSymulacji` prowadzi ją krok w krok z `sim`, `save` ją zapisuje */
 let osada: OsadaGry | null = null;
+/** Ich kwadrat w widoku (?osada=1, po odkryciu; src/ui/osadaWidok.ts): numer w widoku, położenie, świat kwadratu (nie gry osady),
+    siedziba w nim (null, gdy się nie znalazła: kwadrat jest, a etykiety i kliknięcia w niego nie ma) i punkt siedziby w metrach od
+    adresu (jej miejsce na mapie miasta). Poza stanem gry i zapisem: po wczytaniu gra buduje go od nowa z geo osady. */
+interface OsadaWWidoku {
+  q: number;
+  sx: number;
+  sy: number;
+  swiat: World;
+  siedziba: SiedzibaWidoku | null;
+  punkt: [number, number];
+}
+let osadaWidok: OsadaWWidoku | null = null;
+/** karta osady otwarta (klik w jej siedzibę albo w etykietę nad nią; zamyka ją „×”, Esc, zaznaczenie kogoś i klik gdzie indziej) */
+let osadaFocus = false;
+/** Ich kwadrat zbudowany, ale jeszcze nie w widoku: dane osady, świat kwadratu i jego scena. */
+interface ZbudowanyKwadrat {
+  kw: KwadratOsady;
+  swiat: World;
+  scena: Scene;
+}
+/** Budowa ich kwadratu (jedna na grę, obietnica trzymana, żeby budowę zacząć przed odkryciem i dokończyć po nim; niepowodzenie to
+    `null`, nie jest ponawiane i daje jedno ostrzeżenie w konsoli). */
+let osadaBudowa: Promise<ZbudowanyKwadrat | null> | null = null;
+/** czy kwadrat osady już poszedł do widoku (albo próba się nie udała): `pokazOsade` działa raz na grę */
+let osadaPokazana = false;
+/** Co trzeba mieć, żeby zbudować kwadrat obok domu (kwadraty z ?kwadraty= i kwadrat osady): geo domu z tagami (surowe geo
+    domu prostuje budynki przy szwie), jego świat i scena (styl na szwie, piętra), grafika i układ domu. Ustawia `enter`. */
+interface KontekstKwadratow {
+  geo: Geo;
+  world: World;
+  scene: Scene;
+  art: Awaited<typeof grafika>;
+  uklad: Uklad;
+  pietra: boolean;
+}
+let kontekstKwadratow: KontekstKwadratow | null = null;
+/** światy kwadratów obok domu z ?kwadraty= po kluczu „sx,sy”: kwadrat osady, który już tam stoi, nie dokłada się drugi raz */
+const swiatyObok = new Map<string, World>();
 let gov: GovState | null = null;
 /** stan ścieżki celów (src/ui/sciezka.ts): otwarty rozdział, cele zaliczone i przepadłe, także te, których nie widać
     już w stanie gry (drewno, które koza zje); liczy go `renderGoals` co odświeżenie okienka. Nowy przy nowej grze,
@@ -748,6 +803,14 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   mieszkancy = null;
   imieEdit = null;
   imionaGen.clear();
+  // ich kwadrat w widoku, jego karta i budowa należą do jednej gry (osada AI, ?osada=1)
+  osadaWidok = null;
+  osadaFocus = false;
+  osadaBudowa = null;
+  osadaPokazana = false;
+  kontekstKwadratow = null;
+  swiatyObok.clear();
+  $('osadaMark').hidden = true;
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   // widok pięter: wczytany zapis zachowuje to, z czym go zaczęto (nie czyta adresu), nowa gra czyta ?pietra=1
@@ -792,7 +855,13 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // mapa miasta: ten sam filtr nazw dla miejsc z doczytanych kafelków (RODO); bez położenia (proc) nie ma miasta
   mapaMiasta =
     opcjaMiasto && !data.geo.proc
-      ? new MapaMiasta({ c: data.geo.c, okolica, kafelki: kafelkiMiasta, nazwa: nazwaOkolicy })
+      ? new MapaMiasta({
+          c: data.geo.c,
+          okolica,
+          kafelki: kafelkiMiasta,
+          nazwa: nazwaOkolicy,
+          znaczniki: znacznikiMapy,
+        })
       : null;
   $('btnMiasto').hidden = !mapaMiasta;
   minimapa.ustaw(mapaMiasta ? { okolica, st: () => gov } : null);
@@ -866,7 +935,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   $('floorSel').hidden = !pietra;
   selektorPieter.odswiez(pietraLista, 0, null);
   // ?kwadraty=: kwadraty miasta obok domu do oglądania (zrzuty i pomiary); symulacja ich nie zna
-  kwadratyGry = await dodajKwadraty(data, geo, world, scene, art, pietra);
+  kontekstKwadratow = { geo, world, scene, art, uklad: ukladDomu(geo, world), pietra };
+  kwadratyGry = await dodajKwadraty(data, kontekstKwadratow);
   if (window.zm) window.zm.kwadraty = kwadratyGry;
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
@@ -905,6 +975,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
       }
     }
   }
+  // odkryta osada z zapisu: jej kwadrat staje w widoku jeszcze pod ekranem ładowania (przed `sim`, żeby pętla klatek nie ruszyła
+  // z niedokończoną grą)
+  if (osadaGry?.odkryta) await pokazOsade(osadaGry);
   sim = new Sim(world, st);
   osada = osadaGry;
   napisSeen = st.sasiedzi?.n ?? 0;
@@ -1056,20 +1129,36 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
 }
 
 /**
+ * Świat kwadratu (sx, sy) obok domu z jego geo: `buildKwadrat` z surowym geo domu (budynki przy szwie prostują się jak w domu) i,
+ * z widokiem pięter, z domem do poziomów pięter. Wspólne dla kwadratów z ?kwadraty= i kwadratu osady.
+ */
+function swiatKwadratu(k: KontekstKwadratow, g: Geo, sx: number, sy: number): World {
+  return buildKwadrat(g, {
+    seed,
+    uklad: k.uklad,
+    sx,
+    sy,
+    geoDomu: k.geo,
+    ...(k.pietra ? { pietra: true, dom: k.world } : {}),
+  });
+}
+
+/**
+ * Scena kwadratu obok domu: ziarno stylu z klucza budynku i styl domu na szwie (budynek, który ma kawałek w domu, wygląda tak jak
+ * w domu; inne dostają ziarno z klucza). Bez dokładania do widoku.
+ */
+function scenaKwadratu(k: KontekstKwadratow, w: World, sx: number, sy: number): Scene {
+  return buildScene(w, k.art, opcjeSceny({ swiat: w, dom: k.world, sceneDomu: k.scene, sx, sy, seed }));
+}
+
+/**
  * Kwadraty miasta obok domu z parametru ?kwadraty= (czytajKwadraty): dla dema ich dane z public/demo/<klucz>-kwadraty.json
  * (loadDemoKwadraty), dla prawdziwego adresu niczego nie pobieramy, więc stoi tam mgła z napisem „brak danych”. Każdy
  * kwadrat to świat z buildKwadrat (z surowym geo domu, żeby budynki przy szwie prostowały się jak w domu, i z domem do
  * poziomów pięter), scena z ziarnem stylu z klucza budynku i stylem domu na szwie, i dodajKwadrat w widoku. Symulacja
  * dostaje tylko dom. Zwraca czasy budowy do window.zm.kwadraty.
  */
-async function dodajKwadraty(
-  data: Loaded,
-  geo: Geo,
-  world: World,
-  scene: Scene,
-  art: Awaited<typeof grafika>,
-  pietra: boolean,
-): Promise<KwadratGry[]> {
+async function dodajKwadraty(data: Loaded, k: KontekstKwadratow): Promise<KwadratGry[]> {
   const lista = czytajKwadraty(params.get('kwadraty'));
   const out: KwadratGry[] = [];
   if (!lista.length) return out;
@@ -1081,7 +1170,6 @@ async function dodajKwadraty(
       console.warn('Kwadraty obok domu: brak danych dema', err);
     }
   }
-  const uklad = ukladDomu(geo, world);
   for (const [sx, sy] of lista) {
     const klucz = kluczKwadratu(sx, sy);
     const g = dane[klucz];
@@ -1092,12 +1180,10 @@ async function dodajKwadraty(
     }
     try {
       const t0 = performance.now();
-      const w = buildKwadrat(g, { seed, uklad, sx, sy, geoDomu: geo, ...(pietra ? { pietra: true, dom: world } : {}) });
+      const w = swiatKwadratu(k, g, sx, sy);
       const t1 = performance.now();
-      // budynek, który ma kawałek w domu, wygląda tak jak w domu (dom wygrywa na szwie); inne dostają ziarno z klucza
-      const opcje = opcjeSceny({ swiat: w, dom: world, sceneDomu: scene, sx, sy, seed });
-      const sc = buildScene(w, art, opcje);
-      const q = view.dodajKwadrat(sx, sy, sc);
+      const q = view.dodajKwadrat(sx, sy, scenaKwadratu(k, w, sx, sy));
+      swiatyObok.set(klucz, w);
       out.push({ klucz, q, msSwiat: t1 - t0, msScena: performance.now() - t1, brakDanych: false });
     } catch (err) {
       console.warn(`Kwadrat ${klucz}: nie udało się zbudować`, err);
@@ -1108,6 +1194,67 @@ async function dodajKwadraty(
     await new Promise((r) => setTimeout(r, 0));
   }
   return out;
+}
+
+/**
+ * Buduje ich kwadrat (świat i scenę z geo kwadratu sprzed przesunięcia do siedziby, `OsadaGry.kwadrat`), jeszcze bez dokładania go do
+ * widoku: trzy kroki z oddechem dla przeglądarki między nimi (dane, świat, scena), żeby żadna klatka nie niosła całej budowy (na
+ * telefonie z procesorem 4× wolniejszym to i tak ok. 70 ms na krok). Jedna budowa na grę: kolejne wołania dostają tę samą obietnicę,
+ * więc `showPrompt` może zacząć ją, gdy otwiera się karta posła (gracz czyta ją sekundy, a gra za oknem stoi), i odpowiedź na kartę
+ * dokłada już gotowy kwadrat jednym `dodajKwadrat`. Nie rzuca: błąd to jedno ostrzeżenie w konsoli i `null`.
+ */
+function budujKwadratOsady(o: OsadaGry): Promise<ZbudowanyKwadrat | null> {
+  const k = kontekstKwadratow;
+  if (!k) return Promise.resolve(null);
+  osadaBudowa ??= (async () => {
+    const oddech = () => new Promise<void>((r) => setTimeout(r, 0));
+    try {
+      const kw = o.kwadrat();
+      if (!kw) return null;
+      await oddech();
+      if (kontekstKwadratow !== k) return null;
+      const swiat = swiatKwadratu(k, kw.geo, kw.sx, kw.sy);
+      await oddech();
+      if (kontekstKwadratow !== k) return null;
+      return { kw, swiat, scena: scenaKwadratu(k, swiat, kw.sx, kw.sy) };
+    } catch (e) {
+      console.warn('Osada AI: nie udało się zbudować jej kwadratu, gra idzie dalej bez niego', e);
+      return null;
+    }
+  })();
+  return osadaBudowa;
+}
+
+/**
+ * Ich kwadrat w widoku po odkryciu osady (src/ui/osadaWidok.ts, zadanie 5 etapu 2 osady AI): zbudowany jak kwadrat z ?kwadraty=
+ * (`budujKwadratOsady`: `swiatKwadratu` i `scenaKwadratu`, kawałki rysują workery), dołożony do widoku i z siedzibą znalezioną w jego
+ * świecie. Wołają to odpowiedź na kartę posła (`applyFx`), `enter` dla odkrytej osady z zapisu (pod ekranem ładowania) i
+ * `zm.odkryjOsade`. Jedna próba na grę: gdy się nie uda, osada żyje dalej (karta posła i zarząd o niej wiedzą), a widoku jej kwadratu
+ * nie ma. Nie rzuca. Ich ludzi na żywo w widoku nie ma (etap 3: tylko gdy są tam nasi ludzie).
+ */
+async function pokazOsade(o: OsadaGry): Promise<void> {
+  const k = kontekstKwadratow;
+  if (!k || !o.odkryta || osadaWidok || osadaPokazana) return;
+  osadaPokazana = true;
+  try {
+    const b = await budujKwadratOsady(o);
+    if (!b || kontekstKwadratow !== k) return;
+    const { kw, swiat, scena } = b;
+    const klucz = kluczKwadratu(kw.sx, kw.sy);
+    // kwadrat z ?kwadraty= (obie flagi naraz, tylko do oglądania) już stoi w widoku: nie dokłada się drugi raz
+    const stoi = view.kwadratyObok().find((q) => q.sx === kw.sx && q.sy === kw.sy);
+    const q = stoi?.q ?? view.dodajKwadrat(kw.sx, kw.sy, scena);
+    // świat, z którego rysuje się ten kwadrat w widoku: z ?kwadraty=, gdy kwadrat już tam stał, inaczej świeżo zbudowany
+    const swiatWidoku = stoi ? (swiatyObok.get(klucz) ?? swiat) : swiat;
+    const siedziba = siedzibaWKwadracie(
+      swiatWidoku,
+      { klucz: kw.kluczSiedziby, sx: kw.sx, sy: kw.sy, punkt: kw.punkt },
+      k.uklad.kat,
+    );
+    osadaWidok = { q, sx: kw.sx, sy: kw.sy, swiat: swiatWidoku, siedziba, punkt: [kw.punkt[0], kw.punkt[1]] };
+  } catch (e) {
+    console.warn('Osada AI: nie udało się pokazać jej kwadratu, gra idzie dalej bez niego', e);
+  }
 }
 
 /**
@@ -1199,8 +1346,11 @@ function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
   if (!sim) return '';
   applyGov(sim.st, sim.w, fx);
   // pierwszy kontakt (karta posła): osada odsłonięta z tym, co poseł powiedział; nic z tego nie wchodzi do naszej symulacji ani do
-  // gry osady, a widok kwadratu osady odsłoni zadanie 5
-  if (fx.odkryjOsade) osada?.odkryj(fx.odkryjOsade);
+  // gry osady, a jej kwadrat staje w widoku (kilka kroków z oddechem, bez czekania)
+  if (fx.odkryjOsade && osada) {
+    osada.odkryj(fx.odkryjOsade);
+    void pokazOsade(osada);
+  }
   const last = tr(fx.log[fx.log.length - 1]);
   if (last && hint) say(last, 7000);
   return last;
@@ -1286,7 +1436,9 @@ function showPrompt(p: Prompt) {
     });
   else if (p.k === 'karta') showNight(p);
   else if (p.k === 'zwyciestwo') showEpilog(p.droga);
-  else
+  else {
+    // karta posła z osady: ich kwadrat buduje się, póki gracz ją czyta (gra za oknem stoi), żeby odpowiedź nie niosła kosztu budowy
+    if (p.id === 'posel' && osada && !osada.odkryta) void budujKwadratOsady(osada);
     modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       // „Pokaż”: kamera jedzie na miejsce z karty, okno zostaje otwarte (jak przy „Pokaż” przy przybyszach)
       if (act === 'event-show' && p.gdzie) {
@@ -1297,6 +1449,7 @@ function showPrompt(p: Prompt) {
       applyFx(chooseEvent(g, input(), Number(arg)));
       decided();
     });
+  }
 }
 
 function showNight(p: Extract<Prompt, { k: 'karta' }>) {
@@ -1931,6 +2084,10 @@ function krokSymulacji(s: Sim): void {
 
 function frame(now: number, dtMs: number) {
   if (!sim) return;
+  // gra z osadą (?osada=1, osada czeka albo jest): ośmiu sąsiadów domu pod mgłą, dopóki jej kwadrat nie zostanie odkryty (nie zdradza,
+  // który to); osada, której nie będzie (`brak`: tryb zombie, brak danych, błąd), mgły nie ma. Wołane co klatkę, ale zmienia widok
+  // tylko przy zmianie stanu.
+  view.ustawMgleDomu(osada !== null && osada.stan !== 'brak');
   stepFly(now);
   // klawiatura: przesuwanie mapy
   const pan = (900 * dtMs) / 1000 / view.cam.zoom;
@@ -1969,6 +2126,7 @@ function frame(now: number, dtMs: number) {
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
+  placeOsadaMark(now);
   siec.klatka(sim, now, modal.open);
   placeGhost();
   // zapis co godzinę gry
@@ -2168,9 +2326,14 @@ function hud(now: number) {
     // karta mieszkania po kliknięciu w mieszkanie siedziby, karta budynku po kliknięciu w sąsiedni budynek
     const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
-    card.hidden = !apt && !bud;
+    // karta osady po kliknięciu w jej siedzibę: liczby z ostatniego kontaktu, nigdy z jej gry (src/ui/kartaOsady.ts)
+    const dane =
+      !apt && !bud && osadaFocus && osada ? daneKartyOsady(osada, tx(words.zarzad.krotko, wordsE.krotko)) : null;
+    if (osadaFocus && !dane && !apt && !bud) osadaFocus = false;
+    card.hidden = !apt && !bud && !dane;
     if (apt) setCard(aptCard(apt, touchUI, words, wordsE));
     else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot, pietraGry), touchUI));
+    else if (dane) setCard(kartaOsadyHtml(dane));
     return;
   }
   card.hidden = false;
@@ -2422,6 +2585,77 @@ function placeMarker() {
 }
 const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 
+/** napis etykiety osady i jego rozmiar w pikselach (mierzone po zmianie tekstu, nie co klatkę) */
+let osadaMarkTekst = '';
+let osadaMarkW = 150;
+let osadaMarkH = 24;
+/** nakładki, z których etykieta osady ustępuje (prostokąty ekranu): liczone najwyżej co 150 ms, nie co klatkę */
+let osadaNakladki: { l: number; t: number; r: number; b: number }[] = [];
+let osadaNakladkiAt = -1e9;
+const NAKLADKI_ID = ['top', 'goals', 'card', 'hint', 'arrive', 'minimapa', 'buildPanel', 'pracaPanel', 'placeBar'];
+
+/** prostokąty nakładek nad mapą: pasek, cele, karta, podpowiedź, komunikat o przybyszach, minimapa, panele, pasek stawiania, przyciski
+    przybliżenia, atrybucja i chipy listy ludzi */
+function odswiezNakladki(now: number): void {
+  if (now - osadaNakladkiAt < 150) return;
+  osadaNakladkiAt = now;
+  const elementy: HTMLElement[] = [];
+  for (const id of NAKLADKI_ID) elementy.push($(id));
+  elementy.push(...document.querySelectorAll<HTMLElement>('.mapctl, .attrib, #lista .lp'));
+  osadaNakladki = elementy
+    .filter((e) => naEkranie(e))
+    .map((e) => e.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom }));
+}
+
+/** Etykieta z nazwą osady nad jej siedzibą (po odkryciu): ten sam napis co „Suche drzewo” (klasa `treemark`), jedzie z mapą, a stuknięcie
+    w nią otwiera kartę osady. Widać ją tylko wtedy, gdy kotwica jest na ekranie i napis niczego nie zasłania (pasek, cele, lista ludzi,
+    karta, podpowiedź, przyciski, atrybucja): nakładki są ważniejsze, więc etykieta wtedy znika, a nie przesuwa się. */
+function placeOsadaMark(now: number): void {
+  const el = $('osadaMark');
+  const sied = osadaWidok?.siedziba;
+  const swiat = osada?.swiat;
+  if (!sied || !swiat || !osada?.odkryta || modal.open || badaniaOtwarta()) {
+    if (!el.hidden) el.hidden = true;
+    return;
+  }
+  const [ax, ay] = screenOf(sied.etykieta.x, sied.etykieta.y);
+  const margines = 4;
+  if (ax < margines || ax > view.width - margines || ay < 0 || ay > view.height) {
+    if (!el.hidden) el.hidden = true;
+    return;
+  }
+  const label = el.firstElementChild as HTMLElement;
+  const nazwa = tr(swiat.nazwa);
+  if (nazwa !== osadaMarkTekst || label.textContent !== nazwa) {
+    osadaMarkTekst = nazwa;
+    label.textContent = nazwa;
+    // ukryty element nie ma wymiarów: pomiar po pokazaniu
+    el.hidden = false;
+    osadaMarkW = label.offsetWidth || osadaMarkW;
+    osadaMarkH = label.offsetHeight || osadaMarkH;
+  }
+  // napis wystający za ekran przesuwa się płynnie do środka (ogonek zostaje przy kotwicy)
+  const x0 = ax - osadaMarkW / 2;
+  const przesuniecie = Math.max(margines - x0, Math.min(0, view.width - margines - (x0 + osadaMarkW)));
+  // prostokąt napisu: nad kotwicą (10 px od niej, ogonek w tym odstępie) i szerokość napisu
+  const l = x0 + przesuniecie;
+  const t = ay - 10 - osadaMarkH;
+  odswiezNakladki(now);
+  const zaslania = osadaNakladki.some((n) => l < n.r && l + osadaMarkW > n.l && t < n.b && ay > n.t);
+  if (zaslania) {
+    if (!el.hidden) el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.style.setProperty('--shift', `${Math.round(przesuniecie)}px`);
+  el.style.transform = `translate(${Math.round(ax)}px, ${Math.round(ay)}px)`;
+}
+$('osadaMark').addEventListener('click', () => {
+  otworzKarteOsady();
+});
+
 function say(t: string, ms = 4000) {
   hint = t;
   hintUntil = performance.now() + ms;
@@ -2574,6 +2808,12 @@ $('card').addEventListener('click', (e) => {
   // linia potrzeb i przycisk „Więcej” na telefonie rozwijają i zwijają blok karty; to wybór interfejsu, nie polecenie dla symulacji
   if (b?.dataset.card === 'potrzeby') return przelaczPotrzeby();
   if (b?.dataset.card === 'wiecej') return przelaczWiecej();
+  // karta osady: jedyny przycisk to zamknięcie (reszta karty to sam tekst)
+  if (b?.dataset.card === 'osada-zamknij') {
+    osadaFocus = false;
+    hud(performance.now());
+    return;
+  }
   if (!b || !sim) return;
   const st = sim.st;
   // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
@@ -3153,6 +3393,7 @@ function selectedChanged() {
   aptFocus = -1;
   budFocus = -1;
   residentFocus = -1;
+  osadaFocus = false;
   if (sim?.st.tut.step !== 0 || !selected.size) return;
   sim.push({ t: 'select', ids: [...selected] });
 }
@@ -3175,11 +3416,53 @@ let aptFocus = -1;
 /** cudzy budynek na karcie budynku (M2 fala 2: klik w sąsiedni budynek, gdy nikt nie jest zaznaczony) albo −1 */
 let budFocus = -1;
 
+/** Karta osady w miejscu karty osoby (klik w jej siedzibę albo w etykietę nad nią): zaznaczenie i inne karty ustępują. Bez odkrycia
+    i kontaktu nie ma czego pokazać, więc nic. */
+function otworzKarteOsady(): boolean {
+  if (!osada || !daneKartyOsady(osada)) return false;
+  selected.clear();
+  aptFocus = -1;
+  budFocus = -1;
+  residentFocus = -1;
+  osadaFocus = true;
+  ctx.close();
+  hud(performance.now());
+  return true;
+}
+
+/** Klik w punkt ekranu: czy to siedziba osady w jej kwadracie (obrys budynku w świecie kwadratu, `naSiedzibie`); jeśli tak, otwiera
+    jej kartę. Reszta jej kwadratu, jej pionków i mgły nie reaguje (kwadraty obok domu są tylko do oglądania). */
+function kliknijOsade(px: number, py: number): boolean {
+  const ow = osadaWidok;
+  const sied = ow?.siedziba;
+  if (!ow || !sied) return false;
+  const [wx, wy] = view.toWorld(px, py);
+  return naSiedzibie(ow.swiat, ow.sx, ow.sy, sied.bid, wx / TILE, wy / TILE) && otworzKarteOsady();
+}
+
+/** Znaczniki na mapie miasta: osada AI po odkryciu (jej kwadrat i nazwa przy siedzibie); bez osady, przed odkryciem i bez widoku jej
+    kwadratu pusta lista. Obrys kwadratu to jego rogi w układzie mapy (`obrysKwadratu`). */
+function znacznikiMapy(): ZnacznikMapy[] {
+  const ow = osadaWidok;
+  const jej = osada?.swiat;
+  const k = kontekstKwadratow;
+  if (!ow || !jej || !k || !osada?.odkryta) return [];
+  return [
+    {
+      x: ow.punkt[0],
+      y: ow.punkt[1],
+      napis: tr(jej.nazwa),
+      obrys: obrysKwadratu(k.uklad, ow.sx, ow.sy),
+    },
+  ];
+}
+
 /** karta pod kliknięciem bez zaznaczenia: mieszkanie siedziby albo sąsiedni budynek */
 function focusTile(sx: number, sy: number) {
   if (!sim || zablokowanyKlik(sx, sy)) return;
   const tile = view.tileAt(sx, sy);
   if (tile < 0) return;
+  osadaFocus = false;
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
   budFocus = aptFocus < 0 && bid >= 0 && bid !== sim.w.hq ? bid : -1;
@@ -3684,6 +3967,8 @@ const endPointer = (e: PointerEvent) => {
     }
     return;
   }
+  // klik w siedzibę osady (jej kwadrat jest tylko do oglądania): karta osady zamiast polecenia, także z zaznaczonymi ludźmi
+  if (!placing && d.button === 0 && kliknijOsade(e.offsetX, e.offsetY)) return;
   // klik poza domem, gdy obok są kwadraty tylko do oglądania: gra go ignoruje (nic nie zaznacza, nie rozkazuje, nie stawia)
   if (view.maKwadraty && view.tileAt(e.offsetX, e.offsetY) < 0) return;
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
@@ -3720,6 +4005,7 @@ const endPointer = (e: PointerEvent) => {
       residentFocus = lok.id;
       aptFocus = -1;
       budFocus = -1;
+      osadaFocus = false;
       zdarzenie('mieszkaniec');
     } else focusTile(e.offsetX, e.offsetY);
     return;
@@ -3728,6 +4014,7 @@ const endPointer = (e: PointerEvent) => {
     residentFocus = lok.id;
     aptFocus = -1;
     budFocus = -1;
+    osadaFocus = false;
     zdarzenie('mieszkaniec');
     return;
   }
@@ -3859,6 +4146,7 @@ window.addEventListener('keydown', (e) => {
       aptFocus = -1;
       budFocus = -1;
       residentFocus = -1;
+      osadaFocus = false;
     }
   }
   if (e.code === 'Equal' || e.code === 'NumpadAdd') view.zoomAt(view.width / 2, view.height / 2, 1.25);
@@ -4169,7 +4457,17 @@ zastosujKarte();
     pietro: wybierzPietro,
     pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
     kwadraty: [],
-    osada: () => osada?.podglad() ?? null,
+    osada: () => {
+      const p = osada?.podglad();
+      return p ? { ...p, kwadrat: osadaWidok?.q ?? -1, siedziba: osadaWidok?.siedziba ?? null } : null;
+    },
+    odkryjOsade: async () => {
+      const w = osada?.dlaZarzadu();
+      if (!sim || !osada || !w || osada.odkryta) return false;
+      osada.odkryj({ dzien: dayOf(sim.st.tick), ludnosc: w.ludnosc, budowle: w.budowle });
+      await pokazOsade(osada);
+      return osadaWidok !== null;
+    },
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });

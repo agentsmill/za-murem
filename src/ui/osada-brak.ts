@@ -45,6 +45,7 @@ export function osadaBezKodu(e: unknown): OsadaGry {
     krok() {},
     odkryj() {},
     dlaZarzadu: () => null,
+    kwadrat: () => null,
     zapisz: zapis,
     podglad: () => ({ stan: 'brak', powod: 'blad', blad }),
   };

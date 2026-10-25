@@ -37,6 +37,11 @@
    (w metrach od adresu, bez obrotu) zależy od kąta domu (`srodekKwadratu`), a geo sąsiada tego kąta nie zna. Wołający ma go z
    `ukladDomu(geo, world)` albo `ukladZGeo(geo)`.
 
+   Widok ich kwadratu (zadanie 5) buduje kwadrat obok domu z geo kwadratu SPRZED przesunięcia, a zapis trzyma tylko geo przesunięte:
+   `przesuniecieOsady` odczytuje przesunięcie z `c` obu geo (`przesunGeo` przesuwa środek geograficznie o tyle samo co punkty, a `c`
+   kwadratu to środek układu domu), `geoKwadratuOsady` oddaje z niego geo kwadratu punkt w punkt (współrzędne na siatce 0,5 m),
+   bez zmiany formatu zapisu.
+
    Geo osady (`SwiatOsady.geo`) to geo kwadratu przesunięte o punkt siedziby zaokrąglony do 0,5 m (zapis zostaje zwarty, a
    współrzędne na siatce, na której je podano), ze środkiem `c` przesuniętym geograficznie o tyle samo (generator
    mieszkańców liczy z `c` szerokość i długość budynków, a klucze miejsc są bezwzględne), bez tagów generatora. Zapis gry

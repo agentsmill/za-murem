@@ -36,6 +36,7 @@ describe('osadaBezKodu: zaślepka, gdy nie załadował się kod osady', () => {
     expect(osada.kontakt).toBeUndefined();
     expect(osada.odwolania).toBe(0);
     expect(osada.upadla).toBeNull();
+    expect(osada.kwadrat()).toBeNull();
   });
 
   it('wszystko inne jest bez skutku i bez wyjątku: dane, przygotowanie, kroki, odkrycie, a ostrzeżenie nie powtarza się', () => {

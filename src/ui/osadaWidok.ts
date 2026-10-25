@@ -16,6 +16,7 @@
 
 import type { Pt } from '../world/geo.ts';
 import { kluczBudynku } from '../world/klucze.ts';
+import type { Uklad } from '../world/kwadraty.ts';
 import type { World } from '../world/world.ts';
 
 /** Siedziba osady w jej kwadracie w widoku. Współrzędne w kafelkach układu miasta (kwadrat (sx, sy) zaczyna się w (sx·bok, sy·bok)). */
@@ -122,4 +123,19 @@ export function naSiedzibie(
   const ly = Math.floor(y - sy * kw.size);
   if (lx < 0 || ly < 0 || lx >= kw.size || ly >= kw.size) return false;
   return kw.bid[ly * kw.size + lx] === bid;
+}
+
+/** Rogi kwadratu (sx, sy) w metrach od adresu w układzie geo, bez obrotu (jak `Miejsce` i `Geo`): na mapie miasta z północą u góry to
+    kwadrat obrócony o kąt domu. Kwadrat zajmuje w układzie obróconym [(sx−½)·bok, (sx+½)·bok] × [(sy−½)·bok, (sy+½)·bok], a rogi
+    wracają o ten sam obrót, który `srodekKwadratu` cofa dla środka: kolejno północny zachód, północny wschód, południowy wschód,
+    południowy zachód. */
+export function obrysKwadratu(uklad: Pick<Uklad, 'kat' | 'bok'>, sx: number, sy: number): Pt[] {
+  const c = Math.cos(uklad.kat);
+  const s = Math.sin(uklad.kat);
+  const rog = (dx: number, dy: number): Pt => {
+    const x = (sx + dx) * uklad.bok;
+    const y = (sy + dy) * uklad.bok;
+    return [x * c + y * s, y * c - x * s];
+  };
+  return [rog(-0.5, -0.5), rog(0.5, -0.5), rog(0.5, 0.5), rog(-0.5, 0.5)];
 }

@@ -48,6 +48,10 @@
    9:00. Każdy wybór karty daje skutek `odkryjOsade`, po którym gospodarz woła `odkryj` z liczbami, które poseł podał (dzień, ludność
    i budowle `budowleStojace` w chwili karty): osada jest odkryta, a kontakt trafia do zapisu. Kontakt niczego nie zmienia w grze osady.
 
+   Widok ich kwadratu (zadanie 5): `kwadrat()` podaje gospodarzowi to, z czego buduje on kwadrat obok domu po odkryciu (geo kwadratu
+   sprzed przesunięcia do siedziby, położenie, punkt i klucz siedziby), tak samo dla żywej osady i wczytanej z zapisu; resztę robi
+   main.ts (src/ui/osadaWidok.ts, src/ui/kartaOsady.ts), a karta osady czyta z osady tylko kontakt, nazwę i kierunek.
+
    Moduł niczego nie losuje (kolejność kandydatów, ziarna i wszystko w grze osady idzie z ziaren) i nie czyta zegara. Poza kartą posła
    nic z osady nie wpływa na naszą grę: etap 2 nie ma ludzi między grami, handlu ani napadów. */
 
@@ -62,10 +66,12 @@ import {
   zapiszGre,
 } from '../ai/gra.ts';
 import {
+  geoKwadratuOsady,
   jedzenieWZasiegu,
   kandydaciOsady,
   kierunekOsady,
   nazwaOsady,
+  przesuniecieOsady,
   type SwiatOsady,
   swiatZGeo,
   wybierzOsade,
@@ -83,7 +89,8 @@ import { mieszkancyZapisu } from '../sim/osiedle.ts';
 import { doOtoczenia } from '../sim/sasiedzi.ts';
 import { populacja } from '../sim/snapshot.ts';
 import type { GameMode } from '../sim/tryb.ts';
-import type { Geo } from '../world/geo.ts';
+import type { Geo, Pt } from '../world/geo.ts';
+import { kluczBudynku } from '../world/klucze.ts';
 import { kluczKwadratu, type Uklad, zKlucza } from '../world/kwadraty.ts';
 import { geoKwadratu, type Loaded, loadDemoKwadraty, type PamiecKafelkow } from '../world/load.ts';
 import { worldKey } from './zapis.ts';
@@ -170,6 +177,21 @@ export interface PodgladOsady {
   zawieszonychRazem?: number;
 }
 
+/** Ich kwadrat dla widoku (po odkryciu, `OsadaGry.kwadrat`): z tego main.ts buduje kwadrat obok domu jak kwadrat z `?kwadraty=`. */
+export interface KwadratOsady {
+  /** położenie kwadratu w kwadratach od domu */
+  sx: number;
+  sy: number;
+  /** geo kwadratu w układzie domu SPRZED przesunięcia do siedziby (metry od adresu bez obrotu, `c` domu): to, co dostaje
+      `buildKwadrat`; zapis osady trzyma geo już przesunięte, więc wraca z niego `geoKwadratuOsady` */
+  geo: Geo;
+  /** punkt siedziby w tym układzie (metry od adresu bez obrotu, siatka 0,5 m): jej miejsce na mapie miasta i punkt do szukania
+      siedziby w świecie kwadratu, gdy budynek nie ma klucza */
+  punkt: Pt;
+  /** klucz budynku siedziby (`zm:klucz`) albo null, gdy dane go nie mają */
+  kluczSiedziby: string | null;
+}
+
 export interface OsadaGry {
   /** Dane kandydatów: wołane raz, gdy wszystkie osiem pobrań sąsiednich kwadratów się skończyło (demo od razu, prawdziwy adres w tle;
       kwadraty, które się nie pobrały, brakują w rekordzie). Po starcie osady i w stanie `brak` bez skutku. */
@@ -204,6 +226,10 @@ export interface OsadaGry {
       ludność (`populacja`), stojące budowle (`budowleStojace`), odwołania i upadek. Nowy obiekt przy każdym wywołaniu; `null`
       poza stanem `jest` (przed startem, w `brak`), czyli wtedy zarząd nie dostaje pola i karta posła nie wchodzi. */
   dlaZarzadu(): WejscieOsady | null;
+  /** Dane ich kwadratu dla widoku (zadanie 5: po odkryciu `main.ts` pokazuje go obok domu): geo kwadratu sprzed przesunięcia do
+      siedziby, jego położenie, punkt i klucz siedziby. Liczy się z geo osady (`geoKwadratuOsady`), więc jest taki sam dla żywej
+      osady i wczytanej z zapisu; kopia geo przy każdym wywołaniu (wołaj raz). `null` poza stanem `jest`. */
+  kwadrat(): KwadratOsady | null;
   zapisz(): StanOsady;
   podglad(): PodgladOsady;
 }
@@ -413,6 +439,19 @@ class OsadaWGrze implements OsadaGry {
       budowle: budowleStojace(st.things),
       odwolania: s.odwolania,
       ...(s.upadla ? { upadla: { ...s.upadla } } : {}),
+    };
+  }
+
+  kwadrat(): KwadratOsady | null {
+    const s = this.s;
+    if (s.stan !== 'jest') return null;
+    const w = s.swiat;
+    return {
+      sx: w.sx,
+      sy: w.sy,
+      geo: geoKwadratuOsady(w.geo, this.uklad),
+      punkt: przesuniecieOsady(w.geo, this.uklad),
+      kluczSiedziby: kluczBudynku(w.world.buildings[w.world.hq] ?? { tags: {} }),
     };
   }
 

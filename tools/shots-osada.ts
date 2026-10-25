@@ -45,8 +45,22 @@
    - `osada-kontakt-en`: to samo na telefonie (390×844) po angielsku: tytuł, treść i wybory bez polskich liter, okno mieści się na ekranie
      razem z przyciskami. Zrzut na końcu to ta karta (telefon, angielski);
    - `osada-kontakt-bez-flagi`: gra bez `?osada=1` przez siedem dób: żadnej karty posła w kronice, `zm.osada()` null, zapis bez osady.
-   Zrzut na końcu pozostałych scenariuszy to zwykła gra (osada w etapie 2 niczego nie rysuje: jej kwadrat pokazuje zadanie 5), po nim
-   ogląda się, że gra wygląda jak zawsze (atrybucja mapy, brak plam po błędzie). */
+   Widok ich kwadratu i karta osady (zadanie 5, src/ui/kartaOsady.ts, src/ui/osadaWidok.ts); każdy z nich sprawdza atrybucję map
+   (widoczna i na wierzchu) i milczy w konsoli:
+   - `osada-mgla`: przed odkryciem ośmiu sąsiadów domu pod mgłą (także po starcie osady o 6:00 drugiego dnia), `zm.osada().kwadrat`
+     to −1, bez etykiety i karty, a klik w mgłę niczego nie rusza (bez podpowiedzi, menu, karty i polecenia; kontrola: prawy klik
+     w domu daje podpowiedź). Zrzut: zachodni brzeg domu i mgła ze znakiem zapytania;
+   - `osada-widok`: po odkryciu przez kartę posła kwadrat osady stoi w widoku (numer, położenie, mgła na nieodkrytych sąsiadach domu
+     i osady), siedziba znaleziona po kluczu budynku, etykieta z nazwą nad nią niczego nie zasłania; zapis i wczytanie budują kwadrat
+     od nowa z tą samą siedzibą. Zrzuty: siedziba z bliska (`osada-widok`) i dom z osadą z daleka (`osada-widok-daleko`);
+   - `osada-karta`: klik w budynek siedziby (albo etykietę) otwiera kartę osady z nazwą, kierunkiem i liczbami z ostatniego kontaktu
+     (nie z gry osady), jedynym przyciskiem „×” i bez dyplomacji; zamykają ją „×”, Esc, zaznaczenie kogoś i klik w dom, klik w siedzibę
+     z zaznaczoną osobą nie wydaje polecenia. Zrzuty: karta na komputerze po polsku (`osada-karta`, `osada-karta-otwarta`);
+   - `osada-karta-en`: to samo na telefonie 390×844 po angielsku: karta w ekranie, nic na nic nie nachodzi (`nachodzenia`), etykieta
+     niczego nie zasłania, „×” na palec, tekst bez polskich liter;
+   - `osada-mapa`: mapa miasta ma znacznik osady po odkryciu (nie ma go przed).
+   Zrzut na końcu pozostałych scenariuszy to zwykła gra, po nim ogląda się, że gra wygląda jak zawsze (atrybucja mapy, brak plam po
+   błędzie). */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +76,8 @@ import { ukladZGeo, zKlucza } from '../src/world/kwadraty.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { waitIdle } from './browser.ts';
 import { daneDema, wczytajDemo } from './osada-kwadraty.ts';
-import { chopDryTree, GRA, kliknij, minutaGry, przewin, type ShotCele } from './shots-cele.ts';
+import { chopDryTree, GRA, kliknij, minutaGry, poHudzie, przewin, type ShotCele } from './shots-cele.ts';
+import { nachodzenia, stos } from './shots-uklad.ts';
 
 /** katalog kafelków testowych i TileJSON (jak w tools/shots.ts) */
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
@@ -150,6 +165,24 @@ async function sasiedziBezSieci(page: Page, tryb: 'zerwana' | 'wisi'): Promise<v
       return oryginal(wejscie, init);
     };
   }, tryb);
+}
+
+/** Kafelki dla okna mapy miasta jak `kafelkiMapy` w tools/shots.ts: szablon i z=14 z tests/fixtures (cztery wokół Przymorza), inne z=14
+    i całe z=12 puste. */
+async function kafelkiMapy(page: Page): Promise<void> {
+  await page.route('https://tiles.openfreemap.org/planet', (r) =>
+    r.fulfill({ contentType: 'application/json', body: fs.readFileSync(path.join(FIX, 'tj.json'), 'utf8') }),
+  );
+  await page.route(/tiles\.openfreemap\.org\/planet\/.+\/(\d+)\/(\d+)\/(\d+)\.pbf/, (r) => {
+    const m = r
+      .request()
+      .url()
+      .match(/\/(\d+)\/(\d+)\/(\d+)\.pbf/)!;
+    const f = path.join(FIX, `t_${m[2]}_${m[3]}.pbf`);
+    if (m[1] === '14' && fs.existsSync(f))
+      return r.fulfill({ contentType: 'application/x-protobuf', body: fs.readFileSync(f) });
+    return r.fulfill({ status: 204, body: '' });
+  });
 }
 
 /** liczy ostrzeżenia konsoli o osadzie (komunikaty modułu zaczynają się od „Osada AI”) */
@@ -459,7 +492,559 @@ async function sprawdzKarte(
   return liczby;
 }
 
-export function osadaShots(): ShotCele[] {
+/** Gra do odkrycia osady przez kartę posła (inne okna zarządu dostają pierwszy wybór), odpowiada wyborem `wybor` (stuknięciem na
+    telefonie) i czeka, aż jej kwadrat stanie w widoku i dorysują się kawałki. Zwraca odczyt osady po odkryciu. */
+async function doOdkrycia(page: Page, dotyk: boolean, wybor = 0): Promise<NonNullable<Odczyt['osada']>> {
+  await doPosla(page);
+  await kliknij(page, `#sheet .choices [data-act="event"][data-arg="${wybor}"]`, dotyk);
+  await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+  await page.waitForFunction(() => (window.zm!.osada()?.kwadrat ?? -1) > 0, null, { timeout: 30_000 });
+  await waitIdle(page);
+  const o = (await odczyt(page)).osada;
+  wymagaj(o?.stan === 'jest' && o.odkryta === true && o.kwadrat > 0, 'osada odkryta i jej kwadrat w widoku', o);
+  wymagaj(o.siedziba !== null, 'siedziba osady znaleziona w jej kwadracie', o);
+  return o;
+}
+
+/** Kamera na siedzibę osady przy zoomie `zoom` i czekanie na dorysowanie kawałków: środek ekranu leży 8 kafelków pod środkiem górnej
+    krawędzi obrysu (kotwicą etykiety), więc etykieta stoi nad środkiem ekranu, daleko od okienka celów po lewej, a dach pod nią. */
+async function naSiedzibe(page: Page, zoom: number, pod = 8): Promise<void> {
+  await page.evaluate(
+    ([z, d]) => {
+      const e = window.zm!.osada()!.siedziba!.etykieta;
+      window.zm!.setCam(e.x, e.y + d, z);
+    },
+    [zoom, pod] as const,
+  );
+  await waitIdle(page);
+  // kamera dochodzi w pętli klatek (przycięcie do zakresu), a etykieta ustawia się po niej
+  await page.waitForTimeout(150);
+}
+
+/** Punkt ekranu (px) na górnym rzędzie obrysu siedziby osady, w środku kafelka: tam klika się w jej budynek. */
+const punktSiedziby = (page: Page): Promise<[number, number]> =>
+  page.evaluate(() => {
+    const e = window.zm!.osada()!.siedziba!.etykieta;
+    return window.zm!.screenOf(e.x, e.y + 0.5);
+  });
+
+/** Klik albo stuknięcie w punkt ekranu. */
+const klikPunkt = (page: Page, [x, y]: [number, number], dotyk: boolean): Promise<void> =>
+  dotyk ? page.touchscreen.tap(x, y) : page.mouse.click(x, y);
+
+/** Co widać z karty osady: nagłówek, akapity i etykiety, liczby z listy, przyciski i atrybuty (ta sama karta co `#card`). */
+async function widokKarty(page: Page): Promise<{
+  widac: boolean;
+  nazwa: string;
+  tekst: string;
+  liczby: string[];
+  przyciski: string[];
+  dataAct: number;
+}> {
+  return page.evaluate(() => {
+    const k = document.getElementById('card')!;
+    return {
+      widac: !k.hidden && !!k.querySelector('.osada-glowa'),
+      nazwa: k.querySelector('h2')?.textContent ?? '',
+      tekst: (k.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      liczby: [...k.querySelectorAll('.apt-c')].map((e) => e.textContent ?? ''),
+      przyciski: [...k.querySelectorAll('button')].map((b) => b.getAttribute('data-card') ?? ''),
+      dataAct: k.querySelectorAll('[data-act]').length,
+    };
+  });
+}
+
+/** Prostokąty nakładek gry (px ekranu), pod którymi etykieta osady nie może stać, i prostokąt samej etykiety, gdy jest widoczna. */
+async function etykietaINakladki(page: Page): Promise<{
+  etykieta: { l: number; t: number; r: number; b: number; tekst: string } | null;
+  nakladki: { nazwa: string; l: number; t: number; r: number; b: number }[];
+}> {
+  return page.evaluate(() => {
+    const widoczny = (e: Element | null): e is HTMLElement => {
+      if (!(e instanceof HTMLElement) || e.hidden || getComputedStyle(e).display === 'none') return false;
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const prosty = (nazwa: string, e: HTMLElement) => {
+      const r = e.getBoundingClientRect();
+      return { nazwa, l: r.left, t: r.top, r: r.right, b: r.bottom };
+    };
+    // pojemnik etykiety nie ma własnych wymiarów (napis leży w nim absolutnie), więc o widoczności mówi napis
+    const mark = document.querySelector<HTMLElement>('#osadaMark .treemark-t');
+    const wm = document.getElementById('osadaMark');
+    const etykieta =
+      wm && !wm.hidden && widoczny(mark) && mark
+        ? (() => {
+            const r = mark.getBoundingClientRect();
+            return { l: r.left, t: r.top, r: r.right, b: r.bottom, tekst: mark.textContent ?? '' };
+          })()
+        : null;
+    const sel = [
+      '#top',
+      '#goals',
+      '#card',
+      '#hint',
+      '#arrive',
+      '#minimapa',
+      '#buildPanel',
+      '#pracaPanel',
+      '#placeBar',
+      '.mapctl',
+      '.attrib',
+    ];
+    const nakladki = sel.flatMap((s) => [...document.querySelectorAll(s)].filter(widoczny).map((e) => prosty(s, e)));
+    for (const chip of document.querySelectorAll('#lista .lp'))
+      if (widoczny(chip)) nakladki.push(prosty('#lista .lp', chip));
+    return { etykieta, nakladki };
+  });
+}
+
+/** Etykieta osady nie nachodzi na żadną nakładkę (pasek, cele, karta, lista ludzi, podpowiedź, przyciski, atrybucja). */
+async function sprawdzEtykiete(page: Page, opis: string): Promise<void> {
+  const { etykieta, nakladki } = await etykietaINakladki(page);
+  wymagaj(etykieta, `${opis}: etykieta osady jest widoczna`);
+  const zle = nakladki.filter((n) => etykieta.l < n.r && etykieta.r > n.l && etykieta.t < n.b && etykieta.b > n.t);
+  wymagaj(zle.length === 0, `${opis}: etykieta „${etykieta.tekst}” nie zasłania nakładek`, { etykieta, zle });
+  const [szer, wys] = await page.evaluate(() => [innerWidth, innerHeight]);
+  wymagaj(
+    etykieta.l >= -0.5 && etykieta.r <= szer + 0.5 && etykieta.t >= -0.5 && etykieta.b <= wys + 0.5,
+    `${opis}: etykieta mieści się na ekranie`,
+    etykieta,
+  );
+}
+
+/** Atrybucja map (stopka `.attrib`) jest widoczna i niczym niezasłonięta w środku swojego napisu: wymóg każdego zrzutu. */
+async function sprawdzAtrybucje(page: Page, opis: string): Promise<void> {
+  const a = await page.evaluate(() => {
+    const e = document.querySelector<HTMLElement>('#app .attrib');
+    if (!e || e.hidden || getComputedStyle(e).display === 'none') return null;
+    const r = e.getBoundingClientRect();
+    const srodek = document.elementFromPoint(r.left + 24, r.top + r.height / 2);
+    return {
+      tekst: e.textContent ?? '',
+      widac: r.width > 0 && r.height > 0 && r.bottom <= innerHeight + 0.5,
+      naWierzchu: !!srodek && (srodek === e || e.contains(srodek)),
+    };
+  });
+  wymagaj(a?.widac && a.naWierzchu, `${opis}: atrybucja map widoczna i na wierzchu`, a);
+  wymagaj(
+    /OpenStreetMap/.test(a.tekst) && /OpenFreeMap/.test(a.tekst) && /OpenMapTiles/.test(a.tekst),
+    `${opis}: atrybucja wymienia OpenStreetMap, OpenFreeMap i OpenMapTiles`,
+    a.tekst,
+  );
+}
+
+/** ile kwadratów pod mgłą dla zbioru odkrytych (klucze „sx,sy”): ich nieodkryci sąsiedzi (osiem kierunków), jak `polaMgly` */
+function ileMgly(odkryte: readonly string[]): number {
+  const zbior = new Set(odkryte);
+  const mgla = new Set<string>();
+  for (const k of odkryte) {
+    const [sx, sy] = zKlucza(k);
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++)
+        if ((dx || dy) && !zbior.has(`${sx + dx},${sy + dy}`)) mgla.add(`${sx + dx},${sy + dy}`);
+  }
+  return mgla.size;
+}
+
+/** Widok ich kwadratu i karta osady (zadanie 5 etapu 2 osady AI): mgła przed odkryciem, kwadrat obok domu po odkryciu z etykietą
+    nad siedzibą, karta osady po kliknięciu, mapa miasta, zapis i wczytanie; każdy zrzut ma widoczną atrybucję map. `out` to katalog
+    dodatkowych zrzutów (poza tym, który runner robi na końcu scenariusza). */
+function widokOsadyShots(out: string): ShotCele[] {
+  /** stan widoku osady w jednym wywołaniu: osada, mgła, kwadraty obok, etykieta, karta i kolejka poleceń */
+  const stan = (page: Page) =>
+    page.evaluate(() => {
+      const zm = window.zm!;
+      return {
+        o: zm.osada(),
+        mgla: zm.view.mgla.liczba,
+        obok: zm.view.kwadratyObok(),
+        etykieta: !document.getElementById('osadaMark')!.hidden,
+        karta: !document.getElementById('card')!.hidden,
+        cmds: zm.sim!.st.cmds.length,
+      };
+    });
+  return [
+    {
+      // przed odkryciem: ośmiu sąsiadów domu pod mgłą (żaden nie zdradza, który kryje osadę), kwadratu osady w widoku nie ma, a klik
+      // w mgłę niczego nie rusza. Zrzut: cały dom z mgłą po bokach
+      name: 'osada-mgla',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&speed=0&cam=all`);
+        await waitIdle(page);
+        let s = await stan(page);
+        wymagaj(s.o?.stan === 'czeka' && s.o.kwadrat === -1, 'przed startem osady jej kwadratu w widoku nie ma', s.o);
+        wymagaj(s.mgla === 8 && s.obok.length === 0, 'ośmiu sąsiadów domu pod mgłą, żadnego kwadratu obok', s);
+        // do 7:00 drugiego dnia osada już jest, ale gracz o niej nie wie: widok ten sam, bez etykiety i karty
+        await chopDryTree(page);
+        await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
+        await page.evaluate(() => {
+          const v = window.zm!.view;
+          Object.assign(v.cam, { ...v.srodek, zoom: v.minZoom });
+        });
+        await waitIdle(page);
+        s = await stan(page);
+        wymagaj(s.o?.stan === 'jest' && s.o.odkryta === false, 'osada jest i nie jest odkryta', s.o);
+        wymagaj(s.o.kwadrat === -1 && s.o.siedziba === null, 'przed odkryciem jej kwadratu w widoku nie ma', s.o);
+        wymagaj(s.mgla === 8 && s.obok.length === 0, 'mgła na ośmiu sąsiadach, nic obok domu', s);
+        wymagaj(!s.etykieta && !s.karta, 'bez etykiety i karty przed odkryciem', s);
+        // kliknięcie w mgłę (na prawo od domu) niczego nie rusza: bez podpowiedzi „zaznacz kogoś”, bez menu, bez karty i bez
+        // polecenia; w domu to samo kliknięcie daje podpowiedź (kontrola)
+        const wBloku = () =>
+          page.evaluate(() => ({
+            podpowiedz: document.getElementById('hint')!.textContent ?? '',
+            menu: !document.getElementById('ctx')!.hidden,
+            karta: !document.getElementById('card')!.hidden,
+            rozkazy: window.zm!.sim!.st.cmds.length,
+          }));
+        const przed = await wBloku();
+        const [mx, my] = await page.evaluate(() => window.zm!.screenOf(384 + 40, 192));
+        wymagaj(mx > 20 && mx < 1390, 'punkt w mgle leży na ekranie', [mx, my]);
+        await page.mouse.click(mx, my, { button: 'right' });
+        await page.waitForTimeout(350);
+        await page.mouse.click(mx, my);
+        await page.waitForTimeout(350);
+        const po = await wBloku();
+        wymagaj(
+          po.podpowiedz === przed.podpowiedz && !po.menu && !po.karta && po.rozkazy === przed.rozkazy,
+          'klik w mgłę niczego nie rusza',
+          { przed, po },
+        );
+        const [dx, dy] = await page.evaluate(() => window.zm!.screenOf(192, 192));
+        await page.mouse.click(dx, dy, { button: 'right' });
+        await page.waitForTimeout(350);
+        wymagaj(
+          (await wBloku()).podpowiedz !== przed.podpowiedz,
+          'kontrola: prawy klik w domu bez zaznaczonych daje podpowiedź, więc klik w mgłę naprawdę był ignorowany',
+        );
+        // zrzut: zachodni brzeg domu i mgła obok niego, ze znakiem zapytania w środku kwadratu (podpowiedź z kontroli już zgasła)
+        await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, {
+          timeout: 15_000,
+        });
+        await page.evaluate(() => {
+          const v = window.zm!.view;
+          Object.assign(v.cam, { x: 0, y: v.srodek.y, zoom: v.minZoom });
+        });
+        await waitIdle(page);
+        await page.waitForTimeout(200);
+        await sprawdzAtrybucje(page, 'mgła');
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      // po odkryciu przez kartę posła: kwadrat osady stoi obok domu (numer w widoku, na swoim miejscu), pozostali sąsiedzi pod mgłą,
+      // etykieta z nazwą nad siedzibą i niczego nie zasłania; zapis i wczytanie budują go od nowa. Zrzut: siedziba z bliska
+      name: 'osada-widok',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const o = await doOdkrycia(page, false, 0);
+        const [sx, sy] = zKlucza(o.klucz!);
+        const { nazwa } = nazwaOsady(sx, sy);
+        const u = await stan(page);
+        console.log(
+          `  kwadrat ${o.klucz} w widoku jako ${o.kwadrat}, mgła na ${u.mgla} kwadratach, siedziba ${JSON.stringify(o.siedziba)}`,
+        );
+        wymagaj(
+          u.obok.length === 1 && u.obok[0].q === o.kwadrat && u.obok[0].sx === sx && u.obok[0].sy === sy,
+          'w widoku dom i jeden kwadrat obok: kwadrat osady',
+          u.obok,
+        );
+        wymagaj(u.mgla === ileMgly(['0,0', o.klucz!]), 'mgła na nieodkrytych sąsiadach domu i osady', [
+          u.mgla,
+          ileMgly(['0,0', o.klucz!]),
+        ]);
+        // siedziba leży w kwadracie osady
+        const sied = o.siedziba!;
+        wymagaj(
+          sied.srodek.x > sx * 384 &&
+            sied.srodek.x < (sx + 1) * 384 &&
+            sied.srodek.y > sy * 384 &&
+            sied.srodek.y < (sy + 1) * 384,
+          'siedziba w kwadracie osady',
+          [sied, sx, sy],
+        );
+        // widok z daleka: dom i kwadrat osady razem z mgłą (zakres kamery obejmuje oba)
+        await page.evaluate(() => {
+          const v = window.zm!.view;
+          Object.assign(v.cam, { ...v.srodek, zoom: v.minZoom });
+        });
+        await waitIdle(page);
+        await page.waitForTimeout(150);
+        const zoom = await page.evaluate(() => window.zm!.view.cam.zoom);
+        wymagaj(zoom < 0.08, 'zakres kamery objął dom i kwadrat osady', zoom);
+        await page.screenshot({ path: path.join(out, 'osada-widok-daleko.png') });
+        await sprawdzAtrybucje(page, 'widok z daleka');
+        // z bliska: etykieta z nazwą nad siedzibą, niczego nie zasłania
+        await naSiedzibe(page, 0.45);
+        await sprawdzEtykiete(page, 'komputer');
+        const et = (await etykietaINakladki(page)).etykieta!;
+        wymagaj(et.tekst === nazwa.pl, 'etykieta niesie nazwę osady', [et.tekst, nazwa.pl]);
+        // etykieta stoi nad siedzibą: jej dolna krawędź leży nad górnym rzędem obrysu, środek przy kotwicy
+        const [ax, ay] = await punktSiedziby(page);
+        wymagaj(Math.abs((et.l + et.r) / 2 - ax) < 40 && et.b <= ay + 2, 'etykieta nad górną krawędzią siedziby', [
+          et,
+          ax,
+          ay,
+        ]);
+        await sprawdzAtrybucje(page, 'komputer');
+        // zapis i wczytanie: kwadrat staje w widoku od nowa (z zapisanego geo osady), z tą samą siedzibą i etykietą
+        const siedzibaZywa = JSON.stringify(sied);
+        wymagaj(await page.evaluate(() => window.zm!.save()), 'zapis gry się nie udał');
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const w = await odczyt(page);
+        wymagaj(
+          w.osada?.odkryta === true && w.osada.kwadrat > 0,
+          'po wczytaniu kwadrat osady od razu w widoku',
+          w.osada,
+        );
+        wymagaj(JSON.stringify(w.osada.siedziba) === siedzibaZywa, 'siedziba po wczytaniu ta sama co żywa', [
+          w.osada.siedziba,
+          siedzibaZywa,
+        ]);
+        await naSiedzibe(page, 0.45);
+        await sprawdzEtykiete(page, 'po wczytaniu');
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      // klik w budynek siedziby otwiera kartę osady (nazwa, kierunek, liczby z kontaktu, jeden przycisk „×”); zamyka ją „×”, Esc,
+      // zaznaczenie kogoś i klik w dom; etykieta nad siedzibą otwiera ją też. Komputer, polski
+      name: 'osada-karta',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const o = await doOdkrycia(page, false, 1);
+        const [sx, sy] = zKlucza(o.klucz!);
+        const { nazwa } = nazwaOsady(sx, sy);
+        const { kierunek } = kierunekOsady(sx, sy);
+        await naSiedzibe(page, 0.45);
+        wymagaj((await widokKarty(page)).widac === false, 'karta osady nie jest otwarta przed kliknięciem');
+        const otwarta = () => page.waitForSelector('#card:not([hidden]) .osada-glowa');
+        const zamknieta = () =>
+          page.waitForFunction(
+            () => document.getElementById('card')!.hidden || !document.querySelector('#card .osada-glowa'),
+          );
+        // klik w budynek siedziby otwiera kartę
+        await klikPunkt(page, await punktSiedziby(page), false);
+        await otwarta();
+        let k = await widokKarty(page);
+        console.log(`  karta: ${k.tekst}`);
+        wymagaj(k.nazwa === nazwa.pl, 'nagłówek karty to nazwa osady', k.nazwa);
+        wymagaj(k.tekst.includes(`Leży ${kierunek.pl} od was.`), 'kierunek od domu', k.tekst);
+        wymagaj(
+          k.tekst.toLowerCase().includes(`z ostatniego kontaktu (dzień ${o.kontakt!.dzien})`),
+          'liczby z ostatniego kontaktu z jego dniem',
+          [k.tekst, o.kontakt],
+        );
+        wymagaj(
+          k.liczby.join('|') === `${o.kontakt!.ludnosc}|${o.kontakt!.budowle}`,
+          'ludność i budowle z kontaktu, nie z gry osady',
+          [k.liczby, o.kontakt],
+        );
+        wymagaj(
+          k.przyciski.join(',') === 'osada-zamknij' && k.dataAct === 0,
+          'jedyny przycisk to zamknięcie, żadnej dyplomacji',
+          k,
+        );
+        wymagaj(k.tekst.includes('To wszystko, co o nich wiecie.'), 'karta mówi, skąd to wie', k.tekst);
+        wymagaj(!/upadła|odwoływany/.test(k.tekst), 'zdrowa osada bez zdań o upadku i odwołaniu', k.tekst);
+        await sprawdzAtrybucje(page, 'karta otwarta');
+        await page.screenshot({ path: path.join(out, 'osada-karta-otwarta.png') });
+        // „×” zamyka
+        await page.click('#card .card-x');
+        await zamknieta();
+        // klik jeszcze raz i Esc
+        await klikPunkt(page, await punktSiedziby(page), false);
+        await otwarta();
+        await page.keyboard.press('Escape');
+        await zamknieta();
+        // etykieta otwiera kartę
+        await page.click('#osadaMark .treemark-t');
+        await otwarta();
+        // zaznaczenie kogoś zamyka kartę osady (pokazuje się karta osoby)
+        await page.click('#lista .lp >> nth=0');
+        await page.waitForFunction(
+          () => !document.getElementById('card')!.hidden && !document.querySelector('#card .osada-glowa'),
+        );
+        // klik w siedzibę osady z zaznaczoną osobą otwiera kartę (nie wydaje polecenia): kamera wraca do osady
+        await naSiedzibe(page, 0.45);
+        const cmds = (await stan(page)).cmds;
+        await klikPunkt(page, await punktSiedziby(page), false);
+        await otwarta();
+        wymagaj((await stan(page)).cmds === cmds, 'klik w siedzibę osady nie wydaje polecenia', cmds);
+        // klik w dom (kamera na siedzibie domu) zamyka kartę osady
+        await page.evaluate(() => {
+          const w = window.zm!.sim!.w;
+          const b = w.buildings[w.hq];
+          window.zm!.setCam((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2, 1.3);
+        });
+        await waitIdle(page);
+        const [hx, hy] = await page.evaluate(() => {
+          const w = window.zm!.sim!.w;
+          const b = w.buildings[w.hq];
+          return window.zm!.screenOf((b.x0 + b.x1 + 1) / 2, (b.y0 + b.y1 + 1) / 2);
+        });
+        await page.mouse.click(hx, hy);
+        await zamknieta();
+        // na koniec: karta osady otwarta nad widokiem ich kwadratu (zrzut)
+        await naSiedzibe(page, 0.45);
+        await klikPunkt(page, await punktSiedziby(page), false);
+        await otwarta();
+        k = await widokKarty(page);
+        wymagaj(k.nazwa === nazwa.pl, 'karta po wszystkim jest ta sama', k);
+        await sprawdzAtrybucje(page, 'zrzut');
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      // telefon 390×844, angielski: karta osady po stuknięciu w siedzibę (albo w etykietę) mieści się na ekranie, niczego nie zasłania,
+      // etykieta nie zasłania przycisków ani listy ludzi, tekst bez polskich liter
+      name: 'osada-karta-en',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      touch: true,
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const o = await doOdkrycia(page, true, 0);
+        const [sx, sy] = zKlucza(o.klucz!);
+        const { nazwa } = nazwaOsady(sx, sy);
+        const { kierunek } = kierunekOsady(sx, sy);
+        // telefon ma u góry pasek, cele i chipy ludzi do 300 px: kotwica etykiety niżej, żeby nie wchodziła pod nie
+        await naSiedzibe(page, 0.4, 2);
+        await poHudzie(page);
+        await sprawdzEtykiete(page, 'telefon');
+        const et = (await etykietaINakladki(page)).etykieta!;
+        wymagaj(et.tekst === nazwa.en, 'etykieta po angielsku', [et.tekst, nazwa.en]);
+        // stuknięcie w siedzibę otwiera kartę
+        await klikPunkt(page, await punktSiedziby(page), true);
+        await page.waitForSelector('#card:not([hidden]) .osada-glowa');
+        await poHudzie(page);
+        const k = await widokKarty(page);
+        console.log(`  card: ${k.tekst}`);
+        wymagaj(k.nazwa === nazwa.en, 'nagłówek karty po angielsku', k.nazwa);
+        wymagaj(k.tekst.includes(`It lies ${kierunek.en} of you.`), 'kierunek po angielsku', k.tekst);
+        wymagaj(
+          k.tekst.toLowerCase().includes(`from the last contact (day ${o.kontakt!.dzien})`),
+          'liczby z ostatniego kontaktu',
+          [k.tekst, o.kontakt],
+        );
+        wymagaj(k.liczby.join('|') === `${o.kontakt!.ludnosc}|${o.kontakt!.budowle}`, 'liczby z kontaktu', [
+          k.liczby,
+          o.kontakt,
+        ]);
+        const polskie = k.tekst.match(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g);
+        wymagaj(!polskie, 'polskie litery w angielskiej karcie', polskie);
+        wymagaj(k.przyciski.join(',') === 'osada-zamknij' && k.dataAct === 0, 'jedyny przycisk to zamknięcie', k);
+        // układ: karta w ekranie, nic na nic nie nachodzi (lista ludzi, cele, podpowiedź, przyciski), etykieta niczego nie zasłania
+        const s = await stos(page);
+        const zle = nachodzenia(s, { szufladaNaCelach: true });
+        wymagaj(zle.length === 0, 'nakładki telefonu na siebie nie nachodzą', zle);
+        const u = await page.evaluate(() => {
+          const r = document.getElementById('card')!.getBoundingClientRect();
+          const x = document.querySelector('#card .card-x')!.getBoundingClientRect();
+          return {
+            karta: [r.left, r.top, r.right, r.bottom],
+            x: [x.width, x.height],
+            stronaWBok: document.documentElement.scrollWidth - innerWidth,
+            w: innerWidth,
+            h: innerHeight,
+          };
+        });
+        wymagaj(
+          u.karta[0] >= 0 && u.karta[2] <= u.w + 0.5 && u.karta[1] >= 0 && u.karta[3] <= u.h + 0.5,
+          'karta mieści się w ekranie',
+          u,
+        );
+        wymagaj(u.stronaWBok <= 1, 'bez przewijania w bok', u);
+        wymagaj(u.x[0] >= 36 && u.x[1] >= 36, '„×” na palec (od 36 px)', u.x);
+        await sprawdzEtykiete(page, 'telefon z kartą');
+        await sprawdzAtrybucje(page, 'telefon');
+        // „×” (stuknięcie) zamyka kartę, etykieta otwiera ją znów
+        await kliknij(page, '#card .card-x', true);
+        await page.waitForFunction(() => document.getElementById('card')!.hidden);
+        await kliknij(page, '#osadaMark .treemark-t', true);
+        await page.waitForSelector('#card:not([hidden]) .osada-glowa');
+        await poHudzie(page);
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      // mapa miasta po odkryciu pokazuje nazwę osady na jej kwadracie (znak przy siedzibie, obrys kwadratu); przed odkryciem nic
+      name: 'osada-mapa',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await kafelkiMapy(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const czekajNaMape = async () => {
+          await page.waitForFunction(() => window.zm!.mapa()?.stan().otwarta);
+          await page.waitForFunction(() => window.zm!.mapa()!.stan().wTrakcie === 0, null, {
+            timeout: 30_000,
+            polling: 100,
+          });
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        };
+        const zamknijMape = async () => {
+          await page.click('#sheet [data-act="miasto-zamknij"]');
+          await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        };
+        // przed odkryciem mapa nie ma znacznika osady
+        await page.click('#btnMiasto');
+        await czekajNaMape();
+        wymagaj(
+          (await page.evaluate(() => window.zm!.mapa()!.stan().znaczniki)) === 0,
+          'przed odkryciem bez znacznika osady',
+        );
+        await zamknijMape();
+        const o = await doOdkrycia(page, false, 0);
+        await page.click('#btnMiasto');
+        await czekajNaMape();
+        const st = await page.evaluate(() => window.zm!.mapa()!.stan());
+        console.log(`  mapa po odkryciu: ${JSON.stringify(st)}`);
+        wymagaj(st.znaczniki === 1, 'mapa rysuje znacznik osady', st);
+        await sprawdzAtrybucjeMapy(page);
+        wymagaj(o.kwadrat > 0, 'kwadrat osady w widoku');
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+  ];
+}
+
+/** Okno mapy miasta ma w stopce atrybucję (OpenStreetMap, OpenFreeMap, OpenMapTiles) i widać ją w ekranie. */
+async function sprawdzAtrybucjeMapy(page: Page): Promise<void> {
+  const a = await page.evaluate(() => {
+    const e = document.querySelector<HTMLElement>('#sheet .miasto-attrib');
+    const r = e?.getBoundingClientRect();
+    return { tekst: e?.textContent ?? '', widac: !!r && r.width > 0 && r.top >= 0 && r.bottom <= innerHeight + 0.5 };
+  });
+  wymagaj(a.widac, 'atrybucja w oknie mapy widoczna', a);
+  wymagaj(
+    /OpenStreetMap/.test(a.tekst) && /OpenFreeMap/.test(a.tekst) && /OpenMapTiles/.test(a.tekst),
+    'atrybucja mapy wymienia OpenStreetMap, OpenFreeMap i OpenMapTiles',
+    a.tekst,
+  );
+}
+
+export function osadaShots(out: string): ShotCele[] {
   return [
     {
       name: 'osada-start',
@@ -1291,5 +1876,6 @@ export function osadaShots(): ShotCele[] {
         );
       },
     },
+    ...widokOsadyShots(out),
   ];
 }

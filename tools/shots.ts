@@ -756,7 +756,7 @@ const SHOTS: Shot[] = [
   ...celeShots(OUT),
   // Osada AI w grze (?osada=1, src/ui/osada.ts): start o 6:00 drugiego dnia i krok w krok, tempo 8×, zapis i „Kontynuuj”, adres bez
   // sieci i z wolną siecią, tryb zombie, gra bez flagi
-  ...osadaShots(),
+  ...osadaShots(OUT),
   ...ukladShots(OUT),
   ...telefonShots(OUT),
   // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
