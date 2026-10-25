@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   adresStartowy,
   jestStanOsady,
+  osadaOdrzuconaPrzezSiec,
   osadaWlaczona,
   readSave,
   SAVE_KEY,
@@ -71,6 +72,37 @@ describe('osadaWlaczona: zapis wygrywa z adresem', () => {
 
   it('zapis bez pola osada zostaje bez osady, choć adres ma ?osada=1', () => {
     expect(osadaWlaczona(zapis(), adres('?osada=1'))).toBe(false);
+  });
+});
+
+describe('osada i gra z sąsiadami: ?osada=1 razem z ?siec=1 jest w tym etapie wyłączone', () => {
+  const adres = (q: string) => new URLSearchParams(q);
+
+  it('nowa gra z obiema flagami nie dostaje osady; każda flaga osobno działa jak dotąd', () => {
+    expect(osadaWlaczona(null, adres('?osada=1&siec=1'))).toBe(false);
+    expect(osadaWlaczona(null, adres('?siec=1&demo=przymorze&osada=1'))).toBe(false);
+    expect(osadaWlaczona(null, adres('?osada=1'))).toBe(true);
+    expect(osadaWlaczona(null, adres('?osada=1&siec=0'))).toBe(true);
+    expect(osadaWlaczona(null, adres('?osada=1&siec=2'))).toBe(true);
+    expect(osadaWlaczona(null, adres('?siec=1'))).toBe(false);
+  });
+
+  it('wczytana gra z osadą zachowuje ją także z ?siec=1 w adresie: zapis wygrywa z adresem, osada nie ginie po cichu', () => {
+    expect(osadaWlaczona(zapis({ osada: { v: 1, stan: 'czeka' } }), adres('?siec=1'))).toBe(true);
+    expect(osadaWlaczona(zapis({ osada: { v: 1, stan: 'czeka' } }), adres('?osada=1&siec=1'))).toBe(true);
+    // zapis bez osady dalej jej nie dostaje
+    expect(osadaWlaczona(zapis(), adres('?osada=1&siec=1'))).toBe(false);
+  });
+
+  it('osadaOdrzuconaPrzezSiec: tylko nowa gra z obiema flagami, czyli ta, o której gra ostrzega w konsoli', () => {
+    expect(osadaOdrzuconaPrzezSiec(null, adres('?osada=1&siec=1'))).toBe(true);
+    expect(osadaOdrzuconaPrzezSiec(null, adres('?osada=1'))).toBe(false);
+    expect(osadaOdrzuconaPrzezSiec(null, adres('?siec=1'))).toBe(false);
+    expect(osadaOdrzuconaPrzezSiec(null, adres('?osada=1&siec=0'))).toBe(false);
+    expect(osadaOdrzuconaPrzezSiec(null, adres(''))).toBe(false);
+    // wczytana gra niczego nie odrzuca: albo ma osadę z zapisu, albo nigdy jej nie miała
+    expect(osadaOdrzuconaPrzezSiec(zapis(), adres('?osada=1&siec=1'))).toBe(false);
+    expect(osadaOdrzuconaPrzezSiec(zapis({ osada: { v: 1, stan: 'czeka' } }), adres('?osada=1&siec=1'))).toBe(false);
   });
 });
 

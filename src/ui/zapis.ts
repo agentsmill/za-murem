@@ -58,9 +58,15 @@ export const pietraWlaczone = (saved: Pick<Save, 'pietra'> | null, params: URLSe
   saved ? saved.pietra === true : params.get('pietra') === '1';
 
 /** czy gra ma osadę na sąsiednim kwadracie: zapis wygrywa z adresem (wczytana gra zachowuje to, z czym ją zaczęto), nowa gra czyta
-    `?osada=1` */
+    `?osada=1`. Nowa gra z `?siec=1` (gra z sąsiadami, src/net/gra.ts) osady nie dostaje: etap 2 nie łączy obu rzeczy (zapis do
+    chmury, drużyny na jednym osiedlu), więc flaga `osada` przy `siec` jest na razie wyłączona (`osadaOdrzuconaPrzezSiec`). */
 export const osadaWlaczona = (saved: Pick<Save, 'osada'> | null, params: URLSearchParams): boolean =>
-  saved ? saved.osada !== undefined : params.get('osada') === '1';
+  saved ? saved.osada !== undefined : params.get('osada') === '1' && params.get('siec') !== '1';
+
+/** czy nowa gra prosi o osadę (`?osada=1`) razem z grą z sąsiadami (`?siec=1`), więc osady nie będzie: o tym gra ostrzega raz
+    w konsoli. Wczytana gra niczego nie odrzuca (ma osadę z zapisu albo nigdy jej nie miała). */
+export const osadaOdrzuconaPrzezSiec = (saved: Pick<Save, 'osada'> | null, params: URLSearchParams): boolean =>
+  !saved && params.get('osada') === '1' && params.get('siec') === '1';
 
 /** Pole `osada` do zapisu gry (`Save`): `{ osada }` ze stanem drugiej gry, a bez niej (gra bez flagi) puste, więc zapis bez flagi
     jest bajt w bajt taki jak przed osadą. */
