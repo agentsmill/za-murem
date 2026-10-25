@@ -10,7 +10,9 @@
    45 dniach z osadą mieści się w 4 000 000 znaków; tryb zombie nie dostaje osady; błąd wyboru kwadratu daje `brak` z powodem `blad`
    (jedno ostrzeżenie, bez drugiej próby); odwołanie zarządu osady daje nowy zarząd (rozstrzygnięcie kontrolera 1, src/ai/odwolanie.ts),
    a pustka i exodus kończą osadę (stoi, nie rzuca); pobieranie kandydatów po kolei w kolejności z ziarna z jednym ostrzeżeniem.
-   Szczegóły zapisu (kształt pola, flaga z adresu) są w osada-zapis.test.ts, a pobranie geo kwadratu z kafelków w osada-dane.test.ts.
+   Szczegóły zapisu (kształt pola, flaga z adresu) są w osada-zapis.test.ts, pobranie geo kwadratu z kafelków w osada-dane.test.ts,
+   przygotowanie osady na zapas przed startem (`przygotuj`, `przygotujCiezkie`, nadrabianie w kawałkach) w osada-przygotowanie.test.ts
+   (tu jest jego próba z naszą grą: skróty obu gier po 5 dobach), a zaślepka osady bez kodu w osada-brak.test.ts.
 
    Skrót bota `npm run bot` po 3 dobach (701b05aa) wychodzi z jego scenariusza „pierwsze trzy minuty”, który gra na świecie
    zmienionym wcześniejszą, 45-dniową grą tego samego bota (gra zmienia siatkę swojego świata w miejscu), więc w teście nie da się go

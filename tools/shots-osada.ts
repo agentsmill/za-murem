@@ -14,11 +14,16 @@
      przed 6:00 ani w chwili startu nie trwa dłużej niż 33 ms, liczone dwojako: praca tyknięcia gry (`frame()` z rysowaniem,
      mierzona w tickerze PixiJS) i odstęp od początku jednej klatki do początku następnej (zegar); do dziennika najdłuższe klatki
      z osadą i ta sama próba bez osady (szum tej maszyny), klatka, w której osada powstaje, i czas startu gry z osadą i bez;
+   - `osada-zapis-w-przygotowaniu`: zapis w połowie nadrabiania daje samo `czeka`, „Kontynuuj” zaczyna przygotowanie od nowa, a osada
+     o 7:00 ma ten sam skrót gry co osada z Node, nadrabiająca naraz w ticku startu (to samo sprawdza koniec `osada-nadrabianie`);
    - `osada-siec`: nowa gra z `?osada=1` i `?siec=1` nie dostaje osady (`zm.osada()` to null), w konsoli jedno ostrzeżenie o tym, a
      zapis nie ma pola `osada`;
    - `osada-modul-blad`: plik z kodem osady jest zablokowany: nowa gra z `?osada=1` rusza bez niej (`brak`, powód `blad`, jedno
      ostrzeżenie, zapis z tym stanem), a „Kontynuuj” z zapisem, w którym osada jest, kończy się dotychczasowym komunikatem błędu
      wczytania (gra się nie zaczyna); po odblokowaniu ten sam zapis wczytuje się;
+   - `osada-adres-klatki`: adres spoza dem (Lanciego z danych testowych): przygotowanie osady idzie w grze, w tle po starcie, więc jej
+     niepodzielne kroki (wybór kwadratu, budowa gry, rozgrzewka) są po jednej dłuższej klatce (ok. 70, 21 i 67 ms); do dziennika
+     najdłuższe klatki z fazą przygotowania, jako warunek tylko pułapy (krok niepodzielny 250 ms, klatka z kawałkiem 50 ms);
    - `osada-adres`: adres spoza dem (Lanciego z danych testowych) z działającymi kafelkami: osiem sąsiednich kwadratów z kafelków w tle
      (`geoKwadratu`, `pobierzKandydatow`), po 6:00 drugiego dnia osada jest, bez ostrzeżeń, a jej geo z kafelków siedzi w zapisie;
    - `osada-bez-sieci`: adres spoza dem (Lanciego z danych testowych), ale kafelki sąsiednich kwadratów nie przychodzą (`fetch`
@@ -33,9 +38,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { skrotGry } from '../src/ai/gra.ts';
+import { hashString } from '../src/core/rng.ts';
 import { tickAt } from '../src/sim/handlarz.ts';
+import { nowaOsadaGry } from '../src/ui/osada.ts';
+import { ukladZGeo } from '../src/world/kwadraty.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { waitIdle } from './browser.ts';
+import { daneDema, wczytajDemo } from './osada-kwadraty.ts';
 import { chopDryTree, GRA, minutaGry, przewin, type ShotCele } from './shots-cele.ts';
 
 /** katalog kafelków testowych i TileJSON (jak w tools/shots.ts) */
@@ -135,6 +145,22 @@ function liczOstrzezenia(page: Page): string[] {
   return lista;
 }
 
+/** Wzorzec skrótu gry osady dla dema Przymorze, z Node: osada z tymi samymi danymi i ziarnem co w przeglądarce (z adresu dema),
+    bez przygotowania na zapas, czyli z nadrabianiem naraz w ticku startu, potem krok po kroku do ticku `tick`. Z nim porównuje się
+    osadę z przeglądarki, która nadrabiała po kawałku na klatkę (także po zapisie w trakcie tego i wczytaniu). */
+async function skrotWzorcaPrzymorze(tick: number): Promise<string> {
+  const demo = wczytajDemo('przymorze');
+  const osada = nowaOsadaGry(
+    Number.parseInt(hashString(demo.addr), 16) || 2051,
+    await daneDema('przymorze'),
+    ukladZGeo(demo.geo),
+  );
+  osada.dane(demo.kwadraty);
+  for (let t = 1; t <= tick; t++) osada.krok(t);
+  if (!osada.gra) throw new Error(`wzorzec: osada nie powstała do ticku ${tick} (${osada.stan})`);
+  return skrotGry(osada.gra);
+}
+
 /** Start z adresu spoza dem (Lanciego z danych testowych) i przewinięcie do 7:00 drugiego dnia; `tryb` mówi, co dzieje się z
     kafelkami sąsiednich kwadratów: `dziala` (kafelki z tests/fixtures, tam gdzie ich nie ma, pusty kafelek), `zerwana`, `wisi`.
     Zwraca ostrzeżenia o osadzie, czas od wysłania formularza do gotowej gry w ms i odczyt po przewinięciu. */
@@ -160,38 +186,46 @@ async function adresDoDrugiegoDnia(
   return { ostrzezenia, startMs, po: await odczyt(page) };
 }
 
-/** Rejestr klatek od `zacznijMierzycKlatki`: odstępy między klatkami z rAF ([ms od poprzedniej klatki, nasz tick w klatce]) i praca
-    każdej klatki gry ([ms od początku do końca tyknięcia PixiJS: `frame()` w main.ts razem z rysowaniem, nasz tick]). */
+/** Rejestr klatek od `instalujRejestrKlatek`: odstępy między początkami klatek ([ms od poprzedniej, nasz tick w klatce]), praca
+    każdej klatki gry ([ms od początku do końca tyknięcia PixiJS: `frame()` w main.ts razem z rysowaniem, nasz tick, faza
+    przygotowania osady po klatce albo pusty napis, tick gry osady po klatce albo -1]) i, do porównania z zegarem, odstępy z rAF (znaczniki czasu wyrównane do
+    odświeżania ekranu, nie widzą kilkunastu ms spóźnienia). Tick -1 to klatka przed startem gry (ekran ładowania). */
 interface Klatki {
   odstepy: [number, number][];
-  praca: [number, number][];
-  /** odstępy z rAF (znaczniki czasu klatek, wyrównane do odświeżania ekranu), do porównania z zegarem */
+  praca: [number, number, string, number][];
   raf: [number, number][];
 }
 
-/** włącza w stronie rejestr klatek (rAF dla odstępów, dwa znaczniki tickera PixiJS, pierwszy przed `frame()`, drugi po rysowaniu,
-    dla pracy klatki; nic poza zapisem czasu i odczytem ticku, więc nie rusza tego, co mierzy) */
-const zacznijMierzycKlatki = (page: Page): Promise<void> =>
-  page.evaluate(() => {
-    type Rejestr = {
-      ost: number;
-      ostRaf: number;
-      od: number;
-      on: boolean;
-      odstepy: [number, number][];
-      praca: [number, number][];
-      raf: [number, number][];
-    };
-    const w = window as unknown as { __zmKl: Rejestr };
-    const k: Rejestr = { ost: 0, ostRaf: performance.now(), od: 0, on: true, odstepy: [], praca: [], raf: [] };
-    w.__zmKl = k;
-    const ticker = window.zm!.view.app.ticker;
-    // priorytet 50 (INTERACTION) idzie przed grą, -100 po rysowaniu (UTILITY to -50)
+/** Treść rejestru klatek w stronie, wspólna dla `evaluate` (gra już stoi) i `addInitScript` (od pierwszej klatki strony; czeka na
+    ticker PixiJS). Dwa znaczniki tickera: priorytet 50 (INTERACTION) idzie przed grą, -100 po rysowaniu (UTILITY to -50). Faza
+    przygotowania osady jest czytana tylko do ticku `fazaDoTicku` (potem `osada()` liczy skrót gry i zaburzałoby to pomiar). Nic
+    poza zapisem czasu i odczytem ticku, więc nie rusza tego, co mierzy. */
+function instalujRejestrKlatek(opcje: { fazaDoTicku: number }): void {
+  type Rejestr = {
+    ost: number;
+    ostRaf: number;
+    od: number;
+    on: boolean;
+    odstepy: [number, number][];
+    praca: [number, number, string, number][];
+    raf: [number, number][];
+  };
+  const w = window as unknown as { __zmKl?: Rejestr };
+  if (w.__zmKl) return;
+  const k: Rejestr = { ost: 0, ostRaf: performance.now(), od: 0, on: true, odstepy: [], praca: [], raf: [] };
+  w.__zmKl = k;
+  const tick = (): number => window.zm?.sim?.st.tick ?? -1;
+  const podlacz = () => {
+    const ticker = window.zm?.view?.app?.ticker;
+    if (!ticker) {
+      requestAnimationFrame(podlacz);
+      return;
+    }
     ticker.add(
       () => {
         if (!k.on) return;
         k.od = performance.now();
-        if (k.ost) k.odstepy.push([k.od - k.ost, window.zm!.sim!.st.tick]);
+        if (k.ost) k.odstepy.push([k.od - k.ost, tick()]);
         k.ost = k.od;
       },
       null,
@@ -199,19 +233,28 @@ const zacznijMierzycKlatki = (page: Page): Promise<void> =>
     );
     ticker.add(
       () => {
-        if (k.on) k.praca.push([performance.now() - k.od, window.zm!.sim!.st.tick]);
+        if (!k.on) return;
+        const t = tick();
+        const p = t >= 0 && t < opcje.fazaDoTicku ? window.zm?.osada()?.przygotowanie : undefined;
+        k.praca.push([performance.now() - k.od, t, p?.faza ?? '', p?.tick ?? -1]);
       },
       null,
       -100,
     );
     const krok = (t: number) => {
       if (!k.on) return;
-      k.raf.push([t - k.ostRaf, window.zm!.sim!.st.tick]);
+      k.raf.push([t - k.ostRaf, tick()]);
       k.ostRaf = t;
       requestAnimationFrame(krok);
     };
     requestAnimationFrame(krok);
-  });
+  };
+  podlacz();
+}
+
+/** włącza rejestr klatek w już działającej stronie */
+const zacznijMierzycKlatki = (page: Page, fazaDoTicku = 0): Promise<void> =>
+  page.evaluate(instalujRejestrKlatek, { fazaDoTicku });
 
 /** wyłącza rejestr i oddaje zebrane klatki */
 const zbierzKlatki = (page: Page): Promise<Klatki> =>
@@ -224,7 +267,7 @@ const zbierzKlatki = (page: Page): Promise<Klatki> =>
 /** Klatki z okna ticków [od, do): liczba, najdłuższy odstęp i jego 99. percentyl oraz najdłuższa praca klatki i jej 99. percentyl
     (ms). Dwie pierwsze klatki rejestru niosą sam jego start (czas `evaluate`), więc się ich nie liczy. */
 function opisOkna(kl: Klatki, od: number, doTicku: number) {
-  const z = (lista: [number, number][]) => {
+  const z = (lista: [number, number, ...unknown[]][]) => {
     const w = lista
       .slice(2)
       .filter(([, t]) => t >= od && t < doTicku)
@@ -268,7 +311,7 @@ async function biegPrzezStart(
   await page.goto(`${base}?${query}`);
   await waitIdle(page);
   const startMs = Date.now() - t0;
-  await zacznijMierzycKlatki(page);
+  await zacznijMierzycKlatki(page, tickAt(2, 6));
   // klik w stronie, a nie `page.click`: sprawdzanie widoczności i przewijanie Playwrighta wydłuża jedną klatkę o kilkanaście ms
   // (także bez osady), co do gry nie należy
   await page.evaluate(() => document.querySelector<HTMLElement>('#speed [data-s="4"]')?.click());
@@ -495,6 +538,15 @@ export function osadaShots(): ShotCele[] {
         wymagaj(z.koniec.osada?.stan === 'jest', 'o 7:00 osada ma być', z.koniec);
         wymagaj(z.koniec.osada.tick === z.koniec.nasz, 'ticki równe po starcie', z.koniec);
         wymagaj(z.koniec.osada.bledowRazem === 0, 'osada bez błędów', z.koniec.osada);
+        // stan gry osady po nadrabianiu w kawałkach jest ten sam, co z Node przy nadrabianiu naraz w ticku startu
+        const wzorzec = await skrotWzorcaPrzymorze(z.koniec.osada.tick ?? 0);
+        console.log(
+          `  skrót osady w przeglądarce ${z.koniec.osada.skrot} przy ticku ${z.koniec.osada.tick}, wzorzec z Node ${wzorzec}`,
+        );
+        wymagaj(z.koniec.osada.skrot === wzorzec, 'skrót osady z przeglądarki różni się od wzorca z Node', [
+          z.koniec.osada.skrot,
+          wzorzec,
+        ]);
         // Rozstrzygnięcie 1 kontrolera: żadna klatka przed 6:00 (nadrabianie) ani w chwili startu osady nie trwa dłużej niż 33 ms.
         // Mierzone dwojako: praca tyknięcia gry (`frame()` z rysowaniem, czyli to, co dokłada nasz kod) i odstęp od początku jednej
         // klatki do początku następnej (zegar; do niego wchodzą też zatrzymania poza grą, np. obciążona maszyna)
@@ -524,6 +576,58 @@ export function osadaShots(): ShotCele[] {
           `odstęp między klatkami w chwili startu osady ${naStarcie.max} ms (limit 33 ms)`,
           naStarcie,
         );
+      },
+    },
+    {
+      name: 'osada-zapis-w-przygotowaniu',
+      query: '',
+      run: async (page, base) => {
+        const start = tickAt(2, 6);
+        // przygotowanie idzie też przy pauzie (speed=0), więc po zapisie w jego połowie wystarczy odczekać
+        await page.goto(`${base}?demo=przymorze&osada=1&godzina=3&speed=0&cam=hq,1`);
+        await waitIdle(page);
+        const w = await page.waitForFunction(
+          (s) => {
+            const p = window.zm!.osada()?.przygotowanie;
+            return p?.faza === 'nadrabianie' && (p.tick ?? 0) >= s / 2 ? p.tick : false;
+          },
+          start,
+          { timeout: 30_000, polling: 20 },
+        );
+        const postepPrzedZapisem = (await w.jsonValue()) as number;
+        await page.evaluate(() => window.zm!.save());
+        const zapis = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null')?.osada, SAVE);
+        console.log(`  zapis w połowie przygotowania (tick gry osady ${postepPrzedZapisem}): ${JSON.stringify(zapis)}`);
+        wymagaj(zapis?.stan === 'czeka', 'zapis w trakcie przygotowania ma osadę „czeka”', zapis);
+        wymagaj(Object.keys(zapis).sort().join() === 'stan,v', 'zapis „czeka” nie niesie przygotowania', zapis);
+        // „Kontynuuj”: przygotowanie zaczyna się od nowa (pierwsza widoczna wartość tuż po starcie, daleko od zapisanej)
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        const odNowa = await page.waitForFunction(() => window.zm?.osada()?.przygotowanie ?? false, null, {
+          timeout: 30_000,
+          polling: 5,
+        });
+        const pierwsze = (await odNowa.jsonValue()) as { faza: string; tick?: number };
+        console.log(`  po „Kontynuuj” pierwszy odczyt przygotowania: ${JSON.stringify(pierwsze)}`);
+        wymagaj(
+          pierwsze.faza === 'nadrabianie' && (pierwsze.tick ?? start) < postepPrzedZapisem,
+          'po wczytaniu przygotowanie zaczyna się od nowa',
+          [pierwsze, postepPrzedZapisem],
+        );
+        // do 7:00: osada powstaje w ticku startu i ma ten sam stan co wzorzec z Node
+        await chopDryTree(page);
+        await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
+        const po = await odczyt(page);
+        wymagaj(po.osada?.stan === 'jest' && po.osada.tick === po.nasz, 'o 7:00 osada jest, ticki równe', po);
+        const wzorzec = await skrotWzorcaPrzymorze(po.osada.tick ?? 0);
+        console.log(
+          `  skrót osady po wczytaniu w przygotowaniu ${po.osada.skrot} przy ticku ${po.osada.tick}, wzorzec z Node ${wzorzec}`,
+        );
+        wymagaj(po.osada.skrot === wzorzec, 'skrót osady po zapisie w przygotowaniu różni się od wzorca z Node', [
+          po.osada.skrot,
+          wzorzec,
+        ]);
       },
     },
     {
@@ -645,6 +749,68 @@ export function osadaShots(): ShotCele[] {
         }, SAVE);
         console.log(`  zapis osady: ${JSON.stringify(zapis)}`);
         wymagaj(zapis?.stan === 'jest' && zapis.budynkow > 0, 'zapis ma geo kwadratu z kafelków', zapis);
+      },
+    },
+    {
+      name: 'osada-adres-klatki',
+      query: '',
+      run: async (page, base) => {
+        // Adres spoza dem: dane ośmiu sąsiadów przychodzą w tle po starcie gry, więc niepodzielne kroki osady (wybór kwadratu,
+        // budowa gry, rozgrzewka) idą w grze, po jednym na klatkę, a nie pod ekranem ładowania: trzy jednorazowe klatki na początku gry
+        // (zmierzone: ok. 70, 21 i 67 ms; wszystkie trzy niepodzielne, kawałki nadrabiania to potem najwyżej 11 ms). Tu się je
+        // mierzy do dziennika, a jako warunek jest tylko rozsądny pułap: niepodzielny krok najwyżej 250 ms, klatka z kawałkiem
+        // nadrabiania najwyżej 50 ms (sama gra z adresu ma w pierwszych sekundach własne klatki po ok. 25 ms, także bez osady).
+        const ostrzezenia = liczOstrzezenia(page);
+        await sieczLanciego(page);
+        await page.addInitScript(instalujRejestrKlatek, { fazaDoTicku: tickAt(2, 6) });
+        await page.goto(`${base}?osada=1&speed=0`);
+        await page.fill('#addr', 'Lanciego 10G, Warszawa');
+        await page.click('#startForm button[type=submit]');
+        await waitIdle(page);
+        await page.waitForFunction(() => window.zm!.osada()?.przygotowanie?.faza === 'gotowa', null, {
+          timeout: 60_000,
+          polling: 100,
+        });
+        const kl = await zbierzKlatki(page);
+        const wGrze = kl.praca.filter(([, t]) => t >= 0);
+        const kroki: Record<string, string> = {
+          budowa: 'wybór kwadratu',
+          rozgrzewka: 'budowa gry',
+          nadrabianie: 'rozgrzewka albo kawałek nadrabiania',
+          gotowa: 'ostatni kawałek nadrabiania',
+        };
+        const najdluzsze = [...wGrze]
+          .sort((a, b) => b[0] - a[0])
+          .slice(0, 6)
+          .map(
+            ([ms, , faza, tickOsady]) =>
+              `${ms.toFixed(0)} ms (po nim faza „${faza || '-'}” tick ${tickOsady}: ${kroki[faza] ?? 'nie osada'})`,
+          );
+        const kawalki = wGrze.filter(
+          ([, , faza, tickOsady]) => (faza === 'nadrabianie' || faza === 'gotowa') && tickOsady > 0,
+        );
+        const kawalkiMax = Math.max(0, ...kawalki.map(([ms]) => ms));
+        const ciezkieMax = Math.max(
+          0,
+          ...wGrze.filter(([, , faza, tickOsady]) => tickOsady <= 0 && faza !== '').map(([ms]) => ms),
+        );
+        console.log(`  klatek w grze do końca przygotowania: ${wGrze.length}; najdłuższe: ${najdluzsze.join('; ')}`);
+        console.log(
+          `  klatki z kawałkami nadrabiania: ${kawalki.length}, najdłuższa ${kawalkiMax.toFixed(1)} ms; klatki z niepodzielnymi krokami: najdłuższa ${ciezkieMax.toFixed(1)} ms`,
+        );
+        wymagaj(
+          wGrze.length > 0 && wGrze.some(([, , faza]) => faza === 'gotowa'),
+          'przygotowanie doszło do końca w grze',
+          wGrze.length,
+        );
+        wymagaj(
+          ciezkieMax <= 250,
+          `niepodzielny krok osady w klatce pracował ${ciezkieMax.toFixed(1)} ms (pułap 250 ms)`,
+        );
+        wymagaj(kawalkiMax <= 50, `kawałek nadrabiania w klatce pracował ${kawalkiMax.toFixed(1)} ms (pułap 50 ms)`);
+        wymagaj(ostrzezenia.length === 0, 'kafelki przyszły, więc bez ostrzeżeń', ostrzezenia);
+        const o = await odczyt(page);
+        wymagaj(o.osada?.stan === 'czeka', 'osada czeka do 6:00 drugiego dnia', o.osada);
       },
     },
     {

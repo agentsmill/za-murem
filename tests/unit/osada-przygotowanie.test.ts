@@ -8,7 +8,7 @@
    Pełny przebieg z naszą grą (skróty obu gier po 5 dobach równe wzorcowi) jest w osada-gra.test.ts. */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { skrotGry } from '../../src/ai/gra.ts';
+import { nowaGraAi, skrotGry } from '../../src/ai/gra.ts';
 import { wybierzOsade } from '../../src/ai/kwadrat.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { doOtoczenia } from '../../src/sim/sasiedzi.ts';
@@ -23,10 +23,19 @@ import type { Geo } from '../../src/world/geo.ts';
 import { type Uklad, ukladZGeo } from '../../src/world/kwadraty.ts';
 import { daneDema, wczytajDemo } from '../../tools/osada-kwadraty.ts';
 
-// doOtoczenia liczy się naprawdę, ale test widzi, kiedy ją wołano (osobny krok rozgrzewki, a nie pierwszy kawałek nadrabiania)
+// Wszystko liczy się naprawdę, ale test widzi, ile razy i kiedy: doOtoczenia (osobny krok rozgrzewki, a nie pierwszy kawałek
+// nadrabiania), wybierzOsade i nowaGraAi (start nie powtarza pracy z przygotowania)
 vi.mock('../../src/sim/sasiedzi.ts', async (importOriginal) => {
   const m = await importOriginal<typeof import('../../src/sim/sasiedzi.ts')>();
   return { ...m, doOtoczenia: vi.fn(m.doOtoczenia) };
+});
+vi.mock('../../src/ai/kwadrat.ts', async (importOriginal) => {
+  const m = await importOriginal<typeof import('../../src/ai/kwadrat.ts')>();
+  return { ...m, wybierzOsade: vi.fn(m.wybierzOsade) };
+});
+vi.mock('../../src/ai/gra.ts', async (importOriginal) => {
+  const m = await importOriginal<typeof import('../../src/ai/gra.ts')>();
+  return { ...m, nowaGraAi: vi.fn(m.nowaGraAi) };
 });
 
 const START = TICK_STARTU_OSADY;
@@ -125,6 +134,27 @@ describe('przygotowanie osady na zapas', () => {
     expect(osada.podglad().przygotowanie).toEqual({ faza: 'nadrabianie', tick: 0 });
     osada.przygotuj();
     expect(osada.podglad().przygotowanie).toEqual({ faza: 'nadrabianie', tick: KAWALEK_NADRABIANIA });
+  });
+
+  it('start nie powtarza pracy z przygotowania: wybór kwadratu i budowa gry po jednym razie, a bez przygotowania też po jednym', () => {
+    const wybor = vi.mocked(wybierzOsade);
+    const budowa = vi.mocked(nowaGraAi);
+    wybor.mockClear();
+    budowa.mockClear();
+    const osada = nowaZDanymi();
+    osada.przygotujCiezkie();
+    przygotujDoKonca(osada);
+    osada.krok(START);
+    expect(osada.stan).toBe('jest');
+    expect(wybor).toHaveBeenCalledTimes(1);
+    expect(budowa).toHaveBeenCalledTimes(1);
+    wybor.mockClear();
+    budowa.mockClear();
+    const bez = nowaZDanymi();
+    bez.krok(START);
+    expect(bez.stan).toBe('jest');
+    expect(wybor).toHaveBeenCalledTimes(1);
+    expect(budowa).toHaveBeenCalledTimes(1);
   });
 
   it('rozgrzewka liczy doOtoczenia świata osady w osobnym kroku, przed pierwszym tickiem jej gry', async () => {
