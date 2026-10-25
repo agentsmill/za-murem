@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
+import { DROGI } from '../../src/gov/zwyciestwo.ts';
 import { nazwaTech, TECHS } from '../../src/sim/badania.ts';
 import { ARTYKUL_STARTOWY, CZIPY, KATEGORIE, maArtykul, rejestr } from '../../src/ui/wiki.ts';
 import { POLSKIE, polskieSlowa } from './po-angielsku.ts';
@@ -20,13 +21,17 @@ const KATEGORIE_DRUGIEJ_SESJI = ['wydarzenia', 'miasto', 'sasiedzi', 'drogi', 'z
 /** odnośnik, który wolno zostawić bez artykułu w tej gałęzi */
 const obcy = (id: string): boolean => UZGODNIONE.has(id);
 
-/** nazwy własne technologii zostają takie same w bloku i w domu, więc przed szukaniem słów z bloku wypadają z tekstu */
+/** nazwy własne technologii i dróg do zwycięstwa (np. „Nowe osiedle”) zostają takie same w bloku i w domu, więc przed
+    szukaniem słów z bloku wypadają z tekstu */
 function bezNazwTechnologii(tekst: string): string {
   let t = tekst;
-  const nazwy = TECHS.flatMap((x) => {
-    const n = nazwaTech(x.id);
-    return [n.pl, n.en];
-  });
+  const nazwy = [
+    ...TECHS.flatMap((x) => {
+      const n = nazwaTech(x.id);
+      return [n.pl, n.en];
+    }),
+    ...Object.values(DROGI).flatMap((d) => [d.nazwa.pl, d.nazwa.en]),
+  ];
   for (const n of nazwy.sort((a, b) => b.length - a.length)) t = t.replaceAll(n, ' ');
   return t.replace(/research board/gi, ' ').replaceAll('tablica badań', ' ');
 }
@@ -52,7 +57,8 @@ describe('wszystkie artykuły, wszystkie przypadki', () => {
           expect(a.zdania.length, a.id).toBeGreaterThanOrEqual(2);
           expect(a.zdania.length, a.id).toBeLessThanOrEqual(5);
           for (const z of a.zdania) {
-            expect(z, a.id).toMatch(/[.!?]$/);
+            // zdanie może kończyć cytat pełnego zdania z gry z kropką w środku („… gra mówi: „Zamknięte na klucz.”)
+            expect(z, a.id).toMatch(/[.!?]”?$/);
             expect(z.length, `${a.id}: ${z}`).toBeLessThan(380);
           }
         }

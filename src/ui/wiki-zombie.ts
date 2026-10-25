@@ -140,6 +140,9 @@ const bronNaStart = (): WeaponId[] => START_KIT.zombie.core.filter((x): x is Wea
 
 const NOCE = [1, 2, 3, 5, 10];
 
+/** klucz tabeli w identyfikatorze faktu: małe litery z łącznikiem (`wywazanieLom` → `wywazanie-lom`), jak wszystkie fakty */
+export const idKlucza = (k: string): string => k.replace(/[A-Z]/g, (x) => `-${x.toLowerCase()}`);
+
 /** hałas przy drzwiach sąsiednich budynków (`HALAS` z src/sim/sasiedzi.ts): klucz tabeli i opis po polsku i angielsku */
 const DRZWI: readonly [keyof typeof HALAS, string, string][] = [
   ['otwieranie', 'otwieranie drzwi', 'opening a door'],
@@ -388,7 +391,7 @@ export function definicjeZombie(): Def[] {
             fakt('wrak-rozbiorka', L('Hałas: rozbiórka wraku', 'Noise: stripping a wreck'), m(WRECK_STRIP_NOISE)),
             fakt('pies', L('Hałas: szczekanie psa', 'Noise: a dog barking'), m(SZCZEK_HALAS)),
             ...DRZWI.map(([klucz, pl, en]) =>
-              fakt(`drzwi-${klucz}`, L(`Hałas: ${pl}`, `Noise: ${en}`), m(HALAS[klucz])),
+              fakt(`drzwi-${idKlucza(klucz)}`, L(`Hałas: ${pl}`, `Noise: ${en}`), m(HALAS[klucz])),
             ),
             fakt(
               'trwa',

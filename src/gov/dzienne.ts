@@ -116,12 +116,18 @@ export function powodOdmowy(st: GovState, i: GovInput, cel: Cel, ids?: readonly 
   }
   if (st.wyprawy?.some((w) => w.cel.klucz === cel.klucz))
     return tx('Ktoś już tam idzie.', 'Somebody is already on the way there.');
-  // mapa osiedla ma własne miejsca, do których idzie się pieszo; cel z TARGETS (zapas null) nie ma położenia
+  // mapa osiedla (w domu mapa ulicy, jak nagłówek „Na ulicy”) ma własne miejsca, do których idzie się pieszo; cel
+  // z TARGETS (zapas null) nie ma położenia
   if (cel.zapas !== null && naMapieLokalnej(cel))
-    return tx(
-      'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
-      'This place is on your estate map: you can walk there, no supply run needed.',
-    );
+    return placeIn(i).kind === 'dom'
+      ? tx(
+          'To miejsce jest na mapie ulicy: tam chodzi się pieszo, bez wyprawy.',
+          'This place is on your street map: you can walk there, no supply run needed.',
+        )
+      : tx(
+          'To miejsce jest na mapie osiedla: tam chodzi się pieszo, bez wyprawy.',
+          'This place is on your estate map: you can walk there, no supply run needed.',
+        );
   return null;
 }
 

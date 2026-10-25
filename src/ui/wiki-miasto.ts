@@ -104,10 +104,10 @@ export function progiRyzyka(): [number, number] {
 /** Powody, dla których wyprawa dzienna nie wyjdzie, z `powodOdmowy` na świeżym stanie z mapą miasta: po zmroku, za daleko,
     wybrane do cna, miejsce na mapie osiedla. `powodOdmowy` czyta z odczytu tylko godzinę, więc wystarcza mu odczyt z samą
     godziną. */
-export function powodyOdmowy(): { noc: string; daleko: string; cna: string; osiedle: string } {
+export function powodyOdmowy(place?: WikiCtx['place']): { noc: string; daleko: string; cna: string; osiedle: string } {
   const st = newGov(1);
   wlaczMiasto(st);
-  const odczyt = (hour: number) => ({ hour }) as unknown as GovInput;
+  const odczyt = (hour: number) => ({ hour, place }) as unknown as GovInput;
   const pelne = (odl: number): Cel => ({ ...celKategorii('sklep', odl), zapas: 10 });
   const powod = (hour: number, cel: Cel) => tr(powodOdmowy(st, odczyt(hour), cel));
   return {
@@ -144,7 +144,7 @@ function lupTekst(kat: string): string {
     bez punktów (garaże, hale) mają null */
 const OSM: Record<string, [string, string] | null> = {
   spozywczy: [
-    'sklepy spożywcze wszelkiego rodzaju: osiedlowe, supermarkety, piekarnie, rzeźnicy, warzywniaki i kioski',
+    'sklepy spożywcze wszelkiego rodzaju: sklepiki, supermarkety, piekarnie, rzeźnicy, warzywniaki i kioski',
     'food shops of every kind: corner shops, supermarkets, bakeries, butchers, greengrocers and kiosks',
   ],
   apteka: ['apteki i sklepy z wyrobami medycznymi', 'pharmacies and medical supply shops'],
@@ -318,8 +318,8 @@ export function definicjeMiasto(): Def[] {
                 'Dragging moves the map, the wheel zooms it, and clicking a sign shows the place card.',
               ),
           L(
-            `Koło wokół siedziby (${odleglosc(PROMIEN_MAPY_LOKALNEJ)}) to mapa osiedla: miejsca w nim są przygaszone, bo tam chodzi się pieszo i nie są celami wypraw.`,
-            `The circle around the HQ (${odleglosc(PROMIEN_MAPY_LOKALNEJ)}) is the estate map: places in it are dimmed, because you walk there and they are not targets for supply runs.`,
+            `Koło wokół siedziby (${odleglosc(PROMIEN_MAPY_LOKALNEJ)}) to ${c.dom ? 'mapa ulicy' : 'mapa osiedla'}: miejsca w nim są przygaszone, bo tam chodzi się pieszo i nie są celami wypraw.`,
+            `The circle around the HQ (${odleglosc(PROMIEN_MAPY_LOKALNEJ)}) is ${c.dom ? 'your street map' : 'the estate map'}: places in it are dimmed, because you walk there and they are not targets for supply runs.`,
           ),
           L(
             'Karta miejsca podaje odległość i czas drogi, ryzyko słowem, co tam zwykle jest, ile zostało i kiedy byliście tu ostatnio, a „Wyślij wyprawę” jest wyszarzone, gdy wyprawa nie wyjdzie.',
@@ -331,7 +331,13 @@ export function definicjeMiasto(): Def[] {
           ),
         ],
         fakty: [
-          fakt('osiedle', L('Mapa osiedla (promień)', 'Estate map (radius)'), odleglosc(PROMIEN_MAPY_LOKALNEJ)),
+          fakt(
+            'osiedle',
+            c.dom
+              ? L('Mapa ulicy (promień)', 'Street map (radius)')
+              : L('Mapa osiedla (promień)', 'Estate map (radius)'),
+            odleglosc(PROMIEN_MAPY_LOKALNEJ),
+          ),
           fakt(
             'najdalej',
             L('Najdalszy cel wyprawy dziennej', 'Farthest target for a day run'),
@@ -362,8 +368,8 @@ export function definicjeMiasto(): Def[] {
       (c): Tresc => ({
         zdania: [
           L(
-            `Wyprawa to wyjście kilku osób z ${c.words.zarzad.dk} do sklepu albo usługi poza osiedlem po ${listaI([LOOT.supplies, LOOT.meds, LOOT.parts, LOOT.scrap, LOOT.wood].map((t) => tr(t)))}.`,
-            `A supply run is a trip by a few people from ${c.e.krotko} to a shop or service beyond the estate for ${listaI([LOOT.supplies, LOOT.meds, LOOT.parts, LOOT.scrap, LOOT.wood].map((t) => tr(t)))}.`,
+            `Wyprawa to wyjście kilku osób z ${c.words.zarzad.dk} do sklepu albo usługi poza ${c.dom ? 'waszą ulicą' : 'osiedlem'} po ${listaI([LOOT.supplies, LOOT.meds, LOOT.parts, LOOT.scrap, LOOT.wood].map((t) => tr(t)))}.`,
+            `A supply run is a trip by a few people from ${c.e.krotko} to a shop or service beyond ${c.dom ? 'your street' : 'the estate'} for ${listaI([LOOT.supplies, LOOT.meds, LOOT.parts, LOOT.scrap, LOOT.wood].map((t) => tr(t)))}.`,
           ),
           L(
             'Wysyłacie ją na dwa sposoby: za dnia z mapy miasta albo w nocy z karty nocy, wybierając „Wyprawa blisko” albo „Wyprawa daleko”.',
@@ -424,7 +430,7 @@ export function definicjeMiasto(): Def[] {
       'miasto',
       () => L('Wyprawa z mapy miasta', 'A run from the city map'),
       (c): Tresc => {
-        const p = powodyOdmowy();
+        const p = powodyOdmowy(c.place);
         return {
           zdania: [
             L(
@@ -432,12 +438,12 @@ export function definicjeMiasto(): Def[] {
               `Click a place on the city map and ${cyt('Wyślij wyprawę', 'Send a supply run')}, pick people from ${c.e.krotko} and confirm: the plan window shows the time, the return, the risk, how much they can carry and how much is left in the place.`,
             ),
             L(
-              `Wyprawy wychodzą tylko za dnia, między ${MORNING}:00 a ${CARD_HOUR}:00, a po zmroku gra mówi: ${wCyt(p.noc)}`,
-              `Runs leave only by day, between ${MORNING}:00 and ${CARD_HOUR}:00, and after dark the game says: ${wCyt(p.noc)}`,
+              `Po zmroku okno planu odmawia słowami ${wCyt(p.noc)}, więc wyprawę wysyła się za dnia, między ${MORNING}:00 a ${CARD_HOUR}:00.`,
+              `After dark the plan window refuses with ${wCyt(p.noc)}, so runs are sent by day, between ${MORNING}:00 and ${CARD_HOUR}:00.`,
             ),
             L(
-              `Odmowa pada też z powodów miejsca: ${wCyt(p.daleko)}, ${wCyt(p.cna)} albo ${wCyt(p.osiedle)}`,
-              `A run is also refused for reasons of the place: ${wCyt(p.daleko)}, ${wCyt(p.cna)} or ${wCyt(p.osiedle)}`,
+              `Odmowa pada też z powodów miejsca, na przykład ${wCyt(p.daleko)}, ${wCyt(p.cna)} albo ${wCyt(p.osiedle)}, i wtedy trzeba wybrać inne miejsce.`,
+              `A run is also refused for reasons of the place, such as ${wCyt(p.daleko)}, ${wCyt(p.cna)} or ${wCyt(p.osiedle)}, and then you pick another place.`,
             ),
             L(
               'Nie wyjdzie ugryziony ani ten, kto nie ma sił na taką drogę, ani ten, kto jest już na wyprawie, a do jednego miejsca nie idą dwie wyprawy naraz.',
@@ -484,8 +490,8 @@ export function definicjeMiasto(): Def[] {
             'On the Night orders each person has a “Short run” and a “Long run” among the options, with the name of the place and its distance.',
           ),
           L(
-            `„Blisko” to najbliższe niewybrane do cna miejsce spoza mapy osiedla do ${odleglosc(BLISKO_DO_M)} (a gdy go nie ma, po prostu najbliższe), a „daleko” to inne miejsce do ${odleglosc(MAX_OKOLICA_M)}, które najlepiej załata braki jedzenia, leków i części.`,
-            `“Short” is the nearest place outside the estate map up to ${odleglosc(BLISKO_DO_M)} that is not picked clean (or simply the nearest one if there is none), and “long” is another place up to ${odleglosc(MAX_OKOLICA_M)} that best makes up for the shortage of food, meds and parts.`,
+            `„Blisko” to najbliższe niewybrane do cna miejsce spoza ${c.dom ? 'mapy ulicy' : 'mapy osiedla'} do ${odleglosc(BLISKO_DO_M)} (a gdy go nie ma, po prostu najbliższe), a „daleko” to inne miejsce do ${odleglosc(MAX_OKOLICA_M)}, które najlepiej załata braki jedzenia, leków i części.`,
+            `“Short” is the nearest place outside ${c.dom ? 'your street map' : 'the estate map'} up to ${odleglosc(BLISKO_DO_M)} that is not picked clean (or simply the nearest one if there is none), and “long” is another place up to ${odleglosc(MAX_OKOLICA_M)} that best makes up for the shortage of food, meds and parts.`,
           ),
           L(
             `Bliska wyprawa wraca o ${celKategorii('sklep', BLISKO_DO_M).powrot}:00, daleka o ${celKategorii('sklep', BLISKO_DO_M + 1).powrot}:00, a do dalekiej trzeba więcej sił i zdrowia.`,

@@ -62,7 +62,7 @@ import {
 import { SZCZEK_HALAS } from '../../src/sim/zwierzeta.ts';
 import { STATYCZNE } from '../../src/ui/jezyk.ts';
 import { artykul, CZIPY, maArtykul, rejestr, szukaj, tytulArtykulu } from '../../src/ui/wiki.ts';
-import { czasDoZbicia, trafienia } from '../../src/ui/wiki-zombie.ts';
+import { czasDoZbicia, idKlucza, trafienia } from '../../src/ui/wiki-zombie.ts';
 import { Atrapa } from './gov-atrapa.ts';
 import { demoWorld } from './miejsce-pomoc.ts';
 import { kontrolaOdnosnikow, kontrolaTresci } from './wiki-kontrola.ts';
@@ -113,7 +113,8 @@ describe('pokrycie', () => {
   });
 
   it('każdy wpis tabeli hałasu przy drzwiach (HALAS) ma wiersz w artykule o hałasie', () => {
-    for (const klucz of Object.keys(HALAS)) expect(fakt('zombie:halas', `drzwi-${klucz}`), klucz).toBeDefined();
+    for (const klucz of Object.keys(HALAS))
+      expect(fakt('zombie:halas', `drzwi-${idKlucza(klucz)}`), klucz).toBeDefined();
   });
 });
 
@@ -146,7 +147,8 @@ describe('fakty zgodne z tabelami gry', () => {
       expect(fakt('zombie:halas', 'wrak-szukanie')).toBe(m(WRECK_SEARCH_NOISE));
       expect(fakt('zombie:halas', 'wrak-rozbiorka')).toBe(m(WRECK_STRIP_NOISE));
       expect(fakt('zombie:halas', 'pies')).toBe(m(SZCZEK_HALAS));
-      for (const [klucz, v] of Object.entries(HALAS)) expect(fakt('zombie:halas', `drzwi-${klucz}`), klucz).toBe(m(v));
+      for (const [klucz, v] of Object.entries(HALAS))
+        expect(fakt('zombie:halas', `drzwi-${idKlucza(klucz)}`), klucz).toBe(m(v));
       expect(fakt('zombie:halas', 'lampa')).toBe(m(LAMP_REACH));
       expect(fakt('zombie:halas', 'lampa-wieza')).toBe(m(LAMP_REACH * WIEZA_ZASIEG));
       expect(fakt('zombie:halas', 'ognisko')).toBe(m(CAMPFIRE_LIGHT));

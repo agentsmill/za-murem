@@ -578,7 +578,10 @@ function opisJak(jak: keyof typeof NASTAWIENIE, c: WikiCtx): string {
     case 'nocleg':
       return L('Wpuszczony na noc', 'Let in for the night');
     case 'przyjety':
-      return L(`Przyjęty do osiedla albo do ${c.words.zarzad.dk}`, `Taken in to stay or onto ${c.e.krotko}`);
+      return L(
+        `Przyjęty do ${c.dom ? 'domu' : 'spółdzielni'} albo do ${c.words.zarzad.dk}`,
+        `Taken in to stay or onto ${c.e.krotko}`,
+      );
     case 'odprawiony':
       return L('Odprawiony', 'Sent away');
     case 'okradl':
