@@ -510,5 +510,118 @@ export function wikiShots(out: string): ShotWiki[] {
         await sprawdzUklad(page, 'artykuł o uchwale w bloku');
       },
     },
+    // tryb zombie: artykuły o szwendaczach są też w zwykłej grze, ale w zombie czipy siatka i stado otwierają swoje
+    {
+      name: 'wiki-zombie',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, 'demo=przymorze&tryb=zombie&speed=0&cam=hq,1.3');
+        await page.click('#sFence');
+        await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zombie:siatka"]');
+        await sprawdzUklad(page, 'artykuł o siatce w trybie zombie');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        await page.click('#sHorde');
+        await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zombie:stado"]');
+        await sprawdzUklad(page, 'artykuł o stadzie w trybie zombie');
+      },
+    },
+    // telefon po angielsku w trybie zombie: artykuł o szwendaczach z uwagą o trybie, potem handlarz z długimi wartościami faktów
+    {
+      name: 'wiki-zombie-telefon-en',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        await start(page, base, 'demo=przymorze&tryb=zombie&speed=0&cam=hq,1.3');
+        await otworzZMenu(page, true);
+        await otworzArtykul(page, 'zombie:szwendacze', true);
+        await sprawdzUklad(page, 'artykuł o szwendaczach na telefonie');
+        sprawdzJezyk('artykuł o szwendaczach na telefonie', await tekstOkna(page), { en: true });
+        const uwaga = await page.$eval('#sheet .wiki-uwaga', (e) => (e as HTMLElement).innerText);
+        if (!/^You are playing Zombie mode/.test(uwaga)) throw new Error(`uwaga o trybie w zombie: ${uwaga}`);
+        const fakty = await page.$$eval('#sheet .wiki-fakt', (l) => l.map((e) => (e as HTMLElement).dataset.fakt));
+        for (const f of ['zdrowie', 'wzrok-dzien', 'trafienia-dzida'])
+          if (!fakty.includes(f)) throw new Error(`brak faktu ${f} w artykule o szwendaczach`);
+        await zapisz(page, 'wiki-zombie-telefon-en-szwendacze');
+        // artykuł o sile naporu na siatkę i o handlarzu: wąskie okno, długie wartości faktów
+        await page.tap('#sheet .wiki-wstecz');
+        await otworzArtykul(page, 'zombie:siatka', true);
+        await sprawdzUklad(page, 'artykuł o siatce na telefonie');
+        await page.tap('#sheet .wiki-wstecz');
+        await otworzArtykul(page, 'wydarzenia:handlarz', true);
+        await sprawdzUklad(page, 'artykuł o handlarzu na telefonie w trybie zombie');
+        sprawdzJezyk('artykuł o handlarzu na telefonie', await tekstOkna(page), { en: true });
+        const oferty = await page.$eval(
+          '#sheet .wiki-fakt[data-fakt="kupuje-zlom"] dd',
+          (e) => (e as HTMLElement).innerText,
+        );
+        if (!/Give 6 scrap for 3 planks/.test(oferty)) throw new Error(`oferty handlarza: ${oferty}`);
+        await zapisz(page, 'wiki-zombie-telefon-en-handlarz');
+        // tabela ofert w faktach jest długim wierszem: po przewinięciu do niej też nic nie wystaje
+        await page.$eval('#sheet .wiki-fakt[data-fakt="reszta"]', (e) => e.scrollIntoView({ block: 'center' }));
+        await sprawdzUklad(page, 'oferty handlarza na telefonie');
+        await zapisz(page, 'wiki-zombie-telefon-en-oferty');
+      },
+    },
+    // komputer po polsku: artykuł o rodzaju miejsca z mapy miasta (apteka), potem odnośnik do wypraw i artykuł o odpowiedziach gościa
+    {
+      name: 'wiki-miejsce-pc',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, GRA);
+        await otworzZMenu(page, false);
+        await otworzArtykul(page, 'miejsce:apteka', false);
+        const fakty = await page.$$eval('#sheet .wiki-fakt', (l) => l.map((e) => (e as HTMLElement).dataset.fakt));
+        for (const f of ['ryzyko-bazowe', 'ryzyko-300', 'lup-meds', 'powrot'])
+          if (!fakty.includes(f)) throw new Error(`brak faktu ${f} w artykule o aptece`);
+        const tytul = await page.$eval('#sheet .wiki-tytul', (e) => (e as HTMLElement).innerText);
+        if (tytul !== 'Apteka') throw new Error(`tytuł artykułu o aptece: ${tytul}`);
+        await sprawdzUklad(page, 'artykuł o aptece na komputerze');
+        sprawdzJezyk('artykuł o aptece na komputerze', await tekstOkna(page), {});
+        await zapisz(page, 'wiki-miejsce-pc-apteka');
+        await page.click('#sheet .wiki-zobacz .wiki-link[data-arg="miasto:wyprawa"]');
+        await page.waitForSelector('#sheet .wiki-art[data-art="miasto:wyprawa"]');
+        await sprawdzUklad(page, 'artykuł o wyprawach po odnośniku');
+        await otworzArtykul(page, 'wydarzenia:wybory', false);
+        const wybory = await page.$$eval('#sheet .wiki-fakt', (l) => l.map((e) => (e as HTMLElement).dataset.fakt));
+        if (!wybory.includes('wybor-noc') || !wybory.includes('wybor-dobic'))
+          throw new Error(`fakty o odpowiedziach: ${wybory.join(', ')}`);
+        await sprawdzUklad(page, 'artykuł o odpowiedziach gościa na komputerze');
+        sprawdzJezyk('artykuł o odpowiedziach gościa', await tekstOkna(page), {});
+        await zapisz(page, 'wiki-miejsce-pc-wybory');
+      },
+    },
+    // dom (Zielonki): artykuły o gościach, handlarzu, sąsiadach, wyprawach, drogach i trybie zombie bez słów z bloku
+    {
+      name: 'wiki-dom-wydarzenia',
+      query: '',
+      run: async (page, base) => {
+        await start(page, base, GRA_DOM);
+        await otworzZMenu(page, false);
+        for (const id of [
+          'wydarzenia:goscie',
+          'wydarzenia:handlarz',
+          'wydarzenia:wybory',
+          'wydarzenia:werbunek',
+          'wydarzenia:znajomi',
+          'sasiedzi:noc',
+          'miasto:nocna',
+          'drogi:ludnosc',
+          'zombie:siatka',
+        ]) {
+          await otworzArtykul(page, id, false);
+          sprawdzJezyk(`artykuł ${id} w domu`, await tekstOkna(page), { dom: true });
+          await sprawdzUklad(page, `artykuł ${id} w domu`);
+        }
+        const t = await tekstOkna(page);
+        if (!/furtk/i.test(t)) throw new Error('artykuł o siatce w domu nie mówi o furtce');
+        await otworzArtykul(page, 'wydarzenia:goscie', false);
+        const tytul = await page.$eval('#sheet .wiki-tytul', (e) => (e as HTMLElement).innerText);
+        if (tytul !== 'Gość pod furtką') throw new Error(`tytuł artykułu o gościu w domu: ${tytul}`);
+        await zapisz(page, 'wiki-dom-wydarzenia-goscie');
+      },
+    },
   ];
 }
