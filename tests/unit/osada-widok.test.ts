@@ -38,10 +38,10 @@ import { ADDRESSES, geoKwadratuTestowego, ukladTestowy } from './fixtures.ts';
 type Demo = ReturnType<typeof wczytajDemo>;
 type Dane = Awaited<ReturnType<typeof daneDema>>;
 
+/** osada wybrana dla dema przy ziarnie gry `seed` */
 interface Przypadek {
   demo: string;
   seed: number;
-  ziarno: number;
   swiat: SwiatOsady;
 }
 
@@ -61,7 +61,7 @@ beforeAll(async () => {
     demA[nazwa] = { demo, dane, uklad, seed, geoDomu: mapaMieszkancow(demo.geo, dane) };
     for (const ziarno of ZIARNA) {
       const swiat = wybierzOsade(ziarno, demo.kwadraty, dane, uklad);
-      if (swiat) przypadki.push({ demo: nazwa, seed: ziarno, ziarno, swiat });
+      if (swiat) przypadki.push({ demo: nazwa, seed: ziarno, swiat });
     }
   }
 }, 180_000);
