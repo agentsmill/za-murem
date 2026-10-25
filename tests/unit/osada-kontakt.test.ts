@@ -326,16 +326,16 @@ describe('poseł z osady: kiedy przychodzi', () => {
   });
 
   it('tylko gdy wejście ma osadę i jest nieodkryta: bez pola, z odkrytą i w trybie zombie karty nie ma', () => {
-    const dziesiec = (gov: GovState, osada: WejscieOsady | undefined) => {
+    const przezDni = (gov: GovState, osada: WejscieOsady | undefined) => {
       for (let dzien = 4; dzien <= 10; dzien++)
         for (const hour of [9, 12, 19, 21])
           if (czekaPosel(gov, wejscie({ day: dzien, hour, screen: 5000 + dzien * 100 + hour, osada }))) return true;
       return false;
     };
-    expect(dziesiec(zarzad(4), undefined)).toBe(false);
-    expect(dziesiec(zarzad(4), osadaWej({ odkryta: true }))).toBe(false);
-    expect(dziesiec(zarzad(4, 1, 'zombie'), osadaWej())).toBe(false);
-    expect(dziesiec(zarzad(4), osadaWej())).toBe(true);
+    expect(przezDni(zarzad(4), undefined)).toBe(false);
+    expect(przezDni(zarzad(4), osadaWej({ odkryta: true }))).toBe(false);
+    expect(przezDni(zarzad(4, 1, 'zombie'), osadaWej())).toBe(false);
+    expect(przezDni(zarzad(4), osadaWej())).toBe(true);
   });
 
   it('w pełnej grze na atrapie: jedna karta, w dniu kontaktu od 9:00, w dzień (przed zebraniem i kartą nocy)', () => {
@@ -953,6 +953,8 @@ describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', (
     const wczytana = osadaZZapisu(zapis, SEED, dane, uklad);
     expect(wczytana.odkryta).toBe(true);
     expect(skrotGry(wczytana.gra!)).toBe(skrotGry(osada.gra!));
+    // wczytana osada podaje zarządowi to samo (nazwa, kierunek, dzień kontaktu, ludność, budowle): droga z zapisu ma te same pola
+    expect(wczytana.dlaZarzadu()).toEqual(osada.dlaZarzadu());
     const drugi = new Gra(7, null);
     drugi.gospodarz = wczytana;
     drugi.gov = loadGov(saveGov(g.gov));

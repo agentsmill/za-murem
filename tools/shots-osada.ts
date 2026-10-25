@@ -40,6 +40,8 @@
    - `osada-kontakt-odpowiedz`: ta sama karta, wybór „Zaprosić do środka…”: osada odkryta, kontakt w stanie osady i w zapisie z liczbami
      z karty, skrót gry osady bez zmian, zaufanie +2 i wkurzenie +1, dwa wpisy w kronice; trzy doby dalej bez drugiej karty, a zapis i
      wczytanie pamiętają odkrycie;
+   - `osada-kontakt-ziarna`: ziarna gry 2 i 1 (osada na północnym zachodzie z kontaktem w dniu 6 i na południowym wschodzie w dniu 5):
+     karta przychodzi w tych dniach, z tym samym sprawdzeniem co w `osada-kontakt`;
    - `osada-kontakt-en`: to samo na telefonie (390×844) po angielsku: tytuł, treść i wybory bez polskich liter, okno mieści się na ekranie
      razem z przyciskami. Zrzut na końcu to ta karta (telefon, angielski);
    - `osada-kontakt-bez-flagi`: gra bez `?osada=1` przez siedem dób: żadnej karty posła w kronice, `zm.osada()` null, zapis bez osady.
@@ -170,11 +172,12 @@ async function skrotWzorcaPrzymorze(tick: number): Promise<string> {
 /** ziarno naszej gry na demie Przymorze, jak w przeglądarce (skrót adresu dema) */
 const ziarnoPrzymorza = (): number => Number.parseInt(hashString(wczytajDemo('przymorze').addr), 16) || 2051;
 
-/** Osada z Node dla dema Przymorze, doprowadzona do ticku `tick` bez przygotowania na zapas i bez żadnego kontaktu (ani karty
-    posła, ani `odkryj`): wzorzec skrótu gry osady i liczb, które zarząd o niej widzi. */
-async function osadaWzorcowaPrzymorze(tick: number): Promise<OsadaGry> {
+/** Osada z Node dla dema Przymorze (z ziarnem gry `seed`, domyślnie z adresu dema, jak w przeglądarce bez `?seed=`), doprowadzona
+    do ticku `tick` bez przygotowania na zapas i bez żadnego kontaktu (ani karty posła, ani `odkryj`): wzorzec skrótu gry osady
+    i liczb, które zarząd o niej widzi. */
+async function osadaWzorcowaPrzymorze(tick: number, seed = ziarnoPrzymorza()): Promise<OsadaGry> {
   const demo = wczytajDemo('przymorze');
-  const osada = nowaOsadaGry(ziarnoPrzymorza(), await daneDema('przymorze'), ukladZGeo(demo.geo));
+  const osada = nowaOsadaGry(seed, await daneDema('przymorze'), ukladZGeo(demo.geo));
   osada.dane(demo.kwadraty);
   for (let t = 1; t <= tick; t++) osada.krok(t);
   if (!osada.gra) throw new Error(`wzorzec: osada nie powstała do ticku ${tick} (${osada.stan})`);
@@ -412,12 +415,13 @@ async function sprawdzKarte(
   page: Page,
   karta: KartaZEkranu,
   en: boolean,
+  seed = ziarnoPrzymorza(),
 ): Promise<{ ludnosc: number; budowle: number }> {
   const o = await odczyt(page);
   wymagaj(o.osada?.stan === 'jest' && o.osada.odkryta === false, 'osada jest i jeszcze nieodkryta', o.osada);
   const [sx, sy] = zKlucza(o.osada.klucz!);
   const dzien = dayOf(o.nasz);
-  const oczekiwany = dzienKontaktu(ziarnoOsady(ziarnoPrzymorza(), sx, sy));
+  const oczekiwany = dzienKontaktu(ziarnoOsady(seed, sx, sy));
   console.log(
     `  karta w dniu ${dzien}, godzina ${hourOf(o.nasz)}, kwadrat ${o.osada.klucz}, dzień kontaktu osady ${oczekiwany}`,
   );
@@ -438,7 +442,7 @@ async function sprawdzKarte(
   );
   wymagaj(karta.wybory.length === 3, 'trzy wybory', karta.wybory);
   const liczby = liczbyZKarty(karta.akapity);
-  const wzor = await osadaWzorcowaPrzymorze(o.nasz);
+  const wzor = await osadaWzorcowaPrzymorze(o.nasz, seed);
   const wej = wzor.dlaZarzadu()!;
   console.log(
     `  poseł podał: ${JSON.stringify(liczby)}, osada z Node w tym ticku: ludność ${wej.ludnosc}, budowle ${wej.budowle}`,
@@ -1126,6 +1130,33 @@ export function osadaShots(): ShotCele[] {
           'po wczytaniu osada nadal odkryta, kontakt ten sam',
           wczytana.osada,
         );
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      // inne ziarna gry dają osadę na innym kwadracie i inny dzień kontaktu (dla Przymorza: ziarno 2 to północny zachód i dzień 6,
+      // ziarno 1 to południowy wschód i dzień 5; tabela z `dzienKontaktu(ziarnoOsady(ziarno, sx, sy))` dla ziaren 1–24 jest w
+      // raporcie zadania 4): karta przychodzi w tym dniu po kilku nocach z kartami nocy i raportami, z liczbami osady z Node
+      name: 'osada-kontakt-ziarna',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        const oczekiwane = [
+          { seed: 2, klucz: '-1,-1', dzien: 6 },
+          { seed: 1, klucz: '1,1', dzien: 5 },
+        ];
+        for (const { seed, klucz, dzien } of oczekiwane) {
+          await page.evaluate(() => localStorage.clear()).catch(() => {});
+          await page.goto(`${base}?demo=przymorze&osada=1&seed=${seed}&${GRA}`);
+          await waitIdle(page);
+          await chopDryTree(page);
+          const karta = await doPosla(page);
+          const o = await odczyt(page);
+          console.log(`  ziarno ${seed}: „${karta.tytul}”, kwadrat ${o.osada?.klucz}, dzień ${dayOf(o.nasz)}`);
+          wymagaj(o.osada?.klucz === klucz, 'osada na kwadracie z tego ziarna', [klucz, o.osada?.klucz]);
+          wymagaj(dayOf(o.nasz) === dzien, 'dzień kontaktu z tego ziarna', [dzien, dayOf(o.nasz)]);
+          await sprawdzKarte(page, karta, false, seed);
+        }
         wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
       },
     },
