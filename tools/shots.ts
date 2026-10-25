@@ -751,7 +751,7 @@ const SHOTS: Shot[] = [
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
   // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
-  // dom i blok, tryb zombie; każdy scenariusz sprawdza układ, atrybucję map i słowa z bloku w domu
+  // dom i blok; każdy scenariusz sprawdza układ, atrybucję map i słowa z bloku w domu
   ...wikiShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),

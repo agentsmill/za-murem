@@ -205,6 +205,10 @@ export function definicjeStart(): Def[] {
               'Gra staje na pauzie, gdy otwierasz Menu albo okno decyzji.',
               'The game pauses while the Menu or a decision window is open.',
             ),
+            L(
+              `${mysz ? 'Kliknięcie' : 'Stuknięcie'} paska potrzeby na karcie osoby albo znaczka „i” przy budowli w panelu budowy otwiera odpowiedni artykuł wiki.`,
+              `${mysz ? 'Clicking' : 'Tapping'} a need bar on the person card, or the small info mark beside a building in the Build panel, opens the matching wiki article.`,
+            ),
           ],
           zobacz: ['start:zacznij', 'start:pasek', 'praca:polecenia'],
           przyciski: [{ act: 'wiki-pomoc', napis: L('Otwórz „Jak grać”', 'Open “How to play”') }],
