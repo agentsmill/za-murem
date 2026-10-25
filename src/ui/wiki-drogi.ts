@@ -8,6 +8,7 @@
    nazywa się w trybie zombie „Lek”, cel ludności jest wtedy o połowę niższy, a epilog technologii mówi o innej fabryce
    (`WikiCtx.zombie` wybiera nazwy; uwagi mówią o drugim trybie). */
 
+import { WYBOR } from '../content/napisy-sasiedzi.ts';
 import { L, mnogaPl, tr, wielka } from '../core/jezyk.ts';
 import type { GameMode, GovInput } from '../gov/typy.ts';
 import { newGov } from '../gov/zarzad.ts';
@@ -29,9 +30,11 @@ import {
   ZAUFANIE_OD,
 } from '../gov/zwyciestwo.ts';
 import { nazwaTech } from '../sim/badania.ts';
+import { NAPISY as OBCY } from '../sim/wedrowcy.ts';
 import { manyEn, num } from './tekst.ts';
 import { kliknijcie, listaI, polecenie, wCyt } from './wiki-slowa.ts';
 import { type Def, def, type Fakt, fakt, type Tresc, type WikiCtx } from './wiki-typy.ts';
+import { etykietaWyboru } from './wiki-wydarzenia.ts';
 
 /** drogi w kolejności ekranu (tej, w której zwraca je `ocenDrogi`) */
 export const DROGI_KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
@@ -194,7 +197,7 @@ const OPISY: Record<Droga, (c: WikiCtx) => Opis> = {
           : []),
       ],
       jak: [dalej(c, 'teren', 0)].filter((t): t is string => t !== null),
-      zobacz: [],
+      zobacz: ['sasiedzi:plot', 'sasiedzi:teren', 'sasiedzi:budynki'],
     };
   },
 
@@ -217,7 +220,7 @@ const OPISY: Record<Droga, (c: WikiCtx) => Opis> = {
             )
           : L('Droga nie ma jeszcze wymagań.', 'The road has no requirements yet.'),
       ],
-      zobacz: [],
+      zobacz: ['miasto:wyprawa', 'miasto:droga', 'miejsce:apteka', 'miejsce:przychodnia'],
     };
   },
 
@@ -288,11 +291,11 @@ const OPISY: Record<Droga, (c: WikiCtx) => Opis> = {
           `First milestone: get ${osob(PROGI_LUDNOSCI[0])} under ${e.zarzad}.`,
         ),
         L(
-          'Ludzie przychodzą z kart wydarzeń, od sąsiadów i spośród wędrowców. W trybie zombie zamiast wędrowców przychodzą ocalali.',
-          'People come from event cards, from next door and from wanderers. In Zombie mode survivors come instead of wanderers.',
+          `Ludzie przychodzą z kart gości (${wCyt(etykietaWyboru('zostan', c))}), od sąsiadów (${wCyt(tr(WYBOR.zaproszenie('')).replace(/\s*\(.*\)$/, ''))}) i spośród wędrowców (${wCyt(OBCY.zaprosicBez.pl)}). W trybie zombie zamiast wędrowców przychodzą ocalali.`,
+          `People come from guest cards (${wCyt(etykietaWyboru('zostan', c))}), from next door (${wCyt(tr(WYBOR.zaproszenie('')).replace(/\s*\(.*\)$/, ''))}) and from wanderers (${wCyt(OBCY.zaprosicBez.en)}). In Zombie mode survivors come instead of wanderers.`,
         ),
       ],
-      zobacz: ['potrzeba:food'],
+      zobacz: ['potrzeba:food', 'wydarzenia:goscie', 'wydarzenia:wedrowcy', 'wydarzenia:werbunek', 'sasiedzi:budynki'],
     };
   },
 

@@ -638,7 +638,7 @@ export function definicjeMiasto(): Def[] {
               ),
             ),
           ],
-          zobacz: ['miasto:wyprawa', 'miasto:droga', 'miasto:lup', 'zombie:ugryzienie'],
+          zobacz: ['miasto:wyprawa', 'miasto:droga', 'miasto:lup', 'wydarzenia:prosby', 'zombie:ugryzienie'],
         };
       },
       'ryzyko kłopoty niebezpieczeństwo szabrownicy szwendacze risk trouble danger',

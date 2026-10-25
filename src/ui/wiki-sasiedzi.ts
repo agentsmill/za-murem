@@ -445,7 +445,7 @@ export function definicjeSasiedzi(): Def[] {
               [WYBOR.przegonic(''), WYBOR.rozmowa(), WYBOR.odejscie()].map(rdzen).join(', '),
             ),
           ],
-          zobacz: ['sasiedzi:pukanie', 'sasiedzi:wywazanie', 'sasiedzi:noc', 'zasob:jedzenie'],
+          zobacz: ['sasiedzi:pukanie', 'sasiedzi:wywazanie', 'sasiedzi:noc', 'wydarzenia:goscie', 'zasob:jedzenie'],
         };
       },
       'lokatorzy spotkanie zaproszenie jedzenie zapasy szarpanina residents meeting invite supplies',
