@@ -44,6 +44,7 @@ export function osadaBezKodu(e: unknown): OsadaGry {
     przygotujCiezkie() {},
     krok() {},
     odkryj() {},
+    dlaZarzadu: () => null,
     zapisz: zapis,
     podglad: () => ({ stan: 'brak', powod: 'blad', blad }),
   };

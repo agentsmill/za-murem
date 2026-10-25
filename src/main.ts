@@ -35,7 +35,9 @@
    ?osada=1 (osada AI, etap 2, src/ui/osada.ts) dokłada drugą, pełną grę na sąsiednim kwadracie miasta, prowadzoną przez silnik
    decyzji (src/ai): powstaje o 6:00 drugiego dnia (`TICK_STARTU_OSADY`), nadrabia swój czas od ticku 0 i potem idzie krok w krok
    z naszą (`krokSymulacji`: krok naszej symulacji i zaraz po nim `osada.krok`, w pętli klatek i w `zm.ff`), trafia do zapisu
-   (`Save.osada`; zapis wygrywa z adresem jak `pietra`) i niczego w naszej grze nie zmienia. Nadrabianie nie wchodzi w klatkę
+   (`Save.osada`; zapis wygrywa z adresem jak `pietra`) i poza kartą posła niczego w naszej grze nie zmienia: w dniu 4, 5 albo 6
+   (z ziarna osady) od 9:00 zarząd dostaje kartę „Poseł z osady …” (src/gov/kontakt.ts; `input()` dokłada `GovInput.osada` z
+   `osada.dlaZarzadu()`), a skutek jej wyboru, `odkryjOsade`, odsłania osadę (`applyFx` woła `osada.odkryj`). Nadrabianie nie wchodzi w klatkę
    startu: najcięższe kroki (wybór kwadratu, budowa gry, rozgrzewka) demo robi pod ekranem ładowania (`osada.przygotujCiezkie()`),
    a gra osady nadrabia swój czas po kawałku na klatkę przez cały pierwszy dzień (`osada.przygotuj()` w `frame`), poza zapisem
    (zapis w jej trakcie to `czeka`). Dane ośmiu kandydatów: dema z public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry,
@@ -1184,6 +1186,10 @@ function input(): GovInput {
   if (opcjaMiasto) i.okolica = okolica;
   // ludność kwadratu domu z 2021 roku do celu drogi ludnościowej; bez tabel pole zostaje puste
   if (ludnosc2021 !== undefined) i.ludnosc2021 = ludnosc2021;
+  // osada AI (?osada=1): co zarząd o niej wie, gdy już powstała (karta posła, src/gov/kontakt.ts); bez flagi, przed 6:00 drugiego
+  // dnia, w trybie zombie i gdy osady zabrakło pola nie ma, a zarząd gra jak dotąd
+  const jej = osada?.dlaZarzadu();
+  if (jej) i.osada = jej;
   // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
@@ -1192,6 +1198,9 @@ function input(): GovInput {
 function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
   if (!sim) return '';
   applyGov(sim.st, sim.w, fx);
+  // pierwszy kontakt (karta posła): osada odsłonięta z tym, co poseł powiedział; nic z tego nie wchodzi do naszej symulacji ani do
+  // gry osady, a widok kwadratu osady odsłoni zadanie 5
+  if (fx.odkryjOsade) osada?.odkryj(fx.odkryjOsade);
   const last = tr(fx.log[fx.log.length - 1]);
   if (last && hint) say(last, 7000);
   return last;

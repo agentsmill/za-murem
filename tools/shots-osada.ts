@@ -32,21 +32,35 @@
      limitem pobierania, 20 s na kafelek): start gry i pętla na nie nie czekają, o 6:00 drugiego dnia `brak` z powodem `dane`;
    - `osada-zombie`: tryb zombie z flagą od razu nie ma osady (`brak`, powód `regula`), pole `osada` jest w zapisie;
    - `osada-bez-flagi`: gra bez `?osada=1`: `zm.osada()` to null, zapis bez pola `osada`, o 6:00 drugiego dnia nic się nie dzieje.
-   Zrzut na końcu każdego scenariusza to zwykła gra (osada w etapie 2 niczego nie rysuje: jej kwadrat pokazuje zadanie 5), po nim
+   Pierwszy kontakt (zadanie 4, karta „Poseł z osady …”, src/gov/kontakt.ts):
+   - `osada-kontakt`: demo Przymorze po polsku na komputerze, gra przewinięta do karty posła (inne karty po drodze dostają pierwszy
+     wybór): karta przychodzi w dniu kontaktu osady (4–6, z ziarna), od 9:00; tytuł, nagłówek i kierunek z gry, liczby w tekście
+     (ludność i budowle) równe osadzie z Node w tym samym ticku, skrót osady w przeglądarce równy skrótowi z Node; zapis, gdy karta
+     czeka, i „Kontynuuj” otwierają tę samą kartę. Zrzut na końcu to ta karta (komputer, polski);
+   - `osada-kontakt-odpowiedz`: ta sama karta, wybór „Zaprosić do środka…”: osada odkryta, kontakt w stanie osady i w zapisie z liczbami
+     z karty, skrót gry osady bez zmian, zaufanie +2 i wkurzenie +1, dwa wpisy w kronice; trzy doby dalej bez drugiej karty, a zapis i
+     wczytanie pamiętają odkrycie;
+   - `osada-kontakt-en`: to samo na telefonie (390×844) po angielsku: tytuł, treść i wybory bez polskich liter, okno mieści się na ekranie
+     razem z przyciskami. Zrzut na końcu to ta karta (telefon, angielski);
+   - `osada-kontakt-bez-flagi`: gra bez `?osada=1` przez siedem dób: żadnej karty posła w kronice, `zm.osada()` null, zapis bez osady.
+   Zrzut na końcu pozostałych scenariuszy to zwykła gra (osada w etapie 2 niczego nie rysuje: jej kwadrat pokazuje zadanie 5), po nim
    ogląda się, że gra wygląda jak zawsze (atrybucja mapy, brak plam po błędzie). */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { skrotGry } from '../src/ai/gra.ts';
+import { kierunekOsady, nazwaOsady, ziarnoOsady } from '../src/ai/kwadrat.ts';
 import { hashString } from '../src/core/rng.ts';
+import { dzienKontaktu } from '../src/gov/kontakt.ts';
+import { dayOf, hourOf } from '../src/sim/clock.ts';
 import { tickAt } from '../src/sim/handlarz.ts';
-import { nowaOsadaGry } from '../src/ui/osada.ts';
-import { ukladZGeo } from '../src/world/kwadraty.ts';
+import { nowaOsadaGry, type OsadaGry } from '../src/ui/osada.ts';
+import { ukladZGeo, zKlucza } from '../src/world/kwadraty.ts';
 import { ADDRESSES } from '../tests/unit/fixtures.ts';
 import { waitIdle } from './browser.ts';
 import { daneDema, wczytajDemo } from './osada-kwadraty.ts';
-import { chopDryTree, GRA, minutaGry, przewin, type ShotCele } from './shots-cele.ts';
+import { chopDryTree, GRA, kliknij, minutaGry, przewin, type ShotCele } from './shots-cele.ts';
 
 /** katalog kafelków testowych i TileJSON (jak w tools/shots.ts) */
 const FIX = path.resolve(import.meta.dirname, '../tests/fixtures/mvt');
@@ -149,16 +163,22 @@ function liczOstrzezenia(page: Page): string[] {
     bez przygotowania na zapas, czyli z nadrabianiem naraz w ticku startu, potem krok po kroku do ticku `tick`. Z nim porównuje się
     osadę z przeglądarki, która nadrabiała po kawałku na klatkę (także po zapisie w trakcie tego i wczytaniu). */
 async function skrotWzorcaPrzymorze(tick: number): Promise<string> {
+  const osada = await osadaWzorcowaPrzymorze(tick);
+  return skrotGry(osada.gra!);
+}
+
+/** ziarno naszej gry na demie Przymorze, jak w przeglądarce (skrót adresu dema) */
+const ziarnoPrzymorza = (): number => Number.parseInt(hashString(wczytajDemo('przymorze').addr), 16) || 2051;
+
+/** Osada z Node dla dema Przymorze, doprowadzona do ticku `tick` bez przygotowania na zapas i bez żadnego kontaktu (ani karty
+    posła, ani `odkryj`): wzorzec skrótu gry osady i liczb, które zarząd o niej widzi. */
+async function osadaWzorcowaPrzymorze(tick: number): Promise<OsadaGry> {
   const demo = wczytajDemo('przymorze');
-  const osada = nowaOsadaGry(
-    Number.parseInt(hashString(demo.addr), 16) || 2051,
-    await daneDema('przymorze'),
-    ukladZGeo(demo.geo),
-  );
+  const osada = nowaOsadaGry(ziarnoPrzymorza(), await daneDema('przymorze'), ukladZGeo(demo.geo));
   osada.dane(demo.kwadraty);
   for (let t = 1; t <= tick; t++) osada.krok(t);
   if (!osada.gra) throw new Error(`wzorzec: osada nie powstała do ticku ${tick} (${osada.stan})`);
-  return skrotGry(osada.gra);
+  return osada;
 }
 
 /** Start z adresu spoza dem (Lanciego z danych testowych) i przewinięcie do 7:00 drugiego dnia; `tryb` mówi, co dzieje się z
@@ -333,6 +353,106 @@ async function biegPrzezStart(
   const klatki = await zbierzKlatki(page);
   await page.evaluate(() => document.querySelector<HTMLElement>('#speed [data-s="0"]')?.click());
   return { startMs, klatki, postep, koniec: await odczyt(page) };
+}
+
+/** Karta zarządu (okno wydarzenia) tak, jak widzi ją gracz: nagłówek, tytuł, akapity treści i napisy wyborów. */
+interface KartaZEkranu {
+  kicker: string;
+  tytul: string;
+  akapity: string[];
+  wybory: string[];
+}
+
+/** otwarte okno wydarzenia albo null (bez okna albo okno innego rodzaju) */
+const kartaZEkranu = (page: Page): Promise<KartaZEkranu | null> =>
+  page.evaluate(() => {
+    const m = document.getElementById('modal');
+    if (!m || m.hidden) return null;
+    const wybory = [...m.querySelectorAll<HTMLElement>('.choices [data-act="event"]')];
+    if (!wybory.length) return null;
+    return {
+      kicker: m.querySelector('.sheet-kicker')?.textContent ?? '',
+      tytul: m.querySelector('.sheet-title')?.textContent ?? '',
+      akapity: [...m.querySelectorAll('.sheet-body p')].map((p) => p.textContent ?? ''),
+      wybory: wybory.map((b) => b.textContent ?? ''),
+    };
+  });
+
+/** tytuł karty posła po polsku albo po angielsku */
+const TYTUL_POSLA = /^(Poseł z osady |An envoy from the settlement )/;
+
+/** Gra do karty posła (najwyżej do 9. dnia): przewija po 15 minut, a na każde inne okno zarządu odpowiada pierwszym wyborem
+    (`zamknijOkno`), jak gracz, który bierze propozycję. Staje na karcie posła, zanim ktoś na nią odpowie. */
+async function doPosla(page: Page): Promise<KartaZEkranu> {
+  for (let k = 0; k < 4000; k++) {
+    const karta = await kartaZEkranu(page);
+    if (karta && TYTUL_POSLA.test(karta.tytul)) return karta;
+    if (await zamknijOkno(page)) continue;
+    const dzien = await page.evaluate(() => window.zm!.sim!.st.tick);
+    wymagaj(dayOf(dzien) <= 9, 'poseł nie przyszedł do 9. dnia', dayOf(dzien));
+    await page.evaluate(() => window.zm!.ff(15));
+  }
+  throw new Error('poseł nie przyszedł w 4000 krokach przewijania');
+}
+
+/** Ludność i budowle, które poseł podał w tekście karty (po polsku albo po angielsku; „nic jeszcze nie postawili” to zero). */
+function liczbyZKarty(akapity: readonly string[]): { ludnosc: number; budowle: number } {
+  const tekst = akapity.join(' ');
+  const ludnosc = tekst.match(/(\d+) (?:osoba|osoby|osób)\b/) ?? tekst.match(/(\d+) (?:person|people) living/);
+  wymagaj(ludnosc, 'w tekście karty nie ma liczby ludności', tekst);
+  const budowle = tekst.match(/(\d+) budowl(?:a|e|i)\b/) ?? tekst.match(/(\d+) buildings? standing/);
+  const zero = /nic jeszcze nie postawili|nothing built yet/.test(tekst);
+  wymagaj(budowle || zero, 'w tekście karty nie ma liczby budowli', tekst);
+  return { ludnosc: Number(ludnosc[1]), budowle: budowle ? Number(budowle[1]) : 0 };
+}
+
+/** Karta posła zgadza się z grą: dzień kontaktu osady (4–6 z jej ziarna) od 9:00, kierunek i nazwa z klucza kwadratu, a liczby
+    w tekście z osadą z Node w tym samym ticku, której skrót równa się skrótowi osady z przeglądarki. Zwraca liczby posła. */
+async function sprawdzKarte(
+  page: Page,
+  karta: KartaZEkranu,
+  en: boolean,
+): Promise<{ ludnosc: number; budowle: number }> {
+  const o = await odczyt(page);
+  wymagaj(o.osada?.stan === 'jest' && o.osada.odkryta === false, 'osada jest i jeszcze nieodkryta', o.osada);
+  const [sx, sy] = zKlucza(o.osada.klucz!);
+  const dzien = dayOf(o.nasz);
+  const oczekiwany = dzienKontaktu(ziarnoOsady(ziarnoPrzymorza(), sx, sy));
+  console.log(
+    `  karta w dniu ${dzien}, godzina ${hourOf(o.nasz)}, kwadrat ${o.osada.klucz}, dzień kontaktu osady ${oczekiwany}`,
+  );
+  wymagaj(dzien === oczekiwany, 'poseł przyszedł w dniu kontaktu osady', [dzien, oczekiwany]);
+  wymagaj(hourOf(o.nasz) >= 9 && hourOf(o.nasz) < 22, 'poseł przyszedł od 9:00 do 22:00', hourOf(o.nasz));
+  const { nazwaZ } = nazwaOsady(sx, sy);
+  const { kierunek } = kierunekOsady(sx, sy);
+  wymagaj(
+    karta.tytul === (en ? `An envoy ${nazwaZ.en}` : `Poseł ${nazwaZ.pl}`),
+    'tytuł karty z nazwą osady',
+    karta.tytul,
+  );
+  wymagaj(karta.akapity.length === 2, 'karta ma scenę i to, co poseł mówi', karta.akapity);
+  wymagaj(
+    karta.akapity[1].includes(en ? `lies ${kierunek.en} of you` : `leży ${kierunek.pl} od was`),
+    'kierunek osady w tekście',
+    karta.akapity[1],
+  );
+  wymagaj(karta.wybory.length === 3, 'trzy wybory', karta.wybory);
+  const liczby = liczbyZKarty(karta.akapity);
+  const wzor = await osadaWzorcowaPrzymorze(o.nasz);
+  const wej = wzor.dlaZarzadu()!;
+  console.log(
+    `  poseł podał: ${JSON.stringify(liczby)}, osada z Node w tym ticku: ludność ${wej.ludnosc}, budowle ${wej.budowle}`,
+  );
+  wymagaj(
+    liczby.ludnosc === wej.ludnosc && liczby.budowle === wej.budowle,
+    'liczby posła to stan osady z Node w tym ticku',
+    [liczby, wej.ludnosc, wej.budowle],
+  );
+  wymagaj(o.osada.skrot === skrotGry(wzor.gra!), 'skrót osady z przeglądarki równy skrótowi z Node w ticku karty', [
+    o.osada.skrot,
+    skrotGry(wzor.gra!),
+  ]);
+  return liczby;
 }
 
 export function osadaShots(): ShotCele[] {
@@ -890,6 +1010,254 @@ export function osadaShots(): ShotCele[] {
         wymagaj(!tekst.includes('"osada"'), 'zapis bez flagi nie ma pola osada');
         wymagaj(ostrzezenia.length === 0, 'gra bez flagi nie mówi nic o osadzie', ostrzezenia);
         console.log(`  zapis bez flagi: ${tekst.length} znaków, bez pola osada`);
+      },
+    },
+    {
+      name: 'osada-kontakt',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const karta = await doPosla(page);
+        console.log(
+          `  karta: „${karta.tytul}” (${karta.kicker})\n    ${karta.akapity.join('\n    ')}\n    wybory: ${karta.wybory.join(' | ')}`,
+        );
+        wymagaj(/^(Na osiedlu|Na ulicy)$/.test(karta.kicker), 'nagłówek okna ze słownika miejsca', karta.kicker);
+        await sprawdzKarte(page, karta, false);
+        // zapis, gdy karta czeka na odpowiedź, i „Kontynuuj”: ta sama karta od razu po wczytaniu
+        wymagaj(await page.evaluate(() => window.zm!.save()), 'zapis gry się nie udał');
+        const czeka = await page.evaluate((k) => {
+          const s = JSON.parse(localStorage.getItem(k) ?? 'null');
+          const gov = typeof s?.gov === 'string' ? JSON.parse(s.gov) : s?.gov;
+          return { osada: s?.osada?.stan, odkryta: s?.osada?.odkryta, aktywna: gov?.ev?.active?.id };
+        }, SAVE);
+        wymagaj(
+          czeka.osada === 'jest' && czeka.odkryta === false && czeka.aktywna === 'posel',
+          'zapis ma osadę nieodkrytą i kartę posła, która czeka',
+          czeka,
+        );
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        await page.waitForSelector('#sheet .choices [data-act="event"]');
+        const po = await kartaZEkranu(page);
+        wymagaj(JSON.stringify(po) === JSON.stringify(karta), 'po wczytaniu ta sama karta', [karta, po]);
+        const wczytana = await odczyt(page);
+        wymagaj(
+          wczytana.osada?.stan === 'jest' && wczytana.osada.odkryta === false,
+          'osada po wczytaniu',
+          wczytana.osada,
+        );
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      name: 'osada-kontakt-odpowiedz',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const karta = await doPosla(page);
+        const liczby = await sprawdzKarte(page, karta, false);
+        const przed = await odczyt(page);
+        const dzien = dayOf(przed.nasz);
+        const nastroj = () => page.evaluate(() => ({ trust: window.zm!.gov!.trust, anger: window.zm!.gov!.anger }));
+        const n0 = await nastroj();
+        const log0 = await page.evaluate(() => window.zm!.gov!.log.length);
+        // drugi wybór: zaprosić do środka (zaufanie +2, wkurzenie +1)
+        await page.click('#sheet .choices [data-act="event"][data-arg="1"]');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        const po = await odczyt(page);
+        wymagaj(po.osada?.odkryta === true, 'po odpowiedzi osada jest odkryta', po.osada);
+        wymagaj(
+          JSON.stringify(po.osada.kontakt) ===
+            JSON.stringify({ dzien, ludnosc: liczby.ludnosc, budowle: liczby.budowle }),
+          'kontakt w stanie osady to dzień i liczby z karty',
+          po.osada.kontakt,
+        );
+        wymagaj(
+          po.osada.tick === przed.osada?.tick && po.osada.skrot === przed.osada?.skrot,
+          'kontakt nie zmienia gry osady',
+          [przed.osada?.skrot, po.osada.skrot],
+        );
+        const n1 = await nastroj();
+        wymagaj(n1.trust - n0.trust === 2 && n1.anger - n0.anger === 1, 'zaufanie +2 i wkurzenie +1', [n0, n1]);
+        const logi = await page.evaluate((od) => window.zm!.gov!.log.slice(od).map((l) => l.txt.pl), log0);
+        console.log(`  kronika po odpowiedzi: ${JSON.stringify(logi)}`);
+        wymagaj(
+          logi.length === 2 && logi[0].startsWith('Poseł z osady na ') && logi[1].includes('herbaty z pokrzyw'),
+          'dwa wpisy w kronice',
+          logi,
+        );
+        const zapis = await page.evaluate((k) => {
+          window.zm!.save();
+          return JSON.parse(localStorage.getItem(k) ?? 'null')?.osada;
+        }, SAVE);
+        wymagaj(
+          zapis?.stan === 'jest' &&
+            zapis.odkryta === true &&
+            JSON.stringify(zapis.kontakt) === JSON.stringify(po.osada.kontakt),
+          'zapis ma osadę odkrytą z kontaktem',
+          zapis && { stan: zapis.stan, odkryta: zapis.odkryta, kontakt: zapis.kontakt },
+        );
+        // trzy doby dalej: żadnej drugiej karty posła, osada krok w krok
+        await przewin(page, (teraz) => teraz >= minutaGry(dzien + 3, 7), { dotyk: false });
+        const dalej = await odczyt(page);
+        const wKronice = await page.evaluate(
+          (t) => window.zm!.gov!.log.filter((l) => l.txt.pl === t).length,
+          karta.tytul,
+        );
+        wymagaj(wKronice === 1, 'karta posła przyszła dokładnie raz', wKronice);
+        wymagaj(dalej.osada?.odkryta === true && dalej.osada.tick === dalej.nasz, 'osada odkryta i krok w krok', dalej);
+        // wczytanie: odkrycie przeżywa
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        const wczytana = await odczyt(page);
+        wymagaj(
+          wczytana.osada?.odkryta === true &&
+            JSON.stringify(wczytana.osada.kontakt) === JSON.stringify(po.osada.kontakt),
+          'po wczytaniu osada nadal odkryta, kontakt ten sam',
+          wczytana.osada,
+        );
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      name: 'osada-kontakt-en',
+      query: '',
+      w: 390,
+      h: 844,
+      lang: 'en',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        const karta = await doPosla(page);
+        console.log(
+          `  card: “${karta.tytul}” (${karta.kicker})\n    ${karta.akapity.join('\n    ')}\n    choices: ${karta.wybory.join(' | ')}`,
+        );
+        wymagaj(
+          /^(On the estate|On the street)$/.test(karta.kicker),
+          'nagłówek okna ze słownika miejsca',
+          karta.kicker,
+        );
+        await sprawdzKarte(page, karta, true);
+        const polskie = [karta.kicker, karta.tytul, ...karta.akapity, ...karta.wybory]
+          .join(' ')
+          .match(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g);
+        wymagaj(!polskie, 'polskie litery w angielskiej karcie', polskie);
+        // okno mieści się na ekranie telefonu razem z przyciskami, bez przewijania w bok
+        const uklad = await page.evaluate(() => {
+          const sheet = document.getElementById('sheet')!.getBoundingClientRect();
+          const body = document.querySelector<HTMLElement>('#sheet .sheet-body')!;
+          const przyciski = [...document.querySelectorAll<HTMLElement>('#sheet .choices [data-act="event"]')].map(
+            (b) => {
+              const r = b.getBoundingClientRect();
+              return { lewo: r.left, prawo: r.right, gora: r.top, dol: r.bottom };
+            },
+          );
+          return {
+            okno: { lewo: sheet.left, prawo: sheet.right, gora: sheet.top, dol: sheet.bottom },
+            szerokosc: innerWidth,
+            wysokosc: innerHeight,
+            trescWBok: body.scrollWidth - body.clientWidth,
+            stronaWBok: document.documentElement.scrollWidth - innerWidth,
+            przyciski,
+          };
+        });
+        console.log(`  układ: ${JSON.stringify(uklad)}`);
+        wymagaj(
+          uklad.okno.lewo >= 0 && uklad.okno.prawo <= uklad.szerokosc + 0.5,
+          'okno mieści się w szerokości ekranu',
+          uklad.okno,
+        );
+        wymagaj(
+          uklad.okno.gora >= 0 && uklad.okno.dol <= uklad.wysokosc + 0.5,
+          'okno mieści się w wysokości ekranu',
+          uklad.okno,
+        );
+        wymagaj(uklad.trescWBok <= 1 && uklad.stronaWBok <= 1, 'treść ani strona nie przewijają się w bok', uklad);
+        for (const b of uklad.przyciski)
+          wymagaj(
+            b.lewo >= uklad.okno.lewo - 0.5 &&
+              b.prawo <= uklad.okno.prawo + 0.5 &&
+              b.gora >= uklad.okno.gora - 0.5 &&
+              b.dol <= uklad.okno.dol + 0.5,
+            'przycisk wyboru w oknie, bez ucięcia',
+            { b, okno: uklad.okno },
+          );
+        // dotyk działa: pierwszy wybór stuknięty palcem zamyka okno i odsłania osadę. Odpowiedź zapisuje grę (`decided`), więc zapis
+        // sprzed niej wraca do pamięci przed wczytaniem, a zrzut na końcu pokazuje znów tę kartę (na telefonie, po angielsku)
+        const przedOdpowiedzia = await page.evaluate((k) => {
+          window.zm!.save();
+          return localStorage.getItem(k);
+        }, SAVE);
+        wymagaj(przedOdpowiedzia, 'zapis sprzed odpowiedzi');
+        await kliknij(page, '#sheet .choices [data-act="event"][data-arg="0"]', true);
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+        wymagaj((await odczyt(page)).osada?.odkryta === true, 'stuknięcie odsłania osadę');
+        // gra zapisuje się też przy wyjściu ze strony (`pagehide`), więc zapis sprzed odpowiedzi wraca dopiero w nowej stronie, przed
+        // skryptami gry
+        await page.addInitScript(
+          ([k, v]) => {
+            if (sessionStorage.getItem('zmPrzywrocony')) return;
+            sessionStorage.setItem('zmPrzywrocony', '1');
+            localStorage.setItem(k, v);
+          },
+          [SAVE, przedOdpowiedzia] as const,
+        );
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await kliknij(page, '#btnResume', true);
+        await waitIdle(page);
+        await page.waitForSelector('#sheet .choices [data-act="event"]');
+        const znowu = await kartaZEkranu(page);
+        wymagaj(
+          JSON.stringify(znowu) === JSON.stringify(karta),
+          'po wczytaniu zapisu sprzed odpowiedzi ta sama karta',
+          [karta, znowu],
+        );
+        wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);
+      },
+    },
+    {
+      name: 'osada-kontakt-bez-flagi',
+      query: '',
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        await page.goto(`${base}?demo=przymorze&${GRA}`);
+        await waitIdle(page);
+        await chopDryTree(page);
+        await przewin(page, (teraz) => teraz >= minutaGry(7, 7), { dotyk: false });
+        wymagaj(
+          (await page.evaluate(() => window.zm!.osada())) === null,
+          'bez flagi zm.osada() to null przez siedem dób',
+        );
+        const posel = await page.evaluate(
+          () =>
+            window.zm!.gov!.log.filter(
+              (l) => /^(Poseł z osady|An envoy from)/.test(l.txt.pl) || /^An envoy/.test(l.txt.en),
+            ).length,
+        );
+        wymagaj(posel === 0, 'bez flagi żadnej karty posła w kronice', posel);
+        wymagaj(await page.evaluate(() => window.zm!.save()), 'zapis gry się nie udał');
+        const tekst = await page.evaluate((k) => localStorage.getItem(k) ?? '', SAVE);
+        wymagaj(
+          !tekst.includes('"osada"') && !tekst.includes('"posel"'),
+          'zapis bez flagi nie ma pola osada ani karty posła',
+        );
+        wymagaj(ostrzezenia.length === 0, 'gra bez flagi nie mówi nic o osadzie', ostrzezenia);
+        console.log(
+          `  siedem dób bez flagi: kronika ${await page.evaluate(() => window.zm!.gov!.log.length)} wpisów, zapis ${tekst.length} znaków`,
+        );
       },
     },
   ];

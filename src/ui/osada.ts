@@ -43,9 +43,13 @@
    wczytuje grę. Stan `czeka` wraca jako `czeka`: gospodarz pobiera dane od nowa i znów woła `dane()`. Kształt zapisu pilnuje
    `readSave` (src/ui/zapis.ts, `jestStanOsady`); wczytanie i tak łapie każdy wyjątek.
 
-   Moduł niczego nie losuje (kolejność kandydatów, ziarna i wszystko w grze osady idzie z ziaren) i nie czyta zegara. Nic z osady nie
-   wpływa na naszą grę: etap 2 nie ma ludzi między grami, handlu ani napadów (zadanie 4 dołoży pierwszy kontakt, jedyny skutek
-   w naszą stronę jest po stronie zarządu, `OsadaGry.odkryj`). */
+   Pierwszy kontakt (zadanie 4): osada jest dla zarządu polem wejścia `GovInput.osada` (`dlaZarzadu`, tylko w stanie `jest`), z którego
+   zarząd robi kartę posła (src/gov/kontakt.ts) w dniu kontaktu, 4, 5 albo 6, z ziarna osady (`dzienKontaktu(ziarnoOsady(…))`), od
+   9:00. Każdy wybór karty daje skutek `odkryjOsade`, po którym gospodarz woła `odkryj` z liczbami, które poseł podał (dzień, ludność
+   i budowle `budowleOsady` w chwili karty): osada jest odkryta, a kontakt trafia do zapisu. Kontakt niczego nie zmienia w grze osady.
+
+   Moduł niczego nie losuje (kolejność kandydatów, ziarna i wszystko w grze osady idzie z ziaren) i nie czyta zegara. Poza kartą posła
+   nic z osady nie wpływa na naszą grę: etap 2 nie ma ludzi między grami, handlu ani napadów. */
 
 import {
   type GraAi,
@@ -69,11 +73,15 @@ import {
 } from '../ai/kwadrat.ts';
 import { nowyZarzad } from '../ai/odwolanie.ts';
 import { silnik } from '../ai/silnik.ts';
+import { dzienKontaktu } from '../gov/kontakt.ts';
+import type { WejscieOsady } from '../gov/typy.ts';
 import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
+import { BUILDS, naObwodzie } from '../sim/budowle.ts';
 import { dayOf } from '../sim/clock.ts';
 import { tickAt } from '../sim/handlarz.ts';
 import { mieszkancyZapisu } from '../sim/osiedle.ts';
 import { doOtoczenia } from '../sim/sasiedzi.ts';
+import { populacja } from '../sim/snapshot.ts';
 import type { GameMode } from '../sim/tryb.ts';
 import type { Geo } from '../world/geo.ts';
 import { kluczKwadratu, type Uklad, zKlucza } from '../world/kwadraty.ts';
@@ -189,8 +197,13 @@ export interface OsadaGry {
   readonly odwolania: number;
   /** osada upadła (pustka albo exodus): jej gra stoi */
   readonly upadla: UpadekOsady | null;
-  /** Odsłania osadę z tym, co gracz o niej wie (ostatni kontakt zastępuje poprzedni); poza stanem `jest` nic nie robi. */
+  /** Odsłania osadę z tym, co gracz o niej wie (ostatni kontakt zastępuje poprzedni); poza stanem `jest` nic nie robi. Woła je
+      gospodarz po skutku `GovEffects.odkryjOsade` (karta posła, src/gov/kontakt.ts), z liczbami, które poseł podał. */
   odkryj(kontakt: KontaktOsady): void;
+  /** Co zarząd wie o osadzie w tej chwili (`GovInput.osada`): nazwa, kierunek, czy odkryta, dzień kontaktu (4–6, z ziarna osady),
+      ludność (`populacja`), stojące budowle (`budowleOsady`), odwołania i upadek. Nowy obiekt przy każdym wywołaniu; `null`
+      poza stanem `jest` (przed startem, w `brak`), czyli wtedy zarząd nie dostaje pola i karta posła nie wchodzi. */
+  dlaZarzadu(): WejscieOsady | null;
   zapisz(): StanOsady;
   podglad(): PodgladOsady;
 }
@@ -214,6 +227,12 @@ type Przygotowanie =
   | { faza: 'budowa'; swiat: SwiatOsady }
   | { faza: 'rozgrzewka' | 'nadrabianie' | 'gotowa'; s: Jest }
   | { faza: 'bez-osady' };
+
+/** Stojące budowle osady z rzeczy jej gry (`SimState.things`): rodzaje z `BUILDS` poza tymi na obwodzie (zasieki, barykada).
+    Meble, drewno, sterty i inne rzeczy to nie budowle. Ta sama miara co `budowleStojace` uprzęży pomiarowej (tools/osada-ocena.ts,
+    stamtąd do tabeli i poranków `npm run bot:osada`); test pilnuje, żeby obie liczyły to samo. */
+export const budowleOsady = (rzeczy: readonly { kind: string }[]): number =>
+  rzeczy.filter((t) => Object.hasOwn(BUILDS, t.kind) && !naObwodzie(t.kind)).length;
 
 class OsadaWGrze implements OsadaGry {
   private s: Stan;
@@ -384,6 +403,23 @@ class OsadaWGrze implements OsadaGry {
     if (this.s.stan !== 'jest') return;
     this.s.odkryta = true;
     this.s.kontakt = { dzien: kontakt.dzien, ludnosc: kontakt.ludnosc, budowle: kontakt.budowle };
+  }
+
+  dlaZarzadu(): WejscieOsady | null {
+    const s = this.s;
+    if (s.stan !== 'jest') return null;
+    const st = s.gra.sim.st;
+    return {
+      nazwa: s.swiat.nazwa,
+      nazwaZ: s.swiat.nazwaZ,
+      kierunek: s.swiat.kierunek,
+      odkryta: s.odkryta,
+      dzienKontaktu: dzienKontaktu(ziarnoOsady(this.seed, s.swiat.sx, s.swiat.sy)),
+      ludnosc: populacja(st).razem,
+      budowle: budowleOsady(st.things),
+      odwolania: s.odwolania,
+      ...(s.upadla ? { upadla: { ...s.upadla } } : {}),
+    };
   }
 
   zapisz(): StanOsady {

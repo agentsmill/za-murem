@@ -8,10 +8,11 @@
    osadę w grze (`OsadaGry.odkryj`, src/ui/osada.ts).
    Pliki: karta i jej czas na atrapie zarządu (bez symulacji), przebiegi na atrapie ze zwykłą polityką gracza, zapis w połowie,
    przebiegi bez osady (skróty zarządu sprzed zmiany), a na końcu gospodarz z prawdziwą osadą (Przymorze z mieszkańcami z
-   generatora): `GovInput.osada` z gry osady i odsłonięcie po karcie. */
+   generatora): `GovInput.osada` z gry osady (`OsadaGry.dlaZarzadu`) i odsłonięcie po karcie (`OsadaGry.odkryj`). */
 
-import { describe, expect, it } from 'vitest';
-import { kierunekOsady, nazwaOsady } from '../../src/ai/kwadrat.ts';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { skrotGry } from '../../src/ai/gra.ts';
+import { kierunekOsady, nazwaOsady, ziarnoOsady } from '../../src/ai/kwadrat.ts';
 import { tx } from '../../src/core/jezyk.ts';
 import { hashString, mulberry, type Rng } from '../../src/core/rng.ts';
 import {
@@ -27,6 +28,13 @@ import type { GovInput, GovPlace, GovState, OdkrycieOsady, WejscieOsady } from '
 import { emptyEffects, QUIET } from '../../src/gov/wspolne.ts';
 import { GAP_PO, GAP_ROZRZUT, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, govUpdate, lawEffects, loadGov, newGov, pending, saveGov } from '../../src/gov/zarzad.ts';
+import { dayOf, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { populacja } from '../../src/sim/snapshot.ts';
+import { budowleOsady, nowaOsadaGry, type OsadaGry, osadaZZapisu, TICK_STARTU_OSADY } from '../../src/ui/osada.ts';
+import { osadaBezKodu } from '../../src/ui/osada-brak.ts';
+import { type Uklad, ukladZGeo } from '../../src/world/kwadraty.ts';
+import { daneDema, wczytajDemo } from '../../tools/osada-kwadraty.ts';
+import { budowleStojace } from '../../tools/osada-ocena.ts';
 import { Atrapa, answer, at, run, TPH, TPS } from './gov-atrapa.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { pl, polskieSlowa } from './po-angielsku.ts';
@@ -127,6 +135,8 @@ class Gra {
   odkryta = false;
   odkrycia: OdkrycieOsady[] = [];
   posly: Posel[] = [];
+  /** prawdziwa osada z gry w roli gospodarza: wejście z `dlaZarzadu`, odsłonięcie przez `odkryj` (zamiast osady z pól) */
+  gospodarz: Pick<OsadaGry, 'dlaZarzadu' | 'odkryj'> | null = null;
 
   private readonly osada: Partial<WejscieOsady> | null;
   private readonly odkrywaj: boolean;
@@ -141,10 +151,12 @@ class Gra {
   }
 
   input(): GovInput {
-    return {
-      ...this.atr.input(),
-      ...(this.osada ? { osada: osadaWej({ ...this.osada, odkryta: this.odkryta }) } : {}),
-    };
+    const osada = this.gospodarz
+      ? this.gospodarz.dlaZarzadu()
+      : this.osada
+        ? osadaWej({ ...this.osada, odkryta: this.odkryta })
+        : null;
+    return { ...this.atr.input(), ...(osada ? { osada } : {}) };
   }
 
   minuta(): number {
@@ -173,6 +185,7 @@ class Gra {
           if (fx.odkryjOsade) {
             this.odkrycia.push(fx.odkryjOsade);
             if (this.odkrywaj) this.odkryta = true;
+            this.gospodarz?.odkryj(fx.odkryjOsade);
           }
           this.atr.apply(fx);
           continue;
@@ -785,5 +798,176 @@ describe('gra bez osady jest bajt w bajt dzisiejsza', () => {
     bez.graj(at(5, 19));
     expect(z.gov.log.some((l) => l.txt.pl === 'Poseł z osady na północy')).toBe(true);
     expect(bez.gov.log.some((l) => l.txt.pl.startsWith('Poseł'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Gospodarz: prawdziwa osada (Przymorze z mieszkańcami z generatora) jako źródło GovInput.osada
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe('gospodarz: wejście zarządu z gry osady i odsłonięcie po karcie', () => {
+  let demo: ReturnType<typeof wczytajDemo>;
+  let dane: Awaited<ReturnType<typeof daneDema>>;
+  let uklad: Uklad;
+  let SEED = 0;
+
+  beforeAll(async () => {
+    demo = wczytajDemo('przymorze');
+    dane = await daneDema('przymorze');
+    uklad = ukladZGeo(demo.geo);
+    SEED = Number.parseInt(hashString(demo.addr), 16) || 2051;
+  }, 120_000);
+
+  /** nowa osada po starcie w ticku startu (6:00 drugiego dnia), z nadrabianiem naraz */
+  function poStarcie(tryb: 'zwykly' | 'zombie' = 'zwykly'): OsadaGry {
+    const o = nowaOsadaGry(SEED, dane, uklad, tryb);
+    o.dane(demo.kwadraty);
+    o.krok(TICK_STARTU_OSADY);
+    return o;
+  }
+
+  /** tyle ticków naprzód osady (krok po kroku, bez naszej gry): wystarczy jej tick */
+  function naprzod(osada: OsadaGry, ticki: number): void {
+    let t = osada.gra!.sim.st.tick;
+    for (let k = 0; k < ticki; k++) osada.krok(++t);
+  }
+
+  it('bez osady zarząd nic nie dostaje: przed startem, w trybie zombie i po błędzie kodu osady wejścia nie ma', () => {
+    const czeka = nowaOsadaGry(SEED, dane, uklad);
+    expect(czeka.stan).toBe('czeka');
+    expect(czeka.dlaZarzadu()).toBeNull();
+    czeka.dane(demo.kwadraty);
+    czeka.przygotujCiezkie();
+    expect(czeka.dlaZarzadu()).toBeNull();
+    const zombie = nowaOsadaGry(SEED, dane, uklad, 'zombie');
+    zombie.krok(TICK_STARTU_OSADY);
+    expect(zombie.stan).toBe('brak');
+    expect(zombie.dlaZarzadu()).toBeNull();
+    expect(osadaBezKodu(new Error('x')).dlaZarzadu()).toBeNull();
+  });
+
+  it('po starcie: nazwa, forma „z osady” i kierunek z kwadratu, ludność i budowle z jej gry, nieodkryta, bez odwołań', () => {
+    const osada = poStarcie();
+    const w = osada.dlaZarzadu()!;
+    expect(w).not.toBeNull();
+    const { sx, sy } = osada.swiat!;
+    expect(w.nazwa).toEqual(nazwaOsady(sx, sy).nazwa);
+    expect(w.nazwaZ).toEqual(nazwaOsady(sx, sy).nazwaZ);
+    expect(w.kierunek).toEqual(kierunekOsady(sx, sy).kierunek);
+    expect(w.nazwa).toEqual(osada.swiat!.nazwa);
+    expect(w.ludnosc).toBe(populacja(osada.gra!.sim.st).razem);
+    // zarząd osady to cztery osoby, mieszkańców siedziby przy starcie na Przymorzu jeszcze nie ma
+    expect(w.ludnosc).toBeGreaterThanOrEqual(4);
+    expect(w.budowle).toBe(budowleStojace(osada.gra!.sim.st.things));
+    expect(w.odkryta).toBe(false);
+    expect(w.odwolania).toBe(0);
+    expect('upadla' in w).toBe(false);
+    // wejście to kopia: zmiana wyniku nie rusza osady
+    (w as { upadla?: unknown }).upadla = { dzien: 1, powod: 'pustka' };
+    expect(osada.dlaZarzadu()!.upadla).toBeUndefined();
+  });
+
+  it('dzień kontaktu to 4 + ziarno osady mod 3: 4, 5 albo 6, z ziarna naszej gry i kwadratu osady', () => {
+    const osada = poStarcie();
+    const { sx, sy } = osada.swiat!;
+    const w = osada.dlaZarzadu()!;
+    expect(w.dzienKontaktu).toBe(4 + (ziarnoOsady(SEED, sx, sy) % 3));
+    expect(w.dzienKontaktu).toBe(dzienKontaktu(ziarnoOsady(SEED, sx, sy)));
+    expect([4, 5, 6]).toContain(w.dzienKontaktu);
+    // ten sam kwadrat i ten sam dzień niezależnie od chwili; inne ziarna gry dają wszystkie trzy dni
+    expect(poStarcie().dlaZarzadu()!.dzienKontaktu).toBe(w.dzienKontaktu);
+    const dni = new Set(Array.from({ length: 40 }, (_, k) => dzienKontaktu(ziarnoOsady(1000 + k, sx, sy))));
+    expect([...dni].sort()).toEqual([4, 5, 6]);
+  });
+
+  it('budowle to stojące budowle poza obwodem: ta sama miara co w uprzęży (budowleStojace), nie meble ani zasieki', () => {
+    const rzeczy = [
+      { kind: 'warsztat' },
+      { kind: 'koza_beczka' },
+      { kind: 'zasieki' },
+      { kind: 'barykada' },
+      { kind: 'stol' },
+      { kind: 'drewno' },
+      { kind: 'magazyn' },
+    ];
+    expect(budowleOsady(rzeczy)).toBe(3);
+    expect(budowleOsady(rzeczy)).toBe(budowleStojace(rzeczy));
+    expect(budowleOsady([])).toBe(0);
+    // na żywej grze po trzech dobach (więcej budowli niż zero) obie miary się zgadzają
+    const osada = poStarcie();
+    naprzod(osada, 3 * 24 * 800);
+    expect(osada.dlaZarzadu()!.budowle).toBe(budowleStojace(osada.gra!.sim.st.things));
+  });
+
+  it('odkryj: osada odkryta w wejściu, kontakt w zapisie i po wczytaniu, a drugi kontakt zastępuje pierwszy', () => {
+    const osada = poStarcie();
+    osada.odkryj({ dzien: 5, ludnosc: 23, budowle: 6 });
+    expect(osada.dlaZarzadu()!.odkryta).toBe(true);
+    const zapis = JSON.parse(JSON.stringify(osada.zapisz()));
+    expect(zapis).toMatchObject({ stan: 'jest', odkryta: true, kontakt: { dzien: 5, ludnosc: 23, budowle: 6 } });
+    const wczytana = osadaZZapisu(zapis, SEED, dane, uklad);
+    expect(wczytana.dlaZarzadu()).toMatchObject({ odkryta: true });
+    expect(wczytana.kontakt).toEqual({ dzien: 5, ludnosc: 23, budowle: 6 });
+  });
+
+  it('odwołanie zarządu osady i jej upadek są w wejściu zarządu', () => {
+    const odwolana = poStarcie();
+    naprzod(odwolana, 400);
+    odwolana.gra!.gov.anger = 100;
+    naprzod(odwolana, 2 * TICKS_PER_SECOND);
+    expect(odwolana.odwolania).toBe(1);
+    expect(odwolana.dlaZarzadu()).toMatchObject({ odwolania: 1 });
+    expect('upadla' in odwolana.dlaZarzadu()!).toBe(false);
+    for (const powod of ['exodus', 'pustka'] as const) {
+      const upadla = poStarcie();
+      naprzod(upadla, 300);
+      if (powod === 'exodus') upadla.gra!.gov.trust = 0;
+      else upadla.gra!.gov.over = 'pustka';
+      naprzod(upadla, 2 * TICKS_PER_SECOND);
+      expect(upadla.upadla?.powod, powod).toBe(powod);
+      expect(upadla.dlaZarzadu()!.upadla).toEqual({ dzien: dayOf(upadla.gra!.sim.st.tick), powod });
+    }
+  });
+
+  it('od początku do końca: poseł przychodzi w dniu kontaktu osady, odsłania ją liczbami z karty, a zapis niesie kontakt', () => {
+    const osada = poStarcie();
+    const w = osada.dlaZarzadu()!;
+    const g = new Gra(7, null);
+    g.gospodarz = osada;
+    g.graj(at(w.dzienKontaktu, 8, 59));
+    expect(g.posly).toEqual([]);
+    expect(osada.odkryta).toBe(false);
+    g.graj(at(w.dzienKontaktu + 3, 7));
+    expect(g.posly.length).toBe(1);
+    const p = g.posly[0];
+    expect(p.dzien).toBe(w.dzienKontaktu);
+    expect(p.godzina).toBeGreaterThanOrEqual(9);
+    // poseł podał to, co zarząd widział w wejściu w chwili karty
+    expect(p.dane).toMatchObject({ ludnosc: w.ludnosc, budowle: w.budowle, nazwa: w.nazwa, kierunek: w.kierunek });
+    expect(osada.odkryta).toBe(true);
+    expect(osada.kontakt).toEqual({ dzien: w.dzienKontaktu, ludnosc: w.ludnosc, budowle: w.budowle });
+    // po odsłonięciu wejście mówi „odkryta”, a zapis i wczytanie to pamiętają i karta nie wraca
+    expect(osada.dlaZarzadu()!.odkryta).toBe(true);
+    const zapis = JSON.parse(JSON.stringify(osada.zapisz()));
+    expect(zapis).toMatchObject({ odkryta: true, kontakt: osada.kontakt });
+    const wczytana = osadaZZapisu(zapis, SEED, dane, uklad);
+    expect(wczytana.odkryta).toBe(true);
+    expect(skrotGry(wczytana.gra!)).toBe(skrotGry(osada.gra!));
+    const drugi = new Gra(7, null);
+    drugi.gospodarz = wczytana;
+    drugi.gov = loadGov(saveGov(g.gov));
+    drugi.atr = g.atr.clone();
+    drugi.graj(at(w.dzienKontaktu + 8, 7));
+    expect(drugi.posly).toEqual([]);
+  }, 120_000);
+
+  it('kontakt nie zmienia gry osady: skrót jej gry po odsłonięciu jest ten sam, co bez niego', () => {
+    const a = poStarcie();
+    const b = poStarcie();
+    b.odkryj({ dzien: 5, ludnosc: 23, budowle: 6 });
+    expect(skrotGry(b.gra!)).toBe(skrotGry(a.gra!));
+    naprzod(a, 2000);
+    naprzod(b, 2000);
+    expect(skrotGry(b.gra!)).toBe(skrotGry(a.gra!));
   });
 });
