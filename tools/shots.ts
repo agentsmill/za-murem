@@ -30,8 +30,8 @@ import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './k
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
-import { telefonShots } from './shots-telefon.ts';
 import { tekstyShots } from './shots-teksty.ts';
+import { telefonShots } from './shots-telefon.ts';
 import { ukladShots } from './shots-uklad.ts';
 import { wikiShots } from './shots-wiki.ts';
 

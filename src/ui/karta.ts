@@ -1,5 +1,5 @@
 /* Karta osoby: paski potrzeb (na telefonie, w oknie węższym niż 768 px, zwinięte do linii z ostrzeżeniami, `potrzebyLinia`;
-   rozwija je stuknięcie, stan trzyma main.ts), chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
+   rozwija je stuknięcie, stan trzyma main.ts; pasek potrzeby otwiera artykuł wiki dopiero po rozwinięciu, zwinięte są schowane), chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
    drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
    trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
    wymyśleni, i przycisk zmiany imienia (`data-card="imie"`: main.ts otwiera w karcie edytor z src/ui/imiona.ts, także

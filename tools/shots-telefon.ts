@@ -99,6 +99,27 @@ const tyleSamo = (a: string[], b: string[]): boolean => a.length === b.length &&
 const klucz = (page: Page, k: string): Promise<string | null> =>
   page.evaluate((nazwa) => localStorage.getItem(nazwa), k);
 
+/** środek elementu w pikselach ekranu */
+const srodek = (page: Page, sel: string): Promise<[number, number]> =>
+  page.$eval(sel, (e) => {
+    const r = e.getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2] as [number, number];
+  });
+
+/** stuknięcie palcem albo kliknięcie myszą w punkt ekranu, tak jak robi to gracz (a nie w element: kafelki zwiniętego paska nie
+    biorą dotyku, więc `page.tap('#sWood')` czekałby na nie bez końca, a gracz po prostu trafia w pasek pod nimi) */
+const wPunkt = (page: Page, dotyk: boolean, [x, y]: [number, number]): Promise<void> =>
+  dotyk ? page.touchscreen.tap(x, y) : page.mouse.click(x, y);
+
+/** pas ▴ na dole rozwiniętego paska stanu (część paska, która go zwija, a nie kafelek, który otwiera wiki) */
+const pasStrzalki = (page: Page): Promise<[number, number]> =>
+  page.$eval('#stats', (e) => {
+    const r = e.getBoundingClientRect();
+    return [r.left + r.width / 2, r.bottom - 6] as [number, number];
+  });
+
+const oknoOtwarte = (page: Page): Promise<boolean> => page.evaluate(() => !document.getElementById('modal')!.hidden);
+
 async function przeladuj(page: Page, query: string, base: string): Promise<void> {
   await start(page, base, query);
   await poHudzie(page, 3);
@@ -157,6 +178,21 @@ const pasekZwiniety = (
       throw new Error(
         `${opis}: strefa dotyku linii: tuż nad ${strefa.nad} (ma być true), tuż pod ${strefa.pod} (true), 6 px nad ${strefa.dalekoNad} (false)`,
       );
+    // kafelki zwiniętej linii nie biorą dotyku (stuknięcie w nie rozwija pasek, a nie otwiera wiki): pod palcem jest pojemnik
+    const zwiniety = await page.evaluate(() => {
+      const st = document.getElementById('stats')!;
+      const k = [...st.querySelectorAll<HTMLElement>('.stat')].find((e) => getComputedStyle(e).display !== 'none')!;
+      const r = k.getBoundingClientRect();
+      return {
+        kafelek: k.id,
+        podPalcem: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === st,
+        inert: k.inert,
+      };
+    });
+    if (!zwiniety.podPalcem || !zwiniety.inert)
+      throw new Error(
+        `${opis}: kafelek ${zwiniety.kafelek} zwiniętej linii bierze dotyk (pod palcem pojemnik ${zwiniety.podPalcem}, inert ${zwiniety.inert})`,
+      );
     await page.screenshot({ path: path.join(out, `${name}-zwiniety.png`) });
     // 2. stuknięcie w linię rozwija: wszystkie kafelki, odstępy etykiet jak w uklad-pasek-telefon-*, strzałka w górę
     await kliknij(page, '#stats', true);
@@ -179,6 +215,24 @@ const pasekZwiniety = (
     );
     if (zle2.length) throw new Error(`${opis}, rozwinięty: ${zle2.join('; ')}`);
     sprawdzPasek(`${opis}, rozwinięty`, await pasekTelefonu(page), { jedenWiersz: true, nazwa: true });
+    // w rozwiniętym pasku dotyk w kafelek trafia w kafelek (otwiera wiki), a w pas ▴ w pasek (zwija go)
+    const rozwiniety = await page.evaluate(() => {
+      const st = document.getElementById('stats')!;
+      const k = document.getElementById('sWood')!.getBoundingClientRect();
+      const r = st.getBoundingClientRect();
+      return {
+        kafelek: document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2)?.closest('.stat')?.id ?? null,
+        pas: document.elementFromPoint(r.left + r.width / 2, r.bottom - 6) === st,
+        wysokoscPasa: parseFloat(getComputedStyle(st, '::after').height),
+      };
+    });
+    console.log(
+      `  ${opis}, rozwinięty: pod palcem w kafelku ${rozwiniety.kafelek}, w pasie ▴ ${rozwiniety.pas ? 'pasek' : 'coś innego'}, pas ${rozwiniety.wysokoscPasa} px`,
+    );
+    if (rozwiniety.kafelek !== 'sWood' || !rozwiniety.pas)
+      throw new Error(
+        `${opis}: rozwinięty pasek: w kafelku trafia ${rozwiniety.kafelek} (ma być sWood), pas ▴ należy do paska ${rozwiniety.pas}`,
+      );
     await page.screenshot({ path: path.join(out, `${name}-rozwiniety.png`) });
     // po stuknięciu fokus nie zostaje na pasku (tak jak na przyciskach paska, src/ui/fokus.ts): spacja zatrzymuje albo rusza grę,
     // a nie zwija pasek
@@ -201,8 +255,10 @@ const pasekZwiniety = (
     const po1 = await stanPaska(page);
     if (po1.zwiniety || po1.kafelki.some((k) => !k.widac))
       throw new Error(`${opis}: po przeładowaniu rozwinięty pasek wrócił do zwiniętego (zwinięty ${po1.zwiniety})`);
-    await kliknij(page, '#stats', true);
+    // zwija pas ▴ (środek paska zajmują kafelki, które otwierają artykuły wiki)
+    await wPunkt(page, true, await pasStrzalki(page));
     await poHudzie(page);
+    if (await oknoOtwarte(page)) throw new Error(`${opis}: stuknięcie w pas ▴ otworzyło okno`);
     const zw = await stanPaska(page);
     if (!zw.zwiniety || (await klucz(page, KLUCZ_PASEK)) !== 'zwiniete')
       throw new Error(`${opis}: po zwinięciu zwinięty ${zw.zwiniety}, pamięć „${await klucz(page, KLUCZ_PASEK)}”`);
@@ -242,7 +298,11 @@ const pasekKomputerBezZmian = (name: string, w: number, h: number): ShotTelefon 
       );
     if (p.strzalka !== 'none' && p.strzalka !== 'normal') zle.push(`strzałka „${p.strzalka}” na szerokim ekranie`);
     if (p.rola !== null || p.ariaExpanded !== null) zle.push(`rola ${p.rola}, aria-expanded ${p.ariaExpanded}`);
+    // kafelek otwiera swój artykuł w wiki (src/ui/wiki-okno.ts), ale pasek zostaje cały i nic się nie zapisuje
     await page.click('#stats .stat:visible >> nth=0');
+    await poHudzie(page);
+    if (!(await oknoOtwarte(page))) zle.push('kafelek na szerokim ekranie nie otworzył artykułu w wiki');
+    await page.keyboard.press('Escape');
     await poHudzie(page);
     const po = await stanPaska(page);
     if (po.zwiniety || po.kafelki.some((k) => !k.widac))
@@ -656,6 +716,137 @@ const rozwiniete = (
   },
 });
 
+/* ---------------------------------------------------------------- wiki a zwijanie */
+
+/** Pasek stanu a wiki (kafelki otwierają artykuły, src/ui/wiki-okno.ts): w zwiniętej linii stuknięcie rozwija pasek i nie otwiera
+    wiki; w rozwiniętym kafelek otwiera swój artykuł i pasku nie zwija; zwija pas ▴ i też niczego nie otwiera. Dotykiem na telefonie
+    i myszą w wąskim oknie komputera (700 px, też węższym niż 768). Nigdy oba naraz. */
+const wikiPasek = (
+  name: string,
+  w: number,
+  h: number,
+  lang: 'pl' | 'en',
+  dotyk: boolean,
+  out: string,
+): ShotTelefon => ({
+  name,
+  query: '',
+  w,
+  h,
+  touch: dotyk,
+  lang,
+  run: async (page, base) => {
+    const opis = `${name} ${w}×${h} ${dotyk ? 'dotyk' : 'mysz'}`;
+    await start(page, base, `demo=przymorze&${GRA}`);
+    await poHudzie(page, 3);
+    const stan0 = await stanPaska(page);
+    if (!stan0.zwiniety) throw new Error(`${opis}: pasek nie jest zwinięty domyślnie`);
+    // 1. zwinięta linia: stuknięcie w widoczny kafelek (palec trafia w pasek pod nim) rozwija pasek, wiki nie
+    const pierwszy = stan0.kafelki.find((k) => k.widac)!;
+    await wPunkt(page, dotyk, await srodek(page, `#${pierwszy.id}`));
+    await poHudzie(page);
+    const po1 = await stanPaska(page);
+    console.log(
+      `  ${opis}: stuknięcie w „${pierwszy.id}” zwiniętej linii: zwinięty ${po1.zwiniety}, okno ${await oknoOtwarte(page)}`,
+    );
+    if (po1.zwiniety) throw new Error(`${opis}: stuknięcie w kafelek zwiniętej linii nie rozwinęło paska`);
+    if (await oknoOtwarte(page)) throw new Error(`${opis}: stuknięcie w kafelek zwiniętej linii otworzyło okno (wiki)`);
+    // 2. rozwinięty: stuknięcie w kafelek otwiera jego artykuł, pasek zostaje rozwinięty
+    await wPunkt(page, dotyk, await srodek(page, '#sWood'));
+    await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zasob:drewno"]', { timeout: 5000 }).catch(() => {
+      throw new Error(`${opis}: stuknięcie w kafelek rozwiniętego paska nie otworzyło artykułu o drewnie`);
+    });
+    if ((await stanPaska(page)).zwiniety) throw new Error(`${opis}: kafelek zwinął pasek razem z otwarciem wiki`);
+    await page.screenshot({ path: path.join(out, `${name}-wiki.png`) });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+    await poHudzie(page);
+    if ((await stanPaska(page)).zwiniety) throw new Error(`${opis}: po zamknięciu wiki pasek jest zwinięty`);
+    // 3. pas ▴ zwija pasek i nie otwiera wiki
+    await wPunkt(page, dotyk, await pasStrzalki(page));
+    await poHudzie(page);
+    const po3 = await stanPaska(page);
+    console.log(`  ${opis}: stuknięcie w pas ▴: zwinięty ${po3.zwiniety}, okno ${await oknoOtwarte(page)}`);
+    if (!po3.zwiniety) throw new Error(`${opis}: pas ▴ nie zwinął paska`);
+    if (await oknoOtwarte(page)) throw new Error(`${opis}: pas ▴ otworzył okno (wiki)`);
+    // 4. z klawiatury: kafelki zwiniętej linii nie biorą fokusu (Tab idzie do pojemnika), Enter na pojemniku rozwija, a Enter na
+    // kafelku rozwiniętego paska otwiera artykuł
+    await page.focus('#stats');
+    await page.keyboard.press('Tab');
+    const fokus = await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName || '');
+    if (fokus.startsWith('s') && fokus !== 'stats' && /^s[A-Z]/.test(fokus))
+      throw new Error(`${opis}: Tab wszedł w kafelek ${fokus} zwiniętej linii`);
+    await page.focus('#stats');
+    await page.keyboard.press('Enter');
+    await poHudzie(page);
+    if ((await stanPaska(page)).zwiniety || (await oknoOtwarte(page)))
+      throw new Error(`${opis}: Enter na pojemniku zwiniętej linii: pasek zwinięty albo otwarte okno`);
+    await page.focus('#sWood');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zasob:drewno"]', { timeout: 5000 }).catch(() => {
+      throw new Error(`${opis}: Enter na kafelku rozwiniętego paska nie otworzył artykułu`);
+    });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+  },
+});
+
+/** Potrzeby na karcie a wiki (paski potrzeb otwierają artykuły): linia zwiniętych potrzeb tylko rozwija, pasek rozwiniętych tylko
+    otwiera artykuł, linia nad nimi zwija. Dotykiem na telefonie i myszą w wąskim oknie. Nigdy oba naraz. */
+const wikiKarta = (
+  name: string,
+  w: number,
+  h: number,
+  lang: 'pl' | 'en',
+  dotyk: boolean,
+  out: string,
+): ShotTelefon => ({
+  name,
+  query: '',
+  w,
+  h,
+  touch: dotyk,
+  lang,
+  run: async (page, base) => {
+    const opis = `${name} ${w}×${h} ${dotyk ? 'dotyk' : 'mysz'}`;
+    await start(page, base, `demo=przymorze&${GRA}`);
+    await osobaZPotrzebami(page, dotyk);
+    await liniaPotrzeb(page, opis);
+    const k0 = await stanKarty(page);
+    if (!k0.zwinieta || k0.paskiWidac) throw new Error(`${opis}: potrzeby nie są zwinięte domyślnie`);
+    // 1. zwinięte: stuknięcie w linię rozwija paski, wiki nie
+    await wPunkt(page, dotyk, await srodek(page, '#card .potrzeby-linia'));
+    await poHudzie(page);
+    const k1 = await stanKarty(page);
+    console.log(
+      `  ${opis}: stuknięcie w linię: zwinięte ${k1.zwinieta}, paski ${k1.paskiWidac}, okno ${await oknoOtwarte(page)}`,
+    );
+    if (k1.zwinieta || !k1.paskiWidac) throw new Error(`${opis}: stuknięcie w linię nie rozwinęło potrzeb`);
+    if (await oknoOtwarte(page)) throw new Error(`${opis}: stuknięcie w linię potrzeb otworzyło okno (wiki)`);
+    // 2. rozwinięte: stuknięcie w pasek najedzenia otwiera artykuł, karta zostaje rozwinięta
+    await wPunkt(page, dotyk, await srodek(page, '#card .need[data-wiki="potrzeba:food"]'));
+    await page.waitForSelector('#sheet.wiki .wiki-art[data-art="potrzeba:food"]', { timeout: 5000 }).catch(() => {
+      throw new Error(`${opis}: stuknięcie w pasek najedzenia nie otworzyło artykułu`);
+    });
+    if ((await stanKarty(page)).zwinieta)
+      throw new Error(`${opis}: pasek potrzeby zwinął potrzeby razem z otwarciem wiki`);
+    await page.screenshot({ path: path.join(out, `${name}-wiki.png`) });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+    await poHudzie(page, 2);
+    if ((await stanKarty(page)).zwinieta) throw new Error(`${opis}: po zamknięciu wiki potrzeby są zwinięte`);
+    // 3. linia nad paskami zwija, wiki nie
+    await wPunkt(page, dotyk, await srodek(page, '#card .potrzeby-linia'));
+    await poHudzie(page);
+    const k3 = await stanKarty(page);
+    console.log(
+      `  ${opis}: stuknięcie w linię rozwiniętych: zwinięte ${k3.zwinieta}, paski ${k3.paskiWidac}, okno ${await oknoOtwarte(page)}`,
+    );
+    if (!k3.zwinieta || k3.paskiWidac) throw new Error(`${opis}: linia nie zwinęła potrzeb`);
+    if (await oknoOtwarte(page)) throw new Error(`${opis}: linia rozwiniętych potrzeb otworzyła okno (wiki)`);
+  },
+});
+
 /* ---------------------------------------------------------------- lista scenariuszy */
 
 export function telefonShots(out: string): ShotTelefon[] {
@@ -676,5 +867,9 @@ export function telefonShots(out: string): ShotTelefon[] {
     mapaTelefon('telefon-mapa-en-zombie-360', 360, 740, 'en', true, out),
     rozwiniete('telefon-rozwiniete-pl', 390, 844, 'pl', false, out),
     rozwiniete('telefon-rozwiniete-en-zombie-360', 360, 740, 'en', true, out),
+    wikiPasek('telefon-wiki-pasek-dotyk', 390, 844, 'pl', true, out),
+    wikiPasek('telefon-wiki-pasek-mysz', 700, 900, 'en', false, out),
+    wikiKarta('telefon-wiki-karta-dotyk', 360, 740, 'en', true, out),
+    wikiKarta('telefon-wiki-karta-mysz', 700, 900, 'pl', false, out),
   ];
 }

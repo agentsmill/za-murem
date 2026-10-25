@@ -26,7 +26,10 @@
    Na telefonie (okno węższe niż 768 px) pasek stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, wybór
    w pamięci przeglądarki: src/ui/telefon.ts), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`,
    `--zapas-dol`).
-   Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami (`przelaczPotrzeby`). */
+   Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami (`przelaczPotrzeby`). Artykuły wiki z kafelków paska
+   i z pasków potrzeb otwierają się tylko z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok
+   i nie otwiera wiki (kafelki zwiniętego paska są `inert`), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera artykuł
+   i niczego nie zwija. */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -2398,7 +2401,8 @@ const wiki = utworzWiki({
     sheetAgain = f;
   },
 });
-// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu
+// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu (na telefonie tylko z rozwiniętego paska: kafelki zwiniętego są
+// `inert`, patrz `zastosujPasekStanu`)
 wiki.czipy(() => {
   if (!sim || modal.open || badaniaOtwarta()) return false;
   pauseGame();
@@ -3858,7 +3862,11 @@ let potrzebyRozwiniete = wczytajWybor(POTRZEBY_KEY) === 'rozwiniete';
 function zastosujPasekStanu() {
   const el = $('stats');
   const telefon = telefonMq.matches;
-  el.toggleAttribute('data-zwiniete', telefon && !statyRozwiniete);
+  const zwiniety = telefon && !statyRozwiniete;
+  el.toggleAttribute('data-zwiniete', zwiniety);
+  // kafelki zwiniętego paska nie biorą klawiatury ani dotyku: Enter i stuknięcie w linię rozwijają pasek, a artykuł wiki
+  // (src/ui/wiki-okno.ts wiąże z nim kafelek po identyfikatorze) otwiera dopiero kafelek rozwiniętego paska
+  for (const k of el.querySelectorAll<HTMLElement>('.stat')) k.inert = zwiniety;
   if (!telefon) {
     for (const a of ['role', 'tabindex', 'aria-expanded', 'aria-label']) el.removeAttribute(a);
     return;
@@ -3880,6 +3888,9 @@ function przelaczPasekStanu() {
   zastosujPasekStanu();
 }
 $('stats').addEventListener('click', (e) => {
+  // stuknięcie w kafelek rozwiniętego paska otwiera jego artykuł w wiki, więc go nie zwija (zwija strzałka ▴ i przerwy między
+  // kafelkami); w zwiniętym kafelki nie biorą dotyku (CSS i `inert`), więc cel kliknięcia jest zawsze pojemnikiem
+  if (e.target !== e.currentTarget) return;
   przelaczPasekStanu();
   // dotyk i mysz nie zostawiają fokusu na pasku, tak jak na przyciskach paska (src/ui/fokus.ts): spacja ma dalej zatrzymywać grę,
   // a nie zwijać pasek; z klawiatury (Tab, potem Enter albo Spacja) fokus zostaje

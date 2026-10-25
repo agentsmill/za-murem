@@ -8,7 +8,12 @@
    język i imiona (src/ui/jezyk.ts, src/ui/imiona.ts): to stan interfejsu, nie symulacji, więc nie trafia do zapisu gry.
    Kontrakt: każda funkcja działa bez wyjątku także wtedy, gdy przeglądarka nie daje dostępu do pamięci (tryb prywatny, zablokowane
    dane witryny, podgląd miniatur): wtedy nic się nie zapisuje, a odczyt to domyślne „zwiniete”; uszkodzony wpis to też domyślne.
-   Czyste poza samym magazynem, który można podstawić w testach. */
+   Czyste poza samym magazynem, który można podstawić w testach.
+
+   Wiki (src/ui/wiki-okno.ts): kafelki paska i paski potrzeb na karcie otwierają swoje artykuły, ale tylko w rozwiniętym bloku.
+   Zwinięta linia stanu i linia potrzeb przyjmują stuknięcie same i rozwijają blok, więc kafelki zwiniętego paska nie biorą
+   dotyku ani klawiatury (`inert` z main.ts i `pointer-events: none` w src/style.css), a w rozwiniętym kafelek otwiera artykuł,
+   nie zwija paska (zwija strzałka ▴ i przerwy między kafelkami). */
 
 /** okno węższe niż 768 px (telefon i mały tablet w pionie); musi się zgadzać z `@media (max-width: 767px)` w src/style.css */
 export const TELEFON_MQ = '(max-width: 767px)';

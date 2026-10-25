@@ -1909,19 +1909,28 @@ a.btn {
   /* Pasek stanu: pojemnik jest przyciskiem (role, tabindex i aria-expanded ustawia main.ts). Zwinięty (`data-zwiniete`) zostawia
      jedną niską linię z kafelkami pilnymi (klasa `pilne` z `oznaczPilne`: w stanie „uwaga” i „źle”, a gdy nic takiego nie ma,
      jedzenie, drewno i wkurzenie), każdy w jednym wierszu (etykieta obok wartości), ze strzałką ▾ na końcu; rozwinięty pokazuje
-     wszystkie kafelki, a pod nimi pasek ze strzałką ▴. Kafelki, których jest za dużo na jedną linię, zawijają się, a nie giną. */
+     wszystkie kafelki, a pod nimi pasek ze strzałką ▴. Kafelki, których jest za dużo na jedną linię, zawijają się, a nie giną.
+     Kafelki otwierają artykuły wiki (src/ui/wiki-okno.ts), ale tylko w rozwiniętym pasku: w zwiniętym nie biorą dotyku ani myszy
+     (stuknięcie w linię trafia w pojemnik i go rozwija), a rozwinięty pasek zwija strzałka ▴ i przerwy między kafelkami. */
   .stats[role="button"] {
     position: relative;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Strefa dotyku wyższa od widocznej linii o 4 px z góry (przerwa między wierszami paska) i z dołu (jego dopełnienie), a po bokach
-     o 6 px (dopełnienie paska): zwinięta linia ma 19 px, a palec potrzebuje około 27. Nie sięga dalej, więc nie zabiera dotyku
-     przyciskom z wiersza wyżej. */
+  /* Strefa dotyku wyższa od tego, co widać. Zwinięta linia: o 4 px z góry (przerwa między wierszami paska) i z dołu (jego
+     dopełnienie), po bokach o 6 px (dopełnienie paska): linia ma 19 px, a palec potrzebuje około 27. Rozwinięty pasek: tylko pas
+     ▴ i dopełnienie pod nim (20 px od dołu), żeby nie przykryć kafelków, które mają własny dotyk (wiki). Nie sięga dalej, więc nie
+     zabiera dotyku przyciskom z wiersza wyżej. */
   .stats[role="button"]::before {
     content: "";
     position: absolute;
+  }
+  .stats[data-zwiniete]::before {
     inset: -4px -6px;
+  }
+  .stats[role="button"]:not([data-zwiniete])::before {
+    inset: auto -6px -4px;
+    height: 20px;
   }
   .stats[role="button"]:focus-visible {
     outline: 2px solid var(--lamp);
@@ -1931,10 +1940,10 @@ a.btn {
   .stats[role="button"]::after {
     content: "▴";
     flex: 0 0 100%;
-    height: 12px;
+    height: 16px;
     margin-top: -1px;
     color: var(--ink-dim);
-    font: 700 10px / 12px var(--f-sign);
+    font: 700 10px / 16px var(--f-sign);
     text-align: center;
   }
   .stats[data-zwiniete] {
@@ -1955,6 +1964,7 @@ a.btn {
     align-items: baseline;
     gap: 4px;
     padding: 1px 6px 2px;
+    pointer-events: none;
   }
   .stats[data-zwiniete] .stat-k {
     letter-spacing: 0.04em;
