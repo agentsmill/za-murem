@@ -16,7 +16,8 @@
    (`polozenieEtykiety`: wyśrodkowana nad kotwicą, przy brzegu ekranu przesunięta do środka) i ustępowanie nakładkom
    (`zaslaniaNakladki`: pasek, cele, lista ludzi, karta, podpowiedź, przyciski, atrybucja; etykieta wtedy znika) to też czyste
    funkcje, żeby dało się je sprawdzić bez przeglądarki; `placeOsadaMark` w src/main.ts tylko mierzy nakładki i ustawia element.
-   `obrysKwadratu` daje rogi kwadratu osady dla mapy miasta. Prostokąty ekranu mają kształt `DOMRect` (`Prostokat` z src/ui/pietra.ts:
+   `wProstokacie` rozstrzyga klik w napis etykiety (etykieta przepuszcza wskaźnik do mapy). `obrysKwadratu` daje rogi kwadratu osady dla
+   mapy miasta. Prostokąty ekranu mają kształt `DOMRect` (`Prostokat` z src/ui/pietra.ts:
    left, top, right, bottom), więc nakładki idą prosto z `getBoundingClientRect()`. */
 
 import type { Pt } from '../world/geo.ts';
@@ -151,6 +152,12 @@ export function polozenieEtykiety(
   const left = x0 + przesuniecie;
   return { przesuniecie, rect: { left, top: ay - ODSTEP_ETYKIETY - wys, right: left + szer, bottom: ay } };
 }
+
+/** Czy punkt (x, y) ekranu leży w prostokącie `r` (brzegi liczą się); `null` (etykiety nie widać) to nigdy. Etykieta osady przepuszcza
+    wskaźnik do mapy (kółko, przeciąganie i szczypanie zaczęte na niej działają jak obok), więc to mapa rozstrzyga, czy klik trafił w
+    jej napis: po prostokącie, który `polozenieEtykiety` podał przy ostatnim ustawieniu etykiety. */
+export const wProstokacie = (r: Prostokat | null, x: number, y: number): boolean =>
+  r !== null && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 
 /** Czy prostokąt etykiety (od jej napisu do kotwicy) nachodzi na którąś z nakładek; prostokąty, które się tylko stykają, nie nachodzą. */
 export const zaslaniaNakladki = (etykieta: Prostokat, nakladki: readonly Prostokat[]): boolean =>

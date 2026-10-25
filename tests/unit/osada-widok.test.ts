@@ -27,6 +27,7 @@ import {
   PROMIEN_SZUKANIA,
   polozenieEtykiety,
   siedzibaWKwadracie,
+  wProstokacie,
   zaslaniaNakladki,
 } from '../../src/ui/osadaWidok.ts';
 import type { Geo } from '../../src/world/geo.ts';
@@ -537,5 +538,29 @@ describe('położenie etykiety nad siedzibą i ustępowanie nakładkom', () => {
         { left: 190, top: 110, right: 250, bottom: 120 },
       ]),
     ).toBe(true);
+  });
+});
+
+describe('trafienie w napis etykiety (etykieta przepuszcza wskaźnik do mapy, więc klik rozstrzyga mapa po prostokącie napisu)', () => {
+  it('punkt w prostokącie napisu z kotwicą trafia, także na brzegach; obok, powyżej, poniżej i bez etykiety nie', () => {
+    const { rect } = polozenieEtykiety(500, 300, 160, 24, 1440); // 420..580 × 266..300
+    for (const [x, y] of [
+      [500, 280],
+      [420, 266],
+      [580, 300],
+      [420, 300],
+      [580, 266],
+    ])
+      expect(wProstokacie(rect, x, y), `(${x}, ${y})`).toBe(true);
+    for (const [x, y] of [
+      [419.9, 280],
+      [580.1, 280],
+      [500, 265.9],
+      [500, 300.1],
+      [0, 0],
+    ])
+      expect(wProstokacie(rect, x, y), `(${x}, ${y})`).toBe(false);
+    // etykiety nie widać (ukryta albo bez siedziby): nigdy
+    expect(wProstokacie(null, 500, 280)).toBe(false);
   });
 });

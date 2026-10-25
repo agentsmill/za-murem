@@ -1057,13 +1057,12 @@ a.btn {
   border-top-color: transparent;
   border-bottom-color: var(--lamp);
 }
-/* etykieta z nazwą osady AI nad jej siedzibą (po odkryciu, src/main.ts `placeOsadaMark`): ten sam napis co „Suche drzewo”, ale
-   stuknięcie otwiera kartę osady */
+/* etykieta z nazwą osady AI nad jej siedzibą (po odkryciu, src/main.ts `placeOsadaMark`): ten sam napis co „Suche drzewo”, a klik w
+   niego otwiera kartę osady. Wskaźnik przechodzi przez napis do mapy (kółko, przeciąganie i szczypanie działają nad nim jak obok), a
+   klik rozstrzyga mapa po prostokącie napisu (`kliknijOsade`); z klawiatury to zwykły przycisk (Tab, Enter) */
 .treemark.osada-mark .treemark-t {
   border: 0;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-tap-highlight-color: transparent;
+  pointer-events: none;
 }
 /* karta osady (src/ui/kartaOsady.ts): nagłówek z nazwą i przyciskiem zamknięcia, zdanie o kierunku nad liczbami z kontaktu */
 .osada-glowa {

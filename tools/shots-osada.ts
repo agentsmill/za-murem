@@ -533,6 +533,101 @@ const punktSiedziby = (page: Page): Promise<[number, number]> =>
 const klikPunkt = (page: Page, [x, y]: [number, number], dotyk: boolean): Promise<void> =>
   dotyk ? page.touchscreen.tap(x, y) : page.mouse.click(x, y);
 
+/** Środek napisu etykiety osady (px ekranu). Etykieta przepuszcza wskaźnik do mapy (nie jest celem kliknięcia), więc klika się w ekran
+    w tym miejscu, tak jak robi to gracz. */
+const srodekEtykiety = (page: Page): Promise<[number, number]> =>
+  page.evaluate(() => {
+    const r = document.querySelector('#osadaMark .treemark-t')!.getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2] as [number, number];
+  });
+
+/** Klik albo stuknięcie w napis etykiety osady. */
+const kliknijEtykiete = async (page: Page, dotyk: boolean): Promise<void> =>
+  klikPunkt(page, await srodekEtykiety(page), dotyk);
+
+/** kamera gry: środek w pikselach świata i przybliżenie */
+const kamera = (page: Page) => page.evaluate(() => ({ ...window.zm!.view.cam }));
+
+/** czeka (do 3 s), aż przybliżenie kamery przekroczy `prog`; false zamiast wyjątku, żeby scenariusz opisał, co się nie stało */
+const zoomPowyzej = (page: Page, prog: number): Promise<boolean> =>
+  page
+    .waitForFunction((p) => window.zm!.view.cam.zoom > p, prog, { timeout: 3000 })
+    .then(
+      () => true,
+      () => false,
+    );
+
+/** Wskaźnik zaczęty na napisie etykiety trafia do mapy (etykieta go przepuszcza, a nie pochłania jak przycisk): kółko nad napisem
+    przybliża tak samo jak obok niego, a przeciągnięcie myszą od napisu przesuwa mapę i nie otwiera karty. Wymaga zamkniętej karty i
+    kamery, przy której etykieta jest widoczna; zmienia kamerę (wołający ustawia ją od nowa). */
+async function sprawdzPrzepuszczanieMyszy(page: Page, opis: string): Promise<void> {
+  const [x, y] = await srodekEtykiety(page);
+  const k0 = await kamera(page);
+  await page.mouse.move(x, y);
+  await page.mouse.wheel(0, -400);
+  const przyblizylo = await zoomPowyzej(page, k0.zoom * 1.15);
+  wymagaj(przyblizylo, `${opis}: kółko nad napisem etykiety przybliża mapę`, [k0.zoom, (await kamera(page)).zoom]);
+  // przeciągnięcie od napisu przesuwa mapę o tyle, o ile przesunięto mysz (w pikselach świata: piksele ekranu / przybliżenie)
+  const [x1, y1] = await srodekEtykiety(page);
+  const k1 = await kamera(page);
+  await page.mouse.move(x1, y1);
+  await page.mouse.down();
+  await page.mouse.move(x1 + 90, y1 + 50, { steps: 8 });
+  await page.mouse.up();
+  const k2 = await kamera(page);
+  wymagaj(
+    Math.abs(k2.x - (k1.x - 90 / k1.zoom)) < 1 && Math.abs(k2.y - (k1.y - 50 / k1.zoom)) < 1,
+    `${opis}: przeciągnięcie od napisu etykiety przesuwa mapę o 90 × 50 px`,
+    [k1, k2],
+  );
+  wymagaj(!(await widokKarty(page)).widac, `${opis}: przeciągnięcie od napisu nie otwiera karty osady`);
+}
+
+/** palce przez CDP jak z telefonu: każdy od a[i] do b[i] w 10 krokach */
+async function palce(page: Page, a: [number, number][], b: [number, number][]): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const n = 10;
+  const w = (k: number) =>
+    a.map(([x, y], id) => ({ id, x: x + ((b[id][0] - x) * k) / n, y: y + ((b[id][1] - y) * k) / n }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: w(0) });
+  for (let k = 1; k <= n; k++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: w(k) });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+/** To samo dla palców: jeden palec zaczęty na napisie etykiety przesuwa mapę i nie otwiera karty, a dwa palce (jeden na napisie)
+    przybliżają. Wymaga zamkniętej karty i kamery, przy której etykieta jest widoczna; zmienia kamerę. */
+async function sprawdzPrzepuszczaniePalcow(page: Page, opis: string): Promise<void> {
+  const [x, y] = await srodekEtykiety(page);
+  const k0 = await kamera(page);
+  await palce(page, [[x, y]], [[x - 60, y + 40]]);
+  const k1 = await kamera(page);
+  wymagaj(
+    Math.abs(k1.x - (k0.x + 60 / k0.zoom)) < 1 && Math.abs(k1.y - (k0.y - 40 / k0.zoom)) < 1,
+    `${opis}: palec zaczęty na napisie etykiety przesuwa mapę o 60 × 40 px`,
+    [k0, k1],
+  );
+  wymagaj(!(await widokKarty(page)).widac, `${opis}: przeciągnięcie palcem od napisu nie otwiera karty osady`);
+  // dwa palce rozsuwane ze 100 na 200 px, pierwszy na napisie: przybliżenie ×2
+  const [x2, y2] = await srodekEtykiety(page);
+  await palce(
+    page,
+    [
+      [x2, y2],
+      [x2, y2 + 100],
+    ],
+    [
+      [x2, y2 - 50],
+      [x2, y2 + 150],
+    ],
+  );
+  const k2 = await kamera(page);
+  wymagaj(k2.zoom > k1.zoom * 1.6, `${opis}: dwa palce, jeden na napisie etykiety, przybliżają mapę`, [
+    k1.zoom,
+    k2.zoom,
+  ]);
+}
+
 /** Co widać z karty osady: nagłówek, akapity i etykiety, liczby z listy, przyciski i atrybuty (ta sama karta co `#card`). */
 async function widokKarty(page: Page): Promise<{
   widac: boolean;
@@ -909,8 +1004,11 @@ function widokOsadyShots(out: string): ShotCele[] {
         await otwarta();
         await page.keyboard.press('Escape');
         await zamknieta();
+        // wskaźnik zaczęty na napisie etykiety trafia do mapy (kółko, przeciąganie), zanim zacznie się nim otwierać kartę
+        await sprawdzPrzepuszczanieMyszy(page, 'komputer');
+        await naSiedzibe(page, 0.45);
         // etykieta otwiera kartę, a po kliknięciu myszą spacja dalej zatrzymuje i puszcza grę
-        await page.click('#osadaMark .treemark-t');
+        await kliknijEtykiete(page, false);
         await otwarta();
         await sprawdzSpacje(page, 'po kliknięciu etykiety');
         // zaznaczenie kogoś zamyka kartę osady (pokazuje się karta osoby)
@@ -1019,7 +1117,13 @@ function widokOsadyShots(out: string): ShotCele[] {
         // „×” (stuknięcie) zamyka kartę, etykieta otwiera ją znów
         await kliknij(page, '#card .card-x', true);
         await page.waitForFunction(() => document.getElementById('card')!.hidden);
-        await kliknij(page, '#osadaMark .treemark-t', true);
+        // palec zaczęty na napisie etykiety przesuwa mapę, a dwa przybliżają; potem kamera wraca i stuknięcie w napis otwiera kartę
+        await sprawdzEtykiete(page, 'telefon po zamknięciu karty');
+        await sprawdzPrzepuszczaniePalcow(page, 'telefon');
+        await naSiedzibe(page, 0.4, 2);
+        await poHudzie(page);
+        await sprawdzEtykiete(page, 'telefon po powrocie kamery');
+        await kliknijEtykiete(page, true);
         await page.waitForSelector('#card:not([hidden]) .osada-glowa');
         await poHudzie(page);
         wymagaj(ostrzezenia.length === 0, 'zwykła gra osady milczy w konsoli', ostrzezenia);

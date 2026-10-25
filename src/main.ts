@@ -51,9 +51,10 @@
    (`pokazOsade`: `OsadaGry.kwadrat()`, `swiatKwadratu`, `scenaKwadratu`, `view.dodajKwadrat`, kawałki rysują workery), a budowa
    zaczyna się już przy otwarciu karty posła (`budujKwadratOsady` w `showPrompt`), więc odpowiedź niesie tylko dołożenie do widoku;
    odkryta osada z zapisu staje w widoku pod ekranem ładowania. Nad ich siedzibą stoi etykieta z nazwą w stylu „Suche drzewo”
-   (`placeOsadaMark`: znika, gdy zasłaniałaby pasek, cele, listę ludzi, kartę, podpowiedź albo przyciski), kliknięcie w siedzibę albo
-   etykietę otwiera kartę osady w miejscu karty osoby (`kliknijOsade`, src/ui/kartaOsady.ts: liczby z ostatniego kontaktu, nigdy z gry
-   osady; zamyka ją „×”, Esc, zaznaczenie kogoś i klik w dom), a mapa miasta ma znacznik z jej nazwą i obrysem kwadratu
+   (`placeOsadaMark`: znika, gdy zasłaniałaby pasek, cele, listę ludzi, kartę, podpowiedź albo przyciski; przepuszcza wskaźnik do mapy,
+   więc kółko, przeciąganie i szczypanie zaczęte na napisie działają jak obok), kliknięcie w siedzibę albo w napis etykiety (jej
+   prostokąt rozstrzyga mapa) otwiera kartę osady w miejscu karty osoby (`kliknijOsade`, src/ui/kartaOsady.ts: tylko to, co z
+   kontaktu, nigdy z gry osady; zamyka ją „×”, Esc, zaznaczenie kogoś i klik w dom), a mapa miasta ma znacznik z jej nazwą i obrysem kwadratu
    (`znacznikiMapy`). Reszta ich kwadratu jest tylko do oglądania, jak kwadraty z `?kwadraty=`. `window.zm.odkryjOsade()` odsłania osadę
    bez karty (tylko do zrzutów i pomiarów). */
 
@@ -215,6 +216,7 @@ import {
   polozenieEtykiety,
   type SiedzibaWidoku,
   siedzibaWKwadracie,
+  wProstokacie,
   zaslaniaNakladki,
 } from './ui/osadaWidok.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
@@ -2602,6 +2604,9 @@ const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 let osadaMarkTekst = '';
 let osadaMarkW = 150;
 let osadaMarkH = 24;
+/** prostokąt napisu etykiety osady na ekranie (od napisu do kotwicy), gdy etykieta jest widoczna; inaczej null. Etykieta przepuszcza
+    wskaźnik do mapy (`pointer-events: none`), więc klik w jej napis rozstrzyga mapa po tym prostokącie (`kliknijOsade`). */
+let osadaMarkRect: Prostokat | null = null;
 /** nakładki, z których etykieta osady ustępuje (prostokąty ekranu): liczone najwyżej co 150 ms, nie co klatkę */
 let osadaNakladki: Prostokat[] = [];
 let osadaNakladkiAt = -1e9;
@@ -2621,20 +2626,26 @@ function odswiezNakladki(now: number): void {
     .filter((r) => r.width > 0 && r.height > 0);
 }
 
-/** Etykieta z nazwą osady nad jej siedzibą (po odkryciu): ten sam napis co „Suche drzewo” (klasa `treemark`), jedzie z mapą, a stuknięcie
-    w nią otwiera kartę osady. Widać ją tylko wtedy, gdy kotwica jest na ekranie i napis niczego nie zasłania (pasek, cele, lista ludzi,
-    karta, podpowiedź, przyciski, atrybucja): nakładki są ważniejsze, więc etykieta wtedy znika, a nie przesuwa się. */
+/** Etykieta z nazwą osady nad jej siedzibą (po odkryciu): ten sam napis co „Suche drzewo” (klasa `treemark`), jedzie z mapą i otwiera
+    kartę osady po kliknięciu, ale nie pochłania wskaźnika: przepuszcza go do mapy, więc kółko, przeciąganie i szczypanie zaczęte na
+    napisie działają jak obok, a klik w napis rozstrzyga mapa (`kliknijOsade`, po `osadaMarkRect`); z klawiatury etykieta jest
+    zwykłym przyciskiem (Tab, Enter). Widać ją tylko wtedy, gdy kotwica jest na ekranie i napis niczego nie zasłania (pasek, cele,
+    lista ludzi, karta, podpowiedź, przyciski, atrybucja): nakładki są ważniejsze, więc etykieta wtedy znika, a nie przesuwa się. */
 function placeOsadaMark(now: number): void {
   const el = $('osadaMark');
+  const ukryj = () => {
+    if (!el.hidden) el.hidden = true;
+    osadaMarkRect = null;
+  };
   const sied = osadaWidok?.siedziba;
   const swiat = osada?.swiat;
   if (!sied || !swiat || !osada?.odkryta || modal.open || badaniaOtwarta()) {
-    if (!el.hidden) el.hidden = true;
+    ukryj();
     return;
   }
   const [ax, ay] = screenOf(sied.etykieta.x, sied.etykieta.y);
   if (ax < MARGINES_ETYKIETY || ax > view.width - MARGINES_ETYKIETY || ay < 0 || ay > view.height) {
-    if (!el.hidden) el.hidden = true;
+    ukryj();
     return;
   }
   const label = el.firstElementChild as HTMLElement;
@@ -2651,13 +2662,15 @@ function placeOsadaMark(now: number): void {
   const { przesuniecie, rect } = polozenieEtykiety(ax, ay, osadaMarkW, osadaMarkH, view.width);
   odswiezNakladki(now);
   if (zaslaniaNakladki(rect, osadaNakladki)) {
-    if (!el.hidden) el.hidden = true;
+    ukryj();
     return;
   }
   el.hidden = false;
+  osadaMarkRect = rect;
   el.style.setProperty('--shift', `${Math.round(przesuniecie)}px`);
   el.style.transform = `translate(${Math.round(ax)}px, ${Math.round(ay)}px)`;
 }
+// z klawiatury (Tab, Enter na etykiecie): kliknięcie myszą i stuknięcie nie trafiają w przycisk, tylko w mapę (`kliknijOsade`)
 $('osadaMark').addEventListener('click', () => {
   otworzKarteOsady();
 });
@@ -3436,14 +3449,17 @@ function otworzKarteOsady(): boolean {
   return true;
 }
 
-/** Klik w punkt ekranu: czy to siedziba osady w jej kwadracie (obrys budynku w świecie kwadratu, `naSiedzibie`); jeśli tak, otwiera
-    jej kartę. Reszta jej kwadratu, jej pionków i mgły nie reaguje (kwadraty obok domu są tylko do oglądania). */
+/** Klik w punkt ekranu: czy to siedziba osady w jej kwadracie (obrys budynku w świecie kwadratu, `naSiedzibie`) albo napis jej
+    etykiety (`osadaMarkRect`, etykieta przepuszcza wskaźnik do mapy); jeśli tak, otwiera jej kartę. Reszta jej kwadratu, jej pionków
+    i mgły nie reaguje (kwadraty obok domu są tylko do oglądania). */
 function kliknijOsade(px: number, py: number): boolean {
   const ow = osadaWidok;
   const sied = ow?.siedziba;
   if (!ow || !sied) return false;
   const [wx, wy] = view.toWorld(px, py);
-  return naSiedzibie(ow.swiat, ow.sx, ow.sy, sied.bid, wx / TILE, wy / TILE) && otworzKarteOsady();
+  const trafiona =
+    naSiedzibie(ow.swiat, ow.sx, ow.sy, sied.bid, wx / TILE, wy / TILE) || wProstokacie(osadaMarkRect, px, py);
+  return trafiona && otworzKarteOsady();
 }
 
 /** Znaczniki na mapie miasta: osada AI po odkryciu (jej kwadrat i nazwa przy siedzibie); bez osady, przed odkryciem i bez widoku jej
