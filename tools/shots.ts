@@ -14576,6 +14576,9 @@ function pietraShots(): Shot[] {
       await podstawAtrape(page);
       await page.goto(`${base}?demo=${DEMO_ATRAPA}&pietra=1&speed=0&cam=${cam}`);
       await waitIdle(page);
+      // licznik klatek na pasku (`.fps`) zmienia się sam, a obrys budynku z zapasem sięga pod pasek (dwa wiersze od 1100 px, 105 px):
+      // bez tego dwa zrzuty tego samego budynku różnią się cyframi licznika (0 i 38 kl/s), nie budynkiem
+      await page.addStyleTag({ content: '.fps { visibility: hidden !important; }' });
       /** widoczne w całości budynki z wyglądem: obrys z zapasem na ozdoby (wieża nad dachem, portyk przed frontem) */
       const lista = await page.evaluate(() => {
         const zm = window.zm!;
