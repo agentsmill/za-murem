@@ -40,8 +40,9 @@
    Widok ich kwadratu (zadanie 5) buduje kwadrat obok domu z geo kwadratu SPRZED przesunięcia, a zapis trzyma tylko geo przesunięte:
    `przesuniecieOsady` odczytuje przesunięcie z `c` obu geo (`przesunGeo` przesuwa środek geograficznie o tyle samo co punkty, a `c`
    kwadratu to środek układu domu), `geoKwadratuOsady` oddaje z niego geo kwadratu punkt w punkt (współrzędne na siatce 0,5 m
-   wracają co do wartości, minus zero jako zero), bez zmiany formatu zapisu. Gdy `c` obu geo się rozjadą (przesunięcie nie wypada na siatce
-   0,5 m), `przesuniecieOsady` rzuca zamiast po cichu przesunąć kwadrat o zły kawałek; gospodarz łapie to jednym ostrzeżeniem i kwadratu nie dokłada.
+   wracają co do wartości, minus zero jako zero), bez zmiany formatu zapisu. Rozjazd `c` o kilka metrów (adres z Nominatim przesunięty
+   od zapisu) nic nie psuje (błąd to zaokrąglenie do 0,5 m), a gruby rozjazd (zły adres, zmieniona konwencja `c`) wyłapuje
+   `punktSiedzibyWKwadracie`: `OsadaGry.kwadrat()` rzuca, gospodarz łapie to jednym ostrzeżeniem i kwadratu nie dokłada.
 
    Geo osady (`SwiatOsady.geo`) to geo kwadratu przesunięte o punkt siedziby zaokrąglony do 0,5 m (zapis zostaje zwarty, a
    współrzędne na siatce, na której je podano), ze środkiem `c` przesuniętym geograficznie o tyle samo (generator
@@ -171,28 +172,30 @@ export function przesunGeo(geo: Geo, dx: number, dy: number): Geo {
 
 const naPolmetry = (v: number): number => Math.round(v * 2) / 2;
 
-/** Najwięcej, o ile przesunięcie odczytane z `c` może odbiegać od siatki 0,5 m, żeby uznać je za błąd zaokrąglenia (metry): przy
-    zgodnych `c` błąd to rząd 1e-9 m, więc 1 mm odrzuca każdy rozjazd o ułamek metra, a nie rusza poprawnych danych. */
-const TOLERANCJA_SIATKI_M = 0.001;
-
 /** Przesunięcie, o które `przesunGeo` przesunęło geo kwadratu do siedziby (punkt siedziby w metrach od adresu w układzie geo, bez
     obrotu, na siatce 0,5 m): wynika z `c`, bo `przesunGeo` przesuwa geograficznie środek geo o tyle samo co punkty, a `c` geo
     kwadratu to środek układu domu (`uklad.c`, `geoKwadratu` i dema liczą je od adresu). Tak zapis osady, który trzyma tylko geo
     już przesunięte, oddaje przesunięcie bez zmiany formatu. Odwrotność: `przesunGeo(geoKwadratu, ...przesuniecieOsady(...))`.
-    Straż niezmiennika „`c` geo kwadratu == `c` układu domu”: gdy odczytane przesunięcie nie leży na siatce 0,5 m (rozjazd `c` o
-    ułamek metra, np. adres z Nominatim przesunięty od zapisu), rzuca zamiast po cichu zaokrąglić do złego przesunięcia, przy którym
-    kwadrat stanąłby kilka metrów obok, a szwy by się rozjechały; wołający (src/main.ts, `budujKwadratOsady`) łapie to jednym
-    ostrzeżeniem i nie dokłada kwadratu. Rozjazd o równą wielokrotność 0,5 m jest nie do odróżnienia od innego przesunięcia. */
+    Gdy środek układu domu ruszył się od zapisu (adres z Nominatim przesunięty o kilka metrów), wynik to dawny punkt w nowym układzie:
+    kwadrat dalej stoi we właściwym miejscu, a błąd to samo zaokrąglenie do 0,5 m (najwyżej 0,25 m); dlatego funkcja nie rzuca przy
+    rozjeździe `c`, a gruby rozjazd (zły adres, zmieniona konwencja `c`) wyłapuje `punktSiedzibyWKwadracie`. */
 export function przesuniecieOsady(geoOsady: Pick<Geo, 'c'>, uklad: Pick<Uklad, 'c'>): Pt {
   const { kx, ky } = metryNaStopien(uklad.c[0]);
-  const rx = (geoOsady.c[1] - uklad.c[1]) * kx;
-  const ry = (uklad.c[0] - geoOsady.c[0]) * ky;
-  const [dx, dy] = [naPolmetry(rx), naPolmetry(ry)];
-  if (!(Math.abs(rx - dx) <= TOLERANCJA_SIATKI_M && Math.abs(ry - dy) <= TOLERANCJA_SIATKI_M))
-    throw new Error(
-      `Osada AI: środek geo osady ${JSON.stringify(geoOsady.c)} nie zgadza się ze środkiem układu domu ${JSON.stringify(uklad.c)}: przesunięcie (${rx}, ${ry}) m nie leży na siatce 0,5 m`,
-    );
-  return [nz(dx), nz(dy)];
+  return [nz(naPolmetry((geoOsady.c[1] - uklad.c[1]) * kx)), nz(naPolmetry((uklad.c[0] - geoOsady.c[0]) * ky))];
+}
+
+/** Najdalej tyle metrów od środka kwadratu może leżeć punkt siedziby osady: jej budynek ma środek obrysu w `PROMIEN_SIEDZIBY_M`, punkt
+    leży w obrysie, a na demach najdalszy z 198 kandydatów (nie tylko wybranych) jest 120,1 m od środka; 80 m zapasu na wklęsły albo
+    ogromny obrys. Nie ma być ostrą miarą, tylko odciąć błąd o kwadrat i więcej. */
+export const PROMIEN_PUNKTU_SIEDZIBY_M = PROMIEN_SIEDZIBY_M + 80;
+
+/** Straż zgodności środka układu domu z geo osady: czy punkt siedziby (`przesuniecieOsady`, metry od adresu w układzie geo) leży w
+    pobliżu środka kwadratu (sx, sy) osady (`PROMIEN_PUNKTU_SIEDZIBY_M` od `srodekKwadratu`). Fałsz znaczy, że `c` geo osady nie zgadza
+    się z układem domu o kwadrat albo więcej (zapis z innego adresu, zmieniona konwencja `c`), więc kwadrat stanąłby w złym miejscu i
+    lepiej go nie pokazywać; rozjazd o kilka metrów (adres z Nominatim) przechodzi, bo kwadrat wtedy dalej stoi dobrze. */
+export function punktSiedzibyWKwadracie(punkt: Pt, uklad: Uklad, sx: number, sy: number): boolean {
+  const [cx, cy] = srodekKwadratu(uklad, sx, sy);
+  return Math.hypot(punkt[0] - cx, punkt[1] - cy) <= PROMIEN_PUNKTU_SIEDZIBY_M;
 }
 
 /** Geo kwadratu osady SPRZED przesunięcia do siedziby (metry od adresu w układzie domu, bez obrotu, `c` układu domu): to, z czego

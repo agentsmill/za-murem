@@ -74,6 +74,7 @@ import {
   kierunekOsady,
   nazwaOsady,
   przesuniecieOsady,
+  punktSiedzibyWKwadracie,
   type SwiatOsady,
   swiatZGeo,
   wybierzOsade,
@@ -230,8 +231,9 @@ export interface OsadaGry {
   dlaZarzadu(): WejscieOsady | null;
   /** Dane ich kwadratu dla widoku (zadanie 5: po odkryciu `main.ts` pokazuje go obok domu): geo kwadratu sprzed przesunięcia do
       siedziby, jego położenie, punkt i klucz siedziby. Liczy się z geo osady (`geoKwadratuOsady`), więc jest taki sam dla żywej
-      osady i wczytanej z zapisu; kopia geo przy każdym wywołaniu (wołaj raz). `null` poza stanem `jest`. Rzuca, gdy `c` geo osady nie
-      zgadza się ze środkiem układu domu (`przesuniecieOsady`: przesunięcie poza siatką 0,5 m); wołający łapie to i kwadratu nie dokłada. */
+      osady i wczytanej z zapisu; kopia geo przy każdym wywołaniu (wołaj raz). `null` poza stanem `jest`. Rzuca, gdy punkt siedziby
+      leży za daleko od środka jej kwadratu, czyli `c` geo osady nie zgadza się ze środkiem układu domu o kwadrat i więcej
+      (`punktSiedzibyWKwadracie`; rozjazd o kilka metrów przechodzi); wołający łapie to i kwadratu nie dokłada. */
   kwadrat(): KwadratOsady | null;
   zapisz(): StanOsady;
   podglad(): PodgladOsady;
@@ -449,11 +451,17 @@ class OsadaWGrze implements OsadaGry {
     const s = this.s;
     if (s.stan !== 'jest') return null;
     const w = s.swiat;
+    const punkt = przesuniecieOsady(w.geo, this.uklad);
+    // straż: punkt siedziby w pobliżu środka jej kwadratu, inaczej środek geo osady nie zgadza się z układem domu o kwadrat i więcej
+    if (!punktSiedzibyWKwadracie(punkt, this.uklad, w.sx, w.sy))
+      throw new Error(
+        `Osada AI: punkt siedziby (${punkt[0]}, ${punkt[1]}) m leży za daleko od środka kwadratu ${w.klucz}: środek geo osady nie zgadza się ze środkiem układu domu`,
+      );
     return {
       sx: w.sx,
       sy: w.sy,
       geo: geoKwadratuOsady(w.geo, this.uklad),
-      punkt: przesuniecieOsady(w.geo, this.uklad),
+      punkt,
       kluczSiedziby: kluczBudynku(w.world.buildings[w.world.hq] ?? { tags: {} }),
     };
   }

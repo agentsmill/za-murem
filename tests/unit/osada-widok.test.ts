@@ -10,9 +10,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   geoKwadratuOsady,
+  PROMIEN_PUNKTU_SIEDZIBY_M,
   PROMIEN_SIEDZIBY_M,
   przesunGeo,
   przesuniecieOsady,
+  punktSiedzibyWKwadracie,
   type SwiatOsady,
   wybierzOsade,
 } from '../../src/ai/kwadrat.ts';
@@ -152,25 +154,35 @@ describe('przesunięcie i geo kwadratu osady z jej geo', () => {
     }
   });
 
-  it('rozjazd c geo osady i układu domu, który nie wypada na siatce 0,5 m, rzuca zamiast po cichu przesunąć kwadrat', () => {
+  it('rozjazd c o kilka metrów (adres z Nominatim przesunięty od zapisu) nie psuje kwadratu: geo wraca z błędem najwyżej 0,25 m', () => {
     const p = przypadki[0];
     const d = demA[p.demo];
+    const orig = d.demo.kwadraty[p.swiat.klucz];
     const { kx, ky } = metryNaStopien(d.uklad.c[0]);
-    const poprawne = przesuniecieOsady(p.swiat.geo, d.uklad);
-    // c przesunięte o kilka decymetrów w obu osiach (nie wielokrotność 0,5 m): każda z wartości jest błędem, który rzuca
-    for (const m of [0.1, 0.2, 0.3, 0.45, 0.7, 1.3, 7.2]) {
-      const poWschodzie = { ...p.swiat.geo, c: [p.swiat.geo.c[0], p.swiat.geo.c[1] + m / kx] as [number, number] };
-      const poPolnocy = { ...p.swiat.geo, c: [p.swiat.geo.c[0] + m / ky, p.swiat.geo.c[1]] as [number, number] };
-      for (const zepsute of [poWschodzie, poPolnocy]) {
-        expect(() => przesuniecieOsady(zepsute, d.uklad), `rozjazd ${m} m`).toThrow(/siatce 0,5 m/);
-        expect(() => geoKwadratuOsady(zepsute, d.uklad), `rozjazd ${m} m`).toThrow(/siatce 0,5 m/);
-      }
+    const [sx, sy] = przesuniecieOsady(p.swiat.geo, d.uklad);
+    // nowy środek układu domu o (ex na wschód, ey na południe) metrów od zapisanego: punkty geo kwadratu liczą się od nowego początku
+    for (const [ex, ey] of [
+      [0.3, 0.1],
+      [3.3, -2.1],
+      [12.7, 8.9],
+      [-40.2, 25.4],
+    ]) {
+      const u = { ...d.uklad, c: [d.uklad.c[0] - ey / ky, d.uklad.c[1] + ex / kx] as [number, number] };
+      const [px, py] = przesuniecieOsady(p.swiat.geo, u);
+      // punkt siedziby to dawny punkt w nowym układzie, z zaokrągleniem do 0,5 m
+      expect(Math.abs(px - (sx - ex)), `rozjazd (${ex}, ${ey})`).toBeLessThanOrEqual(0.25 + 1e-6);
+      expect(Math.abs(py - (sy - ey)), `rozjazd (${ex}, ${ey})`).toBeLessThanOrEqual(0.25 + 1e-6);
+      const g = geoKwadratuOsady(p.swiat.geo, u);
+      let maks = 0;
+      for (let i = 0; i < orig.b.length; i++)
+        for (let k = 0; k < orig.b[i].p.length; k++) {
+          const [ox, oy] = orig.b[i].p[k];
+          const [gx, gy] = g.b[i].p[k];
+          maks = Math.max(maks, Math.abs(gx - (ox - ex)), Math.abs(gy - (oy - ey)));
+        }
+      expect(maks, `rozjazd (${ex}, ${ey}) m: największy błąd punktu budynku`).toBeLessThanOrEqual(0.25 + 1e-6);
+      expect(g.c).toEqual(u.c);
     }
-    // rozjazd o równą wielokrotność 0,5 m to inne, poprawne przesunięcie: tej straży nie złapie (ten sam niezmiennik co w zapisie)
-    const o2 = { ...p.swiat.geo, c: [p.swiat.geo.c[0], p.swiat.geo.c[1] + 2 / kx] as [number, number] };
-    expect(przesuniecieOsady(o2, d.uklad)).toEqual([poprawne[0] + 2, poprawne[1]]);
-    // dane z dema i z kafelków przechodzą (błąd zaokrąglenia jest o rzędy mniejszy niż tolerancja)
-    for (const q of przypadki) expect(() => przesuniecieOsady(q.swiat.geo, demA[q.demo].uklad)).not.toThrow();
   });
 
   it('zapis i wczytanie geo (JSON) nie zmieniają wyniku', () => {
@@ -399,6 +411,45 @@ describe('siedzibaWKwadracie na małym świecie (kawałki jednego budynku, szuka
   });
 });
 
+describe('punktSiedzibyWKwadracie: straż zgodności środka układu domu z geo osady', () => {
+  it('punkt siedziby każdej osady z dem leży w pobliżu środka jej kwadratu', () => {
+    for (const p of przypadki) {
+      const d = demA[p.demo];
+      const punkt = przesuniecieOsady(p.swiat.geo, d.uklad);
+      expect(punktSiedzibyWKwadracie(punkt, d.uklad, p.swiat.sx, p.swiat.sy), `${p.demo} ${p.seed}`).toBe(true);
+    }
+  });
+
+  it('granica to promień wyboru siedziby z zapasem, od środka kwadratu w każdą stronę (też po obrocie układu)', () => {
+    const u = demA.przymorze.uklad;
+    const [cx, cy] = srodekKwadratu(u, -1, 1);
+    for (const [dx, dy] of [
+      [1, 0],
+      [0, 1],
+      [-0.6, 0.8],
+    ]) {
+      const w = (r: number) => punktSiedzibyWKwadracie([cx + dx * r, cy + dy * r], u, -1, 1);
+      expect(w(PROMIEN_PUNKTU_SIEDZIBY_M - 0.5)).toBe(true);
+      expect(w(PROMIEN_PUNKTU_SIEDZIBY_M + 0.5)).toBe(false);
+    }
+    expect(PROMIEN_PUNKTU_SIEDZIBY_M).toBeGreaterThan(PROMIEN_SIEDZIBY_M);
+  });
+
+  it('inny kwadrat, środek układu o kwadrat dalej i zły adres to nie ten kwadrat', () => {
+    const p = przypadki[0];
+    const d = demA[p.demo];
+    const punkt = przesuniecieOsady(p.swiat.geo, d.uklad);
+    // ten sam punkt, ale kwadrat osady jest gdzie indziej
+    for (const [sx, sy] of sasiedzi8(0, 0))
+      if (sx !== p.swiat.sx || sy !== p.swiat.sy)
+        expect(punktSiedzibyWKwadracie(punkt, d.uklad, sx, sy), `kwadrat ${sx},${sy} zamiast ${p.swiat.klucz}`).toBe(
+          false,
+        );
+    // punkt z zapisu innego adresu: kilometry od środka kwadratu
+    expect(punktSiedzibyWKwadracie([punkt[0] + 4000, punkt[1] - 2500], d.uklad, p.swiat.sx, p.swiat.sy)).toBe(false);
+  });
+});
+
 describe('OsadaGry.kwadrat: dane ich kwadratu dla widoku, także po zapisie i wczytaniu', () => {
   it('przed startem i bez osady null, po starcie geo kwadratu z dema, punkt i klucz siedziby', () => {
     const d = demA.przymorze;
@@ -439,20 +490,37 @@ describe('OsadaGry.kwadrat: dane ich kwadratu dla widoku, także po zapisie i wc
   }, 120_000);
 });
 
-describe('OsadaGry.kwadrat przy zepsutym c w zapisie osady', () => {
-  it('rzuca (host zapisze ostrzeżenie i nie dołoży kwadratu), a reszta osady działa dalej', () => {
+describe('OsadaGry.kwadrat przy rozjechanym środku układu domu', () => {
+  /** zapis osady Przymorza po odkryciu, jej klucz i dane demo */
+  function zapisOsady() {
     const d = demA.przymorze;
     const zywa = nowaOsadaGry(d.seed, d.dane, d.uklad);
     zywa.dane(d.demo.kwadraty);
     zywa.krok(TICK_STARTU_OSADY + 10);
     zywa.odkryj({ dzien: 4, ludnosc: 4, budowle: 1 });
-    const zapis = JSON.parse(JSON.stringify(zywa.zapisz())) as StanOsady & { stan: 'jest' };
-    // ten sam zapis, ale c geo osady rozjechane o 0,3 m od środka układu domu (jak po zmianie adresu z Nominatim o kilka metrów)
+    return { d, zywa, zapis: JSON.parse(JSON.stringify(zywa.zapisz())) as StanOsady & { stan: 'jest' } };
+  }
+
+  it('adres przesunięty o kilka metrów: kwadrat się buduje, punkt siedziby z błędem najwyżej 0,25 m', () => {
+    const { d, zywa, zapis } = zapisOsady();
+    const { kx, ky } = metryNaStopien(d.uklad.c[0]);
+    const [ex, ey] = [3.3, -2.1];
+    const u = { ...d.uklad, c: [d.uklad.c[0] - ey / ky, d.uklad.c[1] + ex / kx] as [number, number] };
+    const wczytana = osadaZZapisu(zapis, d.seed, d.dane, u);
+    const kw = wczytana.kwadrat()!;
+    const przed = zywa.kwadrat()!;
+    expect(kw).not.toBeNull();
+    expect(Math.abs(kw.punkt[0] - (przed.punkt[0] - ex))).toBeLessThanOrEqual(0.25 + 1e-6);
+    expect(Math.abs(kw.punkt[1] - (przed.punkt[1] - ey))).toBeLessThanOrEqual(0.25 + 1e-6);
+  }, 120_000);
+
+  it('zapis z innego adresu (środek geo osady kilometry od środka układu domu): kwadrat() rzuca, a reszta osady działa dalej', () => {
+    const { d, zapis } = zapisOsady();
     const { kx } = metryNaStopien(d.uklad.c[0]);
-    zapis.geo.c = [zapis.geo.c[0], zapis.geo.c[1] + 0.3 / kx];
+    zapis.geo.c = [zapis.geo.c[0], zapis.geo.c[1] + 4000 / kx];
     const wczytana = osadaZZapisu(zapis, d.seed, d.dane, d.uklad);
     expect(wczytana.stan).toBe('jest');
-    expect(() => wczytana.kwadrat()).toThrow(/siatce 0,5 m/);
+    expect(() => wczytana.kwadrat()).toThrow(/za daleko od środka kwadratu/);
     // sama osada (nazwa, kierunek, kontakt) działa, tylko widoku jej kwadratu nie da się zbudować
     expect(wczytana.odkryta).toBe(true);
     expect(wczytana.swiat).not.toBeNull();
