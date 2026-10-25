@@ -64,8 +64,8 @@ export interface Sheet {
   /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
       mapa miasta (okno na cały ekran, src/ui/miasto.ts), plan wyprawy z mapy (zwykłe okno w barwie mapy,
       src/ui/wyprawa.ts), ekran dróg do zwycięstwa (szeroka tabliczka w złocie) i epilog zwycięstwa (ta sama barwa,
-      zwykła szerokość), oba z src/ui/zwyciestwo.ts, i odkrycie (karta po ukończeniu badania, w kolorze korka
-      tablicy) */
+      zwykła szerokość), oba z src/ui/zwyciestwo.ts, odkrycie (karta po ukończeniu badania, w kolorze korka
+      tablicy) i wiki (szerokie okno z listą i artykułem, src/ui/wiki.ts) */
   tone:
     | 'noc'
     | 'uchwala'
@@ -80,7 +80,8 @@ export interface Sheet {
     | 'wyprawa'
     | 'drogi'
     | 'zwyciestwo'
-    | 'odkrycie';
+    | 'odkrycie'
+    | 'wiki';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
   /** linia „Cel: …” pod nagłówkiem: tekst celu ze ścieżki celów, który dotyczy tego okna (`celWOknie` w src/ui/sciezka.ts;
@@ -509,7 +510,7 @@ export function menuSheet(note: string): Sheet {
     body: `<div class="menu-list">${btn('menu-back', L('Wróć do gry', 'Back to the game'), 'btn go')}${btn(
       'menu-help',
       L('Jak grać', 'How to play'),
-    )}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${btn(
+    )}${btn('menu-wiki', L('Wiki', 'Wiki'))}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${btn(
       'menu-start',
       L('Zapisz i wróć do ekranu startowego', 'Save and go back to the start screen'),
     )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(

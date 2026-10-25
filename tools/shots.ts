@@ -31,6 +31,7 @@ import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
 import { tekstyShots } from './shots-teksty.ts';
+import { wikiShots } from './shots-wiki.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -750,6 +751,9 @@ const SHOTS: Shot[] = [
   // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
+  // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
+  // dom i blok; każdy scenariusz sprawdza układ, atrybucję map i słowa z bloku w domu
+  ...wikiShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
   // Poprawki tekstów po przeglądzie spójności: pora roku na pasku w zimie, słowa domu (komitet, furtka) w drogach, epilogach, planie

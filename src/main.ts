@@ -34,7 +34,16 @@ import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { wyslijWyprawe } from './gov/dzienne.ts';
-import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
+import {
+  BLOK,
+  placeOfWorld,
+  type Words,
+  type WordsEn,
+  wordsEn,
+  wordsEnOfWorld,
+  wordsOf,
+  wordsOfWorld,
+} from './gov/miejsce.ts';
 import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import { lancuchyZAdresu } from './gov/watki.ts';
@@ -198,6 +207,8 @@ import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
+import { utworzWiki } from './ui/wiki-okno.ts';
+import { wikiCtx } from './ui/wiki-typy.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import {
   adresStartowy,
@@ -2330,6 +2341,7 @@ function showMenu() {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
+      else if (act === 'menu-wiki') wiki.otworz(null, true);
       else if (act === 'menu-zwyciestwo') showDrogi();
       else if (act === 'menu-start') {
         save();
@@ -2350,6 +2362,30 @@ function showHelp() {
     nextPrompt,
   );
 }
+/* ---------- wiki (src/ui/wiki.ts): z Menu i z czipów górnego paska ---------- */
+const wiki = utworzWiki({
+  modal,
+  root: $('modal'),
+  // artykuły czytają słownik miejsca siedziby; wiki to dokumentacja, nie widok na żywo (żadnego stanu symulacji)
+  ctx: () => wikiCtx(sim ? placeOfWorld(sim.w) : BLOK, touchUI, !!sim && modeOf(sim.st) === 'zombie'),
+  pomoc: showHelp,
+  wroc: showMenu,
+  zamknij: () => {
+    modal.close();
+    nextPrompt();
+  },
+  dismiss: nextPrompt,
+  powtorz: (f) => {
+    sheetAgain = f;
+  },
+});
+// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu
+wiki.czipy(() => {
+  if (!sim || modal.open || badaniaOtwarta()) return false;
+  pauseGame();
+  ctx.close();
+  return true;
+});
 // przełącznik języka w Menu: kliknięcie zmienia język, a okno rysuje się od nowa przez słuchacza niżej
 podepnijPrzelacznik($('modal'));
 $('btnMenu').onclick = () => {
