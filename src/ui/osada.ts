@@ -6,15 +6,24 @@
    ładuje dopiero przy fladze (`import()`), więc gra bez flagi nie niesie silnika AI.
 
    Cykl życia osady (`StanOsady`, to samo trafia do zapisu jako `Save.osada`):
-   - `czeka` od nowej gry do `TICK_STARTU_OSADY` (6:00 drugiego dnia, `tickAt(2, 6)`): niczego nie liczy. Przed tą chwilą nic nie łączy
-     obu gier (pierwszy kontakt najwcześniej w 4. dniu), więc przebieg nie zależy od tego, kiedy przyszły dane;
-   - w ticku startu gospodarz woła `krok(nasz tick)` i osada wybiera kwadrat (`wybierzOsade`, src/ai/kwadrat.ts), buduje swoją grę
-     (`nowaGraAi` z ziarnem z ziarna naszej gry i kwadratu) i nadrabia ją od ticku 0 do naszego ticka (około 12000 kroków, rzędu
-     pół sekundy). Wybór idzie dopiero na komplecie danych: `dane()` woła gospodarz raz, gdy wszystkie osiem pobrań sąsiednich
-     kwadratów się skończyło (dobrze albo błędem; nieudane kwadraty po prostu brakują w rekordzie). Bez wywołania do ticku startu
-     osady nie ma (`brak`, powód `dane`), a dane podane później nic nie zmieniają. Rekord bez żadnego kandydata to też `dane`.
-     Żaden kandydat nie spełnia reguły miejsca albo brak tabel mieszkańców: `brak`, powód `regula`. Wyjątek z wyboru, z budowy gry
-     albo z jej nadrabiania: `brak`, powód `blad`, jedno ostrzeżenie w konsoli i żadnej drugiej próby;
+   - `czeka` od nowej gry do `TICK_STARTU_OSADY` (6:00 drugiego dnia, `tickAt(2, 6)`): na zewnątrz niczego nie ma ani nie liczy
+     (zapis to samo `czeka`). Przed tą chwilą nic nie łączy obu gier (pierwszy kontakt najwcześniej w 4. dniu), więc przebieg nie
+     zależy od tego, kiedy przyszły dane ani kiedy osada policzyła swoją grę, byle w ticku startu miała ją za sobą;
+   - praca na zapas, żeby żadna klatka nie liczyła naraz całej gry osady (około 12000 kroków, rzędu 0,2 do 0,5 s): gdy są dane,
+     gospodarz woła `przygotujCiezkie()` raz (niepodzielne kroki: wybór kwadratu `wybierzOsade`, src/ai/kwadrat.ts, budowa gry
+     `nowaGraAi` z ziarnem z ziarna naszej gry i kwadratu, rozgrzewka, czyli `doOtoczenia` jej świata, którą inaczej liczyłby dopiero
+     pierwszy krok zarządu; razem kilkadziesiąt do ponad 200 ms, więc pod ekranem ładowania) i `przygotuj()` raz na klatkę (jedna
+     porcja: niepodzielny krok albo `KAWALEK_NADRABIANIA` ticków gry osady od 0 do `TICK_STARTU_OSADY`). Praca jest ukryta (`prep`,
+     w podglądzie `przygotowanie`) i poza zapisem: zapis w jej trakcie to `czeka`, a po wczytaniu gospodarz podaje dane od nowa i
+     przygotowanie zaczyna się od początku, z tym samym skutkiem. Nowy rekord danych przed startem zaczyna ją od nowa;
+   - w ticku startu gospodarz woła `krok(nasz tick)` i osada powstaje z tego, co przygotowano, a resztę (wybór, budowę, nadrabianie)
+     robi naraz, jak wtedy, gdy gospodarz nie przygotował niczego; stan jest ten sam bajt w bajt (skrót gry w ticku startu). Wybór idzie
+     dopiero na komplecie danych: `dane()` woła gospodarz raz, gdy wszystkie osiem pobrań sąsiednich kwadratów się skończyło (dobrze
+     albo błędem; nieudane kwadraty po prostu brakują w rekordzie). Bez wywołania do ticku startu osady nie ma (`brak`, powód
+     `dane`), a dane podane później nic nie zmieniają. Rekord bez żadnego kandydata to też `dane`. Żaden kandydat nie spełnia reguły
+     miejsca albo brak tabel mieszkańców: `brak`, powód `regula` (też dopiero w ticku startu, choć wiadomo o tym wcześniej). Wyjątek
+     z wyboru, z budowy gry albo z jej nadrabiania: `brak`, powód `blad`, jedno ostrzeżenie w konsoli i żadnej drugiej próby (wyjątek
+     z przygotowania na zapas wyłącza osadę od razu, bo wiadomo już, że jej nie będzie);
    - `jest`: od startu `krok(nasz tick)` po każdym kroku naszej symulacji robi dokładnie tyle kroków gry osady, ile trzeba, żeby jej tick
      równał się naszemu (zwykle jeden: `krokGry` z silnikiem `silnik`). Krok po kroku w jednej pętli, więc tempo 8×, przewijanie
      (`zm.ff`) i zrzucanie zaległości przez pętlę klatek niczego nie rozjeżdżają: liczy się tylko nasz tick;
@@ -38,7 +47,16 @@
    wpływa na naszą grę: etap 2 nie ma ludzi między grami, handlu ani napadów (zadanie 4 dołoży pierwszy kontakt, jedyny skutek
    w naszą stronę jest po stronie zarządu, `OsadaGry.odkryj`). */
 
-import { type GraAi, krokGry, nowaGraAi, skrotGry, wczytajGre, type ZapisGryAi, zapiszGre } from '../ai/gra.ts';
+import {
+  type GraAi,
+  krokGry,
+  nowaGraAi,
+  skrotGry,
+  tekstBledu,
+  wczytajGre,
+  type ZapisGryAi,
+  zapiszGre,
+} from '../ai/gra.ts';
 import {
   jedzenieWZasiegu,
   kandydaciOsady,
@@ -55,6 +73,7 @@ import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
 import { dayOf } from '../sim/clock.ts';
 import { tickAt } from '../sim/handlarz.ts';
 import { mieszkancyZapisu } from '../sim/osiedle.ts';
+import { doOtoczenia } from '../sim/sasiedzi.ts';
 import type { GameMode } from '../sim/tryb.ts';
 import type { Geo } from '../world/geo.ts';
 import { kluczKwadratu, type Uklad, zKlucza } from '../world/kwadraty.ts';
@@ -64,10 +83,22 @@ import { worldKey } from './zapis.ts';
 /** Tick, w którym osada powstaje: 6:00 drugiego dnia gry (nasz tick; osada nadrabia swoją grę od ticku 0 do niego). */
 export const TICK_STARTU_OSADY: number = tickAt(2, 6);
 
+/** Ile ticków gry osady nadrabia jedno `przygotuj()` (jedno wywołanie na klatkę). Stała liczba, a nie budżet czasu: moduł nie czyta
+    zegara, a liczba klatek do końca nadrabiania wynika tylko z niej (`TICK_STARTU_OSADY / KAWALEK_NADRABIANIA` = 120, czyli 2 s przy
+    60 klatkach na sekundę, a do startu osady jest co najmniej 10 minut gry). Koszt kawałka zmierzony w Node (Przymorze i Lanciego,
+    po rozgrzewce `doOtoczenia`): średnio 0,7 do 1,6 ms, 95. percentyl 3,8 do 5,8 ms, najdroższy kawałek 6,7 do 11,6 ms (jego koszt
+    robi pojedynczy tick zarządu osady, więc mniejsze kawałki go nie zbijają, a większe go tylko podnoszą). */
+export const KAWALEK_NADRABIANIA = 100;
+
 /** Dlaczego osady nie ma: `dane` (do ticku startu nie przyszły wszystkie osiem pobrań albo żadne się nie udało), `regula` (żaden
     kandydat nie spełnia reguły miejsca, brak tabel mieszkańców albo tryb zombie), `blad` (wyjątek przy wyborze, budowie, nadrabianiu
     albo wczytaniu zapisu). */
 export type PowodBraku = 'dane' | 'regula' | 'blad';
+
+/** Co osada ma już zrobione na zapas przed startem (poza zapisem; `PodgladOsady.przygotowanie`): faza to następny krok. `budowa`:
+    kwadrat wybrany, gry jeszcze nie ma; `rozgrzewka`: gra zbudowana (tick 0); `nadrabianie`: kawałki ticków; `gotowa`: gra osady
+    jest w ticku startu i czeka na niego; `bez-osady`: wybór nie dał kwadratu (w ticku startu będzie `brak`, powód `regula`). */
+export type FazaPrzygotowania = 'budowa' | 'rozgrzewka' | 'nadrabianie' | 'gotowa' | 'bez-osady';
 
 /** Co gra wie o osadzie z ostatniego kontaktu: dzień, ludność i budowle w tamtej chwili (`OsadaGry.odkryj`). */
 export interface KontaktOsady {
@@ -113,6 +144,9 @@ export interface PodgladOsady {
   powod?: PowodBraku;
   /** tekst błędu, który zepsuł osadę (tylko `brak` z powodem `blad`; poza zapisem) */
   blad?: string;
+  /** praca na zapas przed startem (tylko `czeka`, od pierwszego kroku przygotowania; poza zapisem): faza i tick gry osady, gdy ją
+      już zbudowano */
+  przygotowanie?: { faza: FazaPrzygotowania; tick?: number };
   klucz?: string;
   odkryta?: boolean;
   kontakt?: KontaktOsady;
@@ -131,8 +165,18 @@ export interface OsadaGry {
   /** Dane kandydatów: wołane raz, gdy wszystkie osiem pobrań sąsiednich kwadratów się skończyło (demo od razu, prawdziwy adres w tle;
       kwadraty, które się nie pobrały, brakują w rekordzie). Po starcie osady i w stanie `brak` bez skutku. */
   dane(kandydaci: Readonly<Record<string, Geo>>): void;
-  /** Krok po kroku naszej symulacji, z naszym tickiem po kroku: przed startem nic, w ticku startu wybór i nadrabianie, potem tyle
-      kroków gry osady, żeby jej tick równał się naszemu. Nie rzuca: błąd gry osady wyłącza ją (`brak`, powód `blad`). */
+  /** Jedna porcja pracy na zapas przed startem osady, wołana raz na klatkę: jeden niepodzielny krok (wybór kwadratu, budowa gry,
+      rozgrzewka) albo kawałek nadrabiania `KAWALEK_NADRABIANIA` ticków gry osady. Nic nie zmienia na zewnątrz (osada `czeka`, zapis to
+      `czeka`) i niczego nie robi bez danych, po starcie ani w `brak`; nie rzuca (błąd to `brak`, powód `blad`). Wynik w ticku
+      startu jest ten sam, co gdy osada robi całą pracę dopiero wtedy, a czego nie zdążono zrobić, dokańcza się w ticku startu. */
+  przygotuj(): void;
+  /** Wszystkie niepodzielne kroki pracy na zapas naraz (wybór kwadratu, budowa gry, rozgrzewka), bez nadrabiania ticków: dla
+      gospodarza, który robi to pod ekranem ładowania, żeby żadna klatka gry nie niosła ich kosztu (razem kilkadziesiąt do ponad
+      200 ms). Nie rzuca. */
+  przygotujCiezkie(): void;
+  /** Krok po kroku naszej symulacji, z naszym tickiem po kroku: przed startem nic, w ticku startu osada powstaje (z tego, co
+      przygotowano na zapas, a resztę robi naraz), potem tyle kroków gry osady, żeby jej tick równał się naszemu. Nie rzuca: błąd
+      gry osady wyłącza ją (`brak`, powód `blad`). */
   krok(nasz: number): void;
   readonly stan: StanOsady['stan'];
   readonly gra: GraAi | null;
@@ -162,13 +206,19 @@ interface Jest {
 }
 type Stan = { stan: 'czeka' } | { stan: 'brak'; powod: PowodBraku; blad?: string } | Jest;
 
-/** Tekst błędu do podglądu: nazwa i komunikat, w jednym wierszu. */
-const opisBledu = (e: unknown): string =>
-  (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).replace(/\s+/g, ' ');
+/** Praca na zapas przed startem (tylko w stanie `czeka`, poza zapisem): wynik ostatniego ukończonego kroku, a następny krok to
+    jego `faza`. Bez niej (`null`) następny krok to wybór kwadratu. Gra w `s` to przyszły stan `jest`; do ticku startu nikt poza
+    osadą jej nie widzi. */
+type Przygotowanie =
+  | { faza: 'budowa'; swiat: SwiatOsady }
+  | { faza: 'rozgrzewka' | 'nadrabianie' | 'gotowa'; s: Jest }
+  | { faza: 'bez-osady' };
 
 class OsadaWGrze implements OsadaGry {
   private s: Stan;
   private kandydaci: Readonly<Record<string, Geo>> | null = null;
+  /** praca na zapas przed startem; tylko w `czeka` (poza zapisem: po wczytaniu zaczyna się od nowa) */
+  private prep: Przygotowanie | null = null;
   private readonly seed: number;
   private readonly tabele: DaneMieszkancow | null;
   private readonly uklad: Uklad;
@@ -203,38 +253,104 @@ class OsadaWGrze implements OsadaGry {
   }
 
   dane(kandydaci: Readonly<Record<string, Geo>>): void {
-    if (this.s.stan === 'czeka') this.kandydaci = kandydaci;
+    if (this.s.stan !== 'czeka') return;
+    this.kandydaci = kandydaci;
+    // praca na zapas liczyła się z poprzedniego rekordu: z nowego zaczyna się od nowa
+    this.prep = null;
+  }
+
+  przygotuj(): void {
+    try {
+      this.porcja();
+    } catch (e) {
+      this.zepsuta(e, 'przy przygotowaniu osady');
+    }
+  }
+
+  przygotujCiezkie(): void {
+    try {
+      while (this.czekaCiezki()) this.porcja();
+    } catch (e) {
+      this.zepsuta(e, 'przy przygotowaniu osady');
+    }
   }
 
   krok(nasz: number): void {
+    let gdzie = 'w trakcie gry';
     try {
       const s = this.s;
       if (s.stan === 'czeka') {
-        if (nasz >= TICK_STARTU_OSADY) this.start(nasz);
+        if (nasz >= TICK_STARTU_OSADY) {
+          gdzie = 'przy starcie osady';
+          this.start(nasz);
+        }
       } else if (s.stan === 'jest') this.graj(s, nasz);
     } catch (e) {
-      this.zepsuta(e, 'w trakcie gry');
+      this.zepsuta(e, gdzie);
     }
   }
 
-  /** Start w ticku startu (albo później, gdy zapis stanu `czeka` wczytano po nim): wybór kwadratu, budowa gry i nadrabianie. */
+  /** czy są dane kandydatów, z których da się wybierać (pusty rekord to brak danych: w ticku startu `brak`, powód `dane`) */
+  private maDane(): boolean {
+    return !!this.kandydaci && Object.keys(this.kandydaci).length > 0;
+  }
+
+  /** czy następny krok pracy na zapas jest niepodzielny (wybór kwadratu, budowa gry albo rozgrzewka) i da się go zrobić */
+  private czekaCiezki(): boolean {
+    if (this.s.stan !== 'czeka' || !this.maDane()) return false;
+    const faza = this.prep?.faza;
+    return faza === undefined || faza === 'budowa' || faza === 'rozgrzewka';
+  }
+
+  /** Jedna porcja pracy na zapas (rzuca przy błędzie, łapią ją `przygotuj` i `przygotujCiezkie`): wybór kwadratu, budowa jego gry,
+      rozgrzewka albo kawałek nadrabiania. Te same porcje, tylko pod rząd, robi `start`, jeśli nie zdążono ich zrobić przed nim. */
+  private porcja(): void {
+    const kandydaci = this.kandydaci;
+    if (this.s.stan !== 'czeka' || !kandydaci || !this.maDane()) return;
+    const p = this.prep;
+    if (!p) {
+      const swiat = wybierzOsade(this.seed, kandydaci, this.tabele, this.uklad);
+      this.prep = swiat ? { faza: 'budowa', swiat } : { faza: 'bez-osady' };
+    } else if (p.faza === 'budowa') {
+      const swiat = p.swiat;
+      const gra = nowaGraAi(swiat.world, ziarnoOsady(this.seed, swiat.sx, swiat.sy), swiat.opcje);
+      const { pomiar: _pomiar, ...bezPomiaru } = swiat;
+      this.prep = { faza: 'rozgrzewka', s: { stan: 'jest', swiat: bezPomiaru, gra, odkryta: false, odwolania: 0 } };
+    } else if (p.faza === 'rozgrzewka') {
+      // pierwszy krok zarządu osady liczy `doOtoczenia` świata (kilkadziesiąt ms, raz na świat): tu, osobno, zamiast w pierwszym
+      // kawałku nadrabiania; wynik to cecha świata, więc gra jest ta sama (sasiedzi.ts, `doOtoczenia`)
+      doOtoczenia(p.s.gra.sim.w);
+      this.prep = { faza: 'nadrabianie', s: p.s };
+    } else if (p.faza === 'nadrabianie') {
+      const g = p.s.gra;
+      this.graj(p.s, Math.min(TICK_STARTU_OSADY, g.sim.st.tick + KAWALEK_NADRABIANIA));
+      if (g.sim.st.tick >= TICK_STARTU_OSADY || p.s.upadla) this.prep = { faza: 'gotowa', s: p.s };
+    }
+  }
+
+  /** Start w ticku startu (albo później, gdy zapis stanu `czeka` wczytano po nim): to, czego nie zrobiono na zapas (wybór kwadratu,
+      budowa gry, rozgrzewka, nadrabianie), robi się teraz naraz, i osada jest. Efekt ten sam, co gdyby wszystko poszło dopiero tu. */
   private start(nasz: number): void {
     const kandydaci = this.kandydaci;
-    this.kandydaci = null;
-    if (!kandydaci || !Object.keys(kandydaci).length) {
+    if (!kandydaci || !this.maDane()) {
+      this.kandydaci = null;
+      this.prep = null;
       this.s = { stan: 'brak', powod: 'dane' };
       return;
     }
-    const swiat = wybierzOsade(this.seed, kandydaci, this.tabele, this.uklad);
-    if (!swiat) {
+    let p = this.prep;
+    while (!p || (p.faza !== 'gotowa' && p.faza !== 'bez-osady')) {
+      this.porcja();
+      p = this.prep;
+    }
+    this.kandydaci = null;
+    this.prep = null;
+    if (p.faza === 'bez-osady') {
       this.s = { stan: 'brak', powod: 'regula' };
       return;
     }
-    const gra = nowaGraAi(swiat.world, ziarnoOsady(this.seed, swiat.sx, swiat.sy), swiat.opcje);
-    const { pomiar: _pomiar, ...bezPomiaru } = swiat;
-    const s: Jest = { stan: 'jest', swiat: bezPomiaru, gra, odkryta: false, odwolania: 0 };
-    this.s = s;
-    this.graj(s, nasz);
+    this.s = p.s;
+    this.graj(p.s, nasz);
   }
 
   /** Gra osady do ticku `doTicku`, z obsługą końca gry po każdym kroku: odwołanie to nowy zarząd, reszta to upadek. */
@@ -258,8 +374,9 @@ class OsadaWGrze implements OsadaGry {
   /** Błąd w osadzie nie może zepsuć naszej gry: osada wyłącza się (`brak`, powód `blad`), jedno ostrzeżenie, bez drugiej próby. */
   zepsuta(e: unknown, gdzie: string): void {
     console.warn(`Osada AI: błąd ${gdzie}, gra idzie dalej bez osady`, e);
-    this.s = { stan: 'brak', powod: 'blad', blad: opisBledu(e) };
+    this.s = { stan: 'brak', powod: 'blad', blad: tekstBledu(e) };
     this.kandydaci = null;
+    this.prep = null;
   }
 
   odkryj(kontakt: KontaktOsady): void {
@@ -288,7 +405,12 @@ class OsadaWGrze implements OsadaGry {
 
   podglad(): PodgladOsady {
     const s = this.s;
-    if (s.stan === 'czeka') return { stan: 'czeka' };
+    if (s.stan === 'czeka') {
+      const p = this.prep;
+      if (!p) return { stan: 'czeka' };
+      const tick = 's' in p ? { tick: p.s.gra.sim.st.tick } : {};
+      return { stan: 'czeka', przygotowanie: { faza: p.faza, ...tick } };
+    }
     if (s.stan === 'brak') return { stan: 'brak', powod: s.powod, ...(s.blad ? { blad: s.blad } : {}) };
     return {
       stan: 'jest',

@@ -34,7 +34,7 @@ import { START_WKURZENIA, START_ZAUFANIA } from '../../src/ai/odwolanie.ts';
 import { silnik, silnikPodstawowy } from '../../src/ai/silnik.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { newGov } from '../../src/gov/zarzad.ts';
-import { dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
+import { dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { tickAt } from '../../src/sim/handlarz.ts';
 import {
   ludnoscSpisu2021,
@@ -326,6 +326,35 @@ describe('dane kandydatów', () => {
     expect(s.osada).toBe(wzorzec.hash5.osada);
     // nasza gra też ta sama (osada niczego w niej nie zmienia)
     expect(s.nasza).toBe(wzorzec.hash5.nasza);
+  });
+
+  it('przygotowanie na zapas co sekundę gry (jedno przygotuj() na klatkę): osada czeka do ticku startu, a skróty obu gier po 5 dobach są równe wzorcowi', {
+    timeout: 300_000,
+  }, () => {
+    const h = nowyGospodarz();
+    const osada = h.osada!;
+    graj(h, 100);
+    osada.dane(demo.kwadraty);
+    osada.przygotujCiezkie();
+    let gotowaOd = -1;
+    while (h.nasza.sim.st.tick < TICK_STARTU_OSADY - 1) {
+      krokGospodarza(h);
+      if (h.nasza.sim.st.tick % TICKS_PER_SECOND === 0) osada.przygotuj();
+      if (gotowaOd < 0 && osada.podglad().przygotowanie?.faza === 'gotowa') gotowaOd = h.nasza.sim.st.tick;
+      expect(osada.stan).toBe('czeka');
+    }
+    // 120 kawałków po jednym na sekundę gry: gotowa długo przed startem, a na zewnątrz dalej czeka i zapisuje się jako czeka
+    expect(gotowaOd).toBeGreaterThan(0);
+    expect(gotowaOd).toBeLessThan(TICK_STARTU_OSADY - 5 * TICKS_PER_HOUR);
+    expect(osada.podglad().przygotowanie).toEqual({ faza: 'gotowa', tick: TICK_STARTU_OSADY });
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'czeka' });
+    expect(osada.gra).toBeNull();
+    krokGospodarza(h);
+    expect(osada.stan).toBe('jest');
+    expect(osada.gra!.sim.st.tick).toBe(h.nasza.sim.st.tick);
+    graj(h, 5 * TICKS_PER_DAY);
+    bezBledow(h);
+    expect(skroty(h)).toEqual(wzorzec.hash5);
   });
 
   it('bez danych do ticku startu: zapisz() daje { stan: brak, powod: dane }, dane podane później nic nie zmieniają', () => {

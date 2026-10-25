@@ -355,10 +355,11 @@ function wybierzPierwszyDozwolony(p: unknown, r: Rece): void {
   r.wybierz(Math.max(0, pierwszy));
 }
 
-/** Tekst błędu rzuconego przez decydenta: nazwa i komunikat bez stosu (`Error: …`), dla innych wartości ich napis; w jednym
+/** Tekst błędu rzuconego przez decydenta (a w grze w przeglądarce także przez wybór kwadratu, budowę i kroki osady, które
+    opisuje tak samo: `PodgladOsady.blad` w src/ui/osada.ts): nazwa i komunikat bez stosu (`Error: …`), dla innych wartości ich napis; w jednym
     wierszu (znaki nowej linii z wieloliniowego komunikatu zamieniają się na pojedyncze spacje) i ucięty do `MAX_TEKSTU_BLEDU`
     znaków. Sama obsługa błędu nie może rzucić, więc wartość bez napisu (zły `toString`) dostaje opis zastępczy. */
-function tekstBledu(e: unknown): string {
+export function tekstBledu(e: unknown): string {
   let tekst: string;
   try {
     tekst = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
