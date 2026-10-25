@@ -31,6 +31,8 @@ import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
 import { tekstyShots } from './shots-teksty.ts';
+import { telefonShots } from './shots-telefon.ts';
+import { ukladShots } from './shots-uklad.ts';
 import { wikiShots } from './shots-wiki.ts';
 
 const KOD = process.argv.includes('--kod');
@@ -751,6 +753,8 @@ const SHOTS: Shot[] = [
   // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
+  ...ukladShots(OUT),
+  ...telefonShots(OUT),
   // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
   // dom i blok; każdy scenariusz sprawdza układ, atrybucję map i słowa z bloku w domu
   ...wikiShots(OUT),
@@ -6365,7 +6369,9 @@ const SHOTS: Shot[] = [
         for (const p of core) if (p.job?.t === 'research') p.job = null;
         const inny = core[core.length - 1];
         const ok = sim.startResearch(inny, true);
-        zm.setCam(lab.x + 1, lab.y + 0.5, 1.4);
+        // kamera półtora kafelka wyżej niż pracownia: żaden z zaznaczanych (jeden stoi siedem kafelków nad stołem) nie wypada
+        // pod górnym paskiem, który ma od 1100 px stałe 105 px (kliknięcie w pionka pod paskiem trafia w pasek)
+        zm.setCam(lab.x + 1, lab.y - 1, 1.4);
         return {
           lab: { x: lab.x, y: lab.y },
           inny: inny.id,
@@ -10142,6 +10148,16 @@ async function zrzut(shot: Shot): Promise<void> {
       // strona bez pamięci: gra wybierze język domyślny
     }
   }, shot.lang ?? 'pl');
+  // błędy okna „ResizeObserver loop completed with undelivered notifications” nie są wyjątkami, więc Playwright ich nie zgłasza
+  // (`pageerror`), a serwer Vite pisze je tylko jako „[Unhandled error]”: liczy je słuchacz zdarzenia `error` z początku strony,
+  // a scenariusz z choć jednym pada (src/main.ts nie obserwuje okienka celów, tylko mierzy je przy przepisywaniu treści)
+  await page.addInitScript(() => {
+    const okno = window as unknown as { __zmRo: string[] };
+    okno.__zmRo = [];
+    window.addEventListener('error', (e) => {
+      if (/ResizeObserver/.test(e.message)) okno.__zmRo.push(e.message);
+    });
+  });
   // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
   if (KOD)
     await page.addInitScript(() => {
@@ -10173,6 +10189,10 @@ async function zrzut(shot: Shot): Promise<void> {
     }
     const file = path.join(OUT, `${shot.name}.png`);
     await page.screenshot({ path: file });
+    const ro = await page
+      .evaluate(() => (window as unknown as { __zmRo?: string[] }).__zmRo?.length ?? 0)
+      .catch(() => 0);
+    if (ro) errors.push(`${ro}× „ResizeObserver loop completed with undelivered notifications”`);
     console.log(`${shot.name}: ${Date.now() - t0} ms${errors.length ? `, BŁĘDY: ${errors.join(' | ')}` : ''}`);
     // błąd na stronie to nieudany zrzut, także dla CI
     if (errors.length) process.exitCode = 1;
@@ -10605,6 +10625,12 @@ function druzynaShots(): Shot[] {
     żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
     z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
     prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
+/** przycisk karty mieszkańca tylko do odczytu, który nie wydaje polecenia: historia, imię i (na telefonie) rozwijanie potrzeb;
+    funkcja, nie stała, bo scenariusze karty ruszają, zanim moduł dojdzie do stałych z końca pliku */
+function bezRozkazu(przycisk: string | undefined): boolean {
+  return przycisk === 'story' || przycisk === 'imie' || przycisk === 'potrzeby';
+}
+
 function kartaShots(): Shot[] {
   const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
   const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
@@ -10913,7 +10939,7 @@ function kartaShots(): Shot[] {
     if (tap) await page.touchscreen.tap(b.x, b.y);
     else await page.mouse.click(b.x, b.y);
     const m = await sprawdz(page, r.name);
-    if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+    if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
     console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
     await historia(page, nazwa, tap);
     if (!tap) await page.mouse.move(b.x + 400, b.y - 250);
@@ -11243,7 +11269,7 @@ function kartaShots(): Shot[] {
         const b = await ekran(page, r.id);
         await page.mouse.click(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         if ((await cmds(page)) !== przed) throw new Error('kliknięcie mieszkańca wysłało polecenie');
         // zaznaczenie zostało: prawy przycisk na ziemi daje polecenie, a nie „Najpierw zaznaczcie”
         await page.mouse.click(b.x + 120, b.y + 90, { button: 'right' });
@@ -11383,7 +11409,7 @@ function kartaShots(): Shot[] {
         const b = await naPionku(r.id);
         await page.touchscreen.tap(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         await historia(page, 'karta-mieszkanca-telefon', true);
       },
     },
@@ -14550,6 +14576,9 @@ function pietraShots(): Shot[] {
       await podstawAtrape(page);
       await page.goto(`${base}?demo=${DEMO_ATRAPA}&pietra=1&speed=0&cam=${cam}`);
       await waitIdle(page);
+      // licznik klatek na pasku (`.fps`) zmienia się sam, a obrys budynku z zapasem sięga pod pasek (dwa wiersze od 1100 px, 105 px):
+      // bez tego dwa zrzuty tego samego budynku różnią się cyframi licznika (0 i 38 kl/s), nie budynkiem
+      await page.addStyleTag({ content: '.fps { visibility: hidden !important; }' });
       /** widoczne w całości budynki z wyglądem: obrys z zapasem na ozdoby (wieża nad dachem, portyk przed frontem) */
       const lista = await page.evaluate(() => {
         const zm = window.zm!;

@@ -341,6 +341,12 @@ export function wikiShots(out: string): ShotWiki[] {
       lang: 'en',
       run: async (page, base) => {
         await start(page, base, GRA);
+        // zwinięta linia stanu: stuknięcie rozwija pasek i nie otwiera wiki (src/ui/telefon.ts); artykuł otwiera dopiero kafelek
+        // rozwiniętego paska
+        await page.tap('#stats');
+        await page.waitForFunction(() => !document.getElementById('stats')!.hasAttribute('data-zwiniete'));
+        if (await page.evaluate(() => !document.getElementById('modal')!.hidden))
+          throw new Error('stuknięcie w zwiniętą linię stanu otworzyło wiki');
         await page.tap('#sMats');
         await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zasob:odzysk"]');
         await sprawdzUklad(page, 'artykuł z czipa na telefonie');
@@ -472,7 +478,12 @@ export function wikiShots(out: string): ShotWiki[] {
       run: async (page, base) => {
         await start(page, base, GRA);
         await page.tap('#lista .lp');
-        await page.waitForSelector('#card .need[data-wiki="potrzeba:food"]');
+        // zwinięte potrzeby (telefon): stuknięcie w linię rozwija paski i nie otwiera wiki; artykuł otwiera dopiero pasek rozwiniętych
+        await page.waitForSelector('#card .potrzeby-linia');
+        await page.tap('#card .potrzeby-linia');
+        await page.waitForSelector('#card .need[data-wiki="potrzeba:food"]', { state: 'visible' });
+        if (await page.evaluate(() => !document.getElementById('modal')!.hidden))
+          throw new Error('stuknięcie w linię potrzeb otworzyło wiki');
         await page.tap('#card .need[data-wiki="potrzeba:food"]');
         await page.waitForSelector('#sheet.wiki .wiki-art[data-art="potrzeba:food"]');
         await sprawdzUklad(page, 'artykuł o najedzeniu z karty osoby na telefonie');

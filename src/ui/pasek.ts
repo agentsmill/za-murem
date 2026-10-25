@@ -3,7 +3,9 @@
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. Wartości i podpowiedzi
    (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. Skąd biorą się deski, złom i części,
    mówią słowa miejsca (`szukanie.zrodla`, zdania „Pochodzą z …”). Podpis pory roku nad paskiem (`sezonPodpis`) idzie
-   z zegara gry, nie ze stałego napisu: main.ts wpisuje go przy każdym odświeżeniu paska. */
+   z zegara gry, nie ze stałego napisu: main.ts wpisuje go przy każdym odświeżeniu paska. Na telefonie (okno węższe niż 768 px)
+   pasek stanu jest zwinięty do kafelków pilnych: `oznaczPilne` daje im klasę `pilne` (reguła w src/ui/telefon.ts, wygląd
+   w src/style.css). */
 
 import { SEASONS_EN } from '../content/data.en.ts';
 import { L, type Tx, tx } from '../core/jezyk.ts';
@@ -14,6 +16,7 @@ import type { SimSnapshot } from '../sim/snapshot.ts';
 import { WARM_ENOUGH } from '../sim/tutorial.ts';
 import { FENCE_BEARS } from '../sim/zombie.ts';
 import { deg, manyEn, num } from './tekst.ts';
+import { MALY_TELEFON_MQ, pilneKafelki } from './telefon.ts';
 
 export interface Stat {
   id: string;
@@ -210,6 +213,18 @@ export function statsOf(
 }
 
 const shown = new Map<string, string>();
+
+/** Kafelki, których układ nie pokazuje nigdy (nie dlatego, że pasek jest zwinięty): do 640 px deski, złom i części są jednym
+    kafelkiem `sMats`, od 641 px trzema osobnymi, a `sMats` jest schowany (reguły `#sMats` i `#sBoards` w src/style.css). */
+export const ukryteKafelki = (): readonly string[] =>
+  globalThis.matchMedia?.(MALY_TELEFON_MQ).matches ? ['sBoards', 'sScrap', 'sParts'] : ['sMats'];
+
+/** Oznacza klasą `pilne` kafelki, które zwinięty pasek stanu pokazuje na telefonie (src/ui/telefon.ts, `pilneKafelki`). Woła się
+    ją po `renderStats`, bo ten przepisuje klasę kafelka przy każdej zmianie; klasa zmienia się tylko wtedy, gdy trzeba. */
+export function oznaczPilne(list: readonly Stat[], ukryte: readonly string[] = ukryteKafelki()): void {
+  const pilne = pilneKafelki(list.filter((s) => !ukryte.includes(s.id)).map((s) => ({ id: s.id, level: s.level })));
+  for (const s of list) document.getElementById(s.id)?.classList.toggle('pilne', pilne.has(s.id));
+}
 
 /** wpisuje wartości do pasku (span.stat > b) tylko po zmianie */
 export function renderStats(list: Stat[]): void {
