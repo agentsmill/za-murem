@@ -1,4 +1,4 @@
-/* Za Murem 0.4: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
+/* Za Murem 1.0: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
    po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
    wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
@@ -38,7 +38,16 @@ import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { wyslijWyprawe } from './gov/dzienne.ts';
-import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
+import {
+  BLOK,
+  placeOfWorld,
+  type Words,
+  type WordsEn,
+  wordsEn,
+  wordsEnOfWorld,
+  wordsOf,
+  wordsOfWorld,
+} from './gov/miejsce.ts';
 import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import { lancuchyZAdresu } from './gov/watki.ts';
@@ -140,7 +149,7 @@ import {
   zmianaZPol,
   zTejOsobyGeneratora,
 } from './ui/imiona.ts';
-import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
+import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
@@ -169,7 +178,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
-import { oznaczPilne, renderStats, statsOf } from './ui/pasek.ts';
+import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
   nastepnePietro,
@@ -198,10 +207,13 @@ import {
   type ZdarzenieUi,
   zdarzenieUi,
 } from './ui/sciezka.ts';
+import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import { PASEK_KEY, POTRZEBY_KEY, TELEFON_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
+import { utworzWiki } from './ui/wiki-okno.ts';
+import { wikiCtx } from './ui/wiki-typy.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import {
   adresStartowy,
@@ -302,10 +314,11 @@ declare global {
       /** widok ścieżki celów (okazja, rozdział, drogi po ostatnim rozdziale) po kroku ścieżki na stanie z tej chwili; null
           bez gry */
       cele: () => WidokSciezki | null;
-      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick i liczniki „od otwarcia”);
-          zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten jest
-          skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, jakby rozdział otwarto wcześniej (zapas celu „nowi”
-          w trybie zombie po trzech dobach bez grania ich) */
+      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick, czas przy ekranie i liczniki
+          „od otwarcia”); zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten
+          jest skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, a czas przy ekranie o tyle, ile te doby zajmują graczowi
+          w tempie 1× (około 627 s na dobę, bo noc po karcie biegnie 6×), jakby rozdział otwarto wcześniej (zapas celu „nowi”
+          w trybie zombie po trzech dobach, czyli po `EKRAN_NOWI_ZAPAS`, bez grania ich) */
       rozdzial: (k: KluczRozdzialu, dobyTemu?: number) => void;
       /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
           nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
@@ -1263,7 +1276,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
 function showEpilog(droga: Droga) {
   const g = gov;
   if (!g || !sim) return;
-  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input())), (act) => {
+  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input()), words, wordsE), (act) => {
     if (act === 'zw-dalej') {
       grajDalej(g);
       decided();
@@ -1963,6 +1976,8 @@ function hud(now: number) {
   const st = sim.st;
   $('hDay').textContent = L(`Dzień ${dayOf(st.tick)}`, `Day ${dayOf(st.tick)}`);
   $('hTime').textContent = clockOf(st.tick);
+  // pora roku z zegara gry (dotąd stały napis „jesień 2051” z index.html, także w zimie)
+  $('hSeason').textContent = tr(sezonPodpis(st.tick));
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   lastStock = snap.stock;
@@ -2089,6 +2104,8 @@ function odczytCelow(snap: SimSnapshot): OdczytCelow {
       wejscie ??= gov ? input() : null;
       return wejscie;
     },
+    // czas przy ekranie z ułamkiem: zapas celu „Przyjmijcie kogoś nowego” w zombie mierzy go, nie doby gry (tempo kart idzie z niego)
+    ekran: screen,
     touch: touchUI,
     words,
     wordsEn: wordsE,
@@ -2343,6 +2360,7 @@ function showMenu() {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
+      else if (act === 'menu-wiki') wiki.otworz(null, true);
       else if (act === 'menu-zwyciestwo') showDrogi();
       else if (act === 'menu-start') {
         save();
@@ -2363,6 +2381,30 @@ function showHelp() {
     nextPrompt,
   );
 }
+/* ---------- wiki (src/ui/wiki.ts): z Menu i z czipów górnego paska ---------- */
+const wiki = utworzWiki({
+  modal,
+  root: $('modal'),
+  // artykuły czytają słownik miejsca siedziby; wiki to dokumentacja, nie widok na żywo (żadnego stanu symulacji)
+  ctx: () => wikiCtx(sim ? placeOfWorld(sim.w) : BLOK, touchUI, !!sim && modeOf(sim.st) === 'zombie'),
+  pomoc: showHelp,
+  wroc: showMenu,
+  zamknij: () => {
+    modal.close();
+    nextPrompt();
+  },
+  dismiss: nextPrompt,
+  powtorz: (f) => {
+    sheetAgain = f;
+  },
+});
+// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu
+wiki.czipy(() => {
+  if (!sim || modal.open || badaniaOtwarta()) return false;
+  pauseGame();
+  ctx.close();
+  return true;
+});
 // przełącznik języka w Menu: kliknięcie zmienia język, a okno rysuje się od nowa przez słuchacza niżej
 podepnijPrzelacznik($('modal'));
 $('btnMenu').onclick = () => {
@@ -2405,9 +2447,12 @@ function alarmButton(st: SimState) {
   const b = $('btnAlarm');
   const on = alarmOn(st);
   const text = on ? L(ALARM_OFF, ALARM_OFF_EN) : tr(ALARM_IDLE.tekst);
-  if (b.textContent === text) return;
+  // podpowiedź bez alarmu ze słowami miejsca (w domu komitet): napis statyczny ma wersję z bloku, a nalozStatyczne()
+  // przywraca go po zmianie języka, więc porównanie obejmuje też podpowiedź
+  const title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(alarmTytul(words, wordsE));
+  if (b.textContent === text && b.title === title) return;
   b.textContent = text;
-  b.title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(ALARM_IDLE.title);
+  b.title = title;
   b.classList.toggle('on', on);
   b.setAttribute('aria-pressed', String(on));
 }
@@ -3135,6 +3180,7 @@ const pracaPanel = new PracaPanel($('pracaPanel'), $('app'), {
     return nalozPolecenia(widokPracy(snap, { kol, zlecen: kol ? sim.ileZlecen(kol) : 0, touch: touchUI }), sim.st.cmds);
   },
   en: () => jezyk() === 'en',
+  slowa: () => ({ w: words, e: wordsE }),
   touch: touchUI,
   onPrio: (osoba, rodzaj, prio) => sim?.push({ t: 'prio', ids: [], osoba, rodzaj, prio }),
   onProg: (co, n) => sim?.push({ t: 'prog', ids: [], co, n }),
@@ -3939,11 +3985,13 @@ zastosujPotrzeby();
     },
     rozdzial: (k, dobyTemu = 0) => {
       if (!sim) return;
-      // jak otwarcie rozdziału przez krok ścieżki: tick i liczniki „od otwarcia” z tej chwili (tick cofnięty o `dobyTemu` dób)
+      // jak otwarcie rozdziału przez krok ścieżki: tick, czas przy ekranie i liczniki „od otwarcia” z tej chwili (tick cofnięty
+      // o `dobyTemu` dób, a czas przy ekranie o tyle, ile te doby zajmują graczowi w tempie 1×: próg zapasu dzielony na jego doby)
       sciezka = {
         ...sciezka,
         rozdzial: k,
         od: sim.st.tick - Math.round(dobyTemu * TICKS_PER_DAY),
+        odEkran: screen - (dobyTemu * EKRAN_NOWI_ZAPAS) / DOBY_NOWI_ZAPAS,
         start: licznikiStartu(sim.st, gov),
       };
       const snap = snapNow();

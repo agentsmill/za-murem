@@ -382,7 +382,7 @@ describe('kradzież z głodu', () => {
         .map((c) => c.label),
     ).toEqual(['Wyrzucić sprawcę z osiedla', 'Przymknąć oko']);
     expect(ev('kradziez').text(h, d).en).toBe(
-      'Overnight, someone made off with 5 food from the basement of Atrapia 7. The footprints lead to a ground-floor flat.',
+      'Overnight, someone made off with 5 portions of food from the basement of Atrapia 7. The footprints lead to a ground-floor flat.',
     );
     // wyrzucenie bez sprawcy po staremu: jeden mieszkaniec mniej
     const { fx } = wybierz('kradziez', d, 0, bez);

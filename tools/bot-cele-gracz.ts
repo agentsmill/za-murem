@@ -104,6 +104,8 @@ export function odczyt(g: Gra): OdczytCelow {
       we ??= wejscie(g);
       return we;
     },
+    // czas przy ekranie: bot gra w tempie 1×, więc sekunda przy ekranie to 20 ticków
+    ekran: st.tick / TICKS_PER_SECOND,
     touch: false,
     words: g.words,
     wordsEn: g.wordsEn,

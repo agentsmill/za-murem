@@ -6,6 +6,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
+import { BLOK, wordsEn, wordsOf } from '../../src/gov/miejsce.ts';
 import {
   PROG_MAX,
   PROGI_DOMYSLNE,
@@ -20,12 +21,12 @@ import { type SimPerson, snapshot } from '../../src/sim/snapshot.ts';
 import { personCard } from '../../src/ui/karta.ts';
 import { helpSheet } from '../../src/ui/okna.ts';
 import {
-  BEZ_OGNIA,
   KROK_PROGU,
   nalozPolecenia,
   nastepnyPriorytet,
   nazwaRodzaju,
   opisRodzaju,
+  ostrzezenieBezOgnia,
   pracaPanelHtml,
   type WidokPracy,
   type WierszPracy,
@@ -37,6 +38,9 @@ import { polskieSlowa } from './po-angielsku.ts';
 import { demoWorld } from './sasiedzi-pomoc.ts';
 
 afterEach(() => ustawJezyk('pl'));
+
+/** ostrzeżenie „nikt nie ma Ognia” w bloku (bez słów miejsca panel mówi jak w bloku) */
+const BEZ_OGNIA = ostrzezenieBezOgnia(wordsOf(BLOK), wordsEn(BLOK));
 
 const prio = (...p: Priorytet[]): Priorytet[] => {
   const out: Priorytet[] = [1, 2, 3, 3, 2, 3, 3, 3, 0];

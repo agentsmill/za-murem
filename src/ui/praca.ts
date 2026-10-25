@@ -5,7 +5,8 @@
    - `widokPracy(snap, …)` składa `WidokPracy` z odczytu (`SimSnapshot`): wiersz na osobę zarządu po numerze osoby,
      progi i widoczne rodzaje. `nalozPolecenia` nakłada na widok polecenia ustawień, które czekają w kolejności
      symulacji (gra na pauzie nie wykonuje kroku, a panel ma się zmienić od razu).
-   - `pracaPanelHtml(v, en)` robi treść: lead (zdanie o strzałce „za siatkę” przy osobie mówi, że jest domyślnie
+   - `pracaPanelHtml(v, en, w?, e?)` robi treść (słowa miejsca `w`, `e` ze słownika src/gov/miejsce.ts, jak w oknach z okna.ts:
+     w domu komitet zamiast zarządu i dom zamiast mieszkań; bez nich jak w bloku): lead (zdanie o strzałce „za siatkę” przy osobie mówi, że jest domyślnie
      włączona w trybie zwykłym, a wyłączona w zombie; stan każdej osoby z odczytu to `aria-pressed` przycisku
      `data-zasiatke`; na komputerze z regułą klawiatury: Tab i strzałki wybierają komórkę,
      cyfry 0–4 ustawiają priorytet, spacja i Enter zmieniają o jeden, a po kliknięciu myszą spacja i 1–4 znów
@@ -13,7 +14,7 @@
      liczba, plus po 5) i tabelę, w której wiersz to osoba, a kolumna to rodzaj pracy w kolejności `RODZAJE`. W trybie
      zombie nad tabelą stoi stała linia `.pr-uwaga` o szwendaczach za siatką (podpowiedź z `say()` chowa się na telefonie
      pod panelem, a ostrzeżenie ma być widać tam, gdzie jest przełącznik „za siatkę”). Gdy nikt w zarządzie nie ma
-     Ognia (priorytet 0 i bez stałego zajęcia Ogień), nad tabelą stoi też linia `data-uwaga="ogien"` (`BEZ_OGNIA`).
+     Ognia (priorytet 0 i bez stałego zajęcia Ogień), nad tabelą stoi też linia `data-uwaga="ogien"` (`ostrzezenieBezOgnia`).
      Znaczniki, na których stoją zrzuty i delegacja: komórka `data-prio="<osoba>:<rodzaj>"` z cyfrą 1–4 albo pustą
      treścią (nie robi), `data-prog="<co>:<+n|-n>"`, `data-zasiatke="<osoba>"` i nagłówek `data-kol="<rodzaj>"`.
    - Kolumna `badania` jest tylko wtedy, gdy rodzaj jest w `widoczne` (gałąź z badaniami); dzidy tylko w trybie zombie.
@@ -22,6 +23,7 @@
 
 import { zawodEn } from '../content/data.en.ts';
 import { type Tx, tx } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import {
   PROG_MAX,
   PROGI_DOMYSLNE,
@@ -80,17 +82,19 @@ const NAZWY: Record<RodzajPracy, Tx> = {
   badania: tx('Badania', 'Research'),
 };
 
-const OPISY: Record<RodzajPracy, Tx> = {
+/** opisy rodzajów pracy; rodzaj ze słowem miejsca (naprawy w lokum zarządu) ma funkcję ze słownika wspólnoty */
+const OPISY: Record<RodzajPracy, Tx | ((w: Words, e: WordsEn) => Tx)> = {
   ogien: tx('Dokładanie do kozy i noszenie drewna do składu.', 'Feeding the stove and carrying wood to the woodpile.'),
   kuchnia: tx('Gotowanie, kiedy trzeba.', 'Cooking when it’s needed.'),
   budowa: tx(
     'Budowa według planów i dokańczanie wspólnego płotu.',
     'Building the plans and finishing the shared fence.',
   ),
-  naprawy: tx(
-    'Łatanie dziur w siatce i naprawy w naszych mieszkaniach.',
-    'Patching holes in the fence and repairs in our flats.',
-  ),
+  naprawy: (w, e) =>
+    tx(
+      `Łatanie dziur w siatce i naprawy ${w.lokal.wiele}.`,
+      `Patching holes in the fence and repairs in ${e.lokal.wiele}.`,
+    ),
   drwal: tx(
     'Ścinanie drzew, póki drewna jest mniej niż próg.',
     'Chopping trees while there is less wood than the stock level.',
@@ -152,16 +156,26 @@ export const ZA_SIATKE_ZOMBIE: Tx = tx(
 );
 
 /** ostrzeżenie w panelu Pracy, gdy nikt w zarządzie nie ma Ognia (priorytet 0 i bez stałego zajęcia Ogień): jedna
-    pomyłka w kolumnie nie może po cichu zgasić kozy */
-export const BEZ_OGNIA: Tx = tx(
-  'Nikt w zarządzie nie ma włączonego Ognia: nikt sam nie dołoży do kozy.',
-  'Nobody on the board has Fire switched on: nobody will feed the stove on their own.',
-);
+    pomyłka w kolumnie nie może po cichu zgasić kozy. Zarząd (w domu komitet) ze słownika miejsca. */
+export const ostrzezenieBezOgnia = (w: Words, e: WordsEn): Tx =>
+  tx(
+    `Nikt w ${w.zarzad.l} nie ma włączonego Ognia: nikt sam nie dołoży do kozy.`,
+    `Nobody on ${e.krotko} has Fire switched on: nobody will feed the stove on their own.`,
+  );
 
 /** krótka nazwa rodzaju pracy (nagłówek kolumny, karta osoby) */
 export const nazwaRodzaju = (r: RodzajPracy, en: boolean): string => wJezyku(NAZWY[r], en);
-/** jedno zdanie o tym, co obejmuje rodzaj pracy (dymek nagłówka i wiersz pod tabelą) */
-export const opisRodzaju = (r: RodzajPracy, en: boolean): string => wJezyku(OPISY[r], en);
+/** jedno zdanie o tym, co obejmuje rodzaj pracy (dymek nagłówka i wiersz pod tabelą); słowa miejsca jak w oknach
+    z okna.ts, bez nich jak w bloku */
+export const opisRodzaju = (
+  r: RodzajPracy,
+  en: boolean,
+  w: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): string => {
+  const o = OPISY[r];
+  return wJezyku(typeof o === 'function' ? o(w, e) : o, en);
+};
 
 /* ---------- priorytet ---------- */
 
@@ -248,7 +262,12 @@ const IKONA_ZA_SIATKE =
 
 /** Treść panelu Pracy: lead, „Trzymać w zapasie”, linia o wybranej kolumnie i tabela osób. Nagłówek (kicker, ✕) robi
     panelpracy.ts. */
-export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
+export function pracaPanelHtml(
+  v: WidokPracy,
+  en: boolean,
+  w: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): string {
   const t = (pl: string, eng: string): string => (en ? eng : pl);
   // przełącznik „za siatkę” (strzałka przy osobie) ma domyślną zależną od trybu; lead mówi tę, która obowiązuje w grze
   const domyslnie = v.zombie ? t('wyłączona', 'off') : t('włączona', 'on');
@@ -295,12 +314,12 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
   )}</h3><div class="pr-progi">${klucze.map(prog).join('')}</div></section>`;
 
   if (!v.wiersze.length)
-    return `${lead}${klawiatura}${zapas}<p class="build-empty">${esc(t('Nikogo w zarządzie.', 'Nobody on the board.'))}</p>`;
+    return `${lead}${klawiatura}${zapas}<p class="build-empty">${esc(t(`Nikogo w ${w.zarzad.l}.`, `Nobody on ${e.krotko}.`))}</p>`;
 
   const naglowek = (r: RodzajPracy): string => {
     const wybrana = v.kol === r;
     return `<th scope="col" class="pr-th"><button type="button" class="pr-kol${wybrana ? ' sel' : ''}" data-kol="${r}" aria-pressed="${wybrana}" title="${esc(
-      opisRodzaju(r, en),
+      opisRodzaju(r, en, w, e),
     )}"><span class="pr-kol-t">${esc(nazwaRodzaju(r, en))}</span>${wybrana ? `<b class="pr-n">${v.zlecen}</b>` : ''}</button></th>`;
   };
   const komorka = (w: WierszPracy, r: RodzajPracy): string => {
@@ -323,7 +342,7 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
 
   const info = v.kol
     ? `<p class="pr-info"><b>${esc(nazwaRodzaju(v.kol, en))}</b> · ${esc(t('zleceń do wzięcia', 'jobs waiting'))}: <b>${v.zlecen}</b><span class="pr-opis">${esc(
-        opisRodzaju(v.kol, en),
+        opisRodzaju(v.kol, en, w, e),
       )}</span></p>`
     : `<p class="pr-info">${esc(
         t(
@@ -341,7 +360,7 @@ export function pracaPanelHtml(v: WidokPracy, en: boolean): string {
   const ogien = v.wiersze.some((w) => (w.prio[kOgien] ?? 0) > 0 || w.stale === 'ogien');
   const bezOgnia = ogien
     ? ''
-    : `<p class="pr-uwaga pr-bez-ognia" role="alert" data-uwaga="ogien"><span class="pr-uwaga-i" aria-hidden="true">!</span>${esc(wJezyku(BEZ_OGNIA, en))}</p>`;
+    : `<p class="pr-uwaga pr-bez-ognia" role="alert" data-uwaga="ogien"><span class="pr-uwaga-i" aria-hidden="true">!</span>${esc(wJezyku(ostrzezenieBezOgnia(w, e), en))}</p>`;
 
   const kolumny = `<colgroup><col class="pr-col-os">${v.widoczne.map(() => '<col class="pr-col-k">').join('')}</colgroup>`;
   const tabela = `<table class="pr-tab">${kolumny}<thead><tr><th scope="col" class="pr-os"><span class="sr">${esc(

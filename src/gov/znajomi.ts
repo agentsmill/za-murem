@@ -23,6 +23,10 @@
    najlepiej nastawiony, potem najdawniejszy, potem po id. Powrót to prawdziwa wizyta gościa (`planujPowrot` w wizyta.ts,
    `Gosc.wraca`), więc nie ma tu żadnej karty: wydarzenie `powrot` tylko ją planuje, jak `gosc`.
 
+   Imiona w grze (`imionaPostaci`): pierwsze imiona postaci, które zarząd zna z kart, poza zarządem i mieszkańcami z osobą
+   (tych pilnują wizyta i karty): znajomi, prowadzony gość i ludzie z danych haków łańcuchów. Nowa postać nie dostaje takiego
+   imienia (wizyta.ts, warianty.ts, watki-tresc.ts), więc chłopiec z łańcucha i gość nie czytają się jak jedna osoba. Tylko czyta.
+
    Napad (`wrogDoNapadu`): w zwykłym trybie najbliższy napad bierze jednego ujemnego znajomego (najbardziej ujemny, potem
    najdawniejszy, potem po id), raz na znajomego (`Znajomy.napad`); jeden szabrownik dostaje jego wygląd, raport rano mówi,
    kto to był (`liniaWsrod`). W trybie zombie ujemny nie wraca ani nie dołącza do niczego.
@@ -248,6 +252,27 @@ export function znajdzZnajomego(
   );
 }
 
+/** Pierwsze imiona zmyślonych postaci, które zarząd już zna z kart, poza zarządem i mieszkańcami z osobą (tych pilnują
+    `zajete` w wizycie i `imionaZajete` w kartach): znajomi (goście z pamięci), prowadzony gość i ludzie zapisani w danych
+    haków łańcuchów (obiekt z polami `first` i `name` gdziekolwiek w JSON-ie haka). Nowa postać nie dostaje takiego
+    imienia, więc dwie różne osoby nie mają tego samego imienia i nazwiska w jednej grze: chłopiec z łańcucha „Adam
+    Kowalski” i gość „Adam Kowalski ze słoikami” czytały się jak jedna osoba. Tylko czyta. */
+export function imionaPostaci(st: Pick<GovState, 'znajomi' | 'goscie' | 'watki'>): Set<string> {
+  const out = new Set<string>();
+  for (const z of st.znajomi ?? []) out.add(z.osoba.first);
+  for (const p of st.goscie?.aktywny?.gosc.osoby ?? []) out.add(p.first);
+  const przejdz = (v: unknown): void => {
+    if (Array.isArray(v)) for (const x of v) przejdz(x);
+    else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (typeof o.first === 'string' && typeof o.name === 'string') out.add(o.first);
+      for (const x of Object.values(o)) przejdz(x);
+    }
+  };
+  for (const h of Object.values(st.watki?.haki ?? {})) przejdz(h.d);
+  return out;
+}
+
 // ---------------------------------------------------------------- wybór
 
 const najpierwNajdawniejszy = (a: Znajomy, b: Znajomy): number =>
@@ -453,7 +478,7 @@ function rozpoznanie(z: Znajomy, g: Gosc): Tx {
       );
     case 'nocleg':
       return tx(
-        `Rozgląda się po podwórku jak ktoś, kto już tu ${plec(p, 'był', 'była')}.`,
+        'Rozgląda się po podwórku jak ktoś, kto dobrze zna to miejsce.',
         `${he} looks around the yard like someone who has been here before.`,
       );
     case 'przyjety':

@@ -99,7 +99,7 @@ describe('ekran dróg (drogiSheet)', () => {
   it('okno z tytułem „Drogi do zwycięstwa”, przyciskiem powrotu i zamykane bez decyzji', () => {
     const s = drogi(stan(), wej());
     expect(s.title).toBe('Drogi do zwycięstwa');
-    expect(s.kicker).toBe('Za Murem 0.4');
+    expect(s.kicker).toBe('Za Murem 1.0');
     expect(s.tone).toBe('drogi');
     expect(s.closable).toBe(true);
     expect(s.foot).toContain('data-act="zw-wroc"');
@@ -715,10 +715,10 @@ describe('statystyki epilogu (statyEpilogu)', () => {
 });
 
 describe('Menu', () => {
-  it('„Drogi do zwycięstwa” stoi pod „Jak grać”, a przed zapisem i powrotem na ekran startowy', () => {
+  it('„Drogi do zwycięstwa” stoi pod „Jak grać” i „Wiki”, a przed zapisem i powrotem na ekran startowy', () => {
     const m = menuSheet('Zapis co godzinę gry.');
     const kolejnosc = [...m.body.matchAll(/data-act="(menu-[\w-]+)"/g)].map((x) => x[1]);
-    expect(kolejnosc).toEqual(['menu-back', 'menu-help', 'menu-zwyciestwo', 'menu-start']);
+    expect(kolejnosc).toEqual(['menu-back', 'menu-help', 'menu-wiki', 'menu-zwyciestwo', 'menu-start']);
     expect(m.body).toContain('>Drogi do zwycięstwa<');
   });
 

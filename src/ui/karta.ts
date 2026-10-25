@@ -14,6 +14,9 @@
    albo „(on own)”, żeby było widać, że to ustawienia z panelu Pracy, a nie rozkaz; snu, posiłku i grzania się nie
    oznaczamy, bo to nie praca. Karta mieszkańca (tylko do odczytu) nie ma ani ustawień, ani dopisku.
 
+   Wiki (src/ui/wiki.ts): każdy pasek potrzeby niesie `data-wiki="potrzeba:<klucz>"`, więc klik w niego otwiera artykuł o tej
+   potrzebie (obsługa na dokumencie w src/ui/wiki-okno.ts, bez własnego kodu w karcie).
+
    Język: karta rysuje się w bieżącym języku (src/core/jezyk.ts). Polskie napisy ze stanu (zawód, cechy, powody
    nastrojów) to identyfikatory tłumaczone tutaj (zawodEn, TRAITS_EN, nastrojEn), opis pracy (`doing`) przychodzi już
    w bieżącym języku z jobText. Historia i rodzina z generatora są w stanie po polsku i tak zostają, chyba że
@@ -221,7 +224,7 @@ export function personCard(
     : '';
   const bars = NEED_ORDER.map((k) => {
     const v = Math.round(p.needs[k]);
-    return `<div class="need ${needLevel(v)}"><span class="need-k">${en ? NEED_LABELS_EN[k] : NEED_LABELS[k]}</span><i class="need-bar" style="--v:${v}%"></i><b class="need-v">${v}</b></div>`;
+    return `<div class="need ${needLevel(v)}" data-wiki="potrzeba:${k}" title="${L('Co to znaczy: opis w wiki', 'What this means: read it in the wiki')}"><span class="need-k">${en ? NEED_LABELS_EN[k] : NEED_LABELS[k]}</span><i class="need-bar" style="--v:${v}%"></i><b class="need-v">${v}</b></div>`;
   }).join('');
   const moods = p.moods
     .filter((m) => m.until > tick)

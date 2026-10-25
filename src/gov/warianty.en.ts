@@ -25,6 +25,7 @@ import { nazwaBudynkuEn } from '../world/classify.en.ts';
 import type { GovHost } from './tresc.ts';
 import { uchodzcyGrupa, uchodzcyN, uchodzcySpec } from './warianty.ts';
 import { bookEn, costEn, costPlEn, dziedzinaEn, fromEn, TOWER_EN } from './warianty-dane.en.ts';
+import { portions } from './wspolne.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: dane wydarzeń z 0.3 mają różne kształty
 type D = any;
@@ -352,8 +353,8 @@ const WYDARZENIA: Record<string, EventEn> = {
     // sprawca z klatki (d.lok): głodny mieszkaniec z imieniem, zamiast mieszkania na parterze
     text: (_h, d) =>
       d.lok
-        ? `Overnight, someone made off with ${d.loss} food from the basement of ${budynek(d.b)}. The footprints lead to your stairwell, and everyone knows who has been eating too little for days: ${d.p.name}.`
-        : `Overnight, someone made off with ${d.loss} food from the basement of ${budynek(d.b)}. The footprints lead to a ground-floor flat.`,
+        ? `Overnight, someone made off with ${portions(d.loss)} of food from the basement of ${budynek(d.b)}. The footprints lead to your stairwell, and everyone knows who has been eating too little for days: ${d.p.name}.`
+        : `Overnight, someone made off with ${portions(d.loss)} of food from the basement of ${budynek(d.b)}. The footprints lead to a ground-floor flat.`,
     labels: (h, d) => [
       ...(h.law('u_sad') ? ['Residents’ court'] : []),
       'Throw the culprit off the estate',

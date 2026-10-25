@@ -29,6 +29,19 @@ describe('atrybucja danych', () => {
     expect(statyczny('.attrib').en).toBe(pasek);
   });
 
+  it('wersja 0.3 pod /v03/: pasek na mapie ma te same trzy źródła co 0.4 (współtwórcy OpenStreetMap, OpenFreeMap, OpenMapTiles)', () => {
+    const v03 = fs.readFileSync(path.join(ROOT, 'public', 'v03', 'index.html'), 'utf8');
+    const pasek = v03.match(/<div class="attrib">(.*?)<\/div>/)?.[1] ?? '';
+    for (const m of MAPY) expect(pasek).toContain(m);
+    expect(pasek).toContain('href="https://www.openstreetmap.org/copyright"');
+    expect(pasek).toContain('href="https://openfreemap.org"');
+    expect(pasek).toContain('href="https://www.openmaptiles.org/"');
+    // napis jak w 0.4: znak ©, potem trzy źródła przedzielone kropką środkową
+    expect(pasek.replace(/<[^>]+>/g, '')).toBe('© współtwórcy OpenStreetMap · OpenFreeMap · OpenMapTiles');
+    // karta startowa 0.3 miała pełną atrybucję od początku
+    expect(v03.match(/<p class="fine">(.*?)<\/p>/)?.[1]).toContain('OpenMapTiles');
+  });
+
   it('minimapa: pod przyciskiem atrybucja trzech źródeł map w obu językach, schowana do włączenia przez grę', () => {
     const podpis = html.match(/<p class="minimapa-attrib">(.*?)<\/p>/)?.[1] ?? '';
     for (const m of MAPY_EN) expect(podpis).toContain(m);

@@ -13,8 +13,9 @@
 
    Co dalej (`PostepDrogi.dalej`). Droga, którą da się grać już teraz (ludność w całości, pierwszy kamień terenu tam, gdzie
    da się otoczyć sąsiada, dwa pierwsze kamienie technologii przy odczycie badań), mówi jednym zdaniem, co zrobić, żeby
-   zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą), przy
-   ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
+   zaliczyć jej następny kamień: ludność „Zbierzcie N osób pod zarządem.” (N to próg kamienia, z polską liczbą mnogą; słowo
+   zarządu idzie ze słownika miejsca, `Words.zarzad.n` i `Words.zarzad.dk`: w domu „pod komitetem ulicy” i „nikt z komitetu”),
+   przy ostatnim kamieniu „Utrzymajcie cel 7 poranków z rzędu: …” z licznikiem poranków „(n z 7)”, teren „Otoczcie wspólnym
    płotem pierwszy sąsiedni budynek.”, technologia przy zerze „Postawcie pracownię w pokoju waszego mieszkania …” (słowo
    lokum idzie ze słownika miejsca przez `waszeLokum` z src/gov/miejsce.ts: w domu jednorodzinnym „waszego domu”), a
    przy jednym kamieniu „Posadźcie kogoś przy stole pracowni …”. Droga z „Wkrótce” i droga przebyta do końca nie mają
@@ -248,36 +249,41 @@ const DALEJ_TECHNOLOGIA: readonly ((place: GovPlace) => Tx)[] = [
 const KOLEJNOSC: readonly Droga[] = ['technologia', 'teren', 'lek', 'ludnosc', 'cuda'];
 
 /** progi osób dla pierwszych trzech kamieni ludności; czwarty to połowa celu (`progiLudnosci`), piąty licznik */
-const PROGI_LUDNOSCI: readonly number[] = [10, 25, 50];
+export const PROGI_LUDNOSCI: readonly number[] = [10, 25, 50];
 /** cel ludności: bez danych z 2021 roku, dolna i górna granica przy danych */
-const CEL_BEZ_DANYCH = 250;
-const CEL_MIN = 120;
-const CEL_MAX = 500;
+export const CEL_BEZ_DANYCH = 250;
+export const CEL_MIN = 120;
+export const CEL_MAX = 500;
 /** ile poranków z rzędu trzeba utrzymać cel */
-const DNI_CELU = 7;
+export const DNI_CELU = 7;
 /** od której godziny nowy dzień gry liczy się do licznika */
-const PORANEK = 6;
+export const PORANEK = 6;
 /** głodna jest osoba z jedzeniem poniżej tej wartości (0–100) */
-const GLOD_PONIZEJ = 25;
+export const GLOD_PONIZEJ = 25;
 /** zaufanie, przy którym cel się liczy */
-const ZAUFANIE_OD = 50;
+export const ZAUFANIE_OD = 50;
 /** identyfikator generatora fuzji w drzewie badań (`TECHS` w src/sim/badania.ts): src/gov nie importuje src/sim, więc
     napis stoi tu, a jego zgodność z drzewem pilnuje tests/unit/zwyciestwo-technologia.test.ts. W etapie 2 piąty kamień
     technologii liczy postawiony generator zamiast zbadanej technologii. */
-const ID_GENERATORA = 't_fuzja';
+export const ID_GENERATORA = 't_fuzja';
 /** era badań, od której liczy się trzeci kamień technologii („Era 3”) */
-const ERA_KAMIENIA = 3;
+export const ERA_KAMIENIA = 3;
 
-/** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”) */
-const dalejOsoby = (n: number): Tx =>
-  tx(`Zbierzcie ${mnogaPl(n, 'osoba', 'osoby', 'osób')} pod zarządem.`, `Get ${n} people under the board.`);
+/** „Co dalej” dla kamieni ludności przed ostatnim: zebrać `n` osób pod zarządem (polska liczba mnoga: „63 osoby”). Słowo
+    zarządu bierze ze słownika miejsca: w domu „pod komitetem ulicy”, po angielsku „under the street committee”. */
+const dalejOsoby = (n: number, place: GovPlace): Tx =>
+  tx(
+    `Zbierzcie ${mnogaPl(n, 'osoba', 'osoby', 'osób')} pod ${wordsOf(place).zarzad.n}.`,
+    `Get ${n} people under ${wordsEn(place).zarzad}.`,
+  );
 
 /** „Co dalej” dla ostatniego kamienia ludności: utrzymać cel siedem poranków, z licznikiem `dni` z 7. Warunki w zdaniu
-    to te same stałe, którymi liczy `krokZwyciestwa` (poranek, głód, zaufanie, liczba dni). */
-const dalejSeria = (dni: number): Tx =>
+    to te same stałe, którymi liczy `krokZwyciestwa` (poranek, głód, zaufanie, liczba dni); „nikt z zarządu” to w domu
+    „nikt z komitetu” (słownik miejsca). */
+const dalejSeria = (dni: number, place: GovPlace): Tx =>
   tx(
-    `Utrzymajcie cel ${DNI_CELU} poranków z rzędu: o ${PORANEK}:00 nikt z zarządu nie jest głodny, a zaufanie wynosi co najmniej ${ZAUFANIE_OD} (${dni} z ${DNI_CELU}).`,
-    `Hold the target for ${DNI_CELU} mornings in a row: at ${PORANEK}:00 nobody on the board is hungry and trust is at least ${ZAUFANIE_OD} (${dni} of ${DNI_CELU}).`,
+    `Utrzymajcie cel ${DNI_CELU} poranków z rzędu: o ${PORANEK}:00 nikt z ${wordsOf(place).zarzad.dk} nie jest głodny, a zaufanie wynosi co najmniej ${ZAUFANIE_OD} (${dni} z ${DNI_CELU}).`,
+    `Hold the target for ${DNI_CELU} mornings in a row: at ${PORANEK}:00 nobody on ${wordsEn(place).krotko} is hungry and trust is at least ${ZAUFANIE_OD} (${dni} of ${DNI_CELU}).`,
   );
 
 /** Nazwa drogi w trybie gry: droga leku w zombie nazywa się „Lek”, reszta tak samo w obu trybach. */
@@ -325,7 +331,7 @@ const wygrana = (z: { wygrane: { droga: Droga }[] }, droga: Droga): boolean => z
 
 /** Progi osób czterech pierwszych kamieni ludności przy celu `cel`: 10, 25, 50 i połowa celu w górę. Piąty kamień to
     licznik poranków, nie próg. Przy małym celu połowa bywa niższa od 50, ale kamienie idą po kolei (`spelnione`). */
-const progiLudnosci = (cel: number): number[] => [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
+export const progiLudnosci = (cel: number): number[] => [...PROGI_LUDNOSCI, Math.ceil(cel / 2)];
 
 /** Ile pierwszych kamieni drogi technologii spełnia odczyt badań (kamienie idą po kolei, więc liczy się początek listy):
     pracownia stoi albo coś już zbadano; zbadano pierwszą technologię; najwyższa era to co najmniej 3; sieć jest
@@ -397,7 +403,8 @@ function dalejDrogi(droga: Droga, zaliczone: number, cel: number, dniCelu: numbe
   if (droga === 'technologia') return DALEJ_TECHNOLOGIA[zaliczone]?.(placeIn(i)) ?? null;
   if (droga !== 'ludnosc') return null;
   const progi = progiLudnosci(cel);
-  return zaliczone < progi.length ? dalejOsoby(progi[zaliczone]) : dalejSeria(dniCelu);
+  const place = placeIn(i);
+  return zaliczone < progi.length ? dalejOsoby(progi[zaliczone], place) : dalejSeria(dniCelu, place);
 }
 
 /** Postęp pięciu dróg w kolejności ekranu (technologia, teren, lek, ludność, cuda) z odczytu i stanu zarządu. Czysta:

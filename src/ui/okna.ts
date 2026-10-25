@@ -53,7 +53,7 @@ import { FURNITURE_EN } from '../sim/nazwy.en.ts';
 import { BURN_TICKS, BURNABLE, FURNITURE_ACC } from '../sim/sim.ts';
 import { NAPISY as WEDROWCY } from '../sim/wedrowcy.ts';
 import { FENCE_BEARS } from '../sim/zombie.ts';
-import { esc, manyEn, num, pct, signed } from './tekst.ts';
+import { deg, esc, manyEn, num, pct, signed } from './tekst.ts';
 
 export interface Sheet {
   /** mały napis nad tytułem, jak na tabliczce */
@@ -64,8 +64,8 @@ export interface Sheet {
   /** odcień okna: noc (granat), zebranie, wydarzenie, raport, menu, sąsiedzi (spotkanie), napad (sąsiedzi atakują),
       mapa miasta (okno na cały ekran, src/ui/miasto.ts), plan wyprawy z mapy (zwykłe okno w barwie mapy,
       src/ui/wyprawa.ts), ekran dróg do zwycięstwa (szeroka tabliczka w złocie) i epilog zwycięstwa (ta sama barwa,
-      zwykła szerokość), oba z src/ui/zwyciestwo.ts, i odkrycie (karta po ukończeniu badania, w kolorze korka
-      tablicy) */
+      zwykła szerokość), oba z src/ui/zwyciestwo.ts, odkrycie (karta po ukończeniu badania, w kolorze korka
+      tablicy) i wiki (szerokie okno z listą i artykułem, src/ui/wiki.ts) */
   tone:
     | 'noc'
     | 'uchwala'
@@ -80,7 +80,8 @@ export interface Sheet {
     | 'wyprawa'
     | 'drogi'
     | 'zwyciestwo'
-    | 'odkrycie';
+    | 'odkrycie'
+    | 'wiki';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
   /** linia „Cel: …” pod nagłówkiem: tekst celu ze ścieżki celów, który dotyczy tego okna (`celWOknie` w src/ui/sciezka.ts;
@@ -425,7 +426,7 @@ export function reportSheet(r: NightReport): Sheet {
   const warm = kit === null ? '' : kit >= 18 ? ' good' : kit < 15 ? ' bad' : '';
   const tally = [
     kit !== null
-      ? `<li class="tal${warm}"><small class="tal-k">${L('Kuchnia rano', 'Kitchen this morning')}</small><b>${Math.round(kit)}°C${
+      ? `<li class="tal${warm}"><small class="tal-k">${L('Kuchnia rano', 'Kitchen this morning')}</small><b>${deg(kit)}${
           r.koza?.length ? L(`, przy kozie ${esc(r.koza.join(', '))}`, `, stove watch: ${esc(r.koza.join(', '))}`) : ''
         }</b></li>`
       : '',
@@ -508,12 +509,12 @@ export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
 export function menuSheet(note: string): Sheet {
   return {
     tone: 'menu',
-    kicker: 'Za Murem 0.4',
+    kicker: 'Za Murem 1.0',
     title: 'Menu',
     body: `<div class="menu-list">${btn('menu-back', L('Wróć do gry', 'Back to the game'), 'btn go')}${btn(
       'menu-help',
       L('Jak grać', 'How to play'),
-    )}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${btn(
+    )}${btn('menu-wiki', L('Wiki', 'Wiki'))}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${btn(
       'menu-start',
       L('Zapisz i wróć do ekranu startowego', 'Save and go back to the start screen'),
     )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(
@@ -534,7 +535,7 @@ const ZOMBIE_HELP = tx(
 function buildHelp(touch: boolean, words: Words, e: WordsEn): string {
   const s = words.szukanie;
   const fetch = tx(
-    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części dają przeszukiwanie ${s.d} i rozbiórka.`,
+    `${words.Zarzad} sam przynosi materiały i buduje. Deski, złom i części pochodzą z przeszukiwania ${s.d} i z rozbiórki.`,
     `${e.Zarzad} fetches the materials and does the building. Planks, scrap and parts come from searching ${e.szukanie.d} and taking things apart.`,
   );
   const items = touch
@@ -826,14 +827,14 @@ export function helpSheet(
       );
   return {
     tone: 'menu',
-    kicker: 'Za Murem 0.4',
+    kicker: 'Za Murem 1.0',
     title: L('Jak grać', 'How to play'),
     body: `<h3 class="help-h">${L('Sterowanie', 'Controls')}</h3><ul class="help">${ctl}</ul>${buildHelp(touch, words, e)}${workHelp(touch)}${outsideHelp(touch, words, e)}${researchHelp(touch)}<h3 class="help-h">${L(words.Zarzad, e.Zarzad)}</h3><ul class="help">${L(
       `<li>Prowadzicie ${words.zarzad.pelny} w 2051 roku. ${osoby.pl}, koza w kuchni i ${zombie ? 'wzmocniona' : 'dziurawa'} siatka wokół podwórka.</li><li>Pilnujcie potrzeb na karcie osoby: najedzenie, ciepło, siły, zdrowie, bezpieczeństwo i nastrój.</li><li>Koza zjada drewno. Pole „koza” u góry mówi, na ile godzin starczy ognia; przed nocą zgromadźcie zapas (ścinanie drzew albo meble na opał).</li><li>O 19:30 zebranie i uchwała, o 20:00 karta nocy: kto śpi, kto trzyma wartę, kto czuwa przy kozie, kto idzie na wyprawę. Bez dyżuru koza gaśnie w nocy, bo wszyscy śpią. Noc biegnie potem szybciej (6×), rano raport i wasze tempo wraca.</li><li>Zaufanie i wkurzenie ${words.mieszkancy.d} liczą się z każdej decyzji. Przy zerowym zaufaniu ludzie odejdą, przy pełnym wkurzeniu ${words.walne} odwoła ${words.zarzad.krotko}.</li><li>${bron.pl} Prawy przycisk na wrogu: „Atakuj”. Warta bije sama, jeśli wróg jest w zasięgu jej broni.</li><li>W Menu jest ekran „Drogi do zwycięstwa”: kamienie milowe każdej drogi, postęp i to, co zrobić dalej.</li>`,
       `<li>You are ${e.pelny} in 2051. ${osoby.en}, a potbelly stove in the kitchen and ${zombie ? 'a reinforced fence' : 'a fence full of holes'} around the yard.</li><li>Watch everyone’s needs on their card: Fed, Warmth, Energy, Health, Safety and Mood.</li><li>The stove eats wood. The “stove” box at the top shows how many hours of fire are left; stock up before night (chop down trees or burn furniture).</li><li>At 19:30 ${e.krotko} meets and passes a resolution, and at 20:00 come the Night orders: who sleeps, who keeps watch, who sits up with the stove, who goes on a run. With nobody on stove watch, the fire goes out overnight, because everyone is asleep. After that the night runs faster (6×), and in the morning you get a report and your own speed back.</li><li>Every decision moves the ${e.mieszkancy}’ trust and anger. At zero trust people leave; at full anger ${e.walne} votes ${e.krotko} out.</li><li>${bron.en} Right-click an enemy: “Attack”. The watch fights on its own when an enemy comes within reach of its weapons.</li><li>The Menu has a “Roads to victory” screen: the milestones of each road, your progress and what to do next.</li>`,
     )}</ul>${zombie ? tr(ZOMBIE_HELP) : ''}<h3 class="help-h">${L('Na razie', 'For now')}</h3><p>${L(
-      `W wersji 0.4 są noce za siatką, budowa, ${words.szukanie.wersja}, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.`,
-      `Version 0.4 has nights behind the fence, building, ${e.szukanie.wersja}, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.`,
+      `W wersji 1.0 są noce za siatką, budowa, ${words.szukanie.wersja}, sąsiedzi, mapa miasta, praca ludzi, badania w pracowni, wydarzenia z łańcuchami historii, cele prowadzące po grze, drogi do zwycięstwa, wiki i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.`,
+      `Version 1.0 has nights behind the fence, building, ${e.szukanie.wersja}, neighbours, the city map, work, research, events with story chains, goals that walk you through the game, roads to victory, the wiki and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.`,
     )}</p>`,
     foot: btn('help-back', L('Wróć', 'Back'), 'btn go'),
     closable: true,

@@ -486,7 +486,7 @@ git commit -m "Osada AI: strojenie 1 (<reguła>)"
 
 **Files:**
 - Modify: tylko `src/ai/*.ts`, `tests/unit/ai-*.test.ts`, `docs/POSTEP.md`
-- Create (tylko przy stopie): `docs/ocena/2026-10-2x-osada-ai-etap-1.md`
+- Create (tylko przy stopie): `docs/ocena/2026-10-24-osada-ai-etap-1.md`
 
 - [ ] **Step 1: Jak zadanie 6, kroki 1–4**
 
@@ -497,7 +497,7 @@ Expected: `bot:osada` z kodem 0 (cel kontrolny z Global Constraints), testy ziel
 
 - [ ] **Step 3: Gdy bramka nie przechodzi: stop**
 
-Raport `docs/ocena/2026-10-2x-osada-ai-etap-1.md`: tabele z zadań 2–7, przyczyny końca, co by pomogło po stronie zasad (z badania zimy), bez zmian zasad. Etap stoi do decyzji Mateusza.
+Raport `docs/ocena/2026-10-24-osada-ai-etap-1.md`: tabele z zadań 2–7, przyczyny końca, co by pomogło po stronie zasad (z badania zimy), bez zmian zasad. Etap stoi do decyzji Mateusza.
 
 - [ ] **Step 4: Dziennik i commit**
 

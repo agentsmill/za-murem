@@ -45,7 +45,7 @@
 import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
 import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
 import { g } from '../content/people.ts';
-import { type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
+import { stopnie, type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
 import { clamp } from '../core/rng.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { peopleNamesTx, TARGETS } from './tresc.ts';
@@ -410,7 +410,8 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         why: ok
           ? undefined
           : tx(g(p, 'Za słaby na czuwanie.', 'Za słaba na czuwanie.'), 'Too weak to sit up all night.'),
-        // noc bez snu zjada około 50 sił (symulacja: 5 na godzinę od karty do 6:00)
+        // noc bez snu zjada około 35 sił (symulacja: `REST_AWAKE` 3,5 na godzinę od karty do 6:00), więc kto ma mniej niż 50,
+        // rano schodzi poniżej progu zmęczenia (`TIRED` 15)
         note: tx(
           `Nie śpi i pilnuje ognia w kozie, ${wn.pl}${p.needs.rest < 50 ? ' Rano będzie bez sił.' : ''}`,
           `Stays up and keeps the stove going, and ${wn.en}${p.needs.rest < 50 ? ' Will be exhausted in the morning.' : ''}`,
@@ -685,11 +686,11 @@ function kozaAdvice(i: GovInput, card: NightCard, assign: Record<string, string>
     );
   }
   if (wd.have < WOOD_PER_HOUR) return NIC;
-  const deg = Math.round(i.kitchen);
+  const deg = stopnie(i.kitchen);
   const now = !i.kozaLit
-    ? tx(`Koza jest zimna, w kuchni ${deg}°C.`, `The stove is cold, and the kitchen is at ${deg}°C.`)
-    : deg < 16
-      ? tx(`W kuchni już tylko ${deg}°C.`, `The kitchen is down to ${deg}°C.`)
+    ? tx(`Koza jest zimna, w kuchni ${deg}.`, `The stove is cold, and the kitchen is at ${deg}.`)
+    : Math.round(i.kitchen) < 16
+      ? tx(`W kuchni już tylko ${deg}.`, `The kitchen is down to ${deg}.`)
       : tx(
           'Bez dyżuru koza zgaśnie w nocy i rano w kuchni będzie zimno.',
           'Without a stove watch the fire will go out in the night, and the kitchen will be cold by morning.',
@@ -1292,7 +1293,7 @@ export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
 
 /** linia raportu o kuchni rano: jak długo paliła się koza, kto przy niej czuwał i ile stopni o 6:00 */
 function kitchenLine(t: number, fire: number, koza: GovPerson[], wood: number): Tx {
-  const deg = `${Math.round(t)}°C`;
+  const deg = stopnie(t);
   const warm = t >= 18 ? 'ciepło' : t >= 15 ? 'chłodno' : 'zimno';
   const warmEn = t >= 18 ? 'warm' : t >= 15 ? 'chilly' : 'cold';
   const rano = `Rano w kuchni ${warm}, ${deg}.`;
