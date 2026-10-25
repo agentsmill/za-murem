@@ -2,8 +2,9 @@
    podpis pory roku na pasku w zimie (zegar gry, obie wersje językowe, tryb zombie, gdzie to jedyny sygnał pory roku), ekran
    dróg, epilogi zwycięstwa, okno planu wyprawy, podpowiedź „Do broni!” i panel Pracy w domu jednorodzinnym (Zielonki: komitet
    ulicy, furtka, płoty zamiast zarządu, bramy i klatek), karta miejsca wybranego do cna, linia końca gry po ludzku i pasek
-   atrybucji w /v03/, a do tego karta „Ślady przy siatce” w obu trybach i językach: łata za 3 złomu jak menu (podpis
-   „(Złom 3)”, wybór wyłączony przy dwóch sztukach, po kliknięciu 3 sztuki mniej i jedna dziura załatana).
+   atrybucji w /v03/, a do tego cztery karty, które łatają dziurę za 3 złomu jak menu („Ślady przy siatce” w obu trybach,
+   „Kury sąsiadów” w domu i krok 2 „Szczekania”; po polsku i po angielsku): podpis „(Złom 3)”, wybór wyłączony przy dwóch
+   sztukach, po kliknięciu 3 sztuki mniej, jedna dziura załatana i wpis w kronice.
    Każdy scenariusz sam sprawdza tekst na ekranie; zrzut jest ostatnim stanem scenariusza. */
 
 import type { Page } from '@playwright/test';
@@ -253,29 +254,101 @@ export function tekstyShots(): ShotTeksty[] {
   const otwarteDziury = (page: Page): Promise<number> =>
     page.evaluate(() => (window.zm!.sim!.st.fence?.holes ?? []).filter((h) => !h.patch).length);
 
-  /** Karta otwarta wprost (jak `doKarty` w tools/shots.ts, ale bez czekania na losowanie), z wyborami z DOM: podpis łaty ma
-      3 sztuki złomu, wyłączony przy dwóch; z `klik` pierwszy wybór idzie w ruch i zapas ma o 3 sztuki mniej, a w zwykłym
-      trybie (siatka z dziurami) o jedną dziurę mniej, z wpisem „złomem i drutem” w kronice. */
-  const slady = (
+  /** Karta, która łata dziurę za złom: adres gry, id i dane karty otwartej wprost, podpisy wszystkich wyborów (łata pod
+      numerem `lata`) i wpis w kronice po łacie */
+  interface KartaLaty {
+    query: string;
+    id: string;
+    d: unknown;
+    wybory: { pl: string[]; en: string[] };
+    lata: number;
+    wpis: { pl: string; en: string };
+    /** dodatkowa kontrola stanu gry po kliknięciu łaty */
+    poKliku?: (page: Page) => Promise<void>;
+  }
+
+  const SLADY_D = { where: { pl: 'przy garażach', en: 'by the garages' } };
+  const SLADY: KartaLaty = {
+    query: 'demo=przymorze&speed=0&cam=hq,1.3',
+    id: 'slady',
+    d: SLADY_D,
+    wybory: {
+      pl: ['Załatać przed nocą (Złom 3)', 'Powiesić puszki z kamykami', 'Udawać, że nic nie widać'],
+      en: ['Patch it up before dark (Scrap 3)', 'Hang up tins full of pebbles', 'Pretend you saw nothing'],
+    },
+    lata: 0,
+    wpis: { pl: 'Dziura załatana złomem i drutem.', en: 'The hole is patched up with scrap and wire.' },
+  };
+  const SLADY_Z: KartaLaty = {
+    query: 'demo=przymorze&speed=0&cam=hq,1.3&tryb=zombie',
+    id: 'slady_z',
+    d: SLADY_D,
+    wybory: {
+      pl: ['Załatać przed nocą (Złom 3)', 'Postawić tam kogoś z dzidą na noc'],
+      en: ['Patch it up before dark (Scrap 3)', 'Post someone there with a spear for the night'],
+    },
+    lata: 0,
+    wpis: SLADY.wpis,
+  };
+  const KURY: KartaLaty = {
+    query: 'demo=zielonki&speed=0&cam=hq,1.3',
+    id: 'kury',
+    d: {},
+    wybory: {
+      pl: ['Odnieść kury i jajko', 'Zatrzymać jajko', 'Załatać dziurę (Złom 3)'],
+      en: ['Return the hens and the egg', 'Keep the egg', 'Patch the hole (Scrap 3)'],
+    },
+    lata: 2,
+    wpis: {
+      pl: 'Dziura załatana. Kury muszą szukać innej drogi.',
+      en: 'Hole patched. The hens will have to find another way.',
+    },
+  };
+  const SZCZEKANIE: KartaLaty = {
+    query: 'demo=przymorze&speed=0&cam=hq,1.3',
+    id: 'szczekanie_2',
+    d: { jak: 'nic' },
+    wybory: {
+      pl: ['Podłożyć resztki pod siatką (Jedzenie 1)', 'Załatać dziurę (Złom 3)', 'Nie ruszać'],
+      en: ['Leave scraps under the fence (Food 1)', 'Patch the hole (Scrap 3)', 'Leave it'],
+    },
+    lata: 1,
+    wpis: {
+      pl: 'Dziura załatana złomem i drutem. Cokolwiek tu chodzi, musi wejść inną drogą.',
+      en: 'The hole is patched with scrap and wire. Whatever has been coming through will need another way in.',
+    },
+    // krok łańcucha zostawia hak, który zwalnia krok 3 („Pies przychodzi sam”, tekst „Dziury już nie ma”)
+    poKliku: async (page) => {
+      const hak = await page.evaluate(() => window.zm!.gov!.watki?.haki['szczekanie.slady']?.d);
+      if (JSON.stringify(hak) !== '{"jak":"lata"}') throw new Error(`hak szczekanie.slady: ${JSON.stringify(hak)}`);
+    },
+  };
+
+  /** Karta otwarta wprost (jak `doKarty` w tools/shots.ts, ale bez czekania na losowanie), z wyborami z DOM: wszystkie
+      podpisy, podpis łaty z 3 sztukami złomu, łata wyłączona przy dwóch sztukach i włączona od trzech, reszta wyborów zawsze
+      włączona; z `klik` wybór łaty idzie w ruch i zapas ma o 3 sztuki mniej, a przy siatce z dziurami o jedną dziurę mniej,
+      z wpisem w kronice. */
+  const lataKarty = (
     lang: 'pl' | 'en',
     nazwa: string,
-    o: { zombie: boolean; zlom: number | null; klik?: boolean },
+    k: KartaLaty,
+    o: { zlom: number | null; klik?: boolean },
   ): ShotTeksty => ({
     name: nazwa,
     query: '',
     lang,
     run: async (page, base) => {
-      await page.goto(`${base}?demo=przymorze&speed=0&cam=hq,1.3${o.zombie ? '&tryb=zombie' : ''}`);
+      await page.goto(`${base}?${k.query}`);
       await waitIdle(page);
       if (o.zlom !== null) await ustawZlom(page, o.zlom);
       const zlomPrzed = await zlomWGrze(page);
       const dziurPrzed = await otwarteDziury(page);
       await page.evaluate(
-        (id) => {
-          window.zm!.gov!.ev.active = { id, d: { where: { pl: 'przy garażach', en: 'by the garages' } } };
+        ([id, d]) => {
+          window.zm!.gov!.ev.active = { id, d };
           window.zm!.govTick();
         },
-        o.zombie ? 'slady_z' : 'slady',
+        [k.id, k.d] as const,
       );
       await page.waitForSelector('#sheet .choices [data-act="event"]');
       await dwieKlatki(page);
@@ -285,29 +358,19 @@ export function tekstyShots(): ShotTeksty[] {
           wylaczony: b.disabled,
         })),
       );
-      const oczekiwane =
-        lang === 'pl'
-          ? [
-              'Załatać przed nocą (Złom 3)',
-              o.zombie ? 'Postawić tam kogoś z dzidą na noc' : 'Powiesić puszki z kamykami',
-            ]
-          : [
-              'Patch it up before dark (Scrap 3)',
-              o.zombie ? 'Post someone there with a spear for the night' : 'Hang up tins full of pebbles',
-            ];
       console.log(
-        `  ${o.zombie ? 'zombie' : 'zwykły'} ${lang}, złom ${zlomPrzed}, dziur ${dziurPrzed}: ${wybory.map((w) => `${w.t}${w.wylaczony ? ' [wyłączony]' : ''}`).join(' | ')}`,
+        `  ${k.id} ${lang}, złom ${zlomPrzed}, dziur ${dziurPrzed}: ${wybory.map((w) => `${w.t}${w.wylaczony ? ' [wyłączony]' : ''}`).join(' | ')}`,
       );
-      for (const [k, t] of oczekiwane.entries())
-        if (wybory[k]?.t !== t) throw new Error(`wybór ${k}: „${wybory[k]?.t}” zamiast „${t}”`);
-      if (wybory.length !== (o.zombie ? 2 : 3)) throw new Error(`wyborów ${wybory.length}`);
+      if (JSON.stringify(wybory.map((w) => w.t)) !== JSON.stringify(k.wybory[lang]))
+        throw new Error(`wybory: ${JSON.stringify(wybory.map((w) => w.t))} zamiast ${JSON.stringify(k.wybory[lang])}`);
       if (wybory.some((w) => /Złom 2|Scrap 2/.test(w.t))) throw new Error('stary koszt łaty na karcie');
       const ma = zlomPrzed >= 3;
-      if (wybory[0].wylaczony === ma) throw new Error(`łata ${ma ? 'wyłączona' : 'włączona'} przy złomie ${zlomPrzed}`);
-      if (wybory[1].wylaczony) throw new Error('drugi wybór wyłączony');
+      if (wybory[k.lata].wylaczony === ma)
+        throw new Error(`łata ${ma ? 'wyłączona' : 'włączona'} przy złomie ${zlomPrzed}`);
+      for (const [n, w] of wybory.entries()) if (n !== k.lata && w.wylaczony) throw new Error(`wybór ${n} wyłączony`);
       if (!o.klik) return;
       if (!ma) throw new Error('klik bez złomu na łatę');
-      await page.click('#sheet .choices [data-act="event"][data-arg="0"]');
+      await page.click(`#sheet .choices [data-act="event"][data-arg="${k.lata}"]`);
       await page.waitForFunction(() => !document.querySelector('#sheet .choices'));
       // łata idzie w poleceniu `mend` do kolejki symulacji: kilka kroków, żeby się wykonała
       await page.evaluate(() => window.zm!.ff(0.25));
@@ -317,9 +380,10 @@ export function tekstyShots(): ShotTeksty[] {
       console.log(`  po kliknięciu: złom ${zlomPrzed} → ${po.zlom}, otwartych dziur ${dziurPrzed} → ${po.dziur}`);
       if (po.zlom !== zlomPrzed - 3) throw new Error(`złom ${zlomPrzed} → ${po.zlom}, a łata ma kosztować 3`);
       if (dziurPrzed > 0 && po.dziur !== dziurPrzed - 1) throw new Error(`dziur ${dziurPrzed} → ${po.dziur}`);
-      const wpis = wpisy.find((t) => t.pl.startsWith('Dziura załatana'));
-      if (wpis?.pl !== 'Dziura załatana złomem i drutem.' || wpis.en !== 'The hole is patched up with scrap and wire.')
-        throw new Error(`wpis w kronice: ${JSON.stringify(wpis)}`);
+      const wpis = wpisy.find((t) => t.pl === k.wpis.pl);
+      if (wpis?.en !== k.wpis.en)
+        throw new Error(`wpis w kronice: ${JSON.stringify(wpisy)} bez ${JSON.stringify(k.wpis)}`);
+      await k.poKliku?.(page);
     },
   });
 
@@ -461,10 +525,14 @@ export function tekstyShots(): ShotTeksty[] {
         },
       }),
     ),
-    slady('pl', 'teksty-slady-lata', { zombie: false, zlom: null }),
-    slady('pl', 'teksty-slady-lata-klik', { zombie: false, zlom: null, klik: true }),
-    slady('en', 'en-teksty-slady-lata-brak', { zombie: false, zlom: 2 }),
-    slady('pl', 'teksty-slady-lata-zombie-brak', { zombie: true, zlom: 2 }),
-    slady('en', 'en-teksty-slady-lata-zombie', { zombie: true, zlom: null, klik: true }),
+    lataKarty('pl', 'teksty-slady-lata', SLADY, { zlom: null }),
+    lataKarty('pl', 'teksty-slady-lata-klik', SLADY, { zlom: null, klik: true }),
+    lataKarty('en', 'en-teksty-slady-lata-brak', SLADY, { zlom: 2 }),
+    lataKarty('pl', 'teksty-slady-lata-zombie-brak', SLADY_Z, { zlom: 2 }),
+    lataKarty('en', 'en-teksty-slady-lata-zombie', SLADY_Z, { zlom: null, klik: true }),
+    lataKarty('pl', 'teksty-kury-lata-klik', KURY, { zlom: null, klik: true }),
+    lataKarty('en', 'en-teksty-kury-lata-brak', KURY, { zlom: 2 }),
+    lataKarty('pl', 'teksty-szczekanie-lata-klik', SZCZEKANIE, { zlom: null, klik: true }),
+    lataKarty('en', 'en-teksty-szczekanie-lata-brak', SZCZEKANIE, { zlom: 2 }),
   ];
 }
