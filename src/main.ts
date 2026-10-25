@@ -25,7 +25,8 @@
    dalej bez nich), a parametr nie zmienia wczytanej gry.
    Na telefonie (okno węższe niż 768 px) pasek stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, wybór
    w pamięci przeglądarki: src/ui/telefon.ts), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`,
-   `--zapas-dol`). */
+   `--zapas-dol`).
+   Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami (`przelaczPotrzeby`). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -200,7 +201,7 @@ import {
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
-import { PASEK_KEY, TELEFON_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
+import { PASEK_KEY, POTRZEBY_KEY, TELEFON_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import {
   adresStartowy,
@@ -1905,12 +1906,14 @@ function setCard(html: string, key = '') {
       pkNowy.remove();
       card.append(...nowa.content.childNodes);
       cardHtml = html;
+      ariaPotrzeb();
       return;
     }
   }
   card.innerHTML = html;
   cardHtml = html;
   cardKey = key;
+  ariaPotrzeb();
 }
 // lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
 $('card').addEventListener('focusout', (e) => {
@@ -2413,6 +2416,8 @@ function alarmButton(st: SimState) {
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
 $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
+  // linia potrzeb na telefonie rozwija i zwija paski i nastroje; to wybór interfejsu, nie polecenie dla symulacji
+  if (b?.dataset.card === 'potrzeby') return przelaczPotrzeby();
   if (!b || !sim) return;
   const st = sim.st;
   // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
@@ -3801,6 +3806,7 @@ document.fonts?.addEventListener('loadingdone', dopasujNazwe);
 /* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px, src/ui/telefon.ts) ---------- */
 const telefonMq = matchMedia(TELEFON_MQ);
 let statyRozwiniete = wczytajWybor(PASEK_KEY) === 'rozwiniete';
+let potrzebyRozwiniete = wczytajWybor(POTRZEBY_KEY) === 'rozwiniete';
 /** Pasek stanu na telefonie: zwinięty (atrybut `data-zwiniete` na `#stats`; src/style.css zostawia w nim tylko kafelki z klasą
     `pilne`) albo rozwinięty; cały pojemnik jest przyciskiem (role, aria-expanded, Enter i Spacja), na komputerze zwykłym pasem. */
 function zastosujPasekStanu() {
@@ -3842,6 +3848,22 @@ $('stats').addEventListener('keydown', (e) => {
 telefonMq.addEventListener('change', zastosujPasekStanu);
 poZmianieJezyka(zastosujPasekStanu);
 zastosujPasekStanu();
+/** Karta osoby na telefonie: potrzeby zwinięte (klasa `potrzeby-zwiniete` na `#card`) do linii z ostrzeżeniami albo rozwinięte do
+    pasków i nastrojów; klasa żyje na pojemniku, więc przeżywa przepisywanie karty co 200 ms. */
+function ariaPotrzeb() {
+  const linia = $('card').querySelector('.potrzeby-linia');
+  if (linia) linia.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+}
+function zastosujPotrzeby() {
+  $('card').classList.toggle('potrzeby-zwiniete', !potrzebyRozwiniete);
+  ariaPotrzeb();
+}
+function przelaczPotrzeby() {
+  potrzebyRozwiniete = !potrzebyRozwiniete;
+  zapiszWybor(POTRZEBY_KEY, potrzebyRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujPotrzeby();
+}
+zastosujPotrzeby();
 
 /* ---------- start ---------- */
 (async () => {

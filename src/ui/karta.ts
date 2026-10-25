@@ -1,4 +1,5 @@
-/* Karta osoby: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
+/* Karta osoby: paski potrzeb (na telefonie, w oknie węższym niż 768 px, zwinięte do linii z ostrzeżeniami, `potrzebyLinia`;
+   rozwija je stuknięcie, stan trzyma main.ts), chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
    drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
    trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
    wymyśleni, i przycisk zmiany imienia (`data-card="imie"`: main.ts otwiera w karcie edytor z src/ui/imiona.ts, także
@@ -37,6 +38,21 @@ export const NEED_ORDER: readonly (keyof Needs)[] = ['food', 'warm', 'rest', 'he
 
 /** poziom paska: źle poniżej 25, uwaga poniżej 50 */
 export const needLevel = (v: number): 'bad' | 'mid' | 'ok' => (v < 25 ? 'bad' : v < 50 ? 'mid' : 'ok');
+
+/** Linia potrzeb na karcie osoby na telefonie (okno węższe niż 768 px; na komputerze jej nie widać, src/style.css): potrzeby w stanie
+    „uwaga” i „źle” w jednej linijce („Ciepło 22 · Najedzenie 45”), a gdy żadnej nie ma, „Potrzeby w normie”. Stuknięcie w nią
+    rozwija paski i nastroje (`data-card="potrzeby"`, main.ts); jej kolor to najgorszy stan, a `aria-expanded` ustawia main.ts
+    według klasy karty (HTML nie zna stanu zwinięcia). */
+export function potrzebyLinia(needs: Needs, en: boolean): string {
+  const zle = NEED_ORDER.map((k) => ({ k, v: Math.round(needs[k]) })).filter((x) => needLevel(x.v) !== 'ok');
+  const poziom = zle.some((x) => needLevel(x.v) === 'bad') ? 'bad' : zle.length ? 'mid' : 'ok';
+  const tekst = zle.length
+    ? zle.map((x) => `${en ? NEED_LABELS_EN[x.k] : NEED_LABELS[x.k]} ${x.v}`).join(' · ')
+    : en
+      ? 'Needs are fine'
+      : 'Potrzeby w normie';
+  return `<button type="button" class="potrzeby-linia ${poziom}" data-card="potrzeby" aria-expanded="false"><span class="potrzeby-t">${esc(tekst)}</span></button>`;
+}
 
 /** liczba z odmianą: 1 nabój, 2 naboje, 5 naboi */
 export function many(n: number, one: string, few: string, lots: string): string {
@@ -224,6 +240,7 @@ export function personCard(
     storyHtml(en ? (opts.en?.story ?? p.story) : p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
     opts.lokator ? biteHtml(p, tick, false, words, e) : armHtml(p, tick, words, e),
+    potrzebyLinia(p.needs, en),
     `<div class="needs">${bars}</div>`,
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',

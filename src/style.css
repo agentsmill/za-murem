@@ -1887,6 +1887,10 @@ a.btn {
 }
 
 /* ---------- telefon (okno węższe niż 768 px): zwijane bloki stanu, src/ui/telefon.ts ---------- */
+/* Linia potrzeb na karcie osoby jest tylko na telefonie (main.ts: `data-card="potrzeby"`, klasa `potrzeby-zwiniete` na karcie). */
+.potrzeby-linia {
+  display: none;
+}
 @media (max-width: 767px) {
   /* Pasek stanu: pojemnik jest przyciskiem (role, tabindex i aria-expanded ustawia main.ts). Zwinięty (`data-zwiniete`) zostawia
      jedną niską linię z kafelkami pilnymi (klasa `pilne` z `oznaczPilne`: w stanie „uwaga” i „źle”, a gdy nic takiego nie ma,
@@ -1952,6 +1956,48 @@ a.btn {
     padding: 0 4px;
     font-size: 12px;
     line-height: 1;
+  }
+  /* Karta osoby: potrzeby zwinięte do jednej linii z ostrzeżeniami (paski i nastroje po stuknięciu). */
+  #card.potrzeby-zwiniete .needs,
+  #card.potrzeby-zwiniete .moods {
+    display: none;
+  }
+  .potrzeby-linia {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin: 6px 0 2px;
+    padding: 4px 8px;
+    font: 600 13px / 1.2 var(--f-sign);
+    letter-spacing: 0.02em;
+    text-align: left;
+    color: var(--ink-dim);
+    background: var(--slab-deep);
+    border: 1px solid var(--seam);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .potrzeby-linia::before {
+    content: "▴";
+    flex: none;
+  }
+  #card.potrzeby-zwiniete .potrzeby-linia::before {
+    content: "▾";
+  }
+  .potrzeby-linia.mid {
+    color: var(--lamp);
+  }
+  .potrzeby-linia.bad {
+    color: var(--bad);
+    border-color: #6a2e24;
+  }
+  .potrzeby-t {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
