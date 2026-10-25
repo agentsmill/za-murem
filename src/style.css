@@ -614,9 +614,11 @@ a.btn {
 }
 
 @media (max-width: 640px) {
+  /* ciaśniej o 4 px w pionie (dopełnienie 4 px zamiast 5, przerwa między wierszami 5 px zamiast 6): na telefonie każdy wiersz
+     nakładki to ułamek mapy, a pasek ma trzy wiersze */
   .top {
-    padding: 5px 6px;
-    gap: 6px 6px;
+    padding: 4px 6px;
+    gap: 5px 6px;
   }
   /* na telefonie 390 px: szyld, zegar i (gdy stoi pracownia) ikona „Badania” w pierwszym wierszu (zegar dopełnia wiersz,
      niżej), tempo, alarm, praca, budowa i menu razem w drugim (dlatego odstępy i boki przycisków ciaśniejsze niż na
@@ -693,9 +695,9 @@ a.btn {
     margin-inline: auto;
     transform: none;
     bottom: calc(var(--card-h, 0px) + var(--place-lift, 0px) + var(--attrib-h, 21px) + 23px);
-    padding: 4px 10px;
-    font-size: 13px;
-    line-height: 1.3;
+    padding: 3px 8px;
+    font-size: 12px;
+    line-height: 1.25;
   }
 }
 
@@ -1765,6 +1767,17 @@ a.btn {
   }
   .goal {
     font-size: 13px;
+  }
+  /* podpowiedź bieżącego celu (zwinięte okienko pokazuje ją w całości) o piksel mniejsza i ciaśniejsza: dzień 2 ma ją w pięciu
+     wierszach */
+  .goal-how {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+  /* atrybucja map (zawsze widoczna) w dwóch wierszach na telefonie: dopełnienie 1 px zamiast 2 */
+  .attrib {
+    padding: 1px 8px;
+    line-height: 1.25;
   }
   /* karta osoby zwarta, żeby nie zasłaniała pół mapy: bez fachu i cech, potrzeby w trzech kolumnach,
      tylko najgorszy nastrój */
