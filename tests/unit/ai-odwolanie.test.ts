@@ -6,7 +6,7 @@
    nowym zarządzie daje ten sam przebieg), kolejne odwołanie, a pustka i exodus nie są odwołaniem (osada upada, to sprawa
    gospodarza w src/ui/osada.ts). Liczby startu (zaufanie, wkurzenie) są w nagłówku modułu z pomiarem. */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { type GraAi, grajDo, krokGry, nowaGraAi, skrotGry, wczytajGre, zapiszGre } from '../../src/ai/gra.ts';
 import { swiatZGeo, wybierzOsade, ziarnoOsady } from '../../src/ai/kwadrat.ts';
 import { nowyZarzad, START_WKURZENIA, START_ZAUFANIA } from '../../src/ai/odwolanie.ts';
@@ -17,6 +17,9 @@ import { dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { mieszkancyZapisu } from '../../src/sim/osiedle.ts';
 import { ukladZGeo } from '../../src/world/kwadraty.ts';
 import { daneDema, wczytajDemo } from '../../tools/osada-kwadraty.ts';
+
+// Gry osady liczą się sekundami, ale maszyna bywa przeciążona (inne procesy, bateria): każdy test pliku ma zapas czasu
+vi.setConfig({ testTimeout: 300_000 });
 
 const DEMO = 'przymorze';
 let demo: ReturnType<typeof wczytajDemo>;
@@ -62,7 +65,7 @@ describe('nowyZarzad: start nowego zarządu', () => {
   });
 });
 
-describe('nowyZarzad: odwołanie wymuszone w grze osady', { timeout: 300_000 }, () => {
+describe('nowyZarzad: odwołanie wymuszone w grze osady', () => {
   it('odwołanie daje nowy zarząd: gra nie jest skończona, ma nowy start, wpis w kronice w obu językach, a tick stoi', () => {
     const g = swiezaGra();
     grajDo(g, silnik, 3 * TICKS_PER_DAY);
@@ -141,7 +144,7 @@ describe('nowyZarzad: odwołanie wymuszone w grze osady', { timeout: 300_000 }, 
   });
 });
 
-describe('nowyZarzad: co nie jest odwołaniem', { timeout: 300_000 }, () => {
+describe('nowyZarzad: co nie jest odwołaniem', () => {
   it('bez końca gry albo przy pustce i exodusie nic nie robi (false, stan bez zmian)', () => {
     const g = swiezaGra();
     grajDo(g, silnik, TICKS_PER_DAY);

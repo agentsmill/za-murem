@@ -63,6 +63,9 @@ import { okolicaZGeo } from './miasto-play.ts';
 // Dane i gospodarz
 // ---------------------------------------------------------------------------------------------------------------------
 
+// Gry osady i naszej liczą się sekundami, ale maszyna bywa przeciążona (inne procesy, bateria): każdy test pliku ma zapas czasu
+vi.setConfig({ testTimeout: 300_000 });
+
 type Demo = ReturnType<typeof wczytajDemo>;
 type Dane = Awaited<ReturnType<typeof daneDema>>;
 
