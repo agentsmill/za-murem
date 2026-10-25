@@ -10625,8 +10625,11 @@ function druzynaShots(): Shot[] {
     żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
     z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
     prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
-/** przyciski karty mieszkańca tylko do odczytu, które nie wydają poleceń: historia, imię i (na telefonie) rozwijanie potrzeb */
-const PRZYCISKI_BEZ_ROZKAZU: readonly (string | undefined)[] = ['story', 'imie', 'potrzeby'];
+/** przycisk karty mieszkańca tylko do odczytu, który nie wydaje polecenia: historia, imię i (na telefonie) rozwijanie potrzeb;
+    funkcja, nie stała, bo scenariusze karty ruszają, zanim moduł dojdzie do stałych z końca pliku */
+function bezRozkazu(przycisk: string | undefined): boolean {
+  return przycisk === 'story' || przycisk === 'imie' || przycisk === 'potrzeby';
+}
 
 function kartaShots(): Shot[] {
   const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
@@ -10936,7 +10939,7 @@ function kartaShots(): Shot[] {
     if (tap) await page.touchscreen.tap(b.x, b.y);
     else await page.mouse.click(b.x, b.y);
     const m = await sprawdz(page, r.name);
-    if (m.buttons.some((x) => !PRZYCISKI_BEZ_ROZKAZU.includes(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+    if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
     console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
     await historia(page, nazwa, tap);
     if (!tap) await page.mouse.move(b.x + 400, b.y - 250);
@@ -11266,8 +11269,7 @@ function kartaShots(): Shot[] {
         const b = await ekran(page, r.id);
         await page.mouse.click(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => !PRZYCISKI_BEZ_ROZKAZU.includes(x)))
-          throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         if ((await cmds(page)) !== przed) throw new Error('kliknięcie mieszkańca wysłało polecenie');
         // zaznaczenie zostało: prawy przycisk na ziemi daje polecenie, a nie „Najpierw zaznaczcie”
         await page.mouse.click(b.x + 120, b.y + 90, { button: 'right' });
@@ -11407,8 +11409,7 @@ function kartaShots(): Shot[] {
         const b = await naPionku(r.id);
         await page.touchscreen.tap(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => !PRZYCISKI_BEZ_ROZKAZU.includes(x)))
-          throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         await historia(page, 'karta-mieszkanca-telefon', true);
       },
     },
