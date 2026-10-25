@@ -2,8 +2,9 @@
    pole `Save.osada` jest opcjonalne (brak pola to gra bez osady, zapis bez flagi jest taki sam jak przed osadą), jego zły
    kształt odrzuca cały zapis (od stanu osady zależy przebieg gry), o fladze wczytanej gry decyduje zapis, nie adres
    (`osadaWlaczona`, jak `pietraWlaczone`), a powrót na ekran startowy zachowuje `osada=1` (`adresStartowy`). Do tego nieudany
-   zapis (brak miejsca w pamięci przeglądarki, dwie gry w jednym zapisie) nie kasuje poprzedniego. Rozmiar zapisu po 45 dniach
-   i odtworzenie gry osady z zapisu są w osada-gra.test.ts. */
+   zapis (brak miejsca w pamięci przeglądarki, dwie gry w jednym zapisie) nie kasuje poprzedniego, a osada, której zapis rzuca, idzie
+   do zapisu bez pola (`poleOsady`). Rozmiar zapisu po 30 dniach jest w osada-zapis-rozmiar.test.ts, odtworzenie gry osady z zapisu
+   w osada-gra.test.ts. */
 
 import fs from 'node:fs';
 import path from 'node:path';
