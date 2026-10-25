@@ -55,7 +55,7 @@
      od nowa z tą samą siedzibą. Zrzuty: siedziba z bliska (`osada-widok`) i dom z osadą z daleka (`osada-widok-daleko`);
    - `osada-karta`: klik w budynek siedziby (albo etykietę) otwiera kartę osady z nazwą, kierunkiem i liczbami z ostatniego kontaktu
      (nie z gry osady), jedynym przyciskiem „×” i bez dyplomacji, a cały jej tekst to wiedza z kontaktu (bez wieści o upadku i odwołaniu); zamykają ją „×”, Esc, zaznaczenie kogoś i klik w dom, klik w siedzibę
-     z zaznaczoną osobą nie wydaje polecenia. Zrzuty: karta na komputerze po polsku (`osada-karta`, `osada-karta-otwarta`);
+     z zaznaczoną osobą nie wydaje polecenia, a po kliknięciu etykiety myszą spacja dalej zatrzymuje i puszcza grę (etykieta nie trzyma fokusu). Zrzuty: karta na komputerze po polsku (`osada-karta`, `osada-karta-otwarta`);
    - `osada-karta-en`: to samo na telefonie 390×844 po angielsku: karta w ekranie, nic na nic nie nachodzi (`nachodzenia`), etykieta
      niczego nie zasłania, „×” na palec, tekst bez polskich liter;
    - `osada-mapa`: mapa miasta ma znacznik osady po odkryciu (nie ma go przed).
@@ -644,6 +644,27 @@ async function sprawdzAtrybucje(page: Page, opis: string): Promise<void> {
   );
 }
 
+/** Po kliknięciu myszą etykieta osady nie trzyma fokusu, więc spacja dalej zatrzymuje i puszcza grę (zamiast klikać etykietę drugi raz i
+    otwierać kartę od nowa), jak po kliknięciu chipa listy ludzi (tools/shots-lista.ts). Dwie spacje wracają do tempa sprzed próby. */
+async function sprawdzSpacje(page: Page, opis: string): Promise<void> {
+  const tempo = () => page.evaluate(() => window.zm!.speed());
+  const wEtykiecie = await page.evaluate(() => document.activeElement?.closest('#osadaMark') != null);
+  wymagaj(!wEtykiecie, `${opis}: etykieta nie trzyma fokusu`);
+  const przed = await tempo();
+  await page.keyboard.press('Space');
+  const po = await tempo();
+  wymagaj((przed === 0) !== (po === 0), `${opis}: spacja zatrzymuje albo puszcza grę`, [przed, po]);
+  wymagaj(
+    (await widokKarty(page)).widac,
+    `${opis}: karta osady dalej stoi (spacja nie zamyka jej ani nie otwiera od nowa)`,
+  );
+  await page.keyboard.press('Space');
+  const wrocilo = await tempo();
+  wymagaj((wrocilo === 0) === (przed === 0), `${opis}: druga spacja odwraca pierwszą`, [przed, po, wrocilo]);
+  // tempo sprzed próby (spacja puszcza zawsze na 1×)
+  if (przed > 1) await page.keyboard.press(`Digit${przed}`);
+}
+
 /** ile kwadratów pod mgłą dla zbioru odkrytych (klucze „sx,sy”): ich nieodkryci sąsiedzi (osiem kierunków), jak `polaMgly` */
 function ileMgly(odkryte: readonly string[]): number {
   const zbior = new Set(odkryte);
@@ -897,9 +918,10 @@ function widokOsadyShots(out: string): ShotCele[] {
         await otwarta();
         await page.keyboard.press('Escape');
         await zamknieta();
-        // etykieta otwiera kartę
+        // etykieta otwiera kartę, a po kliknięciu myszą spacja dalej zatrzymuje i puszcza grę
         await page.click('#osadaMark .treemark-t');
         await otwarta();
+        await sprawdzSpacje(page, 'po kliknięciu etykiety');
         // zaznaczenie kogoś zamyka kartę osady (pokazuje się karta osoby)
         await page.click('#lista .lp >> nth=0');
         await page.waitForFunction(
