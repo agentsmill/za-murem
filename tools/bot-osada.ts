@@ -20,12 +20,19 @@
    tabelę i liczy werdykt. Procesów tyle, ile rdzeni bez jednego (`--procesy=N` zmienia). Gra jest deterministyczna, więc
    te same argumenty dają te same liczby niezależnie od kolejności procesów; skrót końcowy gry idzie w linii postępu.
 
+   Miara bramki (decyzja 2 Mateusza, 24.10.2026; tools/osada-ocena.ts): zarząd nie odwołany wcześniej niż w 30. dniu (albo
+   wcale) i pierwszy kamień ludności najpóźniej w 15. dniu, każde w co najmniej 4 z 5 ziaren na demie; budowle są w tabeli, ale
+   nie w werdykcie. Demo, którego dom nie spełnia reguły miejsca osady (`pozaRegula`: `swiatOsady` z geo domu jako kandydat
+   (0, 0), src/ai/kwadrat.ts; dziś Zielonki, 17 porcji jedzenia w zasięgu), jest w tabeli z dopiskiem „poza regułą miejsca” i
+   nie wchodzi do werdyktu.
+
    Wyjście: nagłówek, dla każdego dema tabela przebiegów (ziarno, koniec albo „żyje”, przyczyna, ludność o 6:00 w dniach 10,
    20, 30 i ostatnim, dzień pierwszego kamienia ludności, budowle na koniec, czas), dla przebiegu bez przeżycia ostatnie
-   pięć poranków (ludność, zarząd, budowle, badania, jedzenie, drewno, zimni, głodni, zaufanie, wkurzenie) i linia „przeżyło
-   x z n”, na końcu błędy przebiegów, uwagi i werdykt. Postęp idzie na stderr. Budowle w tabeli i w ocenie to budowle poza
-   obwodem (`budowleStojace`: bez zasieków i barykady). Demo, w którym któryś przebieg się nie udał, nie jest oceniane: pod
-   jego tabelą i w werdykcie stoi „nie oceniono”, a pozostałe przebiegi tego dema nie liczą się do werdyktu.
+   pięć poranków (ludność, zarząd, budowle, badania, jedzenie, drewno, zimni, głodni, zaufanie, wkurzenie) i linie „przeżyło
+   x z n” (do końca przebiegu) oraz „bez odwołania przed dniem 30: y z n” (miara bramki), na końcu błędy przebiegów, uwagi i
+   werdykt. Postęp idzie na stderr. Budowle w tabeli to budowle poza obwodem (`budowleStojace`: bez zasieków i barykady).
+   Demo, w którym któryś przebieg się nie udał, nie jest oceniane: pod jego tabelą i w werdykcie stoi „nie oceniono”, a
+   pozostałe przebiegi tego dema nie liczą się do werdyktu.
    Kod wyjścia: 0 gdy werdykt przechodzi (albo jest `--bez-progu`, czyli sam pomiar bez progów) i żaden przebieg nie padł;
    1 gdy werdykt nie przechodzi (bez `--bez-progu`) albo któryś przebieg jest błędny (proces padł, przekroczył limit czasu,
    zostawił okno zarządu zawieszone: silnik nie umie odpowiedzieć na taki rodzaj okna, albo decydent rzucił błąd: `krokGry` go
@@ -52,19 +59,33 @@ import {
   skrotGry,
   wejscie,
 } from '../src/ai/gra.ts';
+import {
+  MIN_LOKATORZY_SIEDZIBY,
+  MIN_POKOI_SIEDZIBY,
+  type OdrzucenieOsady,
+  PROG_JEDZENIA_OSADY,
+  PROMIEN_SIEDZIBY_M,
+  swiatOsady,
+} from '../src/ai/kwadrat.ts';
 import { silnik } from '../src/ai/silnik.ts';
+import { mnogaPl } from '../src/core/jezyk.ts';
+import { MAX_OKOLICA_M } from '../src/gov/wyprawy.ts';
 import { liczbaZbadanych } from '../src/sim/badania.ts';
 import { clockOf, dayOf, START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../src/sim/clock.ts';
 import { populacja } from '../src/sim/snapshot.ts';
+import { ukladZGeo } from '../src/world/kwadraty.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import { okolicaZGeo } from '../tests/unit/miasto-play.ts';
+import { daneDema, wczytajDemo } from './osada-kwadraty.ts';
 import {
   type BlednyPrzebieg,
+  bezOdwolaniaPrzed,
   budowleNaKoniec,
   budowleStojace,
   type DzienPrzebiegu,
   dzienKamienia,
   ludnoscWDniu,
+  type PozaRegula,
   PROGI,
   type Przebieg,
   przezyl,
@@ -428,6 +449,43 @@ export function opisBledowDecydenta(b: readonly BladDecydenta[], razem: number =
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Reguła miejsca osady
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Powód odrzucenia kwadratu przez regułę miejsca osady po polsku, z liczbami z pomiaru (`PomiarKwadratu`). */
+export function opisPowoduOdrzucenia(r: OdrzucenieOsady): string {
+  const p = r.pomiar;
+  switch (r.odrzucony) {
+    case 'jedzenie':
+      return `jedzenie: ${mnogaPl(p.jedzenie ?? 0, 'porcja', 'porcje', 'porcji')} w zasięgu ${MAX_OKOLICA_M} m, potrzeba ${PROG_JEDZENIA_OSADY}`;
+    case 'siedziba':
+      return p.kandydatow === 0
+        ? `siedziba: brak budynku mieszkalnego w ${PROMIEN_SIEDZIBY_M} m od środka kwadratu`
+        : `siedziba: żaden z ${p.proby} największych budynków mieszkalnych nie ma ${MIN_POKOI_SIEDZIBY} pokoi i pokoju zarządu (najlepszy ma ${mnogaPl(p.pokoje, 'pokój', 'pokoje', 'pokoi')})`;
+    case 'mieszkancy':
+      return p.lokatorzy === null
+        ? 'mieszkańcy: brak tabel mieszkańców albo generator nie dał wyniku dla siedziby'
+        : `mieszkańcy: siedziba bez lokatorów z generatora (${mnogaPl(p.lokatorzy, 'lokator', 'lokatorzy', 'lokatorów')}, potrzeba ${MIN_LOKATORZY_SIEDZIBY})`;
+  }
+}
+
+/** Czy dom dema stoi na miejscu, na którym osada mogłaby powstać: `swiatOsady` z geo domu jako kandydat (0, 0), z układem
+    domu z jego geo i tabelami mieszkańców dema (public/data). null: spełnia regułę; inaczej powód (`opisPowoduOdrzucenia`).
+    Pomiar jest pełny, więc powód zawsze podaje jedzenie, jeśli się je dało policzyć. Wynik nie zależy od ziarna (ziarno
+    zmienia tylko wnętrze siedziby, nie jedzenie ani mieszkańców; sprawdza to test), ale podaje się je, bo `swiatOsady` je bierze. */
+export async function pozaRegula(demoKlucz: string, ziarno: number): Promise<string | null> {
+  const demo = wczytajDemo(demoKlucz);
+  const dane = await daneDema(demoKlucz);
+  const r = swiatOsady(demo.geo, 0, 0, dane, ziarno, ukladZGeo(demo.geo), { pelny: true });
+  return 'odrzucony' in r ? opisPowoduOdrzucenia(r) : null;
+}
+
+/** Dopisek przy demie poza regułą miejsca (nagłówek jego tabeli). */
+export function opisPozaRegula(powod: string): string {
+  return `poza regułą miejsca (${powod}): przebiegi w tabeli, ale poza werdyktem`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Proces główny
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -506,10 +564,19 @@ async function glowny(o: Opcje): Promise<number> {
   const rezultaty = new Map<string, Rezultat>();
   const klucz = (demo: string, ziarno: number): string => `${demo}:${ziarno}`;
   const procesy = Math.min(o.procesy, zadania.length);
+  // dema, których dom nie spełnia reguły miejsca osady: ich przebiegi są w tabeli, ale poza werdyktem
+  const poza: PozaRegula[] = [];
+  for (const demo of o.dema) {
+    const powod = await pozaRegula(demo, o.ziarna[0]);
+    if (powod) poza.push({ demo, powod });
+  }
   console.log(
-    `Osada AI, etap 1: ${o.dema.join(', ')}; ziarna ${o.ziarna.join(',')}; ${o.dni} dni; gra ${opisGry(o)}; procesów ${procesy}${
+    `Osada AI: ${o.dema.join(', ')}; ziarna ${o.ziarna.join(',')}; ${o.dni} dni; gra ${opisGry(o)}; procesów ${procesy}${
       o.bezProgu ? '; bez progu (sam pomiar)' : ''
     }`,
+  );
+  console.log(
+    `miara bramki (decyzja 2, 24.10.2026): zarząd bez odwołania przed dniem ${PROGI.odwolanieOdDnia} i kamień ludności najpóźniej w dniu ${PROGI.kamien[1]}, każde w ${PROGI.przezyc} z ${PROGI.zZiaren} ziaren; budowle tylko w tabeli`,
   );
   let nastepny = 0;
   let gotowe = 0;
@@ -539,7 +606,8 @@ async function glowny(o: Opcje): Promise<number> {
   /** przebiegi, które się nie udały (proces padł, limit czasu, zawieszone okno, błąd decydenta): ich dema werdykt pomija */
   const bledne: BlednyPrzebieg[] = [];
   for (const demo of o.dema) {
-    console.log(`\n${demo}`);
+    const pozaDemo = poza.find((x) => x.demo === demo);
+    console.log(`\n${demo}${pozaDemo ? ` [${opisPozaRegula(pozaDemo.powod)}]` : ''}`);
     console.log(naglowekTabeli(o.dni));
     const wDemie: Przebieg[] = [];
     for (const ziarno of o.ziarna) {
@@ -573,6 +641,9 @@ async function glowny(o: Opcje): Promise<number> {
       for (const linia of ostatniePoranki(p)) console.log(`  ${linia}`);
     }
     console.log(`\nprzeżyło ${wDemie.filter(przezyl).length} z ${o.ziarna.length}`);
+    console.log(
+      `bez odwołania przed dniem ${PROGI.odwolanieOdDnia}: ${wDemie.filter((x) => bezOdwolaniaPrzed(x, PROGI.odwolanieOdDnia)).length} z ${o.ziarna.length}`,
+    );
     const zleWDemie = bledne.filter((b) => b.demo === demo);
     if (zleWDemie.length)
       console.log(
@@ -587,11 +658,12 @@ async function glowny(o: Opcje): Promise<number> {
     console.log('\nBłędy przebiegów:');
     for (const b of bledyPrzebiegow) console.log(`  - ${b}`);
   }
-  const w = werdykt(przebiegi, PROGI, bledne);
+  const w = werdykt(przebiegi, PROGI, bledne, poza);
   const wynikSlowem = w.ok ? 'przechodzi' : w.bledy.length ? 'NIE PRZECHODZI' : 'NIE OCENIONO';
   console.log(`\nWerdykt: ${wynikSlowem}${o.bezProgu ? ' (bez progu: nie wpływa na kod wyjścia)' : ''}`);
   for (const b of w.bledy) console.log(`  - ${b}`);
   for (const n of w.nieocenione) console.log(`  - ${n}`);
+  for (const n of w.pominiete) console.log(`  - ${n}`);
   if (w.uwagi.length) {
     console.log('Uwagi:');
     for (const u of w.uwagi) console.log(`  - ${u}`);
