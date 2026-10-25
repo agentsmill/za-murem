@@ -231,7 +231,8 @@ describe('praca: tabele wpisane ręcznie', () => {
     const katalogi = ['../../src/sim', '../../src/ui'];
     const zrodla = katalogi
       .flatMap((k) => readdirSync(new URL(`${k}/`, import.meta.url)).map((f) => new URL(`${k}/${f}`, import.meta.url)))
-      .filter((u) => u.pathname.endsWith('.ts') && !u.pathname.includes('/wiki-'))
+      // pomijamy moduły wiki po nazwie pliku, a nie po całej ścieżce: w katalogu o nazwie „wiki-…” (np. drzewo robocze wiki-2) odpadałyby wszystkie pliki
+      .filter((u) => u.pathname.endsWith('.ts') && !(u.pathname.split('/').pop() ?? '').startsWith('wiki-'))
       .map((u) => readFileSync(u, 'utf8'))
       .join('\n');
     for (const wariant of ['blok', 'dom'] as const) {
