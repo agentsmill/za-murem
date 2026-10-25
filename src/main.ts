@@ -27,7 +27,8 @@
    stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, osobny przycisk `#statsToggle`, wybór w pamięci
    przeglądarki), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`, `--zapas-dol`; poziomo chowa
    się, gdy karta zostawia mu mniej niż nagłówek). Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami
-   (`przelaczPotrzeby`). Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
+   (`przelaczPotrzeby`). Ostrzeżenie o zgasłej kozie wisi
+   na telefonie 9 s, potem zostaje czerwona linia stanu. Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
    z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok i nie otwiera wiki (main.ts przechwytuje
    kliknięcie i Enter w zwiniętym pasku, kafelki nie biorą dotyku), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera
    artykuł i niczego nie zwija (pasek zwija przycisk). */
@@ -1975,6 +1976,10 @@ function tonight(p: SimPerson): string | undefined {
   return undefined;
 }
 
+/** Ile ms na telefonie wisi ostrzeżenie o zgasłej kozie (jednorazowo na epizod; potem sama linia stanu). */
+const ZIMNO_NA_TELEFONIE_MS = 9000;
+let zimnoPokazane = false;
+let zimnoDo = 0;
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
@@ -2001,9 +2006,19 @@ function hud(now: number) {
         `${dying.name} is dying of fever and will get back up after death. Have someone armed standing by to finish the job.`,
       )
     : '';
+  // Na telefonie ostrzeżenie o zgasłej kozie wisi 9 s od chwili, gdy problem się zaczyna, a potem zostaje czerwona linia stanu
+  // (kafelki „koza” i „drewno” zwiniętego paska, src/ui/telefon.ts): stałe dwa wiersze nad atrybucją zjadały cztery do pięciu
+  // punktów procentowych mapy, a samo jedno zdanie ucięte do jednego wiersza gubiłoby polecenie (co zrobić). Na komputerze wisi,
+  // dopóki problem trwa.
+  if (!cold) zimnoPokazane = false;
+  else if (!zimnoPokazane && telefonMq.matches) {
+    zimnoPokazane = true;
+    zimnoDo = now + ZIMNO_NA_TELEFONIE_MS;
+  }
+  const zimnoWidac = cold && (!telefonMq.matches || now < zimnoDo);
   const warn = fever
     ? fever
-    : cold
+    : zimnoWidac
       ? touchUI
         ? L(
             'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).',
