@@ -541,10 +541,11 @@ describe('napad dla symulacji: siła w planie, jawny wynik, warta z menu', () =>
   });
 });
 
-describe('łata z kart „Ślady przy siatce”', () => {
+describe('łata z kart łatających za złom („Ślady przy siatce”, „Kury sąsiadów”, krok „Szczekania”)', () => {
   it('kosztuje tyle złomu, ile łata z menu w symulacji', () => {
     // zarząd nie importuje symulacji, więc ta sama liczba żyje w dwóch miejscach (menu łata trzema sztukami desek albo
-    // złomu, karta trzema sztukami złomu); karta o jedną sztukę tańsza niż menu była usterką U13 ścieżki celów
+    // złomu, karty trzema sztukami złomu); karta o jedną sztukę tańsza niż menu była usterką U13 ścieżki celów, a koszt
+    // każdej karty pilnuje tests/unit/lata-kart.test.ts
     expect(PATCH_SCRAP).toBe(PATCH_COST);
   });
 });

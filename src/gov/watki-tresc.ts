@@ -29,7 +29,8 @@
    „Ktoś woła z dachu” i „Pies ujada nocami”, które zajmują miejsce kart z puli pierwszej nocy (`sygnal`, `pies`); satyra i lore
    (list z 2026 i reszta) dopiero od drugiego dnia (decyzja Mateusza, 17.10.2026; pilnuje tego tests/unit/pierwszy-dzien.test.ts).
    Nic tu nie losuje poza tym, co daje host (nowi ludzie z ziarna zarządu w `make`), a angielskie
-   teksty nie losują wcale. */
+   teksty nie losują wcale. Krok 2 „Szczekania” łata dziurę wspólnym wyborem `lataDziury` z tresc.ts (tyle złomu, co łata z menu:
+   `PATCH_SCRAP`, 3 sztuki; tylko gdy jest dziura) i zostawia hak `szczekanie.slady`. */
 
 import { zawodEn } from '../content/data.en.ts';
 import { PROFS, type Prof } from '../content/data.ts';
@@ -39,7 +40,7 @@ import { ri } from '../core/rng.ts';
 import { zPrzedimkiem } from '../mieszkancy/szablony.en.ts';
 import { type KtoId, nazwiskoDla, osobyGrupy } from './goscie.ts';
 import { LICZBY_EN } from './goscie-teksty.ts';
-import type { GChoice, GovHost } from './tresc.ts';
+import { type GChoice, type GovHost, lataDziury } from './tresc.ts';
 import type { GameMode, GovLokator, Punkt } from './typy.ts';
 import { najstarszaMieszkanka, type OsobaKarty, osob, osobaKarty, osobyNaPodlodze } from './warianty.ts';
 import type { Krok, Lancuch } from './watki.ts';
@@ -593,21 +594,14 @@ const SZCZEKANIE: Lancuch = {
             h.log(tx('Resztki zniknęły przed świtem.', 'The scraps were gone before dawn.'));
           },
         },
-        {
-          label: tx('Załatać dziurę (Złom 2)', 'Patch the hole (Scrap 2)'),
-          ok: h.holes() > 0 && h.res.zlom >= 2,
-          run: () => {
-            h.pay({ zlom: 2 });
-            h.patchHole();
-            h.hak('szczekanie.slady', { jak: 'lata' });
-            h.log(
-              tx(
-                'Dziura załatana deskami i drutem. Cokolwiek tu chodzi, musi wejść inną drogą.',
-                'The hole is patched with planks and wire. Whatever has been coming through will need another way in.',
-              ),
-            );
-          },
-        },
+        lataDziury(h, {
+          gdy: h.holes() > 0,
+          po: () => h.hak('szczekanie.slady', { jak: 'lata' }),
+          log: tx(
+            'Dziura załatana złomem i drutem. Cokolwiek tu chodzi, musi wejść inną drogą.',
+            'The hole is patched with scrap and wire. Whatever has been coming through will need another way in.',
+          ),
+        }),
         {
           label: tx('Nie ruszać', 'Leave it'),
           ok: true,
