@@ -431,8 +431,8 @@ function skutekWyboru(id: WyborId, c: WikiCtx): string {
       return L(`${nastroj(-1)}; grupa odchodzi`, `${nastroj(-1)}; the group leaves`);
     case 'zostan':
       return L(
-        `${nastroj(1)} (wkurzenie +2, gdy ktoś musi spać na podłodze); cała grupa zostaje jako mieszkańcy`,
-        `${nastroj(1)} (anger +2 if someone has to sleep on the floor); the whole group stays as residents`,
+        `${nastroj(1)} (wkurzenie +2, gdy ktoś musi spać na podłodze); cała grupa zostaje jako ${c.words.mieszkancy.m}`,
+        `${nastroj(1)} (anger +2 if someone has to sleep on the floor); the whole group stays as ${c.e.mieszkancy}`,
       );
     case 'zarzad':
       return L(
@@ -570,7 +570,9 @@ function opisJak(jak: keyof typeof NASTAWIENIE, c: WikiCtx): string {
     case 'okradl':
       return L('Okradł was', 'Stole from you');
     case 'wyrzucony':
-      return L(`Mieszkaniec wyrzucony przez ${c.words.brama.b}`, `A resident thrown out through ${c.e.brama}`);
+      return c.dom
+        ? L(`Sąsiad wyrzucony przez ${c.words.brama.b}`, `A neighbour thrown out through ${c.e.brama}`)
+        : L(`Mieszkaniec wyrzucony przez ${c.words.brama.b}`, `A resident thrown out through ${c.e.brama}`);
     case 'zlapany':
       return L('Złapany na kradzieży', 'Caught stealing');
   }
@@ -916,8 +918,8 @@ export function definicjeWydarzenia(): Def[] {
               'Help (a night’s shelter, food, meds, taking in, safekeeping) raises trust by 1, sending away lowers it by 1, and the swap and the hearing leave it alone.',
             ),
             L(
-              `Przyjęcie dokłada wkurzenie, gdy zabraknie łóżek i ktoś musi spać na podłodze, a ${wCyt(etykietaWyboru('zarzad', c))} bierze do ${zarzad} tylko pierwszą żywą osobę z grupy, resztę zostawiając jako mieszkańców.`,
-              `Taking in adds anger when the beds run out and someone has to sleep on the floor, and ${wCyt(etykietaWyboru('zarzad', c))} takes only the first living person of the group onto ${c.e.krotko}, leaving the rest as residents.`,
+              `Przyjęcie dokłada wkurzenie, gdy zabraknie łóżek i ktoś musi spać na podłodze, a ${wCyt(etykietaWyboru('zarzad', c))} bierze do ${zarzad} tylko pierwszą żywą osobę z grupy, resztę zostawiając jako ${c.words.mieszkancy.m}.`,
+              `Taking in adds anger when the beds run out and someone has to sleep on the floor, and ${wCyt(etykietaWyboru('zarzad', c))} takes only the first living person of the group onto ${c.e.krotko}, leaving the rest as ${c.e.mieszkancy}.`,
             ),
             L(
               `Nocleg wymaga otwartej ${c.words.brama.d}: z uchwałą ${wCyt(tr(lawNameTx('u_brama', c.place)))} odpowiedź ${wCyt(etykietaWyboru('noc', c))} jest wyszarzona od 20:00 do 6:00.`,
@@ -1520,8 +1522,8 @@ export function definicjeWydarzenia(): Def[] {
               `Each has ${odDoN(n.kartMin, n.kartMax)} cards; the next one waits at least as many game hours as are set for it (from ${n.poMin} to ${n.poMax}), and when it is ripe it jumps ahead of the ordinary pool with a ${proc(SZANSA_KROKU)} chance.`,
             ),
             L(
-              `Część opowieści potrzebuje obcych ${c.words.brama.pod} albo prawdziwych mieszkańców siedziby, więc w grze bez nich się nie zaczyna.`,
-              `Some stories need strangers at ${c.e.brama} or real residents of your seat, so they do not start in a game without them.`,
+              `Część opowieści potrzebuje obcych ${c.words.brama.pod} albo prawdziwych ludzi, którzy mieszkają w siedzibie, więc w grze bez nich się nie zaczyna.`,
+              `Some stories need strangers at ${c.e.brama} or real people who live in your seat, so they do not start in a game without them.`,
             ),
             L(
               'Treści nie zdradzamy: o tym, co się stanie, przekonacie się z kart, a gra zapisana przed pojawieniem się ciągów toczy się dalej bez nich.',
@@ -1570,8 +1572,8 @@ export function definicjeWydarzenia(): Def[] {
         return {
           zdania: [
             L(
-              `${wielka(c.words.zarzad.krotko)} pamięta każdego, o kim zdecydował ${c.words.brama.pod}: nakarmionego, wpuszczonego, przyjętego, odprawionego, okradającego i złapanego, a także mieszkańca wyrzuconego przez ${c.words.brama.b}.`,
-              `${wielka(c.e.krotko)} remembers everyone it has decided on at ${c.e.brama}: fed, let in, taken in, sent away, stealing or caught, and a resident thrown out through ${c.e.brama}.`,
+              `${wielka(c.words.zarzad.krotko)} pamięta każdego, o kim zdecydował ${c.words.brama.pod}: nakarmionego, wpuszczonego, przyjętego, odprawionego, okradającego i złapanego, a także ${c.dom ? 'sąsiada' : 'mieszkańca'} wyrzuconego przez ${c.words.brama.b}.`,
+              `${wielka(c.e.krotko)} remembers everyone it has decided on at ${c.e.brama}: fed, let in, taken in, sent away, stealing or caught, and a ${c.dom ? 'neighbour' : 'resident'} thrown out through ${c.e.brama}.`,
             ),
             L(
               `Każda decyzja zmienia nastawienie w granicach od ${signed(-2, 0)} do ${signed(2, 0)}: nakarmienie i nocleg dają ${signed(NASTAWIENIE.nakarmiony, 0)}, przyjęcie ${signed(NASTAWIENIE.przyjety, 0)}, kradzież ${signed(NASTAWIENIE.okradl, 0)}, a złapanie i wyrzucenie ustawiają od razu ${signed(NASTAWIENIE.zlapany, 0)}.`,

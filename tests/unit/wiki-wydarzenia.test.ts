@@ -1237,6 +1237,17 @@ describe('język, dom i odnośniki', () => {
     expect(kontrolaOdnosnikow('wydarzenia')).toBeGreaterThan(40);
   });
 
+  it('w domu artykuły o wydarzeniach nie mówią o mieszkaniach ani mieszkańcu (sprawdza to też zrzut wiki-dom-wydarzenia)', () => {
+    for (const lang of ['pl', 'en'] as const) {
+      ustawJezyk(lang);
+      for (const zombie of [false, true])
+        for (const d of moje) {
+          const t = tekstArtykulu(artykul(d.id, kontekst('dom', false, zombie))!);
+          expect(t, `${d.id} ${lang}`).not.toMatch(/mieszkani|\bresidents?\b|\bflats?\b|\bboard\b|co-op/i);
+        }
+    }
+  });
+
   it('angielski nie ma polskich słów także w napisach z gry, które cytuje', () => {
     ustawJezyk('en');
     for (const wariant of ['blok', 'dom'] as const)
