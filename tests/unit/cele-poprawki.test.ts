@@ -169,8 +169,8 @@ describe('R1.2: reszta podpowiedzi pierwszej budowli', () => {
     for (const key of DEMOS) {
       const zwykly = goal(day2(game(key, 'zwykly')), 'budowla').how;
       const zombie = goal(day2(game(key, 'zombie')), 'budowla').how;
-      expect(zwykly, key).toContain('Materiał daje przeszukiwanie i rozbiórka.');
-      expect(zombie, key).toContain('Materiał daje przeszukiwanie i rozbiórka.');
+      expect(zwykly, key).toContain('Materiał pochodzi z przeszukiwania i rozbiórki.');
+      expect(zombie, key).toContain('Materiał pochodzi z przeszukiwania i rozbiórki.');
       expect(zwykly, key).toContain('Zasieki liczą się też do obwodu.');
       expect(zombie, key).not.toContain('Zasieki liczą się też do obwodu.');
       // gdy zasieków nie ma wśród dwóch najtańszych, dopisku też nie ma

@@ -15,7 +15,7 @@ import { dayOf, hourOf, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
 import { commandFor } from '../../src/sim/orders.ts';
 import { NOWE } from '../../src/sim/praca.ts';
-import { Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
+import { createSim, Sim, type SimState, trunkOf } from '../../src/sim/sim.ts';
 import { snapshot } from '../../src/sim/snapshot.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import {
@@ -33,7 +33,7 @@ import {
 import { ROZDZIALY } from '../../src/ui/sciezka-rozdzialy.ts';
 import type { Miejsce } from '../../src/world/miasto.ts';
 import type { World } from '../../src/world/world.ts';
-import { newGame, core as rdzen } from './sasiedzi-pomoc.ts';
+import { demoWorld, newGame, core as rdzen } from './sasiedzi-pomoc.ts';
 
 export const DEMA = ['przymorze', 'lanciego', 'zielonki'] as const;
 export type Demo = (typeof DEMA)[number];
@@ -115,6 +115,9 @@ export function przezZapis(g: Gra): Gra {
 /** sekundy przy ekranie w tej chwili (przy tempie 1×) */
 export const ekran = (st: SimState): number => Math.floor(st.tick / TICKS_PER_SECOND);
 
+/** czas przy ekranie z ułamkiem (`OdczytCelow.ekran`), jak go liczy gra w tempie 1×: tick / 20 */
+export const czasPrzyEkranie = (st: SimState): number => st.tick / TICKS_PER_SECOND;
+
 /** wejście zarządu z tej chwili, tak jak buduje je gra (z okolicą, jeśli gra ją ma) */
 export const wejscie = (g: Gra): GovInput => ({
   ...govInput(g.sim.st, g.sim.w, ekran(g.sim.st)),
@@ -140,6 +143,7 @@ export function odczytZ(st: SimState, w: World, gov: GovState | null, o: OpcjeOd
     snap: snapshot(st, w),
     gov,
     input: gov ? govInput(st, w, ekran(st)) : null,
+    ekran: czasPrzyEkranie(st),
     touch: o.touch ?? false,
     words: o.words ?? wordsOfWorld(w),
     wordsEn: o.wordsEn ?? wordsEnOfWorld(w),
@@ -170,11 +174,17 @@ export function krok(g: Gra, o?: OpcjeOdczytu): StanSciezki {
   return g.sciezka;
 }
 
-/** Otwiera rozdział w tej chwili jak `window.zm.rozdzial(k)` (tick otwarcia i liczniki „od otwarcia” z tej chwili, wpisy
+/** Otwiera rozdział w tej chwili jak `window.zm.rozdzial(k)` (tick otwarcia, czas przy ekranie i liczniki „od otwarcia” z tej chwili, wpisy
     zrobionych celów zostają) i robi krok: cele, które gra już spełnia, zaliczają się od razu. Do testów rozdziałów, które
     nie chcą grać dwóch dób do chwili, w której rozdział otworzyłby się sam. */
 export function otworz(g: Gra, k: KluczRozdzialu, o?: OpcjeOdczytu): StanSciezki {
-  g.sciezka = { ...g.sciezka, rozdzial: k, od: g.sim.st.tick, start: licznikiStartu(g.sim.st, g.gov) };
+  g.sciezka = {
+    ...g.sciezka,
+    rozdzial: k,
+    od: g.sim.st.tick,
+    odEkran: czasPrzyEkranie(g.sim.st),
+    start: licznikiStartu(g.sim.st, g.gov),
+  };
   return krok(g, o);
 }
 
@@ -313,6 +323,33 @@ export function poPierwszymRaporcie(key: Demo, mode: GameMode = 'zwykly'): Gra {
     bazy.set(klucz, b);
   }
   return klon(b);
+}
+
+/* Gry z obcymi (`obcy`: wędrowcy, handlarz, ekipy, goście z klocków), liczone raz na demo i tryb; test dostaje klon. */
+const bazyZObcymi = new Map<string, Gra>();
+
+/** Gra z obcymi tuż po zamknięciu pierwszego raportu (drugi dzień około 6:00). Ścieżka w niej jest świeża: bez okazji i bez
+    wpisów okazji w `zrobione`, żeby to, co działo się w pierwszą noc (napad, stado), nie wpływało na testy. */
+export function poRaporcieZObcymi(key: Demo, mode: GameMode): Gra {
+  const klucz = `${key}:${mode}`;
+  let b = bazyZObcymi.get(klucz);
+  if (!b) {
+    const w = demoWorld(key);
+    b = graZSymulacji(key, mode, 5, new Sim(w, createSim(w, 5, { core: 4, mode, obcy: true })));
+    doPierwszegoRaportu(b);
+    b.sciezka = stanZZapisu(undefined, b.sim.st, b.gov);
+    bazyZObcymi.set(klucz, b);
+  }
+  return klon(b);
+}
+
+/** Gra bez losowych wizyt: nikt nie przyjdzie, dopóki test tego nie zażąda (zegary obcych wyłączone). */
+export function bezObcych(g: Gra): Gra {
+  const o = g.sim.st.obcy!;
+  o.next = -1;
+  o.wnext = -1;
+  o.enext = -1;
+  return g;
 }
 
 /** Gra do chwili, gdy zarząd ma pokazać kartę nocy: stoi na tej karcie (otwartej), a krok ścieżki ją widzi. Zwraca kartę.

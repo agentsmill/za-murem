@@ -606,10 +606,14 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // wybiera wątków i nie losuje z ziarna, więc skróty niżej są skrótami gry sprzed łańcuchów (były 10242b95, f01804b8 i 53bab003).
     // Sama gra w przeglądarce ma łańcuchy domyślnie włączone (`?lancuchy=0` wyłącza), a jej przebieg pilnują boty i
     // lancuchy-przelacznik.test.ts; tu zostaje przebieg bez łańcuchów, żeby skróty mierzyły tylko drogi do zwycięstwa.
+    // Dwunasty raz w zadaniu 14 ścieżki celów: karty „Ślady przy siatce” łatają za 3 złomu jak menu (nie za 2) i wpisują
+    // „złomem i drutem” (nie „deskami i drutem”). W przebiegu z ziarnem 5 i polityką „losowo” wypada ta karta z łatą, a jedyne
+    // różnice w stanie zarządu to dwa wpisy kroniki (podpis wyboru z kosztem i wpis o łacie); losowanie się nie przesuwa, więc
+    // skróty ziarna 1 i 3 zostają, a ziarna 5 zmienia się z dc7b63fc na f1500b9a.
     const przebiegi = [
       [1, 'propozycja', '401232fa'],
       [3, 'zawsze-warta', '563c8664'],
-      [5, 'losowo', 'dc7b63fc'],
+      [5, 'losowo', 'f1500b9a'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));

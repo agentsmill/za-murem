@@ -405,6 +405,119 @@ describe('silnik ścieżki: rozdziały na atrapie', () => {
     expect(g.sciezka.od).toBe(g.sim.st.tick - 77);
   });
 
+  it('czas przy ekranie z chwili otwarcia (`odEkran`) zapisuje się razem z tickiem otwarcia i potem się nie zmienia', () => {
+    const g = nowaGra('przymorze');
+    const f = flagi();
+    const { krokA } = silnik(g, atrapa(f));
+    // przed otwarciem r1 stan to stan startu gry: pierwszy dzień od ticku 0, bez czasu przy ekranie
+    expect(krokA().odEkran).toBeUndefined();
+    for (let k = 0; k < 123; k++) g.sim.step();
+    f.a = true;
+    f.b = true;
+    krokA();
+    expect(g.sciezka.rozdzial).toBe('r1');
+    expect(g.sciezka.odEkran).toBe(odczyt(g).ekran);
+    expect(g.sciezka.odEkran).toBe(g.sim.st.tick / 20);
+    const otwarcie = g.sciezka.odEkran;
+    for (let k = 0; k < 77; k++) g.sim.step();
+    expect(krokA().odEkran).toBe(otwarcie);
+    // następny rozdział dostaje swój czas otwarcia
+    f.c = true;
+    f.d = true;
+    krokA();
+    expect(g.sciezka.rozdzial).toBe('r2');
+    expect(g.sciezka.odEkran).toBe(g.sim.st.tick / 20);
+  });
+
+  it('odczyt bez czasu przy ekranie nie zostawia go w stanie: rozdział otwiera się bez `odEkran`', () => {
+    const g = nowaGra('przymorze');
+    const f = flagi();
+    f.a = true;
+    f.b = true;
+    const def = atrapa(f);
+    const bezEkranu = { ...odczyt(g), ekran: undefined };
+    g.sciezka = krokSciezki(g.sciezka, bezEkranu, def);
+    expect(g.sciezka.rozdzial).toBe('r1');
+    expect(g.sciezka.odEkran).toBeUndefined();
+    expect('odEkran' in g.sciezka).toBe(false);
+  });
+
+  it('cel z zapasem: zapas zalicza i zostawia ślad w `zapasem`, a zrobiony wygrywa z zapasem i z terminem', () => {
+    const zapasowy = (f: Flagi & { zapas: boolean }): DefRozdzialu[] =>
+      atrapa(f, {
+        cele: [cl('z', () => f.c, { zapas: () => f.zapas, przepadl: () => f.termin }), cl('w', () => f.d)],
+      });
+    const nowy = () => ({ ...flagi(), zapas: false });
+    const wR1 = (f: Flagi & { zapas: boolean }) => {
+      const g = nowaGra('przymorze');
+      f.a = true;
+      f.b = true;
+      const e = silnik(g, zapasowy(f));
+      e.krokA();
+      expect(g.sciezka.rozdzial).toBe('r1');
+      return { g, ...e };
+    };
+    // zapas prawdziwy, zrobiony fałszywy: zaliczone zapasem, ze śladem
+    const f1 = nowy();
+    const a = wR1(f1);
+    expect(a.krokA().zrobione).not.toHaveProperty(['r1.z']);
+    expect(a.g.sciezka.zapasem).toBeUndefined();
+    f1.zapas = true;
+    a.krokA();
+    expect(a.g.sciezka.zrobione).toHaveProperty(['r1.z']);
+    expect(a.g.sciezka.zapasem).toEqual(['r1.z']);
+    expect(a.widokA().rozdzial!.cele.find((c) => c.key === 'z')).toMatchObject({ done: true });
+    // zaliczenie jest trwałe, a ślad nie dubluje się przy kolejnych krokach
+    f1.zapas = false;
+    a.krokA();
+    a.krokA();
+    expect(a.g.sciezka.zrobione).toHaveProperty(['r1.z']);
+    expect(a.g.sciezka.zapasem).toEqual(['r1.z']);
+    // zrobiony i zapas w tym samym kroku: zrobiony, bez śladu zapasu
+    const f2 = nowy();
+    const b = wR1(f2);
+    f2.c = true;
+    f2.zapas = true;
+    b.krokA();
+    expect(b.g.sciezka.zrobione).toHaveProperty(['r1.z']);
+    expect(b.g.sciezka.zapasem).toBeUndefined();
+    // zapas i termin w tym samym kroku: zapas wygrywa, cel nie przepada
+    const f3 = nowy();
+    const c = wR1(f3);
+    f3.zapas = true;
+    f3.termin = true;
+    c.krokA();
+    expect(c.g.sciezka.zrobione).toHaveProperty(['r1.z']);
+    expect(c.g.sciezka.przepadle).not.toContain('r1.z');
+    expect(c.g.sciezka.zapasem).toEqual(['r1.z']);
+    // sam termin bez zapasu: przepada jak dotąd
+    const f4 = nowy();
+    const d = wR1(f4);
+    f4.termin = true;
+    d.krokA();
+    expect(d.g.sciezka.przepadle).toContain('r1.z');
+    expect(d.g.sciezka.zapasem).toBeUndefined();
+  });
+
+  it('ślad zapasu przechodzi przez zapis i wczytanie, a krok czysty nie zmienia wejścia', () => {
+    const g = nowaGra('przymorze');
+    const f = { ...flagi(), zapas: false };
+    f.a = true;
+    f.b = true;
+    const def = atrapa(f, { cele: [cl('z', () => f.c, { zapas: () => f.zapas }), cl('w', () => f.d)] });
+    g.sciezka = krokSciezki(g.sciezka, odczyt(g), def);
+    expect(g.sciezka.rozdzial).toBe('r1');
+    expect(g.sciezka.zapasem).toBeUndefined();
+    f.zapas = true;
+    const wejscie = zamroz(structuredClone(g.sciezka));
+    const po = krokSciezki(wejscie, odczyt(g), def);
+    expect(po.zapasem).toEqual(['r1.z']);
+    expect(wejscie.zapasem).toBeUndefined();
+    const wczytany = stanZZapisu(JSON.parse(JSON.stringify(po)), g.sim.st, g.gov);
+    expect(wczytany.zapasem).toEqual(['r1.z']);
+    expect(wczytany.zapasem).not.toBe(po.zapasem);
+  });
+
   it('rozdział, którego cele stan gry już spełnia, zalicza je od razu przy otwarciu i może zamknąć się w tym samym kroku', () => {
     const g = nowaGra('przymorze');
     const f = flagi();

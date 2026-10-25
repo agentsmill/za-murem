@@ -3,7 +3,9 @@
    Treść 0.3 zostaje w src/content (pilnuje jej test zgodności), tu są tylko dodatki i wybór.
    Pula wydarzeń zależy od trybu gry: `tryby` (brak: oba tryby; sprawdza je `fitsMode` w wydarzenia.ts). `slady` to
    karta zwykłego trybu, `slady_z` jej wariant zombie (łata albo warta z dzidą, bez „udawać”, które podbijałoby napad
-   szabrowników), a `szwendacz` karta tylko trybu zombie o prawdziwym szwendaczu przy siatce (`GovHost.przy` z
+   szabrowników); łata z obu kart kosztuje `PATCH_SCRAP` złomu, tyle co łata z menu (test zgodności z `PATCH_COST`
+   w zarzad.test.ts), i tyle samo kosztuje na kartach „Kury” (ulica.ts) i „Szczekanie” (watki-tresc.ts): wybór `lataDziury`
+   jest wspólny. `szwendacz` to karta tylko trybu zombie o prawdziwym szwendaczu przy siatce (`GovHost.przy` z
    GovInput.horde.przy; „Dobić dzidą” wysyła atak osoby z dzidą przez `GovHost.atakuj`). `wedrowiec` ma wagę 0 w obu
    trybach: opisuje człowieka pod bramą, a nikogo tam nie ma; jego rolę przejął `gosc` (src/gov/wizyta.ts). Karta
    z miejscem na mapie ma `gdzie`, z którego okno wydarzenia robi przycisk „Pokaż”.
@@ -103,7 +105,7 @@ export const M1_LAWS: Record<string, M1Law> = {
   u_racje: {
     name: LAW.u_racje.name,
     path: LAW.u_racje.path,
-    desc: 'Jedzenie schodzi o 25% wolniej, ale ludzie jedzą dopiero przy wyraźnym głodzie i najwyżej dwa razy na dobę, więc na noc kładą się głodni. Wkurzenie +0,4 dziennie.',
+    desc: 'Porcje są o 25% mniejsze, a zapasy starczają trochę dłużej. Ludzie jedzą dopiero przy wyraźnym głodzie i najwyżej dwa razy na dobę, więc na noc kładą się głodni. Wkurzenie +0,4 dziennie.',
     daily: [0, 0.4],
   },
   u_meble: {
@@ -476,6 +478,46 @@ const DEST_EN = [
   'south',
 ];
 
+/** Godzina karty nocy (`CARD_HOUR` w noc.ts, którego tresc.ts nie może importować: noc.ts importuje tresc.ts; zgodność
+    pilnuje tests/unit/spojnosc-teksty.test.ts). */
+const GODZINA_KARTY = 20;
+
+/** Złom na łatę dziury z kart, które łatają za złom („Ślady przy siatce” `slady` i `slady_z`, „Kury” `kury` w ulica.ts i krok 2
+    łańcucha „Szczekanie” w watki-tresc.ts): tyle, ile bierze łata z menu (`PATCH_COST` w src/sim/sim.ts: trzy sztuki desek
+    albo złomu). Zarząd nie importuje symulacji, więc liczba żyje w dwóch miejscach, a zgodność pilnuje tests/unit/zarzad.test.ts
+    (jak `WOOD_PER_HOUR` i `BURN_TICKS`). Stoi tu, a nie w wspolne.ts, bo wspolne.ts importuje miejsce.ts, które czyta
+    `KONIEC_DOM` z tego pliku przy wczytaniu modułu: import wspolne.ts w tresc.ts wczytałby miejsce.ts przed `KONIEC_DOM`
+    i dał „Cannot access 'KONIEC_DOM' before initialization”. */
+export const PATCH_SCRAP = 3;
+
+/** Wybór „załatać dziurę” każdej karty, która łata za złom: `PATCH_SCRAP` złomu (włączony dopiero, gdy tyle jest w zapasie),
+    jedna dziura mniej i wpis do kroniki `log`. Podpis domyślnie „Załatać dziurę (Złom 3)”, a karta może dać własny (`label`).
+    `gdy` dokłada warunek karty do „starcza złomu” (krok „Szczekania” łata tylko, gdy jest dziura), a `po` to dalszy skutek karty
+    po łacie i przed wpisem (hak łańcucha). Kolejność skutków jak przy ręcznym zapisie na każdej karcie: zapłata, łata, `po`, wpis. */
+export const lataDziury = (h: GovHost, o: { log: Tx; label?: Tx; gdy?: boolean; po?: () => void }): GChoice => ({
+  label: o.label ?? tx(`Załatać dziurę (Złom ${PATCH_SCRAP})`, `Patch the hole (Scrap ${PATCH_SCRAP})`),
+  ok: (o.gdy ?? true) && h.res.zlom >= PATCH_SCRAP,
+  run: () => {
+    h.pay({ zlom: PATCH_SCRAP });
+    h.patchHole();
+    o.po?.();
+    h.log(o.log);
+  },
+});
+
+/** Pierwszy wybór kart „Ślady przy siatce” (`slady` i `slady_z`): łata dziurę za `PATCH_SCRAP` złomu (`lataDziury`) z wpisem
+    „złomem i drutem”. Do 20:00 podpis „przed nocą”, a od 20:00 „teraz”: karta wypada też wieczorem po karcie nocy (okno karty
+    wstrzymuje wydarzenia, więc po 20:00 jest ona już zatwierdzona i noc się zaczęła), a „załatać przed nocą” o 20:33 było
+    nieprawdą. Waga karty i jej losowanie bez zmian. */
+const lataSladow = (h: GovHost): GChoice =>
+  lataDziury(h, {
+    label:
+      h.hour() >= GODZINA_KARTY
+        ? tx(`Załatać teraz (Złom ${PATCH_SCRAP})`, `Patch it up now (Scrap ${PATCH_SCRAP})`)
+        : tx(`Załatać przed nocą (Złom ${PATCH_SCRAP})`, `Patch it up before dark (Scrap ${PATCH_SCRAP})`),
+    log: tx('Dziura załatana złomem i drutem.', 'The hole is patched up with scrap and wire.'),
+  });
+
 /** nowe wydarzenia M1: obcy jako wydarzenie, siatka, noc; teksty według miejsca (w domu ulica i komitet ulicy) */
 export const NEW_EVENTS: GEventDef[] = [
   {
@@ -558,15 +600,7 @@ export const NEW_EVENTS: GEventDef[] = [
       );
     },
     choices: (h) => [
-      {
-        label: tx('Załatać przed nocą (Złom 2)', 'Patch it up before dark (Scrap 2)'),
-        ok: h.res.zlom >= 2,
-        run: () => {
-          h.pay({ zlom: 2 });
-          h.patchHole();
-          h.log(tx('Dziura załatana deskami i drutem.', 'The hole is patched up with planks and wire.'));
-        },
-      },
+      lataSladow(h),
       {
         label: tx('Powiesić puszki z kamykami', 'Hang up tins full of pebbles'),
         ok: true,
@@ -604,15 +638,7 @@ export const NEW_EVENTS: GEventDef[] = [
       );
     },
     choices: (h) => [
-      {
-        label: tx('Załatać przed nocą (Złom 2)', 'Patch it up before dark (Scrap 2)'),
-        ok: h.res.zlom >= 2,
-        run: () => {
-          h.pay({ zlom: 2 });
-          h.patchHole();
-          h.log(tx('Dziura załatana deskami i drutem.', 'The hole is patched up with planks and wire.'));
-        },
-      },
+      lataSladow(h),
       {
         label: tx('Postawić tam kogoś z dzidą na noc', 'Post someone there with a spear for the night'),
         ok: true,

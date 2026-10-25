@@ -735,10 +735,12 @@ describe('haczyk gościa', () => {
       'Wyrzucić z łupem',
       'Zatrzymać do rana',
     ]);
+    // jeden złapany: zaimek zgodny z płcią (grupa: „them”)
+    const go = s.gov.goscie!.aktywny!.gosc.osoby[0].f ? 'her' : 'him';
     expect(v.choices.map((c) => c.label.en)).toEqual([
-      'Take the food back and throw them out',
-      'Throw them out with the loot',
-      'Hold them until morning',
+      `Take the food back and throw ${go} out`,
+      `Throw ${go} out with the loot`,
+      `Hold ${go} until morning`,
     ]);
     expect(v.choices.every((c) => c.ok)).toBe(true);
     expect(v.gdzie).toEqual({ x: 34, y: 12 });
@@ -1438,8 +1440,8 @@ describe('karta po śmierci członka grupy', () => {
     // przyjęcie: wpis w kronice o żywych (2 osoby, pierwszy żywy na czele), nie o zmarłym
     wybierz(s, 'Przyjąć do spółdzielni');
     const linia = s.gov.log.find((l) => l.txt.pl.startsWith('Przyjęliście: '))!;
-    expect(linia.txt.pl).toBe(`Przyjęliście: ${g.osoby[1].name} i reszta (2 osoby).`);
-    expect(linia.txt.en).toBe(`You took in ${g.osoby[1].name} and the others (2 people).`);
+    expect(linia.txt.pl).toBe(`Przyjęliście: ${g.osoby[1].name} i jeszcze 1 osoba.`);
+    expect(linia.txt.en).toBe(`You took in ${g.osoby[1].name} and 1 other.`);
     // wszyscy żywi (indeksy po kolei): bez przycinania, jak dotąd
     const calosc = stan(g, { input: { cap: 20, residents: 0 } });
     expect(eventView(calosc.gov, calosc.i)!.text.pl).toContain(g.osoby[0].name);
@@ -1763,8 +1765,8 @@ describe('język i teksty kart', () => {
     const s = stan(reczny({ kto: 'rodzina', ilu: 4, chce: 'dolaczyc' }), { input: { cap: 9, residents: 8 } });
     wybierz(s, 'Wpuścić na noc');
     oPiatej(s);
-    expect(s.gov.later[0].line.pl).toMatch(/^Noc u was spędzili goście: .+ i reszta \(4 osoby\)\.$/);
-    expect(s.gov.later[0].line.en).toMatch(/and the others \(4 people\) spent the night with you\.$/);
+    expect(s.gov.later[0].line.pl).toMatch(/^Noc u was spędzili goście: .+ i jeszcze 3 osoby\.$/);
+    expect(s.gov.later[0].line.en).toMatch(/ and 3 others spent the night with you\.$/);
   });
 });
 

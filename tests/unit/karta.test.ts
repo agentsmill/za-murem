@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { budynkiZCzlonkami } from '../../src/mieszkancy/budynki.ts';
 import { oznaczGeo } from '../../src/mieszkancy/oznacz.ts';
@@ -161,10 +162,25 @@ describe('personCard: mieszkaniec tylko do odczytu', () => {
     expect(personCard(p, 0, undefined, true, lokator)).toContain('aria-expanded="true"');
     expect(zwinieta).not.toContain('Tej nocy');
   });
-  it('jedynymi przyciskami są historia i zmiana imienia', () => {
+  it('jedynymi przyciskami są historia, zmiana imienia i rozwijanie potrzeb oraz „Więcej” na telefonie (żaden nie wydaje polecenia)', () => {
     const html = personCard(generowana(), 0, undefined, false, lokator);
     const karty = [...html.matchAll(/data-card="([a-z]+)"/g)].map((m) => m[1]).sort();
-    expect(karty).toEqual(['imie', 'story']);
+    expect(karty).toEqual(['imie', 'potrzeby', 'story', 'wiecej']);
+  });
+  it('„Więcej” jest tylko tam, gdzie karta ma co chować: rodzina, historia albo napis o fikcji', () => {
+    expect(personCard(generowana(), 0, undefined, false, lokator)).toContain('data-card="wiecej"');
+    expect(personCard(osoba(), 0)).not.toContain('data-card="wiecej"');
+    expect(personCard(osoba({ story: 'Kiedyś mieszkał na wsi.' }), 0)).toContain('data-card="wiecej"');
+  });
+  it('„Więcej” po angielsku to „More”, z podpowiedzią o rodzinie, historii i zmianie imienia', () => {
+    ustawJezyk('en');
+    try {
+      const html = personCard(generowana(), 0, undefined, false, lokator);
+      expect(html).toContain('>More</button>');
+      expect(html).toContain('title="Family, story and renaming"');
+    } finally {
+      ustawJezyk('pl');
+    }
   });
 });
 

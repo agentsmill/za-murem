@@ -1,5 +1,6 @@
 /* Jedno okno na raz nad grą (zamiast natywnego confirm): tabliczka z tytułem, treść i przyciski.
-   Kliknięcia przycisków z data-act i zmiany list wyboru idą do obsługi podanej przy otwarciu. `sheetHtml(s)` składa
+   Kliknięcia przycisków z data-act i zmiany list wyboru idą do obsługi podanej przy otwarciu; pod listą wyboru z linią
+   `.pick-full` (karta nocy) okno pokazuje pełny tekst wybranej opcji, gdy lista go ucina (`odswiezPelnyTekst`). `sheetHtml(s)` składa
    wnętrze tabliczki z czterech części `Sheet` (nagłówek, tytuł, treść, przyciski) i, gdy okno ma `cel`, linię „Cel: …”
    ścieżki celów tuż pod nagłówkiem; to czysta funkcja, więc da się ją sprawdzić w Node bez DOM. */
 
@@ -7,6 +8,30 @@ import type { Sheet } from './okna.ts';
 import { liniaCelu } from './tekst.ts';
 
 export type SheetHandler = (act: string, arg: string, el: HTMLElement) => void;
+
+/** Ile pikseli pola zamkniętej listy wyboru nie nadaje się na tekst: dopełnienie z obu stron i strzałka (z zapasem). */
+const WYBOR_ZAPAS = 44;
+
+/** jedno płótno do pomiaru szerokości tekstu (bez DOM tekst z `measureText` ma tę samą szerokość co w liście wyboru) */
+let plotnoPomiaru: CanvasRenderingContext2D | null | undefined;
+function szerokoscTekstu(tekst: string, el: HTMLElement): number {
+  plotnoPomiaru ??= document.createElement('canvas').getContext('2d');
+  if (!plotnoPomiaru) return 0;
+  plotnoPomiaru.font = getComputedStyle(el).font;
+  return plotnoPomiaru.measureText(tekst).width;
+}
+
+/** Zamknięta lista wyboru ucina opcję dłuższą niż jej pole: na telefonie „Warta przy dziurze od południowego wschodu, obr…”,
+    a decydujące słowa (obrona, ryzyko, „propozycja”) stoją na końcu. Pod listą jest więc linia `.pick-full` z pełnym tekstem
+    wybranej opcji; widać ją tylko wtedy, gdy tekst się nie mieści w polu listy, więc tam, gdzie lista pokazuje wszystko
+    (komputer), linii nie ma. Liczy się po otwarciu okna, po zmianie wyboru i po zmianie szerokości okna. */
+export function odswiezPelnyTekst(lista: HTMLSelectElement): void {
+  const linia = lista.nextElementSibling;
+  if (!(linia instanceof HTMLElement) || !linia.classList.contains('pick-full')) return;
+  const tekst = lista.selectedOptions[0]?.text ?? '';
+  if (linia.textContent !== tekst) linia.textContent = tekst;
+  linia.hidden = !tekst || szerokoscTekstu(tekst, lista) <= lista.clientWidth - WYBOR_ZAPAS;
+}
 
 /** Wnętrze tabliczki okna: nagłówek (mały napis i tytuł), linia „Cel: …” pod nim (tylko gdy okno ma `cel`), treść
     i przyciski. Części `kicker`, `title`, `body` i `foot` to gotowy HTML; `cel` to zwykły tekst i jest uciekany. */
@@ -39,7 +64,13 @@ export class Modal {
     });
     root.addEventListener('change', (e) => {
       const el = e.target as HTMLElement;
-      if (el instanceof HTMLSelectElement) this.handler?.('select', el.value, el);
+      if (!(el instanceof HTMLSelectElement)) return;
+      this.handler?.('select', el.value, el);
+      // obsługa może cofnąć wybór albo zmienić teksty opcji innych list, więc pełne teksty liczą się po niej
+      this.odswiezWybory();
+    });
+    window.addEventListener('resize', () => {
+      if (this.open) this.odswiezWybory();
     });
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' && this.open && this.closable) {
@@ -64,6 +95,7 @@ export class Modal {
     this.sheet.className = `sheet ${s.tone}`;
     this.sheet.innerHTML = sheetHtml(s);
     this.root.hidden = false;
+    this.odswiezWybory();
     this.sheet.scrollTop = 0;
     // fokus na samym oknie, nie na pierwszym przycisku: żaden wybór nie jest podpowiadany (Tab przechodzi dalej)
     this.sheet.tabIndex = -1;
@@ -85,6 +117,11 @@ export class Modal {
     const d = this.dismiss;
     this.close();
     d?.();
+  }
+
+  /** pełne teksty wybranych opcji pod listami wyboru okna (`odswiezPelnyTekst`) */
+  private odswiezWybory(): void {
+    for (const l of this.sheet.querySelectorAll<HTMLSelectElement>('select.pick')) odswiezPelnyTekst(l);
   }
 
   /** element w otwartym oknie */

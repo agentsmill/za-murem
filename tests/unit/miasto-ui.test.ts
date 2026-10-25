@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Lang, type Tx, tx, ustawJezyk } from '../../src/core/jezyk.ts';
-import { kiedyWraca, podgladWyprawy, powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
+import { kiedyWraca, POWOD_WYBRANE, podgladWyprawy, powodOdmowy, wyslijWyprawe } from '../../src/gov/dzienne.ts';
 import { BLOK } from '../../src/gov/miejsce.ts';
 import { TARGETS } from '../../src/gov/tresc.ts';
 import type { GovInput, GovState } from '../../src/gov/typy.ts';
@@ -456,13 +456,30 @@ describe('kartaMiejsca', () => {
     expect(pusto.linie.map((t) => t.pl).join(' ')).toMatch(/wybrane do cna/i);
     expect(pusto.linie.map((t) => t.en).join(' ')).toMatch(/picked clean/i);
     expect(pusto.linie.map((t) => t.pl).join(' ')).toMatch(/dziś/);
-    expect(pusto.powod?.pl).toMatch(/wybrane do cna/i);
+    // jedna linia stanu: powód odmowy o tym samym znaczeniu nie wraca pod listą (M13)
+    expect(pusto.linie.map((t) => t.pl).filter((t) => /wybrane do cna/i.test(t))).toEqual(['Wybrane do cna.']);
+    expect(pusto.powod).toBeUndefined();
+    expect(powodOdmowy(st, i, celZMiejsca(m))).toBe(POWOD_WYBRANE);
     dwaJezyki(pusto);
 
     // miejsce puste od lat (zapas 0 bez żadnej wizyty) też jest wybrane do cna
     const odLat = kartaMiejsca(pusteOdLat('bank', 900, 0), st, i);
     expect(odLat.mozna).toBe(false);
-    expect(odLat.linie.map((t) => t.pl).join(' ')).toMatch(/wybrane do cna/i);
+    // ... ale bez wizyt nie twierdzi po cichu, że to my je wybraliśmy: „zanim tu dotarliście”, obok „Jeszcze tu nie byliście.”
+    expect(odLat.linie.map((t) => t.pl)).toContain('Wybrane do cna, zanim tu dotarliście.');
+    expect(odLat.linie.map((t) => t.en)).toContain('Picked clean before you got here.');
+    expect(odLat.linie.map((t) => t.pl)).toContain('Jeszcze tu nie byliście.');
+    expect(odLat.linie.map((t) => t.pl).filter((t) => /wybrane do cna/i.test(t))).toHaveLength(1);
+    expect(odLat.powod).toBeUndefined();
+  });
+
+  it('miejsce wybrane do cna po zmroku albo za daleko: karta dalej pokazuje powód, bo ten mówi coś innego niż linia stanu (M13)', () => {
+    const { st, i } = gra(21);
+    const pusty = pusteOdLat('bank', 900, 0);
+    const noc = kartaMiejsca(pusty, st, i);
+    expect(noc.linie.map((t) => t.pl)).toContain('Wybrane do cna, zanim tu dotarliście.');
+    expect(noc.powod?.pl).toMatch(/Po zmroku nikt nie wychodzi/);
+    expect(noc.mozna).toBe(false);
   });
 
   it('dzień ostatniej wizyty sprzed kilku dni', () => {
@@ -530,7 +547,9 @@ describe('kartaMiejsca', () => {
     for (const [m, s0, wej] of przypadki) {
       const k = kartaMiejsca(m, s0, wej);
       const w = wyslijWyprawe(structuredClone(s0), wej, celZMiejsca(m), [b]);
-      expect(k.powod ?? null, `${m.klucz} o ${wej.hour}`).toEqual(w.ok ? null : w.why);
+      // powód „wybrane do cna” karta pokazuje linią stanu zapasu, nie drugi raz pod listą (M13); reszta powodów jest ta sama
+      const oczekiwany = w.ok || w.why === POWOD_WYBRANE ? null : w.why;
+      expect(k.powod ?? null, `${m.klucz} o ${wej.hour}`).toEqual(oczekiwany);
       expect(k.mozna).toBe(w.ok);
     }
   });
@@ -572,10 +591,11 @@ describe('kartaHtml', () => {
   });
 
   it('nazwa z OSM idzie przez ucieczkę HTML', () => {
+    // nazwa z OSM: znaczniki i & idą przez ucieczkę HTML, a proste cudzysłowy stają się polskimi (src/gov/wyprawy.ts, nazwaCelu)
     const zly = { ...m, nazwa: '<b>Sklep & "Spółka"</b>' };
     const h = kartaHtml(zly, kartaMiejsca(zly, st, i), true);
     expect(h).not.toContain('<b>Sklep');
-    expect(h).toContain('&lt;b&gt;Sklep &amp; &quot;Spółka&quot;&lt;/b&gt;');
+    expect(h).toContain('&lt;b&gt;Sklep &amp; „Spółka”&lt;/b&gt;');
   });
 });
 
@@ -907,6 +927,7 @@ describe('planWyprawySheet', () => {
     const { st, i, m } = plan();
     i.people[0].name = '<img src=x onerror=alert(1)> "Zła"';
     i.people[0].id = 'a"b<c>';
+    // nazwa z OSM: znaczniki i & idą przez ucieczkę HTML, a proste cudzysłowy stają się polskimi (src/gov/wyprawy.ts, nazwaCelu)
     const zly = { ...m, nazwa: '<b>Sklep & "Spółka"</b>' };
     const cel = celZMiejsca(zly);
     const s = planWyprawySheet(cel, i, st, new Set([i.people[0].id]), tx('<i>źle</i>', '<i>bad</i>'));
@@ -917,7 +938,7 @@ describe('planWyprawySheet', () => {
     expect(wszystko).not.toContain('a"b<c>');
     expect(wszystko).toContain('&lt;img src=x onerror=alert(1)&gt; &quot;Zła&quot;');
     expect(wszystko).toContain('data-arg="a&quot;b&lt;c&gt;"');
-    expect(wszystko).toContain('&lt;b&gt;Sklep &amp; &quot;Spółka&quot;&lt;/b&gt;');
+    expect(wszystko).toContain('&lt;b&gt;Sklep &amp; „Spółka”&lt;/b&gt;');
   });
 });
 

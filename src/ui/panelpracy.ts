@@ -21,6 +21,7 @@
    w praca.ts. Bez PixiJS. */
 
 import { L } from '../core/jezyk.ts';
+import type { Words, WordsEn } from '../gov/miejsce.ts';
 import { PROG_MAX, type Priorytet, type Progi, RODZAJE, type RodzajPracy } from '../sim/praca.ts';
 import { KROK_PROGU, nastepnyPriorytet, pracaPanelHtml, type WidokPracy } from './praca.ts';
 import './praca.css';
@@ -31,6 +32,8 @@ export interface PracaPanelHooks {
   widok(kol: RodzajPracy | null): WidokPracy | null;
   /** czy panel ma być po angielsku */
   en(): boolean;
+  /** słowa miejsca siedziby (słownik src/gov/miejsce.ts): w domu komitet zamiast zarządu, dom zamiast mieszkań */
+  slowa(): { w: Words; e: WordsEn };
   touch: boolean;
   /** nowy priorytet komórki */
   onPrio(osoba: number, rodzaj: RodzajPracy, prio: Priorytet): void;
@@ -138,11 +141,13 @@ export class PracaPanel {
     const v = this.hooks.widok(this.kol);
     if (!v) return;
     const en = this.hooks.en();
-    const key = `${en ? 'en' : 'pl'}|${JSON.stringify(v)}`;
+    const { w, e } = this.hooks.slowa();
+    // miejsce jest w kluczu: nowa gra w innym miejscu przebudowuje panel, choć widok się nie zmienił
+    const key = `${en ? 'en' : 'pl'}|${w.zarzad.m}|${JSON.stringify(v)}`;
     if (!force && key === this.key) return;
     this.key = key;
     this.view = v;
-    this.render(v, en);
+    this.render(v, en, w, e);
   }
 
   /** po obsłudze myszą albo dotykiem w panelu nie zostaje fokus nigdzie (patrz nagłówek pliku) */
@@ -154,7 +159,7 @@ export class PracaPanel {
 
   /** przebudowuje DOM; po obsłudze z klawiatury fokus wraca na ten sam element (po atrybucie), po myszy nie wraca
       nigdzie; przewinięcie zostaje */
-  private render(v: WidokPracy, en: boolean): void {
+  private render(v: WidokPracy, en: boolean, w: Words, e: WordsEn): void {
     let sel: string | undefined;
     const f = document.activeElement;
     if (this.klawiatura && f instanceof HTMLElement && this.el.contains(f)) {
@@ -169,7 +174,7 @@ export class PracaPanel {
     this.kicker.textContent = this.hooks.touch ? L('Praca', 'Work') : L('Praca (P)', 'Work (P)');
     this.el.setAttribute('aria-label', L('Praca', 'Work'));
     this.el.querySelector('.bp-x')?.setAttribute('aria-label', L('Zamknij', 'Close'));
-    this.body.innerHTML = pracaPanelHtml(v, en);
+    this.body.innerHTML = pracaPanelHtml(v, en, w, e);
     if (sel) this.body.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true });
   }
 

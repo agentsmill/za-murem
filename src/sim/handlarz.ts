@@ -116,15 +116,15 @@ export function zlaSlawa(o: Pick<Obcy, 'offers' | 'slawa'>, tick: number): void 
 export const ROB_MOOD = -6;
 export const ROB_MOOD_OTHERS = -3;
 
-type Deal = [Partial<Record<Mat, number>>, Partial<Record<Mat, number>>];
+export type Deal = [Partial<Record<Mat, number>>, Partial<Record<Mat, number>>];
 /** oferty kupujące złom (pierwsza oferta każdej wizyty jest stąd): [bierze, daje] */
-const BUYS_SCRAP: Deal[] = [
+export const BUYS_SCRAP: Deal[] = [
   [{ zlom: 6 }, { deski: 3 }],
   [{ zlom: 4 }, { jedzenie: 3 }],
   [{ zlom: 8 }, { czesci: 3 }],
 ];
 /** reszta tabeli */
-const OTHER: Deal[] = [
+export const OTHER: Deal[] = [
   [{ czesci: 3 }, { leki: 2 }],
   [{ leki: 2 }, { jedzenie: 5 }],
   [{ drewno: 8 }, { jedzenie: 4 }],

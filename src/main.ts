@@ -1,4 +1,4 @@
-/* Za Murem 0.4: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
+/* Za Murem 1.0: język gry (src/ui/jezyk.ts: angielski domyślnie, przełącznik EN/PL na karcie startowej i w Menu;
    po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
    wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
@@ -22,7 +22,16 @@
    symulacja i polecenia znają sam dom (`dodajKwadraty`, window.zm.kwadraty).
    ?lancuchy=0 wyłącza w nowej grze łańcuchy kart i wątki sezonu (src/gov/watki.ts): bez parametru nowa gra ma je włączone
    (`newGov(…, true)`, pole `GovState.lancuchy`). Zapis trzyma to, z czym grę zaczęto (zapis sprzed łańcuchów, bez pola, gra
-   dalej bez nich), a parametr nie zmienia wczytanej gry. */
+   dalej bez nich), a parametr nie zmienia wczytanej gry.
+   Na telefonie (okno węższe niż 768 px albo niższe niż 501 px, czyli też telefon poziomo; `TELEFON_MQ` w src/ui/telefon.ts) pasek
+   stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, osobny przycisk `#statsToggle`, wybór w pamięci
+   przeglądarki), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`, `--zapas-dol`; poziomo chowa
+   się, gdy karta zostawia mu mniej niż nagłówek). Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami
+   (`przelaczPotrzeby`), a „Więcej” chowa rodzinę, historię i zmianę imienia (`przelaczWiecej`). Ostrzeżenie o zgasłej kozie wisi
+   na telefonie 9 s, potem zostaje czerwona linia stanu. Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
+   z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok i nie otwiera wiki (main.ts przechwytuje
+   kliknięcie i Enter w zwiniętym pasku, kafelki nie biorą dotyku), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera
+   artykuł i niczego nie zwija (pasek zwija przycisk). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -34,7 +43,16 @@ import type { Person } from './content/people.ts';
 import { jezyk, L, poZmianieJezyka, type Tx, tr, tx } from './core/jezyk.ts';
 import { hashString } from './core/rng.ts';
 import { wyslijWyprawe } from './gov/dzienne.ts';
-import { BLOK, type Words, type WordsEn, wordsEn, wordsEnOfWorld, wordsOf, wordsOfWorld } from './gov/miejsce.ts';
+import {
+  BLOK,
+  placeOfWorld,
+  type Words,
+  type WordsEn,
+  wordsEn,
+  wordsEnOfWorld,
+  wordsOf,
+  wordsOfWorld,
+} from './gov/miejsce.ts';
 import { nightAdvice, WIEZA_KEY } from './gov/noc.ts';
 import type { GovInput, GovState, Prompt } from './gov/typy.ts';
 import { lancuchyZAdresu } from './gov/watki.ts';
@@ -136,7 +154,7 @@ import {
   zmianaZPol,
   zTejOsobyGeneratora,
 } from './ui/imiona.ts';
-import { podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
+import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
@@ -165,7 +183,7 @@ import {
 import { Modal } from './ui/okno.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
-import { renderStats, statsOf } from './ui/pasek.ts';
+import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
 import {
   blokujKlik,
   nastepnePietro,
@@ -194,9 +212,21 @@ import {
   type ZdarzenieUi,
   zdarzenieUi,
 } from './ui/sciezka.ts';
+import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
+import {
+  PASEK_KEY,
+  POTRZEBY_KEY,
+  TELEFON_MQ,
+  UKLAD_TELEFONU_MQ,
+  WIECEJ_KEY,
+  wczytajWybor,
+  zapiszWybor,
+} from './ui/telefon.ts';
+import { utworzWiki } from './ui/wiki-okno.ts';
+import { wikiCtx } from './ui/wiki-typy.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import {
   adresStartowy,
@@ -297,10 +327,11 @@ declare global {
       /** widok ścieżki celów (okazja, rozdział, drogi po ostatnim rozdziale) po kroku ścieżki na stanie z tej chwili; null
           bez gry */
       cele: () => WidokSciezki | null;
-      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick i liczniki „od otwarcia”);
-          zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten jest
-          skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, jakby rozdział otwarto wcześniej (zapas celu „nowi”
-          w trybie zombie po trzech dobach bez grania ich) */
+      /** tylko do zrzutów: ustawia rozdział ścieżki celów od tej chwili (jak jego otwarcie: tick, czas przy ekranie i liczniki
+          „od otwarcia”); zaliczone i przepadłe cele zostają, a następny krok ścieżki może otworzyć kolejny rozdział, jeśli ten
+          jest skończony. `dobyTemu` cofa tick otwarcia o tyle dób gry, a czas przy ekranie o tyle, ile te doby zajmują graczowi
+          w tempie 1× (około 627 s na dobę, bo noc po karcie biegnie 6×), jakby rozdział otwarto wcześniej (zapas celu „nowi”
+          w trybie zombie po trzech dobach, czyli po `EKRAN_NOWI_ZAPAS`, bez grania ich) */
       rozdzial: (k: KluczRozdzialu, dobyTemu?: number) => void;
       /** tylko do zrzutów: zwycięstwo drogi teraz (wygrana i wszystkie kamienie w stanie, epilog czeka); gdy żadne okno
           nie jest otwarte, epilog od razu się pokazuje. Zwraca rodzaj okna, które się otworzyło, albo null */
@@ -882,6 +913,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   fenceIn = govFence(world, words, wordsE);
   savedHour = Math.floor(st.tick / TICKS_PER_HOUR);
   $('osName').textContent = data.name;
+  dopasujNazwe();
   document.title = `Za Murem · ${data.name}`;
   const hq = world.buildings[world.hq];
   // kamera na drzwi siedziby, przy których stoi zarząd (środek rdzenia)
@@ -1257,7 +1289,7 @@ function showNight(p: Extract<Prompt, { k: 'karta' }>) {
 function showEpilog(droga: Droga) {
   const g = gov;
   if (!g || !sim) return;
-  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input())), (act) => {
+  modal.show(epilogSheet(droga, g.laws.path, g.mode ?? 'zwykly', statyEpilogu(g, input()), words, wordsE), (act) => {
     if (act === 'zw-dalej') {
       grajDalej(g);
       decided();
@@ -1900,12 +1932,14 @@ function setCard(html: string, key = '') {
       pkNowy.remove();
       card.append(...nowa.content.childNodes);
       cardHtml = html;
+      ariaKarty();
       return;
     }
   }
   card.innerHTML = html;
   cardHtml = html;
   cardKey = key;
+  ariaKarty();
 }
 // lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
 $('card').addEventListener('focusout', (e) => {
@@ -1950,11 +1984,17 @@ function tonight(p: SimPerson): string | undefined {
   return undefined;
 }
 
+/** Ile ms na telefonie wisi ostrzeżenie o zgasłej kozie (jednorazowo na epizod; potem sama linia stanu). */
+const ZIMNO_NA_TELEFONIE_MS = 9000;
+let zimnoPokazane = false;
+let zimnoDo = 0;
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
   $('hDay').textContent = L(`Dzień ${dayOf(st.tick)}`, `Day ${dayOf(st.tick)}`);
   $('hTime').textContent = clockOf(st.tick);
+  // pora roku z zegara gry (dotąd stały napis „jesień 2051” z index.html, także w zimie)
+  $('hSeason').textContent = tr(sezonPodpis(st.tick));
   $('fps').textContent = L(`${Math.round(fps)} kl/s`, `${Math.round(fps)} fps`);
   const snap = snapshot(st, sim.w);
   lastStock = snap.stock;
@@ -1974,9 +2014,19 @@ function hud(now: number) {
         `${dying.name} is dying of fever and will get back up after death. Have someone armed standing by to finish the job.`,
       )
     : '';
+  // Na telefonie ostrzeżenie o zgasłej kozie wisi 9 s od chwili, gdy problem się zaczyna, a potem zostaje czerwona linia stanu
+  // (kafelki „koza” i „drewno” zwiniętego paska, src/ui/telefon.ts): stałe dwa wiersze nad atrybucją zjadały cztery do pięciu
+  // punktów procentowych mapy, a samo jedno zdanie ucięte do jednego wiersza gubiłoby polecenie (co zrobić). Na komputerze wisi,
+  // dopóki problem trwa.
+  if (!cold) zimnoPokazane = false;
+  else if (!zimnoPokazane && telefonMq.matches) {
+    zimnoPokazane = true;
+    zimnoDo = now + ZIMNO_NA_TELEFONIE_MS;
+  }
+  const zimnoWidac = cold && (!telefonMq.matches || now < zimnoDo);
   const warn = fever
     ? fever
-    : cold
+    : zimnoWidac
       ? touchUI
         ? L(
             'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).',
@@ -1989,7 +2039,9 @@ function hud(now: number) {
       : '';
   $('hint').textContent = warn || (now < hintUntil ? hint : '');
   $('hint').classList.toggle('warn', !!warn);
-  renderStats(statsOf(snap, gov, words, wordsE));
+  const kafelki = statsOf(snap, gov, words, wordsE);
+  renderStats(kafelki);
+  oznaczPilne(kafelki);
   odswiezPietra();
   alarmButton(st);
   renderGoals(snap);
@@ -2079,6 +2131,8 @@ function odczytCelow(snap: SimSnapshot): OdczytCelow {
       wejscie ??= gov ? input() : null;
       return wejscie;
     },
+    // czas przy ekranie z ułamkiem: zapas celu „Przyjmijcie kogoś nowego” w zombie mierzy go, nie doby gry (tempo kart idzie z niego)
+    ekran: screen,
     touch: touchUI,
     words,
     wordsEn: wordsE,
@@ -2111,9 +2165,9 @@ function zCelem(s: Sheet, okno: OknoCelu): Sheet {
   return cel ? { ...s, cel } : s;
 }
 /** Czy okienko celów jest rozwinięte. Wybór gracza (klik w nagłówek) wygrywa; bez niego okienko jest rozwinięte na
-    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px, jak w CSS). */
+    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px albo niskie okno, `UKLAD_TELEFONU_MQ`). */
 let celeOtwarte: boolean | null = null;
-const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia('(max-width: 640px)').matches;
+const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia(UKLAD_TELEFONU_MQ).matches;
 /** Okienko celów ze ścieżki: widok z `widokCelow` (otwarty rozdział, a nad nim okazja) albo cele „Bez domu” gry z sąsiadami,
     narysowane przez `celeHtml`; po ostatnim rozdziale bez dróg do zwycięstwa okienko się chowa. */
 function renderGoals(snap: SimSnapshot) {
@@ -2134,13 +2188,22 @@ function renderGoals(snap: SimSnapshot) {
     widok = { okazja: null, rozdzial, drogi: null };
   } else widok = widokCelow(snap);
   const html = celeHtml(widok, { otwarte: celeRozwiniete(), touch: touchUI });
+  const bylo = !el.hidden;
   el.hidden = !html;
-  if (!html) return;
+  // Schowanie i pokazanie okienka oraz zmiana jego treści zmieniają jego wysokość, a od niej zależy położenie listy ludzi pod
+  // nim (`--goals-h`): wymiary liczą się od razu, w tej samej klatce. Okienka nie obserwuje obserwator rozmiaru (`bars` niżej).
+  if (!html) {
+    if (bylo) zmierzNakladki();
+    return;
+  }
+  const zmieniona = html !== goalsHtml || !bylo;
   if (html !== goalsHtml) {
     goalsHtml = html;
     el.innerHTML = html;
   }
   pokazBiezacyCel(el);
+  if (zmieniona) zmierzNakladki();
+  else znacznikPrzewijania(el);
 }
 /** Okienko celów ma ograniczoną wysokość (src/style.css, `.goals`: nie dalej niż karta osoby), a wyższa lista przewija się
     w środku, więc bieżący cel z podpowiedzią trzeba pokazać, kiedy się zmienił albo kiedy zmieniła się wysokość okienka albo
@@ -2324,6 +2387,7 @@ function showMenu() {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
+      else if (act === 'menu-wiki') wiki.otworz(null, true);
       else if (act === 'menu-zwyciestwo') showDrogi();
       else if (act === 'menu-start') {
         save();
@@ -2344,6 +2408,31 @@ function showHelp() {
     nextPrompt,
   );
 }
+/* ---------- wiki (src/ui/wiki.ts): z Menu i z czipów górnego paska ---------- */
+const wiki = utworzWiki({
+  modal,
+  root: $('modal'),
+  // artykuły czytają słownik miejsca siedziby; wiki to dokumentacja, nie widok na żywo (żadnego stanu symulacji)
+  ctx: () => wikiCtx(sim ? placeOfWorld(sim.w) : BLOK, touchUI, !!sim && modeOf(sim.st) === 'zombie'),
+  pomoc: showHelp,
+  wroc: showMenu,
+  zamknij: () => {
+    modal.close();
+    nextPrompt();
+  },
+  dismiss: nextPrompt,
+  powtorz: (f) => {
+    sheetAgain = f;
+  },
+});
+// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu (na telefonie tylko z rozwiniętego paska: w zwiniętym main.ts
+// przechwytuje kliknięcie i Enter, patrz „telefon: zwijane bloki stanu”)
+wiki.czipy(() => {
+  if (!sim || modal.open || badaniaOtwarta()) return false;
+  pauseGame();
+  ctx.close();
+  return true;
+});
 // przełącznik języka w Menu: kliknięcie zmienia język, a okno rysuje się od nowa przez słuchacza niżej
 podepnijPrzelacznik($('modal'));
 $('btnMenu').onclick = () => {
@@ -2386,9 +2475,12 @@ function alarmButton(st: SimState) {
   const b = $('btnAlarm');
   const on = alarmOn(st);
   const text = on ? L(ALARM_OFF, ALARM_OFF_EN) : tr(ALARM_IDLE.tekst);
-  if (b.textContent === text) return;
+  // podpowiedź bez alarmu ze słowami miejsca (w domu komitet): napis statyczny ma wersję z bloku, a nalozStatyczne()
+  // przywraca go po zmianie języka, więc porównanie obejmuje też podpowiedź
+  const title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(alarmTytul(words, wordsE));
+  if (b.textContent === text && b.title === title) return;
   b.textContent = text;
-  b.title = on ? L(ALARM_OFF_TITLE, ALARM_OFF_TITLE_EN) : tr(ALARM_IDLE.title);
+  b.title = title;
   b.classList.toggle('on', on);
   b.setAttribute('aria-pressed', String(on));
 }
@@ -2397,6 +2489,9 @@ function alarmButton(st: SimState) {
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
 $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
+  // linia potrzeb i przycisk „Więcej” na telefonie rozwijają i zwijają blok karty; to wybór interfejsu, nie polecenie dla symulacji
+  if (b?.dataset.card === 'potrzeby') return przelaczPotrzeby();
+  if (b?.dataset.card === 'wiecej') return przelaczWiecej();
   if (!b || !sim) return;
   const st = sim.st;
   // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
@@ -3114,6 +3209,7 @@ const pracaPanel = new PracaPanel($('pracaPanel'), $('app'), {
     return nalozPolecenia(widokPracy(snap, { kol, zlecen: kol ? sim.ileZlecen(kol) : 0, touch: touchUI }), sim.st.cmds);
   },
   en: () => jezyk() === 'en',
+  slowa: () => ({ w: words, e: wordsE }),
   touch: touchUI,
   onPrio: (osoba, rodzaj, prio) => sim?.push({ t: 'prio', ids: [], osoba, rodzaj, prio }),
   onProg: (co, n) => sim?.push({ t: 'prog', ids: [], co, n }),
@@ -3690,22 +3786,196 @@ window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 // wysokość górnego paska, listy celów, karty i atrybucji dla przycisków mapy i podpowiedzi (zawijają się na telefonie)
 const attrib = document.querySelector<HTMLElement>('#app .attrib');
-const bars = new ResizeObserver(() => {
-  const root = document.documentElement.style;
-  root.setProperty('--top-h', `${Math.round($('top').getBoundingClientRect().height)}px`);
-  root.setProperty('--goals-h', `${$('goals').hidden ? 0 : Math.round($('goals').getBoundingClientRect().height)}px`);
-  root.setProperty('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+/** niskie okno od 641 px szerokości (telefon poziomo; reguły `telefon poziomo` w src/style.css) i najmniej tyle pikseli, które okienko
+    celów musi mieć nad kartą osoby, żeby w ogóle się pokazało (nagłówek i trochę treści) */
+const NISKIE_OKNO_MQ = '(min-width: 641px) and (max-height: 500px)';
+const CELE_MIN_PX = 40;
+/** Co `zmierzNakladki` wpisało ostatnio do zmiennych CSS: zmienna dostaje wartość tylko wtedy, gdy się zmieniła, żeby nie
+    przeliczać stylów bez potrzeby. */
+const zmienneNakladek = new Map<string, string>();
+function ustawZmienna(nazwa: string, wartosc: string) {
+  if (zmienneNakladek.get(nazwa) === wartosc) return;
+  zmienneNakladek.set(nazwa, wartosc);
+  document.documentElement.style.setProperty(nazwa, wartosc);
+}
+/** element jest na ekranie (nie `hidden` i nie `display: none` od przodka) */
+const naEkranie = (e: HTMLElement) => !e.hidden && e.getClientRects().length > 0;
+/** Ile pikseli od dołu ekranu okienko celów na telefonie zostawia pod sobą (`--zapas-dol` w `.goals` w src/style.css):
+    komunikat o przybyszach i listę ludzi, które stoją pod nim, oraz to, co stoi na dole nad atrybucją map, czyli kartę osoby,
+    pasek stawiania i podpowiedź (leży tuż nad nimi). Dzięki temu okienko kurczy się i przewija w środku, zamiast zachodzić
+    na listę ludzi, imię na karcie albo podpowiedź. Na komputerze 0 (tam `.goals` ma własne ograniczenie od karty osoby). */
+function zapasDol(): number {
+  if (!matchMedia('(max-width: 640px)').matches) return 0;
+  const dol = $('app').getBoundingClientRect().bottom;
+  const nad = [attrib, $('card'), $('placeBar'), $('hint')].filter((e): e is HTMLElement => !!e && naEkranie(e));
+  const gora = Math.min(dol, ...nad.map((e) => e.getBoundingClientRect().top));
+  const lista = naEkranie($('lista')) ? $('lista').offsetHeight : 0;
+  const przybysze = naEkranie($('arrive')) ? $('arrive').offsetHeight : 0;
+  // odstęp 10 px od okienka do tego, co pod nim, i 8 px między komunikatem a listą (jak `--lista-dy` w src/ui/lista.ts)
+  const pod = lista || przybysze ? 10 + przybysze + (lista && przybysze ? 8 : 0) + lista : 0;
+  return Math.ceil(dol - gora + 8 + pod);
+}
+/** Okienko celów przewija się w środku, gdy jest wyższe od miejsca: `data-przewija` mówi, czy poniżej jest jeszcze treść
+    („dol”: zanik u dołu), czy część jest już przewinięta („gora”: cień pod przyklejonym nagłówkiem), czy jedno i drugie („oba”);
+    bez nadmiaru treści brak atrybutu (`.goals[data-przewija]` w src/style.css). */
+function znacznikPrzewijania(el: HTMLElement) {
+  const dol = el.scrollHeight - el.clientHeight - el.scrollTop > 1.5;
+  const gora = el.scrollTop > 1;
+  const znak = dol && gora ? 'oba' : dol ? 'dol' : gora ? 'gora' : '';
+  if ((el.dataset.przewija ?? '') === znak) return;
+  if (znak) el.dataset.przewija = znak;
+  else delete el.dataset.przewija;
+}
+$('goals').addEventListener('scroll', () => znacznikPrzewijania($('goals')), { passive: true });
+/** Mierzy nakładki i wpisuje wymiary do zmiennych CSS. Woła ją `bars` po zmianie rozmiaru obserwowanych elementów, okienko
+    celów po zmianie treści (`renderGoals`) i wczytanie czcionek. */
+function zmierzNakladki() {
+  ustawZmienna('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+  // telefon poziomo: cele dnia stoją nad kartą osoby w lewej kolumnie, a karta (rozwinięta wyższa niż miejsce) zostawia im mniej niż
+  // nagłówek; wtedy chowają się, dopóki karta stoi (inaczej nachodziłyby na nią paskiem wysokości kilku pikseli)
+  const celeZaMalo =
+    matchMedia(NISKIE_OKNO_MQ).matches &&
+    !$('card').hidden &&
+    window.innerHeight -
+      $('top').getBoundingClientRect().bottom -
+      8 -
+      16 -
+      $('card').getBoundingClientRect().height -
+      48 <
+      CELE_MIN_PX;
+  $('goals').toggleAttribute('data-za-malo', celeZaMalo);
   // atrybucja map i danych mieszkańców na dole: na telefonie dwa wiersze, a karta i podpowiedź stoją nad nią
-  if (attrib) root.setProperty('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
+  if (attrib) ustawZmienna('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
   // pasek trybu stawiania: na telefonie podpowiedź (np. czemu tu nie wolno) idzie nad niego, a nie pod spód
   const place = $('placeBar');
-  root.setProperty('--place-lift', `${place.hidden ? 0 : Math.round(place.getBoundingClientRect().height) + 20}px`);
-});
-bars.observe($('top'));
-bars.observe($('goals'));
-bars.observe($('card'));
-bars.observe($('placeBar'));
+  ustawZmienna('--place-lift', `${place.hidden ? 0 : Math.round(place.getBoundingClientRect().height) + 20}px`);
+  // zapas liczy się po zmiennych wyżej (od nich zależy położenie karty i podpowiedzi), a wysokość okienka i paska po zapasie
+  // (od niego zależy wysokość okienka, a od niej położenie listy ludzi i komunikatu o przybyszach), żeby wszystko zgadzało się
+  // już w tej klatce
+  ustawZmienna('--zapas-dol', `${zapasDol()}px`);
+  ustawZmienna('--top-h', `${Math.round($('top').getBoundingClientRect().height)}px`);
+  ustawZmienna('--goals-h', `${$('goals').hidden ? 0 : Math.round($('goals').getBoundingClientRect().height)}px`);
+  znacznikPrzewijania($('goals'));
+}
+/** Obserwator pilnuje elementów, których rozmiaru zmienne CSS NIE zmieniają: pasek, karta, pasek stawiania, lista ludzi,
+    komunikat o przybyszach, podpowiedź i atrybucja. Okienka celów nie obserwuje, bo jego wysokość ograniczają `--card-h`
+    i `--zapas-dol` (a zmiana rozmiaru obserwowanego elementu w wywołaniu obserwatora kończy się błędem okna „ResizeObserver
+    loop completed with undelivered notifications”): jego treść mierzy `renderGoals`, a zmianę jego szerokości z oknem (obrót
+    telefonu) pasek, który zmienia się razem z nią. */
+const bars = new ResizeObserver(() => zmierzNakladki());
+for (const e of [$('top'), $('card'), $('placeBar'), $('lista'), $('arrive'), $('hint')]) bars.observe(e);
 if (attrib) bars.observe(attrib);
+document.fonts?.addEventListener('loadingdone', zmierzNakladki);
+
+/** Nazwa osiedla na szyldzie paska: na telefonie szyld ma 150 px (src/style.css, `.top .sign`), więc dłuższa nazwa („Przymorze
+    Wielkie”, „Ursynów Północny”) dostaje mniejszą czcionkę, co pół piksela do `NAZWA_MIN_PX`, zamiast urywać się wielokropkiem;
+    dopiero poniżej tego rozmiaru ucina jak dawniej. Szyld ani pasek nie rosną: rozmiar tylko maleje. Liczy się od nowa po zmianie
+    szerokości okna (obrót telefonu) i po wczytaniu czcionek, które zmieniają szerokość napisu. */
+const NAZWA_MIN_PX = 12;
+function dopasujNazwe() {
+  const nazwa = $('osName');
+  nazwa.style.removeProperty('font-size');
+  let px = Number.parseFloat(getComputedStyle(nazwa).fontSize);
+  // scrollWidth i clientWidth są całkowite, a nazwa dłuższa o ułamek piksela dostaje wielokropek: mierzy się napis zakresem
+  const zakres = document.createRange();
+  const szerokosc = () => {
+    zakres.selectNodeContents(nazwa);
+    return zakres.getBoundingClientRect().width - nazwa.getBoundingClientRect().width;
+  };
+  while (szerokosc() > 0.01 && px > NAZWA_MIN_PX) {
+    px -= 0.5;
+    nazwa.style.fontSize = `${px}px`;
+  }
+}
+let nazwaSzerokosc = 0;
+window.addEventListener('resize', () => {
+  if (window.innerWidth === nazwaSzerokosc) return;
+  nazwaSzerokosc = window.innerWidth;
+  requestAnimationFrame(dopasujNazwe);
+});
+document.fonts?.addEventListener('loadingdone', dopasujNazwe);
+
+/* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px albo niższe niż 501 px, src/ui/telefon.ts) ---------- */
+const telefonMq = matchMedia(TELEFON_MQ);
+let statyRozwiniete = wczytajWybor(PASEK_KEY) === 'rozwiniete';
+let potrzebyRozwiniete = wczytajWybor(POTRZEBY_KEY) === 'rozwiniete';
+let wiecejRozwiniete = wczytajWybor(WIECEJ_KEY) === 'rozwiniete';
+const przyciskPaska = $('statsToggle');
+/** Pasek stanu na telefonie: zwinięty (atrybut `data-zwiniete` na `#stats`; src/style.css zostawia w nim tylko kafelki z klasą
+    `pilne`) albo rozwinięty. Zwija i rozwija go osobny przycisk (`#statsToggle`: `aria-expanded`, podpis w obu językach), więc
+    kafelki zostają dla czytników ekranu zwykłymi elementami; na komputerze pasek jest zwykłym pasem, a przycisk schowany. */
+function zastosujPasekStanu() {
+  const zwiniety = telefonMq.matches && !statyRozwiniete;
+  $('stats').toggleAttribute('data-zwiniete', zwiniety);
+  przyciskPaska.setAttribute('aria-expanded', String(!zwiniety));
+  przyciskPaska.setAttribute(
+    'aria-label',
+    zwiniety
+      ? L('Pokaż cały stan osiedla', 'Show the whole estate status')
+      : L('Zwiń stan osiedla do tego, co pilne', 'Collapse the estate status to what is urgent'),
+  );
+  const glif = przyciskPaska.firstElementChild;
+  if (glif) glif.textContent = zwiniety ? '▾' : '▴';
+}
+function przelaczPasekStanu() {
+  if (!telefonMq.matches) return;
+  statyRozwiniete = !statyRozwiniete;
+  zapiszWybor(PASEK_KEY, statyRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujPasekStanu();
+}
+// przycisk: zwykłe kliknięcie (mysz, dotyk, Enter, Spacja); po kliknięciu myszą albo stuknięciu oddaje fokus jak reszta przycisków
+// paska (src/ui/fokus.ts), więc spacja dalej zatrzymuje grę
+przyciskPaska.addEventListener('click', przelaczPasekStanu);
+// Zwinięta linia stanu: stuknięcie albo klik w kafelek czy w sam pasek (także kliknięcie wywołane przez czytnik ekranu) rozwija
+// pasek i nie dociera do wiki, która wiąże kafelek z artykułem; Enter i Spacja na kafelku tak samo. W rozwiniętym pasku kafelek
+// otwiera swój artykuł i niczego nie zwija, a pasek zwija przycisk. Faza przechwytywania, żeby być przed obsługą wiki na dokumencie.
+$('stats').addEventListener(
+  'click',
+  (e) => {
+    if (!telefonMq.matches || statyRozwiniete) return;
+    if (e.target instanceof Element && e.target.closest('#statsToggle')) return;
+    e.stopPropagation();
+    przelaczPasekStanu();
+  },
+  true,
+);
+$('stats').addEventListener(
+  'keydown',
+  (e) => {
+    if (!telefonMq.matches || statyRozwiniete || (e.code !== 'Enter' && e.code !== 'Space')) return;
+    if (e.target instanceof Element && e.target.closest('#statsToggle')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    przelaczPasekStanu();
+  },
+  true,
+);
+telefonMq.addEventListener('change', zastosujPasekStanu);
+poZmianieJezyka(zastosujPasekStanu);
+zastosujPasekStanu();
+/** Karta osoby na telefonie: potrzeby zwinięte (klasa `potrzeby-zwiniete` na `#card`) do linii z ostrzeżeniami albo rozwinięte do
+    pasków i nastrojów, a „Więcej” (klasa `wiecej-zwiniete`) chowa rodzinę, historię i przycisk zmiany imienia; klasy żyją na
+    pojemniku, więc przeżywają przepisywanie karty co 200 ms. */
+function ariaKarty() {
+  $('card').querySelector('.potrzeby-linia')?.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+  $('card').querySelector('.wiecej')?.setAttribute('aria-expanded', String(wiecejRozwiniete));
+}
+function zastosujKarte() {
+  $('card').classList.toggle('potrzeby-zwiniete', !potrzebyRozwiniete);
+  $('card').classList.toggle('wiecej-zwiniete', !wiecejRozwiniete);
+  ariaKarty();
+}
+function przelaczPotrzeby() {
+  potrzebyRozwiniete = !potrzebyRozwiniete;
+  zapiszWybor(POTRZEBY_KEY, potrzebyRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujKarte();
+}
+function przelaczWiecej() {
+  wiecejRozwiniete = !wiecejRozwiniete;
+  zapiszWybor(WIECEJ_KEY, wiecejRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujKarte();
+}
+zastosujKarte();
 
 /* ---------- start ---------- */
 (async () => {
@@ -3781,11 +4051,13 @@ if (attrib) bars.observe(attrib);
     },
     rozdzial: (k, dobyTemu = 0) => {
       if (!sim) return;
-      // jak otwarcie rozdziału przez krok ścieżki: tick i liczniki „od otwarcia” z tej chwili (tick cofnięty o `dobyTemu` dób)
+      // jak otwarcie rozdziału przez krok ścieżki: tick, czas przy ekranie i liczniki „od otwarcia” z tej chwili (tick cofnięty
+      // o `dobyTemu` dób, a czas przy ekranie o tyle, ile te doby zajmują graczowi w tempie 1×: próg zapasu dzielony na jego doby)
       sciezka = {
         ...sciezka,
         rozdzial: k,
         od: sim.st.tick - Math.round(dobyTemu * TICKS_PER_DAY),
+        odEkran: screen - (dobyTemu * EKRAN_NOWI_ZAPAS) / DOBY_NOWI_ZAPAS,
         start: licznikiStartu(sim.st, gov),
       };
       const snap = snapNow();

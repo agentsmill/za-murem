@@ -1,16 +1,22 @@
 /* Górny pasek: temperatura na dworze i w kuchni, ogień w kozie (godziny), drewno na zapas, deski, złom
    i części, jedzenie, zaufanie i wkurzenie. Wartości
    i progi liczy czysta funkcja (do testów), DOM zmienia się tylko po zmianie tekstu. Wartości i podpowiedzi
-   (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. */
+   (title) w bieżącym języku; krótkie podpisy pod liczbami są w index.html. Skąd biorą się deski, złom i części,
+   mówią słowa miejsca (`szukanie.zrodla`, zdania „Pochodzą z …”). Podpis pory roku nad paskiem (`sezonPodpis`) idzie
+   z zegara gry, nie ze stałego napisu: main.ts wpisuje go przy każdym odświeżeniu paska. Na telefonie (okno węższe niż 768 px albo niższe niż 501 px)
+   pasek stanu jest zwinięty do kafelków pilnych: `oznaczPilne` daje im klasę `pilne` (reguła w src/ui/telefon.ts, wygląd
+   w src/style.css). */
 
 import { SEASONS_EN } from '../content/data.en.ts';
-import { L } from '../core/jezyk.ts';
+import { L, type Tx, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GovState } from '../gov/typy.ts';
+import { SEASONS, seasonOf, yearOf } from '../sim/clock.ts';
 import type { SimSnapshot } from '../sim/snapshot.ts';
 import { WARM_ENOUGH } from '../sim/tutorial.ts';
 import { FENCE_BEARS } from '../sim/zombie.ts';
 import { deg, manyEn, num } from './tekst.ts';
+import { MALY_TELEFON_MQ, pilneKafelki } from './telefon.ts';
 
 export interface Stat {
   id: string;
@@ -21,6 +27,15 @@ export interface Stat {
 }
 
 const wielka = (t: string): string => t[0].toUpperCase() + t.slice(1);
+
+/** Podpis pory roku na zegarze nad paskiem: „jesień 2051”, „zima 2051”, „wiosna 2052”, „lato 2052” (po angielsku „autumn
+    2051”…). Pora roku i rok idą z zegara gry (`seasonOf`, `yearOf` z src/sim/clock.ts), tej samej pory, według której
+    liczy się pogoda; main.ts wpisuje podpis przy każdym odświeżeniu paska (`hud`), więc zmienia się razem z dniem. */
+export const sezonPodpis = (tick: number): Tx => {
+  const s = seasonOf(tick);
+  const rok = yearOf(tick);
+  return tx(`${SEASONS[s]} ${rok}`, `${SEASONS_EN[s]} ${rok}`);
+};
 
 /** words: słowa miejsca (w domu sąsiedzi, komitet ulicy i zebranie ulicy), bez nich jak w bloku */
 export function statsOf(
@@ -136,7 +151,7 @@ export function statsOf(
       value: String(k.boards),
       level: k.boards ? 'ok' : 'mid',
       title: L(
-        `Deski: ${k.boards}. Na łaty, naprawy i budowę. Dają je ${words.szukanie.zrodla.deski}.`,
+        `Deski: ${k.boards}. Na łaty, naprawy i budowę. Pochodzą z ${words.szukanie.zrodla.deski}.`,
         `Planks: ${k.boards}. For patches, repairs and building. They come from ${e.szukanie.zrodla.deski}.`,
       ),
     },
@@ -145,7 +160,7 @@ export function statsOf(
       value: String(k.scrap),
       level: k.scrap ? 'ok' : 'mid',
       title: L(
-        `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Dają go przeszukiwanie i rozbiórka śmieci.`,
+        `Złom: ${k.scrap}. Na łaty, zasieki i naprawy rur i pieców. Pochodzi z ${words.szukanie.zrodla.zlom}.`,
         `Scrap: ${k.scrap}. For patches, barricades and fixing pipes and cookers. It comes from ${e.szukanie.zrodla.zlom}.`,
       ),
     },
@@ -154,7 +169,7 @@ export function statsOf(
       value: String(k.parts),
       level: k.parts ? 'ok' : 'mid',
       title: L(
-        `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Dają je przeszukiwanie i rozbiórka sprzętów.`,
+        `Części: ${k.parts}. Do rur, pieców i kuchni społecznej. Pochodzą z ${words.szukanie.zrodla.czesci}.`,
         `Parts: ${k.parts}. For pipes, cookers and the community kitchen. They come from ${e.szukanie.zrodla.czesci}.`,
       ),
     },
@@ -163,7 +178,7 @@ export function statsOf(
       value: `${k.boards}·${k.scrap}·${k.parts}`,
       level: k.boards || k.scrap || k.parts ? 'ok' : 'mid',
       title: L(
-        `Deski ${k.boards}, złom ${k.scrap}, części ${k.parts}. Dają je przeszukiwanie i rozbiórka.`,
+        `Deski ${k.boards}, złom ${k.scrap}, części ${k.parts}. Pochodzą z przeszukiwania i rozbiórki.`,
         `Planks ${k.boards}, scrap ${k.scrap}, parts ${k.parts}. Searching and taking things apart gets you more.`,
       ),
     },
@@ -198,6 +213,18 @@ export function statsOf(
 }
 
 const shown = new Map<string, string>();
+
+/** Kafelki, których układ nie pokazuje nigdy (nie dlatego, że pasek jest zwinięty): do 640 px deski, złom i części są jednym
+    kafelkiem `sMats`, od 641 px trzema osobnymi, a `sMats` jest schowany (reguły `#sMats` i `#sBoards` w src/style.css). */
+export const ukryteKafelki = (): readonly string[] =>
+  globalThis.matchMedia?.(MALY_TELEFON_MQ).matches ? ['sBoards', 'sScrap', 'sParts'] : ['sMats'];
+
+/** Oznacza klasą `pilne` kafelki, które zwinięty pasek stanu pokazuje na telefonie (src/ui/telefon.ts, `pilneKafelki`). Woła się
+    ją po `renderStats`, bo ten przepisuje klasę kafelka przy każdej zmianie; klasa zmienia się tylko wtedy, gdy trzeba. */
+export function oznaczPilne(list: readonly Stat[], ukryte: readonly string[] = ukryteKafelki()): void {
+  const pilne = pilneKafelki(list.filter((s) => !ukryte.includes(s.id)).map((s) => ({ id: s.id, level: s.level })));
+  for (const s of list) document.getElementById(s.id)?.classList.toggle('pilne', pilne.has(s.id));
+}
 
 /** wpisuje wartości do pasku (span.stat > b) tylko po zmianie */
 export function renderStats(list: Stat[]): void {

@@ -3,8 +3,10 @@
    Przy otwartym panelu budowy (#app.build-open) albo pracy (#app.praca-open) kończy się przed nim, a przy panelu Pracy na
    oknach do 940 px i na telefonie chowa się (nie ma wtedy miejsca obok panelu). Komunikat o przybyszach
    stoi w tym samym miejscu pod paskiem, więc lista schodzi pod niego (--lista-dy mierzy lista.ts). Do 640 px (telefon)
-   chipy leżą w rzędzie pod celami dnia na całą szerokość, mniejsze, a rząd zawija się dopiero od ośmiu osób.
-   Pojemnik nie łapie wskaźnika: między chipami klik i przeciąganie trafiają w mapę. */
+   chipy leżą w rzędzie pod celami dnia na całą szerokość, mniejsze, a rząd zawija się dopiero od ośmiu osób; okienko celów
+   nad nimi kurczy się tak, żeby lista została nad kartą osoby i podpowiedzią (--zapas-dol, liczy go main.ts), a przy
+   szufladzie budowy od dołu lista się chowa. Pojemnik nie łapie wskaźnika: między chipami klik i przeciąganie trafiają
+   w mapę. */
 
 .lista {
   position: absolute;
@@ -193,9 +195,18 @@
     right: 8px;
     gap: 4px;
   }
-  /* szuflada budowy jest na telefonie od dołu, więc prawa strona zostaje wolna (przy panelu Pracy lista się chowa) */
+  /* Szuflada budowy jest na telefonie od dołu (pół wysokości ekranu) i sięga pod listę ludzi, jeśli okienko celów jest
+     wysokie, więc chipy leżałyby na kafelkach budowli; lista chowa się razem z kartą osoby, podpowiedzią i przyciskami
+     przybliżenia, dopóki szuflada jest otwarta (przy panelu Pracy też się chowa). */
   .app.build-open .lista {
-    right: 8px;
+    display: none;
+  }
+}
+/* Mniejsze chipy też w niskim oknie (telefon poziomo): zostają na prawo od celów dnia jak na komputerze, ale wiersz ma 54 px
+   zamiast 68, żeby nie sięgał karty osoby w lewym dolnym rogu. */
+@media (max-width: 640px), (max-height: 500px) {
+  .lista {
+    gap: 4px;
   }
   .lp {
     padding: 2px 3px 1px;
@@ -226,5 +237,15 @@
   .lp-nm {
     max-width: 54px;
     font-size: 11px;
+  }
+}
+
+/* Telefon poziomo (niskie okno, od 641 px): lista ludzi stoi na prawo od karty osoby (330 px od lewej plus odstęp), także gdy cele
+   dnia znikną: w niskim oknie karta sięga pod wiersz chipów, więc lista nie może zejść nad nią. Moduł jest ładowany po
+   src/style.css, więc te reguły muszą być tu, żeby wygrać z regułami listy wyżej. */
+@media (min-width: 641px) and (max-height: 500px) {
+  .lista,
+  #goals[hidden] ~ .lista {
+    left: 346px;
   }
 }

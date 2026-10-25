@@ -207,7 +207,7 @@ export function gossipText(k: number, ctx: GossipCtx, ad: number): Napis {
 }
 
 /** rady ocalałych w trybie zombie: to, czego uczy gra (hałas, zamknięta brama, amputacja, dobijanie) */
-const RADY: readonly Napis[] = [
+export const RADY: readonly Napis[] = [
   {
     pl: 'Ocalały mówi, żeby nie strzelać, bo strzał ściąga je z całej okolicy.',
     en: 'The survivor says not to shoot: a gunshot draws them in from all around.',

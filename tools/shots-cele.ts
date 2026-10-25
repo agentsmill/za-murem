@@ -20,11 +20,12 @@
    Przewijanie do bieżącego celu robi `pokazBiezacyCel` w src/main.ts, a `cele-przewijanie` pilnuje go na długiej liście
    zrobionych i po zmianie rozdziału, a także tego, że spod nagłówka nie wystaje przecięty wiersz.
 
-   Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu; rozwiniętą listę
-   (stuknięcie w nagłówek) tylko tak, że karta osoby, arkusz budowy od dołu i podpowiedź u dołu, które rysuje się nad nią, są
-   zamierzone (`dozwolone`), ale zakrywają najwyżej to, co leży pod bieżącym celem z jego podpowiedzią, a pasek, lista ludzi
-   i krawędzie okna dalej muszą się zgadzać. Lista ludzi na telefonie schodzi pod okienko, więc jej nachodzenie na arkusz
-   budowy albo kartę osoby idzie do logu, ale nie może przekroczyć `LISTA_NA_PRZESZKODZIE_MAX` px.
+   Układ na telefonie sprawdza okienko w jego stanie domyślnym, zwiniętym do jednego bieżącego celu, i rozwiniętym (stuknięcie
+   w nagłówek). Rozwinięte okienko kurczy się i przewija w środku tak, żeby lista ludzi pod nim, podpowiedź u dołu i karta osoby
+   (`--zapas-dol` w src/style.css, liczy go main.ts) miały swoje miejsce, więc na nic z tego nie nachodzi, a lista ludzi nie leży
+   ani na karcie, ani na arkuszu budowy (`LISTA_NA_PRZESZKODZIE_MAX` to zero: arkusz budowy od dołu chowa listę, bo i tak
+   zasłaniałby ją razem z kafelkami budowli). Zamierzone jest tylko to, że arkusz budowy leży nad rozwiniętym okienkiem celów
+   (`dozwolone`), ale zakrywa najwyżej to, co leży pod bieżącym celem z jego podpowiedzią.
 
    Stan gry scenariusze prowadzą grą (samouczek, noc, raport, przewijanie przez `zm.ff` z odpowiedziami na okna zarządu),
    a tam, gdzie gra potrzebuje do tego godzin ludzkiej roboty, ustawiają stan wprost jak dzisiejsze scenariusze (pracownia,
@@ -36,7 +37,7 @@
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import type { BuildKind } from '../src/sim/budowle.ts';
-import { minutesAt, TICKS_PER_HOUR } from '../src/sim/clock.ts';
+import { minutesAt, TICKS_PER_DAY, TICKS_PER_HOUR } from '../src/sim/clock.ts';
 import { NIGHT_WOOD } from '../src/ui/cele.ts';
 import type { KluczRozdzialu, WidokSciezki } from '../src/ui/sciezka.ts';
 import { waitIdle } from './browser.ts';
@@ -54,14 +55,14 @@ export interface ShotCele {
 
 const SAVE = 'za-murem-0.4-zapis';
 const TILE = 32;
-const GRA = 'speed=0&cam=hq,1.3';
+export const GRA = 'speed=0&cam=hq,1.3';
 /** słowa z bloku, których w domu nie ma w celach i w ich podpowiedziach (jak BLOKOWE_UI w tools/shots.ts) */
 const BLOKOWE_UI = /spółdziel|zarząd|walne|osiedl|trzepak|klatk|bram|blok|pawilon|świetlic|czynsz|mieszka[nń]/i;
 
 /** telefon: okno węższe niż 640 px (jak w tools/shots.ts: `isMobile` i dotyk) */
-const dotykowy = (w: number): boolean => w < 640;
+export const dotykowy = (w: number): boolean => w < 640;
 /** klik albo stuknięcie, zależnie od ekranu */
-const kliknij = (page: Page, sel: string, dotyk: boolean) => (dotyk ? page.tap(sel) : page.click(sel));
+export const kliknij = (page: Page, sel: string, dotyk: boolean) => (dotyk ? page.tap(sel) : page.click(sel));
 
 /** Co ile `hud` w main.ts odświeża okienko celów, listę ludzi i kartę osoby (ms). */
 const HUD_MS = 200;
@@ -70,7 +71,7 @@ const HUD_MS = 200;
     ResizeObserver ustawia `--goals-h` i `--card-h`; `okresy` to liczba okresów (dłuższe czekanie sprawdza, że odświeżenia
     czegoś nie cofają). Tylko tu jest `waitForTimeout`: gdzie jest stan, na który da się poczekać (selektor, treść okienka),
     scenariusze czekają na niego. */
-const poHudzie = (page: Page, okresy = 2): Promise<void> => page.waitForTimeout(okresy * HUD_MS + 50);
+export const poHudzie = (page: Page, okresy = 2): Promise<void> => page.waitForTimeout(okresy * HUD_MS + 50);
 
 /** minuta gry (od początku dnia 1, 0:00) dla dnia, godziny i minuty */
 const minutaGry = (dzien: number, godz: number, min = 0): number => (dzien - 1) * 1440 + godz * 60 + min;
@@ -117,7 +118,7 @@ async function idz(page: Page, adres: string): Promise<void> {
 }
 
 /** start gry i czekanie na pierwsze chipy listy ludzi (portrety rysuje `hud` co 200 ms) */
-async function start(page: Page, base: string, query: string): Promise<void> {
+export async function start(page: Page, base: string, query: string): Promise<void> {
   await idz(page, `${base}?${query}`);
   await waitIdle(page);
   await page.waitForSelector('#lista:not([hidden]) .lp');
@@ -170,7 +171,7 @@ interface Przewijanie {
 
 /** Przewija grę po kilka minut (`zm.ff`), odpowiadając na okna zarządu, aż `gotowe(minuta gry)` będzie prawdziwe (zwraca
     null) albo stanie okno z `stop` (zwraca je, nie odpowiadając). Rzuca, gdy przez `maks` kroków nic z tego. */
-async function przewin(
+export async function przewin(
   page: Page,
   gotowe: (teraz: number) => boolean | Promise<boolean>,
   o: Przewijanie,
@@ -249,6 +250,49 @@ async function poPodpowiedziStartowej(page: Page): Promise<void> {
     układ po niej, jak gracz, który zdążył ją przeczytać. */
 async function poWiesci(page: Page): Promise<void> {
   await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 });
+}
+
+/** Podpowiedź u dołu (`#hint`, widoczna, dopóki ma tekst) nie nachodzi na pasek u góry, okienko celów, chipy listy ludzi ani kartę
+    osoby; zwraca jej położenie do dziennika. Na telefonie leży ona w wolnym miejscu między listą ludzi a kartą, a okienko celów
+    kurczy się, gdy miejsca jest za mało. */
+async function podpowiedzBezNachodzenia(page: Page, opis: string): Promise<string> {
+  const r = await page.evaluate(() => {
+    const widoczny = (e: Element): boolean => {
+      const h = e as HTMLElement;
+      if (h.hidden || getComputedStyle(h).display === 'none') return false;
+      const b = h.getBoundingClientRect();
+      return b.width > 0 && b.height > 0;
+    };
+    const hint = document.getElementById('hint')!;
+    if (!widoczny(hint)) return null;
+    const a = hint.getBoundingClientRect();
+    const zle: string[] = [];
+    for (const [sel, nazwa] of [
+      ['#top', 'pasek u góry'],
+      ['#goals', 'okienko celów'],
+      ['#lista .lp', 'listę ludzi'],
+      ['#card', 'kartę osoby'],
+      ['#arrive', 'komunikat o przybyszach'],
+    ] as const)
+      for (const e of document.querySelectorAll(sel)) {
+        if (!widoczny(e)) continue;
+        const b = e.getBoundingClientRect();
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 1 && h > 1) zle.push(`podpowiedź nachodzi na ${nazwa} o ${Math.round(w)}×${Math.round(h)} px`);
+      }
+    return {
+      tekst: hint.textContent ?? '',
+      polozenie: `${Math.round(a.left)},${Math.round(a.top)}–${Math.round(a.right)},${Math.round(a.bottom)}`,
+      zle,
+    };
+  });
+  if (!r) throw new Error(`${opis}: nie ma podpowiedzi u dołu, a scenariusz ją sprawdza`);
+  console.log(
+    `  ${opis}: podpowiedź „${r.tekst.slice(0, 36)}…” ${r.polozenie}${r.zle.length ? `, NARUSZENIA: ${r.zle.length}` : ''}`,
+  );
+  if (r.zle.length) throw new Error(`${opis}: ${r.zle.join('; ')}`);
+  return r.polozenie;
 }
 
 async function widok(page: Page): Promise<WidokSciezki> {
@@ -433,9 +477,10 @@ async function naruszenia(page: Page): Promise<Naruszenia> {
   );
 }
 
-/** Ile pikseli listy ludzi na telefonie może leżeć na arkuszu budowy albo na karcie osoby (log, ale nie więcej niż tyle:
-    najwięcej mierzę 54 px przy rozwiniętym okienku z okazją; granica ma pilnować, żeby nie urosło po cichu). */
-const LISTA_NA_PRZESZKODZIE_MAX = 60;
+/** Ile pikseli listy ludzi na telefonie może leżeć na arkuszu budowy albo na karcie osoby: żadnego. Dawniej tolerowało się tu
+    60 px (przy rozwiniętym okienku z okazją chipy leżały na 54 px karty albo arkusza), ale chipy przykrywały wtedy imię
+    i rodzinę zaznaczonej osoby; okienko celów kurczy się teraz do miejsca, które zostaje nad kartą. */
+const LISTA_NA_PRZESZKODZIE_MAX = 0;
 
 /** Lista ludzi stoi pod okienkiem celów (na telefonie pod jego dolną krawędzią), więc wysokość okienka przesuwa ją, a arkusz
     budowy (od dołu) i karta osoby mogą ją przykryć. Zwraca, o ile pikseli chip listy leży na każdej z tych przeszkód
@@ -476,7 +521,7 @@ interface DozwolonePrzeszkody {
 }
 
 /** Sprawdza układ okienka celów w tej chwili: każde naruszenie przerywa scenariusz. Wyjątek to nachodzenie na przeszkodę
-    z `dozwolone` (telefon, rozwinięta lista: karta, arkusz budowy i podpowiedź u dołu leżą nad nią z zamysłu), ale i ono ma
+    z `dozwolone` (telefon, rozwinięta lista: arkusz budowy od dołu leży nad nią z zamysłu), ale i ono ma
     granicę: przeszkoda zaczyna się poniżej bieżącego celu z jego podpowiedzią (pierwszy `li.now`), więc nie zakrywa tego,
     co gracz ma przeczytać. */
 async function bezNachodzenia(page: Page, opis: string, o: DozwolonePrzeszkody = {}): Promise<void> {
@@ -519,7 +564,7 @@ async function ukladZPanelami(
   o: OpcjeUkladu = {},
 ): Promise<void> {
   if (dotyk) await ustawOkienko(page, !!o.rozwiniete, true);
-  const opcje = { dozwolone: dotyk && o.rozwiniete ? [KARTA, PANEL_BUDOWY, PODPOWIEDZ] : [] };
+  const opcje = { dozwolone: dotyk && o.rozwiniete ? [PANEL_BUDOWY] : [] };
   await bezNachodzenia(page, `${opis}, samo okienko`, opcje);
   const cam = await kamera(page);
   await kliknij(page, '#lista .lp >> nth=0', dotyk);
@@ -736,7 +781,7 @@ async function dolozDrewno(page: Page, n: number): Promise<void> {
 }
 
 /** język gry jak wybór gracza w trakcie gry (ten sam moduł, który zna gra: singleton po adresie z serwera Vite) */
-async function ustawJezyk(page: Page, jezyk: 'pl' | 'en'): Promise<void> {
+export async function ustawJezyk(page: Page, jezyk: 'pl' | 'en'): Promise<void> {
   await page.evaluate(async (l) => {
     const adres = '/src/core/jezyk.ts';
     const m = await import(/* @vite-ignore */ adres);
@@ -1026,7 +1071,9 @@ export function celeShots(out: string): ShotCele[] {
     });
 
   /** Uchwała (R4) z linią „Cel: …”: zebranie o 19:30 pierwszego dnia, ścieżka ustawiona na R4. Przed zebraniem cel uchwały
-      i raportu czekają (przyciemnione, z dopiskiem), w oknie uchwały cel jest bieżący, a podpis go zalicza. */
+      i raportu czekają (przyciemnione, z dopiskiem „czeka do zebrania” i „czeka do rana”), w oknie uchwały cel jest bieżący,
+      a podpis go zalicza. Potem gra idzie przez noc do porannego raportu: cel „wkurzenie” zalicza się razem z nim i niesie
+      pod spodem lekcję („Wkurzenie spada, gdy ludzie są najedzeni i w cieple.”), czytelną w okienku na komputerze i na telefonie. */
   const uchwala = (name: string, w: number, h: number): ShotCele =>
     shot({
       name,
@@ -1057,12 +1104,13 @@ export function celeShots(out: string): ShotCele[] {
         const [u, k, nowi] = wr;
         if (!u.klasy.includes('czeka') || u.czeka !== 'czeka do zebrania')
           throw new Error(`${name}: uchwała przed zebraniem ${u.klasy.join('+')} / ${u.czeka}`);
-        if (!k.klasy.includes('czeka') || !k.czeka?.startsWith('Raport rano. Wkurzenie spada'))
-          throw new Error(`${name}: wkurzenie przed rankiem ${k.klasy.join('+')} / ${k.czeka}`);
+        if (!k.klasy.includes('czeka') || k.czeka !== 'czeka do rana' || k.uwaga)
+          throw new Error(`${name}: wkurzenie przed rankiem ${k.klasy.join('+')} / ${k.czeka} / ${k.uwaga}`);
         if (!nowi.klasy.includes('now') || !nowi.jak)
           throw new Error(`${name}: bieżący cel to nie „nowi” (${nowi.klasy.join('+')})`);
-        await sprawdzUklad(page, `${name} ${w}×${h}, przed zebraniem`, dotyk);
+        // zrzut przed sprawdzeniem układu (ono otwiera kartę osoby i panel budowy, a na telefonie okienko się wtedy zwija)
         await zrzut(page, `${name}-przed`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, przed zebraniem`, dotyk);
         const p = await page.evaluate(() => window.zm!.govTick());
         if (p !== 'uchwala') throw new Error(`${name}: o 19:30 zamiast uchwały ${p}`);
         await page.waitForSelector('#sheet [data-act="law-skip"]');
@@ -1077,6 +1125,26 @@ export function celeShots(out: string): ShotCele[] {
         if (!po[0].klasy.includes('done')) throw new Error(`${name}: uchwała po podpisie ${po[0].klasy.join('+')}`);
         console.log(`  po podpisie: ${po.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
         await sprawdzUklad(page, `${name} ${w}×${h}, po podpisie`, dotyk);
+        // noc i poranny raport: wkurzenie zalicza się razem z raportem i niesie lekcję pod spodem, a bieżącym celem zostaje „nowi”
+        const rano = await przewin(page, () => false, { dotyk, stop: ['raport'] });
+        if (rano !== 'raport') throw new Error(`${name}: do rana bez raportu (${rano})`);
+        await kliknij(page, '#sheet [data-act="report-ok"]', dotyk);
+        await zamknijOkna(page, dotyk);
+        await poHudzie(page);
+        await ustawOkienko(page, true, dotyk);
+        const raport = await wiersze(page, 'rozdzial');
+        const wk = raport.find((x) => x.key === 'wkurzenie');
+        if (
+          !wk?.klasy.includes('done') ||
+          wk.czeka ||
+          wk.uwaga !== 'Wkurzenie spada, gdy ludzie są najedzeni i w cieple.'
+        )
+          throw new Error(`${name}: wkurzenie po raporcie to ${JSON.stringify(wk)}`);
+        if (!raport.find((x) => x.key === 'nowi')?.klasy.includes('now'))
+          throw new Error(`${name}: po raporcie bieżący cel to nie „nowi”`);
+        console.log(`  po raporcie: ${raport.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        await zrzut(page, `${name}-rano`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, po raporcie`, dotyk);
       },
     });
 
@@ -1245,11 +1313,11 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(
             `${name} ${k}`,
             jak,
-            dotyk ? 'przytrzymajcie palec na planie' : 'prawy przycisk na planie',
+            dotyk ? 'stuknijcie osobę i przytrzymajcie plan' : 'zaznaczcie osobę i prawy przycisk na planie',
             dom ? 'Po deski zza ulicy:' : 'Po deski z innych klatek i zza ulicy:',
             '„Budować …”',
           );
-          if (!jak.endsWith('(najlepiej bez szwendaczy blisko).'))
+          if (!jak.endsWith('(uwaga na szwendacze).'))
             throw new Error(`${name} ${k}: dopisek nie jest na końcu podpowiedzi: …${jak.slice(-120)}`);
           console.log(`  ${k}: ${biezacy.tekst} (${jak.length} znaków podpowiedzi)`);
           await sprawdzUklad(page, `${name} ${w}×${h}, ${k}`, dotyk);
@@ -1263,7 +1331,9 @@ export function celeShots(out: string): ShotCele[] {
           zawiera(
             `${name} ${k} EN`,
             jakEn,
-            dotyk ? 'press and hold on the plan, “Build …”' : 'right-click the plan, “Build …”',
+            dotyk
+              ? 'tap a person and press and hold on the plan, “Build …”'
+              : 'select a person and right-click the plan, “Build …”',
             dom ? 'For planks across the street:' : 'For planks from other stairwells or across the street:',
           );
           if (!jakEn.endsWith('(best if no shamblers near).'))
@@ -1277,9 +1347,12 @@ export function celeShots(out: string): ShotCele[] {
       },
     });
 
-  /** Zombie, R4 otwarty trzy doby temu i nikt nie został przyjęty: cel „nowi” zalicza się sam (zapas) i mówi to linią „Nikt
-      nie zapukał: …” zamiast zwykłego tekstu; bieżącym celem zostaje „ludzie”. Okienko z tą linią niczego nie zasłania (na
-      telefonie nie nachodzi na panel budowy), po polsku i po angielsku, a przed trzecią dobą cel jest jeszcze do zrobienia. */
+  /** Zombie, R4 otwarty tyle czasu przy ekranie, ile trzy doby przy 1× w prawdziwej grze (1880 s: doba to około 627 s, bo noc po
+      karcie biegnie 6×), i nikt nie został przyjęty: cel „nowi” zalicza się sam
+      (zapas) i mówi to linią „Nikt nie został przyjęty, więc cel zaliczył się sam. …” pod celem; bieżącym celem zostaje „ludzie”.
+      Okienko z tą linią niczego nie zasłania (na telefonie nie nachodzi na panel budowy), po polsku i po angielsku. Przed tym
+      czasem cel jest jeszcze do zrobienia i jest bieżący: jego podpowiedź mówi o ocalałych pod bramą, ich karcie z „Pokaż” i
+      wyborze „Przyjąć do spółdzielni”, a „Przyjąć wszystkich” (kart uchodźców w zombie nie ma) w niej nie ma. */
   const zombieNowiZapas = (name: string, demo: string, w: number, h: number): ShotCele =>
     shot({
       name,
@@ -1289,13 +1362,42 @@ export function celeShots(out: string): ShotCele[] {
       run: async (page, base) => {
         const dotyk = dotykowy(w);
         await start(page, base, `demo=${demo}&tryb=zombie&miasto=0&${GRA}&godzina=11`);
-        // dwie doby i dwadzieścia trzy godziny: zapasu jeszcze nie ma
+        // dwie doby i dwadzieścia trzy godziny (około pół minuty przed progiem): zapasu jeszcze nie ma
         await rozdzial(page, 'r4', 2.95);
         await poPodpowiedziStartowej(page);
         await ustawOkienko(page, true, dotyk);
         const przed = (await wiersze(page, 'rozdzial')).find((x) => x.key === 'nowi');
         if (!przed || przed.klasy.includes('done') || przed.tekst !== 'Przyjmijcie kogoś nowego.')
           throw new Error(`${name}: przed trzecią dobą „nowi” to ${JSON.stringify(przed)}`);
+        if (!przed.klasy.includes('now')) throw new Error(`${name}: przed trzecią dobą „nowi” nie jest bieżący`);
+        zawiera(
+          `${name} przed zapasem`,
+          przed.jak ?? '',
+          'Ocaleni pod bramą mają kartę z „Pokaż”',
+          '„Przyjąć do spółdzielni”',
+          '„Wciągnąć do roboty”',
+          'komunikat o ich drodze ma ten sam „Pokaż”',
+        );
+        nieZawiera(`${name} przed zapasem`, przed.jak ?? '', 'Przyjąć wszystkich');
+        await zrzut(page, `${name}-przed-pl`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, przed zapasem`, dotyk);
+        await ustawJezyk(page, 'en');
+        await ustawOkienko(page, true, dotyk);
+        const przedEn = (await wiersze(page, 'rozdzial')).find((x) => x.key === 'nowi');
+        zawiera(
+          `${name} przed zapasem EN`,
+          przedEn?.jak ?? '',
+          'Survivors at the gate have a card with “Show”',
+          '“Take him/her/them into the co-op”',
+          '“Put him/her to work”',
+          'the notice about them coming in has the same “Show”',
+        );
+        nieZawiera(`${name} przed zapasem EN`, przedEn?.jak ?? '', 'Take everyone in');
+        await okienkoBezPolskich(page, `${name} przed zapasem EN`);
+        await zrzut(page, `${name}-przed-en`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, przed zapasem, EN`, dotyk);
+        await ustawJezyk(page, 'pl');
+        await ustawOkienko(page, true, dotyk);
         // trzy doby: zapas
         await rozdzial(page, 'r4', 3);
         await ustawOkienko(page, true, dotyk);
@@ -1304,7 +1406,8 @@ export function celeShots(out: string): ShotCele[] {
         if (
           !nowi?.klasy.includes('done') ||
           nowi.tekst !== 'Przyjmijcie kogoś nowego.' ||
-          nowi.uwaga !== 'Nikt nie zapukał: gdy ktoś poprosi o miejsce, karta zapyta.'
+          nowi.uwaga !==
+            'Nikt nie został przyjęty, więc cel zaliczył się sam. Gdy ktoś poprosi o miejsce, karta zapyta.'
         )
           throw new Error(`${name}: po trzech dobach „nowi” to ${JSON.stringify(nowi)}`);
         const biezacy = wr.find((x) => x.klasy.includes('now'));
@@ -1322,12 +1425,224 @@ export function celeShots(out: string): ShotCele[] {
         if (
           !nowiEn?.klasy.includes('done') ||
           nowiEn.tekst !== 'Take someone new in.' ||
-          nowiEn.uwaga !== 'Nobody knocked: when someone asks for a place, a card will ask you.'
+          nowiEn.uwaga !==
+            'Nobody was taken in, so the goal completed itself. When someone asks for a place, a card will ask you.'
         )
           throw new Error(`${name} EN: po trzech dobach „nowi” to ${JSON.stringify(nowiEn)}`);
         await okienkoBezPolskich(page, `${name} EN`);
         await zrzut(page, `${name}-en`);
         await sprawdzUklad(page, `${name} ${w}×${h}, zapas, EN`, dotyk);
+        await ustawJezyk(page, 'pl');
+      },
+    });
+
+  /** Zombie, R4 otwarty od razu, a gra idzie ponad trzy doby gry przy 8× (`zm.ff(minuty, 8)`: sekunda przy ekranie to 160 ticków,
+      więc to około 6 minut przy ekranie): zapas celu „nowi” liczy czas przy ekranie, a nie doby gry, więc cel jeszcze czeka
+      (zapas liczony w dobach gry zaliczyłby go po trzech dobach), a gdy nikt nie jest przyjęty i czasu przy ekranie nie przybywa
+      od progu (1880 s), niczego nie zalicza. Dowód, że okienko celów dostaje z gry prawdziwy czas przy ekranie (`ekran` w
+      `odczytCelow`, src/main.ts), a nie tick podzielony przez 20, czego żaden test w Node nie widzi. */
+  const zombieNowiTempo = (name: string, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        await start(page, base, `demo=przymorze&tryb=zombie&miasto=0&${GRA}&godzina=11`);
+        await rozdzial(page, 'r4');
+        await poPodpowiedziStartowej(page);
+        const stan = () =>
+          page.evaluate(() => ({
+            tick: window.zm!.sim!.st.tick,
+            ekran: window.zm!.screen(),
+            koniec: !!window.zm!.gov!.over,
+          }));
+        const od = await stan();
+        const cel = od.tick + Math.round(3.05 * TICKS_PER_DAY);
+        for (let k = 0; k < 400; k++) {
+          const w = await okno(page);
+          if (w) {
+            await odpowiedz(page, w, dotyk);
+            continue;
+          }
+          const teraz = await stan();
+          if (teraz.koniec) throw new Error(`${name}: gra skończyła się po ${teraz.tick - od.tick} tickach`);
+          if (teraz.tick >= cel) break;
+          // krok przy 8×: godzina gry naraz
+          await page.evaluate(() => window.zm!.ff(60, 8));
+        }
+        const po = await stan();
+        const dobyGry = (po.tick - od.tick) / TICKS_PER_DAY;
+        const sekundy = po.ekran - od.ekran;
+        console.log(`  ${dobyGry.toFixed(2)} doby gry, ${sekundy.toFixed(0)} s przy ekranie`);
+        if (dobyGry < 3.05) throw new Error(`${name}: przewinięte tylko ${dobyGry.toFixed(2)} doby`);
+        if (sekundy > 500) throw new Error(`${name}: ${sekundy} s przy ekranie, a przy 8× powinno być około 370`);
+        await zamknijOkna(page, dotyk);
+        await poHudzie(page);
+        await ustawOkienko(page, true, dotyk);
+        const wr = await wiersze(page, 'rozdzial');
+        const nowi = wr.find((x) => x.key === 'nowi');
+        if (!nowi || nowi.klasy.includes('done'))
+          throw new Error(
+            `${name}: po ${dobyGry.toFixed(2)} doby gry i ${sekundy.toFixed(0)} s przy ekranie „nowi” to ${JSON.stringify(nowi)}`,
+          );
+        await zrzut(page, name);
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
+      },
+    });
+
+  /** Podpowiedź bieżącego celu R4 „Przyjmijcie kogoś nowego” (R4 otwarty od razu, uchwała i raport czekają, więc „nowi” jest
+      bieżący): w zwykłym trybie mówi o uchodźcach („Przyjąć wszystkich”), „Wciągnąć do roboty” i gościu pod bramą (furtką w
+      domu) z kartą z „Pokaż” i wyborem „Przyjąć do spółdzielni” (w domu „Przyjąć do domu”), w zombie o ocalałych i bez „Przyjąć
+      wszystkich”. Po polsku i po angielsku bez polskich liter, a okienko (na telefonie zwinięte do tego jednego celu) nie
+      nachodzi na kartę osoby, panel budowy ani listę ludzi. */
+  const nowiPodpowiedz = (name: string, demo: string, zombie: boolean, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        const dom = demo === 'zielonki';
+        await start(page, base, `demo=${demo}${zombie ? '&tryb=zombie' : ''}&miasto=0&${GRA}&godzina=11`);
+        await rozdzial(page, 'r4');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        const biezacy = (await wiersze(page, 'rozdzial')).find((x) => x.klasy.includes('now'));
+        if (biezacy?.key !== 'nowi') throw new Error(`${name}: bieżący cel to ${biezacy?.key}, nie nowi`);
+        const miejsce = dom ? 'pod furtką' : 'pod bramą';
+        const jak = biezacy.jak ?? '';
+        zawiera(
+          name,
+          jak,
+          '„Pokaż”',
+          '„Wciągnąć do roboty”',
+          `„Przyjąć do ${dom ? 'domu' : 'spółdzielni'}”`,
+          'komunikat o ich drodze ma ten sam „Pokaż”',
+        );
+        if (zombie) {
+          zawiera(name, jak, `Ocaleni ${miejsce} mają kartę z „Pokaż”`);
+          nieZawiera(name, jak, 'Przyjąć wszystkich');
+        } else {
+          zawiera(name, jak, `Gość ${miejsce} ma kartę z „Pokaż”`, '„Przyjąć wszystkich”');
+        }
+        const blokowe = dom ? BLOKOWE_UI.exec(jak) : null;
+        if (blokowe) throw new Error(`${name}: w domu podpowiedź ma słowo z bloku „${blokowe[0]}”: ${jak}`);
+        console.log(`  ${jak.length} znaków podpowiedzi: ${jak}`);
+        // zrzut przed sprawdzeniem układu (ono otwiera kartę osoby i panel budowy, a na telefonie okienko się wtedy zwija)
+        await zrzut(page, `${name}-pl`);
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
+        await ustawJezyk(page, 'en');
+        await ustawOkienko(page, true, dotyk);
+        const biezacyEn = (await wiersze(page, 'rozdzial')).find((x) => x.klasy.includes('now'));
+        if (biezacyEn?.key !== 'nowi') throw new Error(`${name} EN: bieżący cel to ${biezacyEn?.key}, nie nowi`);
+        const jakEn = biezacyEn.jak ?? '';
+        const brama = dom ? 'the garden gate' : 'the gate';
+        zawiera(
+          name,
+          jakEn,
+          '“Show”',
+          '“Put him/her to work”',
+          `“Take him/her/them into ${dom ? 'the house' : 'the co-op'}”`,
+          'the notice about them coming in has the same “Show”',
+        );
+        if (zombie) {
+          zawiera(name, jakEn, `Survivors at ${brama} have a card with “Show”`);
+          nieZawiera(name, jakEn, 'Take everyone in');
+        } else zawiera(name, jakEn, `A guest at ${brama} has a card with “Show”`, '“Take everyone in”');
+        console.log(`  EN ${jakEn.length} znaków podpowiedzi: ${jakEn}`);
+        await okienkoBezPolskich(page, `${name} EN`);
+        await zrzut(page, `${name}-en`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, EN`, dotyk);
+        await ustawJezyk(page, 'pl');
+      },
+    });
+
+  /** R8 z celem „teren” (wspólny płot) jako bieżącym, na osiedlu, gdzie płot dosięga sąsiada (Lanciego, Zielonki). Dwa pierwsze cele
+      zalicza gra, a nie hak: „drogi” prawdziwymi kliknięciami (Menu, „Drogi do zwycięstwa”, zamknięcie ekranu), „ludnosc”
+      kamieniem drogi ludnościowej wpisanym w stan zarządu (prawdziwy kosztuje kilkanaście osób więcej, niż mieści zrzut).
+      Podpowiedź mówi, że płot zabiera deski i złom, że zleconego nie da się odwołać i że drugi można zlecić dopiero, gdy
+      pierwszy stanie. Okienko ma w sobie całą podpowiedź bieżącego celu, więc na telefonie po angielsku najdłuższa
+      podpowiedź R8 jest tym, co wypchnęłoby je na panel budowy: układ sprawdza się z kartą osoby i panelem budowy, w obu
+      językach, w trybie zwykłym i zombie (w zombie górny pasek ma więcej pól, więc okienko zaczyna się niżej). */
+  const r8Teren = (name: string, demo: string, zombie: boolean, w: number, h: number): ShotCele =>
+    shot({
+      name,
+      query: '',
+      w,
+      h,
+      run: async (page, base) => {
+        const dotyk = dotykowy(w);
+        await start(page, base, `demo=${demo}${zombie ? '&tryb=zombie' : ''}&miasto=0&${GRA}&godzina=11`);
+        await rozdzial(page, 'r8');
+        await poPodpowiedziStartowej(page);
+        await ustawOkienko(page, true, dotyk);
+        const przed = await wiersze(page, 'rozdzial');
+        if (przed.map((x) => x.key).join() !== 'drogi,ludnosc,teren' || przed[0].klasy.includes('done'))
+          throw new Error(`${name}: R8 na starcie ${przed.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        // „drogi”: ekran dróg z Menu, tak jak otwiera go gracz, i zamknięcie go
+        await kliknij(page, '#btnMenu', dotyk);
+        await page.waitForSelector('#sheet [data-act="menu-zwyciestwo"]');
+        await kliknij(page, '#sheet [data-act="menu-zwyciestwo"]', dotyk);
+        await page.waitForSelector('#sheet .zw-drogi .zw-droga');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => document.getElementById('modal')!.hidden, null, { timeout: 5000 });
+        // „ludnosc”: kolejny kamień drogi ludnościowej niż przy otwarciu rozdziału (krok zarządu liczy go z tego pola)
+        await page.evaluate(() => {
+          const k = window.zm!.gov!.zwyciestwo!.kamienie;
+          k.ludnosc = (k.ludnosc ?? 0) + 1;
+        });
+        await poHudzie(page, 3);
+        await ustawOkienko(page, true, dotyk);
+        const wr = await wiersze(page, 'rozdzial');
+        console.log(`  R8: ${wr.map((x) => `${x.key}(${x.klasy.join('+')})`).join(' ')}`);
+        const biezacy = wr.find((x) => x.klasy.includes('now'));
+        if (biezacy?.key !== 'teren' || wr.slice(0, 2).some((x) => !x.klasy.includes('done')))
+          throw new Error(`${name}: bieżący cel to ${biezacy?.key}, a nie teren po dwóch zrobionych`);
+        if (biezacy.tekst !== 'Zacznijcie otaczać wspólnym płotem pierwszy sąsiedni budynek.')
+          throw new Error(`${name}: tekst celu „${biezacy.tekst}”`);
+        const jak = biezacy.jak ?? '';
+        zawiera(
+          name,
+          jak,
+          dotyk
+            ? 'Przytrzymajcie palec na drzwiach otwartego budynku obok'
+            : 'Prawy przycisk na drzwiach otwartego budynku obok',
+          '„Otoczyć wspólnym płotem (…)”',
+          'desek i złomu',
+          'a zlecenia nie da się odwołać',
+          'drugi zlecicie, gdy ten stanie',
+          'pierwszą sztukę materiału',
+        );
+        const blokowe = demo === 'zielonki' ? BLOKOWE_UI.exec(jak) : null;
+        if (blokowe) throw new Error(`${name}: w domu podpowiedź ma słowo z bloku „${blokowe[0]}”: ${jak}`);
+        console.log(`  ${jak.length} znaków podpowiedzi: ${jak}`);
+        // zrzut przed sprawdzeniem układu (ono otwiera kartę osoby i panel budowy, a na telefonie okienko się wtedy zwija)
+        await zrzut(page, `${name}-pl`);
+        await sprawdzUklad(page, `${name} ${w}×${h}`, dotyk);
+        await ustawJezyk(page, 'en');
+        await ustawOkienko(page, true, dotyk);
+        const biezacyEn = (await wiersze(page, 'rozdzial')).find((x) => x.klasy.includes('now'));
+        if (biezacyEn?.key !== 'teren') throw new Error(`${name} EN: bieżący cel to ${biezacyEn?.key}, nie teren`);
+        const jakEn = biezacyEn.jak ?? '';
+        zawiera(
+          name,
+          jakEn,
+          dotyk
+            ? 'Press and hold on the door of an open building next door'
+            : 'Right-click the door of an open building next door',
+          '“Put up a shared fence (…)”',
+          'planks and scrap',
+          'and can’t be cancelled',
+          'a second one waits until it stands',
+          'first piece of material',
+        );
+        console.log(`  EN ${jakEn.length} znaków podpowiedzi: ${jakEn}`);
+        await okienkoBezPolskich(page, `${name} EN`);
+        await zrzut(page, `${name}-en`);
+        await sprawdzUklad(page, `${name} ${w}×${h}, EN`, dotyk);
         await ustawJezyk(page, 'pl');
       },
     });
@@ -1665,6 +1980,19 @@ export function celeShots(out: string): ShotCele[] {
           krok: () => 2,
           maks: 60,
         });
+        // wieść z rozmowy wisi 7 s u dołu: przy otwartej karcie osoby leży w wolnym miejscu między listą ludzi a kartą, na nic nie
+        // nachodzi (dawniej zakrywała 20 px zwiniętego okienka celów), także przy rozwiniętym okienku
+        await page.waitForFunction(() => document.getElementById('hint')!.textContent !== '', null, { timeout: 3000 });
+        const kameraWiesci = await kamera(page);
+        await ustawOkienko(page, false, true);
+        await kliknij(page, '#lista .lp >> nth=0', true);
+        await page.waitForSelector('#card:not([hidden])');
+        await poHudzie(page, 1);
+        await podpowiedzBezNachodzenia(page, `${name} ${w}×${h}, wieść z rozmowy, zwinięte okienko z kartą`);
+        await ustawOkienko(page, true, true);
+        await podpowiedzBezNachodzenia(page, `${name} ${w}×${h}, wieść z rozmowy, rozwinięte okienko z kartą`);
+        await page.keyboard.press('Escape');
+        await przywrocKamere(page, kameraWiesci);
         await poWiesci(page);
         await poHudzie(page);
         // po rozmowie: bieżące jest zaproszenie, z podpowiedzią bez „(… szans)”
@@ -2409,6 +2737,18 @@ export function celeShots(out: string): ShotCele[] {
     zombieBudowa('cele-zombie-budowa-dom-telefon', 'zielonki', true, 390, 844),
     zombieNowiZapas('cele-zombie-nowi-zapas', 'przymorze', 1440, 900),
     zombieNowiZapas('cele-zombie-nowi-zapas-telefon', 'przymorze', 390, 844),
+    zombieNowiTempo('cele-zombie-nowi-tempo', 1440, 900),
+    nowiPodpowiedz('cele-nowi-gosc', 'przymorze', false, 1440, 900),
+    nowiPodpowiedz('cele-nowi-gosc-telefon', 'przymorze', false, 390, 844),
+    nowiPodpowiedz('cele-nowi-gosc-dom', 'zielonki', false, 1440, 900),
+    nowiPodpowiedz('cele-nowi-gosc-dom-telefon', 'zielonki', false, 390, 844),
+    nowiPodpowiedz('cele-nowi-gosc-zombie', 'przymorze', true, 1440, 900),
+    nowiPodpowiedz('cele-nowi-gosc-zombie-telefon', 'przymorze', true, 390, 844),
+    nowiPodpowiedz('cele-nowi-gosc-zombie-dom-telefon', 'zielonki', true, 390, 844),
+    r8Teren('cele-r8-teren', 'lanciego', false, 1440, 900),
+    r8Teren('cele-r8-teren-telefon', 'lanciego', false, 390, 844),
+    r8Teren('cele-r8-teren-zombie-telefon', 'lanciego', true, 390, 844),
+    r8Teren('cele-r8-teren-dom-telefon', 'zielonki', false, 390, 844),
     czeka('cele-czeka'),
     handlarz('cele-okazja-handlarz'),
     wedrowiec('cele-okazja-wedrowiec'),

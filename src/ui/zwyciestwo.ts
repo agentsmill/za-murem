@@ -15,7 +15,7 @@
      końca ma klasę `zw-wygrana` i odznakę „Zwycięstwo”; zdanie „Wkrótce” pokazuje się tylko wtedy, gdy logika je poda
      (`PostepDrogi.wkrotce`, po przebyciu drogi jest puste). Przycisk „Wróć” (`zw-wroc`) wraca do Menu, a okno zamyka się
      też Esc i kliknięciem obok.
-   - `epilogSheet(droga, path, mode, staty)`: okno zwycięstwa nad grą (tabliczka w złocie): tytuł to nazwa drogi (w zombie
+   - `epilogSheet(droga, path, mode, staty, words?, e?)`: okno zwycięstwa nad grą (tabliczka w złocie): tytuł to nazwa drogi (w zombie
      droga leku to „Lek”), tekst drogi, po nim zdanie ścieżki uchwał (`GovState.laws.path`: Porządek, Wspólnota, Technokracja,
      a bez ścieżki zdanie neutralne), cztery liczby (dzień, ludzie, zmarli, uchwały) i dwa przyciski: „Graj dalej”
      (`zw-dalej`, główny) i „Nowa gra” (`zw-nowa`). Okno nie zamyka się samo (odpowiedź jest obowiązkowa, jak przy
@@ -25,7 +25,9 @@
      przycięty do 120–500. Technologii: „Fabryka ruszyła.” i jedno zdanie o fabryce bieżącego trybu, w zwykłej grze
      o biorobotach, których bakteria nie rusza, w zombie o humanoidalnych żołnierzach, oba z superserwerem (tryb z
      `GovState.mode`, bez liczb). Pozostałe drogi dostają krótki tekst zastępczy z nazwą drogi, a własne dojdą razem
-     z nimi.
+     z nimi. Słowa miejsca (`words`, `e` ze słownika src/gov/miejsce.ts, jak w oknach z okna.ts) wybierają brama | furtka,
+     zarząd | komitet ulicy, klatki | płoty i trzepak | trawniki: w domu epilog nie mówi o klatkach, spółdzielni ani
+     trzepaku; bez słów mówi jak w bloku.
    - `statyEpilogu(st, i)`: liczby do epilogu z odczytu i stanu zarządu: dzień gry, ludzie pod zarządem (tak jak liczy
      droga: `ludnoscOf`), zmarli (zarząd i mieszkańcy, `GovInput.dead`), podpisane uchwały i, gdy `GovInput.ludnosc2021`
      jest liczbą skończoną i dodatnią, spis 2021 (`spis`).
@@ -34,7 +36,8 @@
 
 import './zwyciestwo.css';
 import type { LawPath } from '../content/data.ts';
-import { L, mnogaPl, type Tx, tr, tx, txCat } from '../core/jezyk.ts';
+import { L, mnogaPl, type Tx, tr, tx, txCat, wielka } from '../core/jezyk.ts';
+import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import type { GameMode, GovInput, GovState } from '../gov/typy.ts';
 import { type Droga, ludnoscOf, maDaneSpisu, nazwaDrogi, type PostepDrogi } from '../gov/zwyciestwo.ts';
 import { btn, type Sheet } from './okna.ts';
@@ -113,7 +116,7 @@ function drogaHtml(d: PostepDrogi): string {
 export function drogiSheet(p: PostepDrogi[]): Sheet {
   return {
     tone: 'drogi',
-    kicker: 'Za Murem 0.4',
+    kicker: 'Za Murem 1.0',
     title: L('Drogi do zwycięstwa', 'Roads to victory'),
     body: `<p class="lead">${L(
       'Każda droga ma kamienie milowe, a zwycięstwo nie kończy gry: możecie grać dalej.',
@@ -126,13 +129,15 @@ export function drogiSheet(p: PostepDrogi[]): Sheet {
 
 // ---------------------------------------------------------------- epilog
 
-/** Dwa pierwsze zdania epilogu drogi ludnościowej, bez liczb. Trzecie (`zdanieLudzi`) mówi, ilu ludzi tu dziś mieszka
-    i, jeśli spis 2021 jest do użytku, ilu mieszkało kiedyś: celem jest połowa spisu w przedziale 120–500, więc „połowa
-    tylu ludzi, co w 2021” bywała nieprawdą. */
-const PODWORKO = tx(
-  'Na podwórku znowu jest gwarno. Na klatkach wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze regulamin trzepaka.',
-  'The yard is noisy again. Rotas hang in the stairwells, the kids have their own gang, and someone is already drafting rules for the carpet rack.',
-);
+/** Dwa pierwsze zdania epilogu drogi ludnościowej, bez liczb; kawałki o klatkach i trzepaku idą ze słownika miejsca (w domu
+    płoty i koszenie trawników). Trzecie (`zdanieLudzi`) mówi, ilu ludzi tu dziś mieszka i, jeśli spis 2021 jest do
+    użytku, ilu mieszkało kiedyś: celem jest połowa spisu w przedziale 120–500, więc „połowa tylu ludzi, co w 2021”
+    bywała nieprawdą. */
+const podworko = (w: Words, e: WordsEn): Tx =>
+  tx(
+    `Na podwórku znowu jest gwarno. ${w.epilog.grafiki} wiszą grafiki dyżurów, dzieci mają swoją bandę, a ktoś już pisze ${w.epilog.regulamin}.`,
+    `The yard is noisy again. Rotas hang ${e.epilog.grafiki}, the kids have their own gang, and someone is already drafting rules for ${e.epilog.regulamin}.`,
+  );
 
 /** Ostatnie zdanie epilogu ludności z prawdziwymi liczbami: ludzie dziś (polska liczba mnoga przy „osób”) i, gdy jest
     spis 2021, ilu mieszkało wtedy; bez spisu samo „nikt już nie zamawia jedzenia przez aplikację”. */
@@ -152,63 +157,80 @@ function zdanieLudzi(staty: StatyEpilogu): Tx {
   );
 }
 
+/** „wasza brama”, „wasza furtka” po angielsku: rodzajnik „the” ze słownika zamieniony na „your” (the gate → your gate,
+    the garden gate → your garden gate) */
+const your = (np: string): string => np.replace(/^the /, 'your ');
+
 /** Epilog drogi technologii, zwykła gra: fabryka biorobotów odpornych na bakterię miedzi i superserwer, który liczy, kto
-    pierwszy dostanie prąd. Bez liczb. */
-const FABRYKA_ZWYKLA = tx(
-  'Fabryka ruszyła. Bioroboty, których bakteria nie rusza, kładą nowe linie od waszej bramy przez całe miasto, a superserwer liczy, kto pierwszy dostanie prąd.',
-  'The factory is running. Biorobots the bacterium cannot touch are laying new lines from your gate across the whole city, while the superserver works out who gets power first.',
-);
+    pierwszy dostanie prąd. Bez liczb; brama (w domu furtka) ze słownika miejsca. */
+const fabrykaZwykla = (w: Words, e: WordsEn): Tx =>
+  tx(
+    `Fabryka ruszyła. Bioroboty, których bakteria nie rusza, kładą nowe linie od waszej ${w.brama.d} przez całe miasto, a superserwer liczy, kto pierwszy dostanie prąd.`,
+    `The factory is running. Biorobots the bacterium cannot touch are laying new lines from ${your(e.brama)} across the whole city, while the superserver works out who gets power first.`,
+  );
 
 /** Epilog drogi technologii w trybie zombie: fabryka humanoidalnych żołnierzy, którzy czyszczą miasto ze szwendaczy, i
-    superserwer, który pisze im rozkazy i regulamin. Bez liczb. */
-const FABRYKA_ZOMBIE = tx(
-  'Fabryka ruszyła. Humanoidalni żołnierze wychodzą z bramy i czyszczą miasto ze szwendaczy, kwartał po kwartale, a superserwer pisze im rozkazy i regulamin.',
-  'The factory is running. Humanoid soldiers march out of the gate and clear the city of walkers, block by block, while the superserver writes their orders and their terms of service.',
-);
+    superserwer, który pisze im rozkazy i regulamin. Bez liczb; brama (w domu furtka) ze słownika miejsca. */
+const fabrykaZombie = (w: Words, e: WordsEn): Tx =>
+  tx(
+    `Fabryka ruszyła. Humanoidalni żołnierze wychodzą z ${w.brama.d} i czyszczą miasto ze szwendaczy, kwartał po kwartale, a superserwer pisze im rozkazy i regulamin.`,
+    `The factory is running. Humanoid soldiers march out of ${e.brama} and clear the city of walkers, block by block, while the superserver writes their orders and their terms of service.`,
+  );
 
-/** Zdanie końcowe epilogu według ścieżki uchwał (`GovState.laws.path`); `brak` dla gry bez ścieżki. */
-const SCIEZKA: Readonly<Record<'porzadek' | 'wspolnota' | 'tech' | 'brak', Tx>> = {
+/** Zdanie końcowe epilogu według ścieżki uchwał (`GovState.laws.path`); `brak` dla gry bez ścieżki. Słowa miejsca
+    (brama | furtka, klatka | dom, zarząd | komitet ulicy, spółdzielnia | ulica) idą ze słownika, więc w domu epilog nie
+    mówi o klatkach ani o spółdzielni. */
+const sciezka = (w: Words, e: WordsEn): Readonly<Record<'porzadek' | 'wspolnota' | 'tech' | 'brak', Tx>> => ({
   porzadek: tx(
-    'Brama zamyka się o dwudziestej, a straż zna każdego nowego z imienia.',
-    'The gate shuts at eight and the watch knows every newcomer by name.',
+    `${wielka(w.brama.m)} zamyka się o dwudziestej, a straż zna każdego nowego z imienia.`,
+    `${wielka(e.brama)} shuts at eight and the watch knows every newcomer by name.`,
   ),
   wspolnota: tx(
-    'Każda klatka ma swoje zebranie i swoją kłótnię o grafik, ale nikt nie chce się wyprowadzać.',
-    'Every stairwell has its own meeting and its own row over the rota, but nobody wants to move out.',
+    `${w.epilog.kazda} ma swoje zebranie i swoją kłótnię o grafik, ale nikt nie chce się wyprowadzać.`,
+    `${e.epilog.kazda} has its own meeting and its own row over the rota, but nobody wants to move out.`,
   ),
   tech: tx(
     'Model z dysków banku układa grafiki co do minuty. Nikt nie pyta, kto go kontroluje.',
     'The model from the bank’s disks plans the rotas to the minute. Nobody asks who controls it.',
   ),
   brak: tx(
-    'Zarząd dalej się spiera, czy to już osada, czy jeszcze spółdzielnia.',
-    'The board is still arguing whether this is a settlement now or still a housing co-op.',
+    `${w.Zarzad} dalej się spiera, czy to już osada, czy jeszcze ${w.wspolnota.m}.`,
+    `${e.Zarzad} is still arguing whether this is a settlement now or still ${e.epilog.jeszcze}.`,
   ),
-};
+});
 
 /** Zdanie ścieżki: Porządek, Wspólnota i Technokracja mają własne, wszystko inne (brak ścieżki, „Przetrwanie”) neutralne. */
-function sciezkaOf(path: LawPath | null): Tx {
-  return path === 'porzadek' || path === 'wspolnota' || path === 'tech' ? SCIEZKA[path] : SCIEZKA.brak;
+function sciezkaOf(path: LawPath | null, w: Words, e: WordsEn): Tx {
+  const z = sciezka(w, e);
+  return path === 'porzadek' || path === 'wspolnota' || path === 'tech' ? z[path] : z.brak;
 }
 
 /** Tekst drogi w epilogu: własny (ludność: dwa zdania i zdanie z liczbami ludzi; technologia: fabryka bieżącego trybu),
     a bez niego krótki zastępczy z nazwą drogi. */
-function epilogTekst(droga: Droga, mode: GameMode, staty: StatyEpilogu): Tx {
-  if (droga === 'ludnosc') return txCat(PODWORKO, ' ', zdanieLudzi(staty));
-  if (droga === 'technologia') return mode === 'zombie' ? FABRYKA_ZOMBIE : FABRYKA_ZWYKLA;
+function epilogTekst(droga: Droga, mode: GameMode, staty: StatyEpilogu, w: Words, e: WordsEn): Tx {
+  if (droga === 'ludnosc') return txCat(podworko(w, e), ' ', zdanieLudzi(staty));
+  if (droga === 'technologia') return mode === 'zombie' ? fabrykaZombie(w, e) : fabrykaZwykla(w, e);
   const nazwa = nazwaDrogi(droga, mode);
   return tx(`Droga „${nazwa.pl}” przebyta do końca.`, `The road “${nazwa.en}” is complete.`);
 }
 
-/** Epilog zwycięstwa drogą `droga`: tekst drogi, zdanie ścieżki uchwał `path`, cztery liczby i dwa przyciski. */
-export function epilogSheet(droga: Droga, path: LawPath | null, mode: GameMode, staty: StatyEpilogu): Sheet {
+/** Epilog zwycięstwa drogą `droga`: tekst drogi, zdanie ścieżki uchwał `path`, cztery liczby i dwa przyciski. Słowa
+    miejsca (`words`, `e`) jak w oknach z okna.ts; bez nich epilog mówi jak w bloku. */
+export function epilogSheet(
+  droga: Droga,
+  path: LawPath | null,
+  mode: GameMode,
+  staty: StatyEpilogu,
+  words: Words = wordsOf(BLOK),
+  e: WordsEn = wordsEn(BLOK),
+): Sheet {
   const stat = (t: string) => `<li class="zw-stat">${esc(t)}</li>`;
   return {
     tone: 'zwyciestwo',
     kicker: L('Zwycięstwo', 'Victory'),
     title: esc(tr(nazwaDrogi(droga, mode))),
-    body: `<p class="zw-opowiesc">${esc(tr(epilogTekst(droga, mode, staty)))}</p><p class="zw-sciezka">${esc(
-      tr(sciezkaOf(path)),
+    body: `<p class="zw-opowiesc">${esc(tr(epilogTekst(droga, mode, staty, words, e)))}</p><p class="zw-sciezka">${esc(
+      tr(sciezkaOf(path, words, e)),
     )}</p><ul class="zw-staty">${[
       stat(L(`Dzień ${num(staty.dzien, 0)}`, `Day ${num(staty.dzien, 0)}`)),
       stat(L(`Ludzi: ${num(staty.ludzi, 0)}`, `People: ${num(staty.ludzi, 0)}`)),

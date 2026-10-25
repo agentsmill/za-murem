@@ -30,6 +30,10 @@ import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './k
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { tekstyShots } from './shots-teksty.ts';
+import { telefonShots } from './shots-telefon.ts';
+import { ukladShots } from './shots-uklad.ts';
+import { wikiShots } from './shots-wiki.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -749,8 +753,16 @@ const SHOTS: Shot[] = [
   // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
+  ...ukladShots(OUT),
+  ...telefonShots(OUT),
+  // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
+  // dom i blok; każdy scenariusz sprawdza układ, atrybucję map i słowa z bloku w domu
+  ...wikiShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
+  // Poprawki tekstów po przeglądzie spójności: pora roku na pasku w zimie, słowa domu (komitet, furtka) w drogach, epilogach, planie
+  // wyprawy, alarmie i Pracy, karta miejsca wybranego do cna, koniec gry w kronice, atrybucja w /v03/
+  ...tekstyShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -2442,6 +2454,16 @@ const SHOTS: Shot[] = [
             for (const p of st.pawns)
               if (p.kind === 'resident' && p.person >= 0)
                 p.moods.push({ why: 'Głód w piwnicy', d: -40, until: st.tick + 200 * 800 });
+          });
+          // Pula zarządu tylko z tą jedną kartą (jak w `wyd-przyjety`): „Kradzież z piwnicy” jest rzadką kartą nocy, więc
+          // czekanie na nią w całej puli zależy od przebiegu losowań. Raz już nie wypadła w 150 godzin, gdy zmiana imion
+          // gości (dwie różne osoby nie mają tego samego imienia) przesunęła losowania w tej grze, a scenariusz sprawdza
+          // samą kartę i jej wybory, nie szansę, że wypadnie.
+          await page.evaluate(async () => {
+            const url = '/src/gov/wydarzenia.ts';
+            const m = (await import(/* @vite-ignore */ url)) as { M1_EVENTS: { id: string }[] };
+            const gov = window.zm!.gov!;
+            for (const e of m.M1_EVENTS) if (e.id !== 'kradziez') gov.ev.last[e.id] = 1e9;
           });
           const krok = await doKarty(page, 'kradziez');
           await waitIdle(page);
@@ -6347,7 +6369,9 @@ const SHOTS: Shot[] = [
         for (const p of core) if (p.job?.t === 'research') p.job = null;
         const inny = core[core.length - 1];
         const ok = sim.startResearch(inny, true);
-        zm.setCam(lab.x + 1, lab.y + 0.5, 1.4);
+        // kamera półtora kafelka wyżej niż pracownia: żaden z zaznaczanych (jeden stoi siedem kafelków nad stołem) nie wypada
+        // pod górnym paskiem, który ma od 1100 px stałe 105 px (kliknięcie w pionka pod paskiem trafia w pasek)
+        zm.setCam(lab.x + 1, lab.y - 1, 1.4);
         return {
           lab: { x: lab.x, y: lab.y },
           inny: inny.id,
@@ -10124,6 +10148,16 @@ async function zrzut(shot: Shot): Promise<void> {
       // strona bez pamięci: gra wybierze język domyślny
     }
   }, shot.lang ?? 'pl');
+  // błędy okna „ResizeObserver loop completed with undelivered notifications” nie są wyjątkami, więc Playwright ich nie zgłasza
+  // (`pageerror`), a serwer Vite pisze je tylko jako „[Unhandled error]”: liczy je słuchacz zdarzenia `error` z początku strony,
+  // a scenariusz z choć jednym pada (src/main.ts nie obserwuje okienka celów, tylko mierzy je przy przepisywaniu treści)
+  await page.addInitScript(() => {
+    const okno = window as unknown as { __zmRo: string[] };
+    okno.__zmRo = [];
+    window.addEventListener('error', (e) => {
+      if (/ResizeObserver/.test(e.message)) okno.__zmRo.push(e.message);
+    });
+  });
   // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
   if (KOD)
     await page.addInitScript(() => {
@@ -10155,6 +10189,10 @@ async function zrzut(shot: Shot): Promise<void> {
     }
     const file = path.join(OUT, `${shot.name}.png`);
     await page.screenshot({ path: file });
+    const ro = await page
+      .evaluate(() => (window as unknown as { __zmRo?: string[] }).__zmRo?.length ?? 0)
+      .catch(() => 0);
+    if (ro) errors.push(`${ro}× „ResizeObserver loop completed with undelivered notifications”`);
     console.log(`${shot.name}: ${Date.now() - t0} ms${errors.length ? `, BŁĘDY: ${errors.join(' | ')}` : ''}`);
     // błąd na stronie to nieudany zrzut, także dla CI
     if (errors.length) process.exitCode = 1;
@@ -10587,6 +10625,32 @@ function druzynaShots(): Shot[] {
     żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
     z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
     prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
+/** Na telefonie rodzina, historia i zmiana imienia stoją za „Więcej” (domyślnie zwiniętym, src/main.ts); scenariusze karty, które je
+    sprawdzają albo klikają, rozwijają je tą funkcją (na komputerze przycisku nie ma, wtedy nic nie robi). Funkcja, nie stała, z tego
+    samego powodu co `bezRozkazu`. */
+async function rozwinWiecej(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const przycisk = document.querySelector<HTMLElement>('#card .wiecej');
+    const karta = document.getElementById('card')!;
+    if (przycisk && getComputedStyle(przycisk).display !== 'none' && karta.classList.contains('wiecej-zwiniete'))
+      przycisk.click();
+  });
+  await page.waitForFunction(() => {
+    const przycisk = document.querySelector<HTMLElement>('#card .wiecej');
+    return (
+      !przycisk ||
+      getComputedStyle(przycisk).display === 'none' ||
+      !document.getElementById('card')!.classList.contains('wiecej-zwiniete')
+    );
+  });
+}
+
+/** przycisk karty mieszkańca tylko do odczytu, który nie wydaje polecenia: historia, imię i (na telefonie) rozwijanie potrzeb i
+    „Więcej”; funkcja, nie stała, bo scenariusze karty ruszają, zanim moduł dojdzie do stałych z końca pliku */
+function bezRozkazu(przycisk: string | undefined): boolean {
+  return przycisk === 'story' || przycisk === 'imie' || przycisk === 'potrzeby' || przycisk === 'wiecej';
+}
+
 function kartaShots(): Shot[] {
   const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
   const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
@@ -10615,6 +10679,9 @@ function kartaShots(): Shot[] {
     await page.waitForFunction((n) => document.querySelector('#card:not([hidden]) h2')?.textContent === n, kto, {
       timeout: 5000,
     });
+    // na telefonie rodzina, historia i zmiana imienia stoją za „Więcej”, a scenariusz sprawdza kartę z całą zawartością
+    // (napis o fikcji jest na widoku także zwinięty, scenariusz telefon-karta-wiecej-* to sprawdza)
+    await rozwinWiecej(page);
     const m = await page.evaluate(() => {
       const c = document.getElementById('card')!;
       const q = (sel: string) => {
@@ -10758,8 +10825,9 @@ function kartaShots(): Shot[] {
       const b = await ekran(page, id);
       if (tap) await page.touchscreen.tap(b.x, b.y);
       else await page.mouse.click(b.x, b.y);
-      await page.waitForSelector('#card [data-card="imie"]');
+      await page.waitForSelector('#card [data-card="imie"]', { state: 'attached' });
     }
+    await rozwinWiecej(page);
     if (tap) await page.tap('#card [data-card="imie"]');
     else await page.click('#card [data-card="imie"]');
     await page.waitForSelector('#card form.imie-ed');
@@ -10895,7 +10963,7 @@ function kartaShots(): Shot[] {
     if (tap) await page.touchscreen.tap(b.x, b.y);
     else await page.mouse.click(b.x, b.y);
     const m = await sprawdz(page, r.name);
-    if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+    if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
     console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
     await historia(page, nazwa, tap);
     if (!tap) await page.mouse.move(b.x + 400, b.y - 250);
@@ -11225,7 +11293,7 @@ function kartaShots(): Shot[] {
         const b = await ekran(page, r.id);
         await page.mouse.click(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         if ((await cmds(page)) !== przed) throw new Error('kliknięcie mieszkańca wysłało polecenie');
         // zaznaczenie zostało: prawy przycisk na ziemi daje polecenie, a nie „Najpierw zaznaczcie”
         await page.mouse.click(b.x + 120, b.y + 90, { button: 'right' });
@@ -11365,7 +11433,7 @@ function kartaShots(): Shot[] {
         const b = await naPionku(r.id);
         await page.touchscreen.tap(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         await historia(page, 'karta-mieszkanca-telefon', true);
       },
     },
@@ -11450,7 +11518,8 @@ function kartaShots(): Shot[] {
         await zarzadZGeneratora(page, 0);
         const a = await rdzen(page, 0);
         await page.touchscreen.tap(a.x, a.y);
-        await page.waitForSelector('#card [data-card="imie"]');
+        await page.waitForSelector('#card [data-card="imie"]', { state: 'attached' });
+        await rozwinWiecej(page);
         await page.tap('#card [data-card="imie"]');
         await page.waitForSelector('#card form.imie-ed');
         const f = await page.evaluate(() => {
@@ -13328,7 +13397,8 @@ function zwyciestwoShots(): Shot[] {
       pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
       en: 'Put a shared fence round the first building next door.',
     },
-    ludnosc: { pl: 'Zbierzcie 10 osób pod zarządem.', en: 'Get 10 people under the board.' },
+    // w domu słowo zarządu idzie ze słownika miejsca: komitet ulicy
+    ludnosc: { pl: 'Zbierzcie 10 osób pod komitetem ulicy.', en: 'Get 10 people under the street committee.' },
   };
   /** ostatni kamień ludności z licznikiem poranków `n`: zdanie o siedmiu porankach dosłownie */
   const dalejSeria = (n: number): Tx => ({
@@ -14531,6 +14601,9 @@ function pietraShots(): Shot[] {
       await podstawAtrape(page);
       await page.goto(`${base}?demo=${DEMO_ATRAPA}&pietra=1&speed=0&cam=${cam}`);
       await waitIdle(page);
+      // licznik klatek na pasku (`.fps`) zmienia się sam, a obrys budynku z zapasem sięga pod pasek (dwa wiersze od 1100 px, 105 px):
+      // bez tego dwa zrzuty tego samego budynku różnią się cyframi licznika (0 i 38 kl/s), nie budynkiem
+      await page.addStyleTag({ content: '.fps { visibility: hidden !important; }' });
       /** widoczne w całości budynki z wyglądem: obrys z zapasem na ozdoby (wieża nad dachem, portyk przed frontem) */
       const lista = await page.evaluate(() => {
         const zm = window.zm!;
@@ -15906,7 +15979,7 @@ function pracaShots(): Shot[] {
     lang: 'pl' | 'en',
     w = 390,
     h = 844,
-    opcje: { badania?: boolean; pietra?: boolean } = {},
+    opcje: { badania?: boolean; pietra?: boolean; poziomo?: boolean } = {},
   ): Shot => ({
     name,
     query: '',
@@ -15914,7 +15987,7 @@ function pracaShots(): Shot[] {
     h,
     lang,
     run: async (page, base) => {
-      const { badania = false, pietra = false } = opcje;
+      const { badania = false, pietra = false, poziomo = false } = opcje;
       await page.goto(
         `${base}?demo=przymorze&speed=0&cam=hq,1.3${badania ? '&badania=demo' : ''}${pietra ? '&pietra=1' : ''}`,
       );
@@ -15937,7 +16010,8 @@ function pracaShots(): Shot[] {
           const b = e.getBoundingClientRect();
           return {
             nazwa: e.id || (e.textContent ?? '').trim().slice(0, 12),
-            przycisk: e.tagName === 'BUTTON',
+            // przycisk zwijania stanu (`#statsToggle`) należy do paska stanu, nie do przycisków paska, ale też nie ma nachodzić na kafelki
+            przycisk: e.tagName === 'BUTTON' && e.id !== 'statsToggle',
             l: Math.round(b.left),
             r: Math.round(b.right),
             t: Math.round(b.top),
@@ -15995,8 +16069,16 @@ function pracaShots(): Shot[] {
       if (r.pasek.b > 200) throw new Error(`pasek zajmuje ${r.pasek.b} px od góry`);
       // tempo, alarm, praca, budowa i menu mieszczą się w jednym wierszu (drugim), a „Mapa” i ikona „Badania” stoją
       // w pierwszym za zegarem; kafelek „Piętro” (tylko z flagą) wolno mu zawinąć się niżej, jak w pietra-pasek-*
-      if (!opcje.pietra && r.wiersze > 2) throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
-      if (!opcje.pietra && r.badania && r.menu && r.budowa) {
+      if (!opcje.pietra && !poziomo && r.wiersze > 2)
+        throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
+      // telefon poziomo (niskie okno): wszystkie przyciski w jednym wierszu, a pasek z linią stanu nie wyższy niż 76 px od góry
+      if (poziomo) {
+        if (!opcje.pietra && r.wiersze !== 1)
+          throw new Error(`przyciski w ${r.wiersze} wierszach zamiast jednym (telefon poziomo)`);
+        if (!opcje.pietra && r.pasek.b > 76)
+          throw new Error(`pasek poziomo sięga ${r.pasek.b} px od góry (najwyżej 76)`);
+      }
+      if (!opcje.pietra && !poziomo && r.badania && r.menu && r.budowa) {
         if (r.badania.t >= r.budowa.t - 8)
           throw new Error('ikona „Badania” nie stoi w pierwszym wierszu, nad „Budowa”');
         if (Math.abs(r.menu.t - r.budowa.t) > 3) throw new Error('„Menu” nie stoi w jednym wierszu z „Budowa”');
@@ -16043,6 +16125,11 @@ function pracaShots(): Shot[] {
     // z flagą ?pietra=1 i pracownią naraz: wszystkie przyciski, jakie pasek może mieć
     pasek('pasek-telefon-pietra-badania', 'pl', 390, 844, { badania: true, pietra: true }),
     pasek('pasek-telefon-pietra-badania-360', 'pl', 360, 740, { badania: true, pietra: true }),
+    // telefon poziomo: jeden wiersz przycisków (też z ikoną „Badania”) i niski pasek; z flagą pięter kafelek „Piętro” może zawinąć się niżej
+    pasek('pasek-telefon-poziomo', 'pl', 844, 390, { poziomo: true }),
+    pasek('pasek-telefon-poziomo-badania-812', 'pl', 812, 375, { badania: true, poziomo: true }),
+    pasek('pasek-telefon-poziomo-badania-en', 'en', 932, 430, { badania: true, poziomo: true }),
+    pasek('pasek-telefon-poziomo-pietra-badania', 'pl', 844, 390, { badania: true, pietra: true, poziomo: true }),
   ];
 }
 
