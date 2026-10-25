@@ -410,7 +410,8 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         why: ok
           ? undefined
           : tx(g(p, 'Za słaby na czuwanie.', 'Za słaba na czuwanie.'), 'Too weak to sit up all night.'),
-        // noc bez snu zjada około 50 sił (symulacja: 5 na godzinę od karty do 6:00)
+        // noc bez snu zjada około 35 sił (symulacja: `REST_AWAKE` 3,5 na godzinę od karty do 6:00), więc kto ma mniej niż 50,
+        // rano schodzi poniżej progu zmęczenia (`TIRED` 15)
         note: tx(
           `Nie śpi i pilnuje ognia w kozie, ${wn.pl}${p.needs.rest < 50 ? ' Rano będzie bez sił.' : ''}`,
           `Stays up and keeps the stove going, and ${wn.en}${p.needs.rest < 50 ? ' Will be exhausted in the morning.' : ''}`,
