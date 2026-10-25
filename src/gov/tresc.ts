@@ -44,7 +44,18 @@ import { pick } from '../core/rng.ts';
 import type { ChceId, KtoId, Strona } from './goscie.ts';
 import type { Words, WordsEn } from './miejsce.ts';
 import { M1_LAWS_EN, TARGET_VARIANTS_EN, TARGETS_EN } from './tresc.en.ts';
-import type { Cialo, GameMode, GovLokator, GovNeeds, GovPerson, GovPlace, LootKey, Punkt } from './typy.ts';
+import type {
+  Cialo,
+  GameMode,
+  GovLokator,
+  GovNeeds,
+  GovPerson,
+  GovPlace,
+  LootKey,
+  OdkrycieOsady,
+  Punkt,
+  WejscieOsady,
+} from './typy.ts';
 import { najstarszaMieszkanka, type OsobaKarty, osobaKarty } from './warianty.ts';
 import type { GoscHost } from './wizyta.ts';
 
@@ -315,6 +326,12 @@ export interface GovHost extends EventHost, GoscHost {
   handlarz(): { tile: number; gdzie: Punkt } | null;
   /** skutek dla handlarza pod bramą (`GovEffects.handlarz`): lepsza oferta albo zła sława; bez handlarza w symulacji nic nie robi */
   handlarzEfekt(co: 'oferta' | 'slawa'): void;
+  /** osada AI z wejścia zarządu (`GovInput.osada`, tylko w grze z ?osada=1, gdy osada już powstała): kopia tego, co zarząd o niej
+      wie; null bez osady. Czyta ją karta posła (src/gov/kontakt.ts) */
+  osada(): WejscieOsady | null;
+  /** pierwszy kontakt z osadą: skutek `GovEffects.odkryjOsade` z dniem, ludnością i budowlami, które poseł podał; gospodarz
+      odsłania wtedy osadę w grze. Wołają go wybory karty posła */
+  odkryjOsade(o: OdkrycieOsady): void;
   /** chwilowy nastrój jednej osoby (zarządu albo mieszkańca z osobą) na `hours` godzin gry; powód to polski napis
       z src/content/nastroje.en.ts, jak w `moodAll` */
   moodOf(id: string, why: string, d: number, hours: number): void;

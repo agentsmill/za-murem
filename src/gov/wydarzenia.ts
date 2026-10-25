@@ -35,6 +35,9 @@
    przy pokazaniu karty albo pominięciu zgonu, więc zgon ma najwyżej jedną kartę; zgon starszy niż `POGRZEB_DO` minut
    gry nie dostaje karty, tylko wpis w kronice, że pogrzebu nie było. W trybie zombie karta czeka, dopóki zwłoki leżą
    i mogą wstać (`cialo` = `lezy`), a w jej danych jest los ciała.
+   Poseł z osady (karta `posel`, src/gov/kontakt.ts): karta z sytuacji jak pogrzeb, tylko w grze z osadą (`GovInput.osada`, ?osada=1)
+   i nieodkrytą: w dniu kontaktu (4–6) od 9:00, przed losowaniem kart i bez zużywania losowań, więc gra bez osady w wejściu ma te
+   same losowania co przed kartą. Każdy jej wybór oddaje `GovEffects.odkryjOsade` (host: `GovHost.osada` i `odkryjOsade`).
    Goście z klocków (src/gov/wizyta.ts, karty `gosc` i `zlapany` dołączone do `M1_EVENTS`): wydarzenie `gosc` z puli nie
    otwiera karty, tylko planuje wizytę (`planujGoscia` → GovEffects.gosc) i od razu losuje jeszcze raz wśród reszty (plan nie
    zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
@@ -67,6 +70,7 @@ import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { type Tx, tx, txCat } from '../core/jezyk.ts';
 import { hashString, rngOf } from '../core/rng.ts';
+import { POSEL_EVENT, poselCzeka } from './kontakt.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
 import { mnoznik } from './narrator.ts';
 import { KOZA } from './noc.ts';
@@ -80,7 +84,17 @@ import {
   poraOf,
   REPEAT_GAP,
 } from './tresc.ts';
-import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Punkt, StockKey } from './typy.ts';
+import type {
+  GovEffects,
+  GovInput,
+  GovLokator,
+  GovPerson,
+  GovState,
+  LootKey,
+  Punkt,
+  StockKey,
+  WejscieOsady,
+} from './typy.ts';
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
@@ -220,6 +234,7 @@ export const M1_EVENTS: GEventDef[] = [
   ...STREET_EVENTS,
   ...GOSC_EVENTS,
   POWROT_EVENT,
+  POSEL_EVENT,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
@@ -250,6 +265,9 @@ const toPerson = (p: GovPerson): Person => ({
   dead: false,
   gone: false,
 });
+
+/** osada z wejścia z własnymi obiektami w środku (zdania `Tx` są niezmienne, `upadla` kopiowane) */
+const kopiaOsady = (o: WejscieOsady): WejscieOsady => ({ ...o, ...(o.upadla ? { upadla: { ...o.upadla } } : {}) });
 
 /** to samo co w wejściu, ale z własnymi obiektami w środku (zmiana w wydarzeniu nie rusza wejścia) */
 const kopiaLokatora = (l: GovLokator): GovLokator => ({
@@ -437,6 +455,10 @@ export function makeHost(
       i.strony?.[strona] ?? fenceOf(i, fx.patch).holes.find((x) => x.tiles?.length)?.tiles?.[0] ?? null,
     moodOf: (id, why, d, hours) => {
       fx.moods.push({ id, why, d, hours });
+    },
+    osada: () => (i.osada ? kopiaOsady(i.osada) : null),
+    odkryjOsade: (o) => {
+      fx.odkryjOsade = { dzien: o.dzien, ludnosc: o.ludnosc, budowle: o.budowle };
     },
     pies: () => !!st.flags.dog || i.zwierzeta?.pies !== undefined,
     watek: (id) => !!st.lancuchy && !!st.watki?.wybrane.includes(id),
@@ -683,6 +705,15 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
     const pg = pogrzeb(st, i, fx, pora);
     if (pg) {
       show(st, i, fx, pg);
+      return;
+    }
+  }
+  // poseł z osady (?osada=1, src/gov/kontakt.ts): karta z sytuacji jak pogrzeb, w dniu kontaktu od 9:00; bez `GovInput.osada`
+  // nic nie robi, niczego nie losuje i nie zużywa losowań, więc gra bez osady ma te same losowania co przed kartą
+  if (poselCzeka(st, i, pora)) {
+    const posel = activate(st, h, POSEL_EVENT);
+    if (posel) {
+      show(st, i, fx, posel);
       return;
     }
   }

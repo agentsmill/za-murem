@@ -354,6 +354,40 @@ export interface GovInput {
       tylko, gdy napad jest zaplanowany; fałsz przed wystawieniem i gdy nie było skąd podejść (świat bez ulicy przy siatce).
       Z tego zarząd wie, czy w raporcie wolno mówić, że szabrownicy byli (`znajomyWNapadzie`); bez pola jak z wystawionymi. */
   napadWystawiony?: boolean;
+  /** osada AI (?osada=1, src/ui/osada.ts): co zarząd o niej wie, gdy już powstała; pole jest tylko w grze z osadą, tylko w
+      stanie `jest` jej gry (nie ma go w trybie zombie, przed 6:00 drugiego dnia ani gdy osady zabrakło). Z niego zarząd robi kartę
+      pierwszego kontaktu (`src/gov/kontakt.ts`); bez pola nie robi nic, niczego nie losuje i nie zapisuje */
+  osada?: WejscieOsady;
+}
+
+/** Co zarząd wie o osadzie AI z gry (`GovInput.osada`), w chwili wejścia: nazwa osady i kierunek od domu, czy gracz już ją zna,
+    w którym dniu przyjdzie poseł, ludność i budowle teraz (`populacja(st).razem` i stojące budowle poza obwodem jej gry), ile razy
+    odwołano jej zarząd i, jeśli upadła, kiedy i dlaczego. Gospodarz wypełnia to z gry osady (`OsadaGry.dlaZarzadu`); zdania są
+    w obu językach (`Tx`), więc stan zarządu nie zależy od języka gry. */
+export interface WejscieOsady {
+  /** „Osada na północy” */
+  nazwa: Tx;
+  /** „z osady na północy”: forma do zdań („Poseł z osady na północy”) */
+  nazwaZ: Tx;
+  /** „na północ”: kierunek od domu do osady */
+  kierunek: Tx;
+  /** gracz już ją zna (pierwszy kontakt się odbył) */
+  odkryta: boolean;
+  /** dzień naszej gry (4–6, z ziarna osady), w którym od 9:00 przychodzi poseł */
+  dzienKontaktu: number;
+  ludnosc: number;
+  budowle: number;
+  /** ile razy odwołano zarząd osady (każde dało nowy zarząd) */
+  odwolania: number;
+  /** osada upadła (pustka albo exodus): dzień jej gry i powód; jej gra stoi */
+  upadla?: { dzien: number; powod: 'pustka' | 'exodus' };
+}
+
+/** Co poseł powiedział o osadzie i kiedy (`GovEffects.odkryjOsade`): dzień naszej gry, ludność i budowle z chwili kontaktu */
+export interface OdkrycieOsady {
+  dzien: number;
+  ludnosc: number;
+  budowle: number;
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -438,6 +472,9 @@ export interface GovEffects {
       `oferta` to lepsza oferta (każda jego oferta tańsza o jedną czwartą i o jedną wymianę dłuższa), `slawa` to zła sława u
       handlarzy (poziom +1, jak po napaści: ceny następnych wizyt w górę, wizyty rzadziej, a bieżące oferty o połowę drożej) */
   handlarz?: { oferta?: boolean; slawa?: boolean };
+  /** pierwszy kontakt z osadą AI (karta posła, src/gov/kontakt.ts; każdy jej wybór): gospodarz odsłania osadę w grze z tymi
+      liczbami (`OsadaGry.odkryj`, src/ui/osada.ts). Symulacja naszej gry o tym nie wie, `applyGov` pole pomija. */
+  odkryjOsade?: OdkrycieOsady;
 }
 
 /** Stan zwierząt w symulacji (`SimState.zwierzeta`, odczyt `GovInput.zwierzeta`): pies żyje albo zginął, kot żyje i nie
