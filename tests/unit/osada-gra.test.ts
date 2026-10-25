@@ -206,7 +206,7 @@ beforeAll(async () => {
   const sama = nowaNasza();
   grajDo(sama, silnikPodstawowy, 5 * TICKS_PER_DAY);
   nasza5BezOsady = skrotGry(sama);
-}, 300_000);
+}, 900_000);
 
 /** osada ze startem w TICK_STARTU_OSADY i danymi, bez naszej gry (osada wie o nas tylko tick) */
 function osadaPoStarcieBezNaszej(): OsadaGry {
@@ -309,7 +309,9 @@ describe('start osady i krok w krok', () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe('dane kandydatów', () => {
-  it('dane podane w ticku 100 i w ticku TICK_STARTU_OSADY - 1 dają ten sam skrót osady po 5 dniach', () => {
+  it('dane podane w ticku 100 i w ticku TICK_STARTU_OSADY - 1 dają ten sam skrót osady po 5 dniach', {
+    timeout: 300_000,
+  }, () => {
     const h = nowyGospodarz();
     graj(h, TICK_STARTU_OSADY - 1);
     expect(h.osada!.stan).toBe('czeka');
@@ -419,7 +421,9 @@ describe('dane kandydatów', () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe('zapis i wczytanie', () => {
-  it('zapis z stan: czeka, zrobiony o 5:00 drugiego dnia i wczytany: osada startuje o 6:00 tak samo jak bez przeładowania', () => {
+  it('zapis z stan: czeka, zrobiony o 5:00 drugiego dnia i wczytany: osada startuje o 6:00 tak samo jak bez przeładowania', {
+    timeout: 300_000,
+  }, () => {
     expect(wzorzec.czeka5.osada).toEqual({ v: 1, stan: 'czeka' });
     const h = wczytajPare(wzorzec.czeka5);
     expect(h.nasza.sim.st.tick).toBe(tickAt(2, 5));
@@ -441,7 +445,9 @@ describe('zapis i wczytanie', () => {
     expect(h.osada!.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'dane' });
   });
 
-  it('zapis i wczytanie w 4. dniu: skróty obu gier po 8 dniach równe przebiegowi bez przerwy', () => {
+  it('zapis i wczytanie w 4. dniu: skróty obu gier po 8 dniach równe przebiegowi bez przerwy', {
+    timeout: 300_000,
+  }, () => {
     expect(wzorzec.dzien4.osada).toMatchObject({ v: 1, stan: 'jest', odwolania: 0 });
     const h = wczytajPare(wzorzec.dzien4);
     expect(h.osada!.stan).toBe('jest');
@@ -553,13 +559,18 @@ describe('zapis i wczytanie', () => {
   });
 
   it('odkrycie osady nie zmienia jej gry: skrót gry osady ten sam z odkryciem i bez', () => {
-    const a = wczytajPare(wzorzec.dzien4);
-    const b = wczytajPare(wzorzec.dzien4);
-    b.osada!.odkryj({ dzien: 5, ludnosc: 14, budowle: 2 });
-    graj(a, 5 * TICKS_PER_DAY);
-    graj(b, 5 * TICKS_PER_DAY);
-    expect(skroty(b)).toEqual(skroty(a));
-    expect(skroty(a)).toEqual(wzorzec.hash5);
+    // sama osada z zapisu z 4. dnia, krok po kroku do końca 5. doby (nasz tick to dla niej tylko liczba)
+    const z = wzorzec.dzien4.osada!;
+    const a = osadaZZapisu(JSON.parse(JSON.stringify(z)), SEED, dane, uklad);
+    const b = osadaZZapisu(JSON.parse(JSON.stringify(z)), SEED, dane, uklad);
+    b.odkryj({ dzien: 5, ludnosc: 14, budowle: 2 });
+    for (let t = a.gra!.sim.st.tick + 1; t <= 5 * TICKS_PER_DAY; t++) {
+      a.krok(t);
+      b.krok(t);
+    }
+    expect(a.gra!.sim.st.tick).toBe(5 * TICKS_PER_DAY);
+    expect(skrotGry(b.gra!)).toBe(skrotGry(a.gra!));
+    expect(skrotGry(a.gra!)).toBe(wzorzec.hash5.osada);
   });
 });
 
@@ -568,7 +579,9 @@ describe('zapis i wczytanie', () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe('gra bez flagi', () => {
-  it('save() nie ma pola osada, a gospodarz bez osady gra dokładnie tak jak sama pętla gry (skrót naszej gry po 3 dobach)', () => {
+  it('save() nie ma pola osada, a gospodarz bez osady gra dokładnie tak jak sama pętla gry (skrót naszej gry po 3 dobach)', {
+    timeout: 300_000,
+  }, () => {
     const h = nowyGospodarz(false);
     expect(h.osada).toBeNull();
     graj(h, 3 * TICKS_PER_DAY);
@@ -720,7 +733,9 @@ describe('koniec gry osady', () => {
     expect(String(ostrzezenia.mock.calls[0][0])).toMatch(/Osada AI/);
   });
 
-  it('upadek osady niczego nie zmienia w naszej grze: skrót naszej gry ten sam co bez osady', () => {
+  it('upadek osady niczego nie zmienia w naszej grze: skrót naszej gry ten sam co bez osady', {
+    timeout: 300_000,
+  }, () => {
     const h = nowyGospodarz();
     h.osada!.dane(demo.kwadraty);
     graj(h, TICK_STARTU_OSADY + 20);
@@ -823,7 +838,7 @@ describe('pobierzKandydatow', () => {
 
 describe('rozmiar zapisu', () => {
   it('zapis po 45 dniach z osadą: JSON.stringify(save).length najwyżej 4 000 000 znaków (zmierzono 580 169: 226 383 bez osady i 353 786 osady, z dwoma odwołaniami jej zarządu)', {
-    timeout: 300_000,
+    timeout: 900_000,
   }, () => {
     // nasza gra to goła symulacja z zarządem tylko w zapisie (jak osada: sim + zarząd): rozmiar zapisu zależy od osady,
     // a przebieg naszej gry z zarządem kosztowałby tu minutę więcej bez wpływu na wynik

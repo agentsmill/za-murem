@@ -5,7 +5,7 @@
    - `osada-start`: demo Przymorze z `?osada=1`, przewinięcie do 7:00 drugiego dnia (`przewin`, samouczek i odpowiedzi na okna
      zarządu): przed startem osada czeka, o 6:00 powstaje, tick osady równa się naszemu, zero błędów i zawieszonych okien, osada
      nieodkryta; zapis i „Kontynuuj” z adresem bez `osada=1` (zapis wygrywa z adresem) przywracają tę samą osadę z tym samym skrótem;
-   - `osada-8x`: tempo 8× przez 30 s przy ekranie przez 6:00 drugiego dnia (start osady w pętli klatek), z celowym zawieszeniem wątku
+   - `osada-8x`: tempo 8× przy ekranie przez 6:00 drugiego dnia (start osady w pętli klatek; do 7:00 i 30 próbek, najwyżej 2 minuty), z celowym zawieszeniem wątku
      głównego na pół sekundy (pętla ścina zaległość): w każdej próbce tick osady równa się naszemu; do dziennika najdłuższa klatka
      (nadrabianie 12000 kroków osady jest jednorazową kropką w klatce startu);
    - `osada-adres`: adres spoza dem (Lanciego z danych testowych) z działającymi kafelkami: osiem sąsiednich kwadratów z kafelków w tle
@@ -51,16 +51,20 @@ async function chopDryTree(page: Page): Promise<void> {
   });
 }
 
-/** zamyka otwarte okno zarządu pierwszą odpowiedzią (raport, karta nocy, uchwała bez podpisu, wydarzenie); false, gdy żadnego nie ma */
+/** Zamyka otwarte okno zarządu pierwszą odpowiedzią: raport, karta nocy, uchwała bez podpisu, wydarzenie, spotkanie; okno innego
+    rodzaju pierwszym aktywnym przyciskiem, a bez przycisku klawiszem Esc. false, gdy żadnego okna nie ma. Czas gry zależy od czasu
+    przy ekranie (zarząd losuje karty z zegara ekranu), więc w tempie 8× okno, którego scenariusz nie zna, trafia się różnie. */
 const zamknijOkno = (page: Page): Promise<boolean> =>
   page.evaluate(() => {
     const m = document.getElementById('modal');
     if (!m || m.hidden) return false;
-    const przycisk = m.querySelector<HTMLElement>(
-      '[data-act="report-ok"], [data-act="night-go"], [data-act="law-skip"], .choices [data-act="event"]:not([disabled])',
+    const znany = m.querySelector<HTMLElement>(
+      '[data-act="report-ok"], [data-act="night-go"], [data-act="law-skip"], .choices [data-act="event"]:not([disabled]), [data-act="meet"]:not([disabled])',
     );
-    przycisk?.click();
-    return !!przycisk;
+    const przycisk = znany ?? m.querySelector<HTMLElement>('[data-act]:not([disabled])');
+    if (przycisk) przycisk.click();
+    else window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true, cancelable: true }));
+    return true;
   });
 
 /** warunek scenariusza: przerywa z opisem i stanem, który go złamał */
@@ -276,7 +280,9 @@ export function osadaShots(): ShotCele[] {
         let probek = 0;
         let rozjazd: unknown = null;
         const od = Date.now();
-        while (Date.now() - od < 30_000) {
+        // do 7:00 drugiego dnia i co najmniej 30 próbek, najwyżej 2 minuty przy ekranie (obciążona maszyna gra wolniej)
+        let gotowe = false;
+        while (!gotowe && Date.now() - od < 120_000) {
           await zamknijOkno(page);
           const o = await odczyt(page);
           if (o.osada?.stan === 'jest') {
@@ -295,6 +301,7 @@ export function osadaShots(): ShotCele[] {
               if (po.osada?.stan === 'jest' && po.osada.tick !== po.nasz) rozjazd ??= po;
             }
           }
+          gotowe = probek >= 30 && o.nasz >= tickMinuty(minutaGry(2, 7));
           await page.waitForTimeout(250);
         }
         const koniec = await odczyt(page);

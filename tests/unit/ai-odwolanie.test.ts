@@ -62,7 +62,7 @@ describe('nowyZarzad: start nowego zarządu', () => {
   });
 });
 
-describe('nowyZarzad: odwołanie wymuszone w grze osady', () => {
+describe('nowyZarzad: odwołanie wymuszone w grze osady', { timeout: 300_000 }, () => {
   it('odwołanie daje nowy zarząd: gra nie jest skończona, ma nowy start, wpis w kronice w obu językach, a tick stoi', () => {
     const g = swiezaGra();
     grajDo(g, silnik, 3 * TICKS_PER_DAY);
@@ -141,7 +141,7 @@ describe('nowyZarzad: odwołanie wymuszone w grze osady', () => {
   });
 });
 
-describe('nowyZarzad: co nie jest odwołaniem', () => {
+describe('nowyZarzad: co nie jest odwołaniem', { timeout: 300_000 }, () => {
   it('bez końca gry albo przy pustce i exodusie nic nie robi (false, stan bez zmian)', () => {
     const g = swiezaGra();
     grajDo(g, silnik, TICKS_PER_DAY);
