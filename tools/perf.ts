@@ -1,6 +1,6 @@
 /* Pomiar wydajności: 150 pionków z A* i animacją, klatki na sekundę przez 10 s.
    Laptop: Chromium bez dławienia. Telefon: ekran 390×844 i procesor zdławiony 4× (CDP).
-   Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków).
+   Każdy wariant dwa razy: kamera stoi i kamera jedzie przez mapę (dorysowywanie kawałków); z --osada i --dzien2 jeszcze dwa ujęcia.
    Uruchomienie: npm run perf [-- liczba_pionków [tempo 1-4]] [--no-worker] [--noc] [--zombie] [--zoom=0.5] [--m2]
    [--demo=lanciego] [--kod] [--pietro=2] [--kwadraty=3x3] [--zarzad=12] [--goscie=4] [--osada | --dzien2]
    (--no-worker: kawałki rysuje główny wątek, jak w przeglądarkach bez OffscreenCanvas w workerze;
@@ -27,11 +27,15 @@
    --dzien2: to samo przewijanie i te same cztery ujęcia, ale bez osady (kontrola dla --osada na tym samym HEAD; ujęcia z osadą
    to wtedy dom z bliska i dom przy najmniejszym zoomie). Sama linia poleceń bez żadnej z tych flag gra jak dotąd, od 15:00 pierwszego
    dnia, i ma te same dwa ujęcia.
-   Obok odstępów między klatkami rAF (przy 60 kl/s nasycają się na 16,7 ms i nie pokazują zapasu) każdy pomiar zapisuje pracę klatki:
-   czas od początku tyknięcia PixiJS (priorytet 50) do końca rysowania (−100), jako średnią, p99 i maksimum. Zapas klatki jest tam,
-   gdzie praca jest dużo mniejsza od 16,7 ms; to wskaźnik, czy tempo 8× na telefonie z CPU 4× dalej mieści się w klatce.
-   Na końcu jedna linia z najniższym kl/s, liczbą klatek ponad 33 ms i największą pracą klatki ze wszystkich pomiarów
-   (kryterium bramki etapu 2 osady: nie mniej niż 55 kl/s i zero klatek ponad 33 ms; narzędzie niczego nie ocenia kodem wyjścia).
+   Odstępy między klatkami rAF w headless są wyrównane do odświeżania ekranu (przy 60 kl/s nasycają się na 16,7 ms i nie widzą spóźnień
+   rzędu kilkunastu ms), więc obok nich każdy pomiar zapisuje odstępy między początkami kolejnych tyknięć PixiJS wg `performance.now()`
+   (rzeczywisty rytm klatek: p99, maksimum i liczba odstępów ponad 33 ms) oraz pracę klatki, czyli czas od początku tyknięcia
+   (priorytet 50) do końca rysowania (−100), jako średnią, p99 i maksimum. Zapas klatki jest tam, gdzie praca jest dużo mniejsza od
+   16,7 ms; to wskaźnik, czy tempo 8× na telefonie z CPU 4× dalej mieści się w klatce.
+   Z --osada i --dzien2: karta zarządu, która stanie w oknie pomiaru, zatrzymuje grę (tempo 0), więc ujęcie, po którym okno jest otwarte
+   albo tempo nie jest tym z linii poleceń, idzie od nowa po odpowiedzi na okno (najwyżej trzy próby), a linia pomiaru to zaznacza.
+   Na końcu jedna linia z najniższym kl/s, liczbą odstępów ponad 33 ms (rAF i tickera) i największą pracą klatki ze wszystkich
+   pomiarów (kryterium bramki etapu 2 osady: nie mniej niż 55 kl/s i zero klatek ponad 33 ms; narzędzie niczego nie ocenia kodem wyjścia).
    Zawsze z dymem: koza zarządu rozpalona w stanie gry i ognisko na podwórku. */
 
 import type { Page } from '@playwright/test';
