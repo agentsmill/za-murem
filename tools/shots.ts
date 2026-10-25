@@ -30,6 +30,7 @@ import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './k
 import { decodePng } from './png.ts';
 import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { osadaShots } from './shots-osada.ts';
 import { tekstyShots } from './shots-teksty.ts';
 import { telefonShots } from './shots-telefon.ts';
 import { ukladShots } from './shots-uklad.ts';
@@ -753,6 +754,9 @@ const SHOTS: Shot[] = [
   // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
   // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
   ...celeShots(OUT),
+  // Osada AI w grze (?osada=1, src/ui/osada.ts): start o 6:00 drugiego dnia i krok w krok, tempo 8×, zapis i „Kontynuuj”, adres bez
+  // sieci i z wolną siecią, tryb zombie, gra bez flagi
+  ...osadaShots(),
   ...ukladShots(OUT),
   ...telefonShots(OUT),
   // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,

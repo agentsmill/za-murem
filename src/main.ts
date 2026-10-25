@@ -31,7 +31,14 @@
    na telefonie 9 s, potem zostaje czerwona linia stanu. Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
    z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok i nie otwiera wiki (main.ts przechwytuje
    kliknięcie i Enter w zwiniętym pasku, kafelki nie biorą dotyku), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera
-   artykuł i niczego nie zwija (pasek zwija przycisk). */
+   artykuł i niczego nie zwija (pasek zwija przycisk).
+   ?osada=1 (osada AI, etap 2, src/ui/osada.ts) dokłada drugą, pełną grę na sąsiednim kwadracie miasta, prowadzoną przez silnik
+   decyzji (src/ai): powstaje o 6:00 drugiego dnia (`TICK_STARTU_OSADY`), nadrabia swój czas od ticku 0 i potem idzie krok w krok
+   z naszą (`krokSymulacji`: krok naszej symulacji i zaraz po nim `osada.krok`, w pętli klatek i w `zm.ff`), trafia do zapisu
+   (`Save.osada`; zapis wygrywa z adresem jak `pietra`) i niczego w naszej grze nie zmienia. Dane ośmiu kandydatów: dema z
+   public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry, prawdziwy adres w tle po starcie, po jednym kwadracie, bez
+   czekania; bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero
+   przy fladze), a zapis nie ma pola `osada`. Bez osady w trybie zombie. `window.zm.osada()` pokazuje stan osady (null bez flagi). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -181,6 +188,7 @@ import {
   siecSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
+import type { OsadaGry, PodgladOsady } from './ui/osada.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
 import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
@@ -231,7 +239,9 @@ import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui
 import {
   adresStartowy,
   clearSave,
+  osadaWlaczona,
   pietraWlaczone,
+  poleOsady,
   readSave,
   type Save,
   saveLabel,
@@ -344,6 +354,9 @@ declare global {
       /** kwadraty miasta obok domu z ?kwadraty= (do zrzutów i pomiarów): klucz „sx,sy”, numer w widoku, czas budowy świata
           i sceny w ms; q −1 i brakDanych dla kwadratu bez danych (prawdziwy adres, brzeg danych dema) */
       kwadraty: readonly KwadratGry[];
+      /** osada AI (?osada=1, src/ui/osada.ts): stan drugiej gry, jej klucz kwadratu, skrót, tick (równy naszemu), licznik odwołań i
+          błędów; null w grze bez flagi */
+      osada: () => PodgladOsady | null;
     };
   }
 }
@@ -361,6 +374,8 @@ const view = new GameView();
 /** kwadraty obok domu tej gry (window.zm.kwadraty); pusta lista bez ?kwadraty= */
 let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
+/** druga gra na sąsiednim kwadracie (?osada=1; null w grze bez flagi): `krokSymulacji` prowadzi ją krok w krok z `sim`, `save` ją zapisuje */
+let osada: OsadaGry | null = null;
 let gov: GovState | null = null;
 /** stan ścieżki celów (src/ui/sciezka.ts): otwarty rozdział, cele zaliczone i przepadłe, także te, których nie widać
     już w stanie gry (drewno, które koza zje); liczy go `renderGoals` co odświeżenie okienka. Nowy przy nowej grze,
@@ -729,6 +744,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // widok pięter: wczytany zapis zachowuje to, z czym go zaczęto (nie czyta adresu), nowa gra czyta ?pietra=1
   const pietra = pietraWlaczone(saved ?? null, params);
   pietraGry = pietra;
+  // osada AI (?osada=1): tak samo zapis wygrywa z adresem; przestarzały zapis (niżej) zachowuje flagę, ale zaczyna osadę od nowa
+  const osadaWlaczonaGra = osadaWlaczona(saved ?? null, params);
   const t0 = performance.now();
   // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
   // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
@@ -845,7 +862,25 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     st.tick = Math.round(
       (((((Number(hour) * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR) % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY,
     );
+  // ?osada=1: druga gra na sąsiednim kwadracie. Kod osady (silnik AI) ładuje się dopiero tu, więc gra bez flagi go nie niesie.
+  // Dane kandydatów dema przychodzą przed pierwszym krokiem gry (to jeden plik z public/demo, `sim` jest jeszcze pusty, więc pętla
+  // klatek czeka), prawdziwego adresu pobierają się w tle po starcie, po jednym kwadracie; osada startuje w 6:00 drugiego dnia
+  let osadaGry: OsadaGry | null = null;
+  if (osadaWlaczonaGra) {
+    const modul = await import('./ui/osada.ts');
+    const uklad = ukladDomu(geo, world);
+    const jej = saved?.osada
+      ? modul.osadaZZapisu(saved.osada, seed, dane, uklad)
+      : modul.nowaOsadaGry(seed, dane, uklad, modeOf(st));
+    osadaGry = jej;
+    if (jej.stan === 'czeka') {
+      const kandydaci = modul.daneKandydatow(data, uklad, seed);
+      if (data.src === 'demo') jej.dane(await kandydaci);
+      else void kandydaci.then((k) => jej.dane(k));
+    }
+  }
   sim = new Sim(world, st);
+  osada = osadaGry;
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
   // karta „Odkrycie”, podpowiedź o książce i znaczek NOWE: stare odkrycia i książki się nie powtarzają, widziane budowle
@@ -1367,6 +1402,7 @@ function save(): boolean {
     world: worldKey(sim.w),
     ...(siec.stan ? { siec: siec.stan } : {}),
     ...(pietraGry ? { pietra: true } : {}),
+    ...poleOsady(osada),
     cele: sciezka,
   };
   const ok = writeSave(s);
@@ -1849,6 +1885,15 @@ let fps = 0;
 let hudT = 0;
 const keys = new Set<string>();
 
+/** Jeden krok czasu gry: krok naszej symulacji, a zaraz po nim krok drugiej gry (osada AI, `?osada=1`) z naszym tickiem po kroku.
+    Jedyne miejsce, w którym czas płynie (pętla klatek i `zm.ff`), więc obie gry mają zawsze tyle samo kroków: także przy tempie
+    8×, przy zrzucaniu zaległości przez pętlę (`acc = 0`) i przy przewijaniu. Bez osady (`osada === null`) to dawny krok. */
+function krokSymulacji(s: Sim): void {
+  view.beforeStep(s.st);
+  s.step();
+  osada?.krok(s.st.tick);
+}
+
 function frame(now: number, dtMs: number) {
   if (!sim) return;
   stepFly(now);
@@ -1866,8 +1911,7 @@ function frame(now: number, dtMs: number) {
   acc += dt * TICKS_PER_SECOND * mult;
   let n = 0;
   while (acc >= 1 && n < 40) {
-    view.beforeStep(sim.st);
-    sim.step();
+    krokSymulacji(sim);
     acc -= 1;
     n++;
   }
@@ -4002,8 +4046,7 @@ zastosujKarte();
       const perSecond = Math.max(1, Math.round(TICKS_PER_SECOND * mult));
       let p: Prompt | null = null;
       for (let k = 1; k <= ticks && !p && !gov.over; k++) {
-        view.beforeStep(sim.st);
-        sim.step();
+        krokSymulacji(sim);
         if (k % perSecond === 0) {
           screen += 1;
           govAt = screen;
@@ -4088,6 +4131,7 @@ zastosujKarte();
     pietro: wybierzPietro,
     pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
     kwadraty: [],
+    osada: () => osada?.podglad() ?? null,
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });
