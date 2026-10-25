@@ -63,9 +63,6 @@ import { okolicaZGeo } from './miasto-play.ts';
 // Dane i gospodarz
 // ---------------------------------------------------------------------------------------------------------------------
 
-// Gry osady i naszej liczą się sekundami, ale maszyna bywa przeciążona (inne procesy, bateria): każdy test pliku ma zapas czasu
-vi.setConfig({ testTimeout: 300_000 });
-
 type Demo = ReturnType<typeof wczytajDemo>;
 type Dane = Awaited<ReturnType<typeof daneDema>>;
 
@@ -869,7 +866,7 @@ describe('pobierzKandydatow', () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe('rozmiar zapisu', () => {
-  it('zapis po 45 dniach z osadą: JSON.stringify(save).length najwyżej 4 000 000 znaków (zmierzono 580 169: 226 383 bez osady i 353 786 osady, z dwoma odwołaniami jej zarządu)', {
+  it('zapis po 45 dniach z osadą: JSON.stringify(save).length najwyżej 4 000 000 znaków, a sama osada najwyżej 600 000 (zmierzono 580 169 razem: 226 383 bez osady i 353 786 osady, z dwoma odwołaniami jej zarządu)', {
     timeout: 900_000,
   }, () => {
     // nasza gra to goła symulacja z zarządem tylko w zapisie (jak osada: sim + zarząd): rozmiar zapisu zależy od osady,
@@ -910,6 +907,8 @@ describe('rozmiar zapisu', () => {
       `zapis po 45 dniach: ${tekst.length} znaków (bez osady ${tekst.length - osadaTekst.length}, osada ${osadaTekst.length}); osada: odwołań ${osada.odwolania}, upadła ${osada.upadla ? `w dniu ${osada.upadla.dzien}` : 'nie'}`,
     );
     expect(tekst.length).toBeLessThanOrEqual(4_000_000);
+    // sama osada (zmierzono 353 786): dwukrotny wzrost jej stanu przeszedłby przez luźny limit całego zapisu niezauważony
+    expect(osadaTekst.length).toBeLessThanOrEqual(600_000);
 
     // przez pamięć przeglądarki tam i z powrotem: ten sam zapis, osada wczytuje się z niego i ma ten sam skrót
     const m = new Map<string, string>();

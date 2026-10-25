@@ -6,7 +6,7 @@
    nowym zarządzie daje ten sam przebieg), kolejne odwołanie, a pustka i exodus nie są odwołaniem (osada upada, to sprawa
    gospodarza w src/ui/osada.ts). Liczby startu (zaufanie, wkurzenie) są w nagłówku modułu z pomiarem. */
 
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { type GraAi, grajDo, krokGry, nowaGraAi, skrotGry, wczytajGre, zapiszGre } from '../../src/ai/gra.ts';
 import { swiatZGeo, wybierzOsade, ziarnoOsady } from '../../src/ai/kwadrat.ts';
 import { nowyZarzad, START_WKURZENIA, START_ZAUFANIA } from '../../src/ai/odwolanie.ts';
@@ -17,9 +17,6 @@ import { dayOf, TICKS_PER_DAY, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { mieszkancyZapisu } from '../../src/sim/osiedle.ts';
 import { ukladZGeo } from '../../src/world/kwadraty.ts';
 import { daneDema, wczytajDemo } from '../../tools/osada-kwadraty.ts';
-
-// Gry osady liczą się sekundami, ale maszyna bywa przeciążona (inne procesy, bateria): każdy test pliku ma zapas czasu
-vi.setConfig({ testTimeout: 300_000 });
 
 const DEMO = 'przymorze';
 let demo: ReturnType<typeof wczytajDemo>;
