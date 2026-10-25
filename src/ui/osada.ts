@@ -21,7 +21,9 @@
      dopiero na komplecie danych: `dane()` woła gospodarz raz, gdy wszystkie osiem pobrań sąsiednich kwadratów się skończyło (dobrze
      albo błędem; nieudane kwadraty po prostu brakują w rekordzie). Bez wywołania do ticku startu osady nie ma (`brak`, powód
      `dane`), a dane podane później nic nie zmieniają. Rekord bez żadnego kandydata to też `dane`. Żaden kandydat nie spełnia reguły
-     miejsca albo brak tabel mieszkańców: `brak`, powód `regula` (też dopiero w ticku startu, choć wiadomo o tym wcześniej). Wyjątek
+     miejsca albo brak tabel mieszkańców: `brak`, powód `regula` (też dopiero w ticku startu, choć wiadomo o tym wcześniej). Bez tabel
+     mieszkańców gospodarz w ogóle nie pobiera sąsiadów i nie woła `dane()`, a start i tak daje `regula`, nie `dane` (reguła wymaga
+     bloku z mieszkańcami z generatora, więc dane kandydatów niczego by nie zmieniły). Wyjątek
      z wyboru, z budowy gry albo z jej nadrabiania: `brak`, powód `blad`, jedno ostrzeżenie w konsoli i żadnej drugiej próby (wyjątek
      z przygotowania na zapas wyłącza osadę od razu, bo wiadomo już, że jej nie będzie);
    - `jest`: od startu `krok(nasz tick)` po każdym kroku naszej symulacji robi dokładnie tyle kroków gry osady, ile trzeba, żeby jej tick
@@ -376,6 +378,14 @@ class OsadaWGrze implements OsadaGry {
   /** Start w ticku startu (albo później, gdy zapis stanu `czeka` wczytano po nim): to, czego nie zrobiono na zapas (wybór kwadratu,
       budowa gry, rozgrzewka, nadrabianie), robi się teraz naraz, i osada jest. Efekt ten sam, co gdyby wszystko poszło dopiero tu. */
   private start(nasz: number): void {
+    // reguła miejsca wymaga bloku z mieszkańcami z generatora: bez jego tabel osady być nie może, nawet z danymi kandydatów, więc
+    // gospodarz ich wtedy nie pobiera (`wybierzOsade` zwróciłby null od razu), a brak danych nie jest tu powodem
+    if (!this.tabele) {
+      this.kandydaci = null;
+      this.prep = null;
+      this.s = { stan: 'brak', powod: 'regula' };
+      return;
+    }
     const kandydaci = this.kandydaci;
     if (!kandydaci || !this.maDane()) {
       this.kandydaci = null;

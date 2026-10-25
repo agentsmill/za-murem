@@ -963,7 +963,9 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // jej najcięższą pracę (wybór kwadratu, budowa gry, rozgrzewka) demo robi tu, pod ekranem ładowania, a nadrabianie jej gry idzie
   // po kawałku na klatkę (`osada.przygotuj()` w `frame`); adres robi wszystko to w grze, po jednym kroku na klatkę, gdy przyjdą dane.
   // Nie załadował się kod osady: nowa gra rusza bez niej (`osadaBezKodu`: brak, powód blad, jedno ostrzeżenie), a gra z zapisu,
-  // w którym osada jest, kończy się dotychczasowym błędem wczytania, bo bez kodu nie da się jej odtworzyć
+  // w którym osada jest, kończy się dotychczasowym błędem wczytania, bo bez kodu nie da się jej odtworzyć. Bez tabel mieszkańców
+  // (`dane` null) osady nie będzie (reguła miejsca wymaga bloku z mieszkańcami z generatora: w ticku startu `brak`, powód `regula`),
+  // więc ośmiu sąsiadów w ogóle się nie pobiera (dema 0,35 do 1,2 MB, adres kilkanaście kafelków z dekodowaniem)
   let osadaGry: OsadaGry | null = null;
   if (osadaWlaczonaGra) {
     let modul: typeof import('./ui/osada.ts') | null = null;
@@ -979,7 +981,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
         ? modul.osadaZZapisu(saved.osada, seed, dane, uklad)
         : modul.nowaOsadaGry(seed, dane, uklad, modeOf(st));
       osadaGry = jej;
-      if (jej.stan === 'czeka') {
+      if (jej.stan === 'czeka' && dane) {
         const kandydaci = modul.daneKandydatow(data, uklad, seed);
         if (data.src === 'demo') {
           jej.dane(await kandydaci);

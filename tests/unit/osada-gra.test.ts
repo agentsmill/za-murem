@@ -419,6 +419,30 @@ describe('dane kandydatów', () => {
     expect(osada.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'regula' });
   });
 
+  it('bez tabel mieszkańców osada ma regula także bez żadnych danych kandydatów: gospodarz ośmiu sąsiadów wtedy nie pobiera', () => {
+    // src/main.ts pomija pobranie sąsiadów, gdy tabel nie ma (wybór kwadratu i tak zwróciłby null od razu), więc `dane()` nie przychodzi
+    const osada = nowaOsadaGry(SEED, null, uklad);
+    osada.przygotuj();
+    osada.przygotujCiezkie();
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'czeka' });
+    osada.krok(TICK_STARTU_OSADY - 1);
+    expect(osada.stan).toBe('czeka');
+    osada.krok(TICK_STARTU_OSADY);
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'regula' });
+    expect(osada.gra).toBeNull();
+    // wczytany zapis „czeka” bez tabel: to samo, a pusty rekord danych niczego nie zmienia (brak danych to nie powód osady)
+    const zZapisu = osadaZZapisu({ v: 1, stan: 'czeka' }, SEED, null, uklad);
+    zZapisu.dane({});
+    zZapisu.krok(TICK_STARTU_OSADY);
+    expect(zZapisu.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'regula' });
+  });
+
+  it('z tabelami, ale bez danych kandydatów, osada dalej ma dane (to inny powód niż brak tabel)', () => {
+    const osada = nowaOsadaGry(SEED, dane, uklad);
+    osada.krok(TICK_STARTU_OSADY);
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'dane' });
+  });
+
   it('błąd wyboru kwadratu (uszkodzone geo): brak z powodem blad, jedno ostrzeżenie w konsoli i żadnej drugiej próby', () => {
     const ostrzezenia = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const zepsute: Record<string, Geo> = {};
