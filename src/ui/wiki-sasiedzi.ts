@@ -5,10 +5,20 @@
    `szansaWalki`, `szansaPrzegonienia`; src/world/plot.ts: `PLOT_MAX`; src/sim/mieszkania.ts: `searchTicks`), a polecenia z menu,
    zdania gry i karta budynku z src/content/napisy-sasiedzi.ts (`MENU`, `BUDYNEK`, `KARTA`, `WYBOR`, `zdanie`), więc wiki mówi
    tymi samymi słowami co gra. Zasady są wspólne dla obu trybów; różnice trybu zombie (ocaleni, szwendacz za drzwiami, ukryte
-   ugryzienie, nocni goście) opisują uwagi (`WikiCtx.zombie`). */
+   ugryzienie, nocni goście) opisują uwagi (`WikiCtx.zombie`).
+
+   Sąsiedzi w domach (`sasiedziWDomach`: `GovPlace.near` „domy”, a w samotnym miejscu siedziba w domu; ta sama reguła co rozdział
+   „Sąsiedzi” ścieżki celów). Wnętrze domu (src/world/interior.ts) to jedno mieszkanie bez klatki i schodów, więc przy domu
+   sąsiada są tylko drzwi na zewnątrz (menu „Otworzyć drzwi”, „Zapukać”, „Wyważyć drzwi”, bez wersji „…mieszkania”), nie ma pięter
+   do przeszukania ani poleceń przy schodach, a pomieszczenia to przedpokój, pokój, kuchnia i łazienka. Artykuły opisują wtedy dom:
+   bez drzwi mieszkań, pięter i faktów o nich, z sąsiadami zamiast lokatorów (słowa gry z karty spotkania i jej nagłówka
+   „Sąsiedzi”), a polecenie okradania nazywają „Okraść …”, bo pełny napis gry mówi o mieszkaniu. Dom wśród bloków (`near`
+   „bloki”) zachowuje słowa bloku: mieszkania, piętra i klatki. Tekst bez słów z bloku w domu pilnuje test treści wiki
+   (tests/unit/wiki-tresc.test.ts), a opis wnętrz domów i bloków test tej kategorii. */
 
 import { BUDYNEK, HALAS_ZOMBIE, KARTA, MENU, PO_POLECENIU, WYBOR, zdanie } from '../content/napisy-sasiedzi.ts';
-import { L, tr } from '../core/jezyk.ts';
+import { L, tr, wielka } from '../core/jezyk.ts';
+import { sasiedzi } from '../gov/miejsce.ts';
 import type { Mat } from '../sim/budowle.ts';
 import { searchTicks } from '../sim/mieszkania.ts';
 import { PATCH_HP, REINFORCED_HP } from '../sim/perimeter.ts';
@@ -64,6 +74,27 @@ function uwagaZombie(c: WikiCtx, pl: string, en: string): string {
     : L(`W trybie zombie ${pl}`, `In Zombie mode ${en}`);
 }
 
+/** Czy sąsiedzi stoją w domach, a nie w blokach: ta sama reguła co `sasiedziWDomach` w rozdziale „Sąsiedzi” ścieżki celów
+    (src/ui/sciezka-rozdzialy.ts), czyli według sąsiadów z okolicy (`GovPlace.near`), a w samotnym miejscu według siedziby.
+    Dom sąsiada ma jedno mieszkanie bez klatki i schodów (wnętrze `src/world/interior.ts`: klatka tylko w bloku): drzwi
+    tylko na zewnątrz, pomieszczenia to przedpokój, pokój, kuchnia i łazienka, pięter do przeszukania nie ma, a ludzie za
+    drzwiami to sąsiedzi, nie lokatorzy. Dom wśród bloków (`near` „bloki”) ma więc słowa bloku. */
+export function sasiedziWDomach(c: WikiCtx): boolean {
+  const s = sasiedzi(c.place);
+  return s === 'domy' || (s === null && c.place.kind === 'dom');
+}
+
+/** ludzie za cudzymi drzwiami w słowach gry: w bloku lokatorzy (mieszkanie), w domu sąsiedzi; angielskie „residents” i „neighbours” */
+interface Ludzie {
+  m: string;
+  d: string;
+  n: string;
+  en: string;
+}
+const LUDZIE_BLOK: Ludzie = { m: 'lokatorzy', d: 'lokatorów', n: 'lokatorami', en: 'residents' };
+const LUDZIE_DOM: Ludzie = { m: 'sąsiedzi', d: 'sąsiadów', n: 'sąsiadami', en: 'neighbours' };
+const ludzie = (c: WikiCtx): Ludzie => (sasiedziWDomach(c) ? LUDZIE_DOM : LUDZIE_BLOK);
+
 /** napis Tx bez nawiasu z końca („Zaprosić do nas (45% szans)” → „Zaprosić do nas”) */
 const rdzen = (t: Parameters<typeof tr>[0]): string => tr(t).replace(/\s*\(.*\)$/, '');
 
@@ -103,54 +134,52 @@ export function definicjeSasiedzi(): Def[] {
       'sasiedzi:budynki',
       'sasiedzi',
       () => L('Sąsiednie budynki', 'Neighbouring buildings'),
-      (c): Tresc => ({
-        zdania: [
-          L(
-            'Budynki wokół siedziby można odwiedzać: przy cudzych drzwiach otwieracie, pukacie albo wyważacie, w środku przeszukujecie pomieszczenia i rozmawiacie z lokatorami.',
-            'You can visit the buildings around the HQ: at someone else’s door you open, knock or force it, inside you search rooms and talk to the people who live there.',
+      (c): Tresc => {
+        const d = sasiedziWDomach(c);
+        const h = ludzie(c);
+        return {
+          zdania: [
+            L(
+              `Budynki wokół siedziby można odwiedzać: przy cudzych drzwiach otwieracie, pukacie albo wyważacie, w środku przeszukujecie pomieszczenia i rozmawiacie z ${h.n}.`,
+              'You can visit the buildings around the HQ: at someone else’s door you open, knock or force it, inside you search rooms and talk to the people who live there.',
+            ),
+            L(
+              `${c.touch ? 'Stuknięcie' : 'Kliknięcie'} w cudzy budynek, gdy nikt nie jest zaznaczony, pokazuje jego kartę: rodzaj${d ? '' : ' i wysokość'}, znajomych ${h.d}, drzwi na zewnątrz i ile pomieszczeń już przeszukano.`,
+              `${c.touch ? 'Tapping' : 'Clicking'} someone else’s building while nobody is selected shows its card: the kind${d ? '' : ' and height'}, the people you know, the outside doors and how many rooms have been searched.`,
+            ),
+            L(
+              `Z widzenia znacie ${h.d} ${ZNANI_BUDYNKI} najbliższych budynków mieszkalnych w promieniu ${m(ZNANI_M)} od drzwi siedziby, a reszty nie.`,
+              `You know by sight the people in the ${ZNANI_BUDYNKI} nearest residential buildings within ${m(ZNANI_M)} of the HQ door, and nobody else.`,
+            ),
+            L(
+              `Czego nie widzieliście, tego karta nie zdradza: wnętrze budynku i stan ${h.d} poznajecie dopiero przy drzwiach.`,
+              'The card does not give away what you have not seen: you learn the inside of a building and the state of its people only at the door.',
+            ),
+            L(
+              'Otwarty budynek, którego nie otoczycie wspólnym płotem, odwiedzają nocą obcy.',
+              'An open building you do not put inside a shared fence is visited by strangers at night.',
+            ),
+          ],
+          uwaga: uwagaZombie(
+            c,
+            `nikogo nie znacie z widzenia, przeżywa ${proc(ZOMBIE_PRZEZYLO)} gospodarstw, reszta ${d ? 'domów' : 'mieszkań'} stoi pusta, a w ${proc(ZOMBIE_W_MIESZKANIU)} takich ${d ? 'domów' : 'mieszkań'} czeka szwendacz.`,
+            `you know nobody by sight, ${proc(ZOMBIE_PRZEZYLO)} of the households survive, the rest of the ${d ? 'houses' : 'flats'} stand empty, and in ${proc(ZOMBIE_W_MIESZKANIU)} of those a shambler waits.`,
           ),
-          c.touch
-            ? L(
-                'Stuknięcie w cudzy budynek, gdy nikt nie jest zaznaczony, pokazuje jego kartę: rodzaj i wysokość, znajomych lokatorów, drzwi na zewnątrz i ile pomieszczeń już przeszukano.',
-                'Tapping someone else’s building while nobody is selected shows its card: the kind and height, the people you know, the outside doors and how many rooms have been searched.',
-              )
-            : L(
-                'Kliknięcie w cudzy budynek, gdy nikt nie jest zaznaczony, pokazuje jego kartę: rodzaj i wysokość, znajomych lokatorów, drzwi na zewnątrz i ile pomieszczeń już przeszukano.',
-                'Clicking someone else’s building while nobody is selected shows its card: the kind and height, the people you know, the outside doors and how many rooms have been searched.',
-              ),
-          L(
-            `Z widzenia znacie lokatorów ${ZNANI_BUDYNKI} najbliższych budynków mieszkalnych w promieniu ${m(ZNANI_M)} od drzwi siedziby, a reszty nie.`,
-            `You know by sight the people in the ${ZNANI_BUDYNKI} nearest residential buildings within ${m(ZNANI_M)} of the HQ door, and nobody else.`,
-          ),
-          L(
-            'Czego nie widzieliście, tego karta nie zdradza: wnętrze budynku i stan lokatorów poznajecie dopiero przy drzwiach.',
-            'The card does not give away what you have not seen: you learn the inside of a building and the state of its people only at the door.',
-          ),
-          L(
-            'Otwarty budynek, którego nie otoczycie wspólnym płotem, odwiedzają nocą obcy.',
-            'An open building you do not put inside a shared fence is visited by strangers at night.',
-          ),
-        ],
-        uwaga: uwagaZombie(
-          c,
-          `nikogo nie znacie z widzenia, przeżywa ${proc(ZOMBIE_PRZEZYLO)} gospodarstw, reszta mieszkań stoi pusta, a w ${proc(ZOMBIE_W_MIESZKANIU)} takich mieszkań czeka szwendacz.`,
-          `you know nobody by sight, ${proc(ZOMBIE_PRZEZYLO)} of the households survive, the rest of the flats stand empty, and in ${proc(ZOMBIE_W_MIESZKANIU)} of those a shambler waits.`,
-        ),
-        fakty: [
-          fakt(
-            'znani',
-            L('Znani sąsiedzi', 'Neighbours you know'),
-            L(`${ZNANI_BUDYNKI} budynki`, `${ZNANI_BUDYNKI} buildings`),
-          ),
-          fakt('promien', L('Znani w promieniu', 'Known within'), m(ZNANI_M)),
-          fakt('stany', L('Stany drzwi', 'Door states'), STANY_DRZWI.map(([, pl, en]) => L(pl, en)).join(', ')),
-        ],
-        jak: [tr(BUDYNEK.jak(c.touch))],
-        zobacz: ['sasiedzi:drzwi', 'sasiedzi:przeszukiwanie', 'sasiedzi:lokatorzy', 'sasiedzi:plot', 'sasiedzi:noc'],
-      }),
+          fakty: [
+            fakt(
+              'znani',
+              L('Znani sąsiedzi', 'Neighbours you know'),
+              L(`${ZNANI_BUDYNKI} budynki`, `${ZNANI_BUDYNKI} buildings`),
+            ),
+            fakt('promien', L('Znani w promieniu', 'Known within'), m(ZNANI_M)),
+            fakt('stany', L('Stany drzwi', 'Door states'), STANY_DRZWI.map(([, pl, en]) => L(pl, en)).join(', ')),
+          ],
+          jak: [tr(BUDYNEK.jak(c.touch))],
+          zobacz: ['sasiedzi:drzwi', 'sasiedzi:przeszukiwanie', 'sasiedzi:lokatorzy', 'sasiedzi:plot', 'sasiedzi:noc'],
+        };
+      },
       'budynek sąsiad lokator karta building neighbour resident card',
     ),
-
     def(
       'sasiedzi:drzwi',
       'sasiedzi',
@@ -204,194 +233,256 @@ export function definicjeSasiedzi(): Def[] {
       'sasiedzi:pukanie',
       'sasiedzi',
       () => L('Pukanie do drzwi', 'Knocking'),
-      (c): Tresc => ({
-        zdania: [
-          L(
-            `Pukanie trwa ${czasTickow(PUKANIE_TICKS)} i słychać je na ${m(HALAS.pukanie)}, a pukać można tylko do zamkniętych drzwi budynku mieszkalnego.`,
-            `Knocking takes ${czasTickow(PUKANIE_TICKS)} and can be heard ${m(HALAS.pukanie)} away, and you can only knock on closed doors of a residential building.`,
+      (c): Tresc => {
+        const d = sasiedziWDomach(c);
+        const h = ludzie(c);
+        return {
+          zdania: [
+            L(
+              `Pukanie trwa ${czasTickow(PUKANIE_TICKS)} i słychać je na ${m(HALAS.pukanie)}, a pukać można tylko do zamkniętych drzwi budynku mieszkalnego.`,
+              `Knocking takes ${czasTickow(PUKANIE_TICKS)} and can be heard ${m(HALAS.pukanie)} away, and you can only knock on closed doors of a residential building.`,
+            ),
+            L(
+              'Jeśli ktoś jest w domu, może otworzyć i zaczyna się spotkanie: chętniej otwierają życzliwi i zdesperowani, rzadziej nieufni i wrodzy.',
+              'If someone is at home they may open up and a meeting begins: friendly and desperate people open more readily, wary and hostile ones less.',
+            ),
+            L(
+              'Nieufni otwierają rzadziej nocą, a w trybie zombie rzadziej otwierają wszyscy.',
+              'Wary people open less often at night, and in Zombie mode everybody opens less often.',
+            ),
+            L(
+              `Gdy nikt nie otwiera, gra mówi ${cytatGry('nikt')} albo ${cytatGry('ktos')}`,
+              `When nobody opens, the game says ${cytatGry('nikt')} or ${cytatGry('ktos')}`,
+            ),
+            L(
+              `W odróżnieniu od wyważania pukanie nie psuje stosunków z ${h.n}, a pukający czeka potem przy drzwiach, żeby zapukać jeszcze raz albo wyważyć.`,
+              `Unlike forcing a door, knocking does not sour relations with the ${h.en}, and whoever knocked then waits by the door to knock again or force it.`,
+            ),
+          ],
+          uwaga: uwagaZombie(
+            c,
+            `przy ${d ? 'domu' : 'mieszkaniu'} ze szwendaczem zamiast ciszy słychać szuranie: ${cytatGry('szuranie')}`,
+            `at a ${d ? 'house' : 'flat'} with a shambler in it you hear shuffling instead of silence: ${cytatGry('szuranie')}`,
           ),
-          L(
-            'Jeśli ktoś jest w domu, może otworzyć i zaczyna się spotkanie: chętniej otwierają życzliwi i zdesperowani, rzadziej nieufni i wrodzy.',
-            'If someone is at home they may open up and a meeting begins: friendly and desperate people open more readily, wary and hostile ones less.',
-          ),
-          L(
-            'Nieufni otwierają rzadziej nocą, a w trybie zombie rzadziej otwierają wszyscy.',
-            'Wary people open less often at night, and in Zombie mode everybody opens less often.',
-          ),
-          L(
-            `Gdy nikt nie otwiera, gra mówi ${cytatGry('nikt')} albo ${cytatGry('ktos')}`,
-            `When nobody opens, the game says ${cytatGry('nikt')} or ${cytatGry('ktos')}`,
-          ),
-          L(
-            'W odróżnieniu od wyważania pukanie nie psuje stosunków z lokatorami, a pukający czeka potem przy drzwiach, żeby zapukać jeszcze raz albo wyważyć.',
-            'Unlike forcing a door, knocking does not sour relations with the residents, and whoever knocked then waits by the door to knock again or force it.',
-          ),
-        ],
-        uwaga: uwagaZombie(
-          c,
-          `przy mieszkaniu ze szwendaczem zamiast ciszy słychać szuranie: ${cytatGry('szuranie')}`,
-          `at a flat with a shambler in it you hear shuffling instead of silence: ${cytatGry('szuranie')}`,
-        ),
-        fakty: [
-          fakt('czas', L('Pukanie trwa', 'Knocking takes'), czasTickow(PUKANIE_TICKS)),
-          fakt('halas', L('Hałas pukania', 'Noise of knocking'), m(HALAS.pukanie)),
-        ],
-        jak: [
-          polecenie(c, ['cudzych drzwiach', 'someone else’s door'], [MENU.zapukaj.pl, MENU.zapukaj.en]),
-          L(
-            `Przy drzwiach mieszkania menu mówi ${wCyt(MENU.zapukajMieszkanie.pl)}.`,
-            `At a flat door the menu says ${wCyt(MENU.zapukajMieszkanie.en)}.`,
-          ),
-        ],
-        zobacz: ['sasiedzi:lokatorzy', 'sasiedzi:wywazanie', 'sasiedzi:drzwi'],
-      }),
-      'pukanie pukać lokator drzwi knock door residents',
+          fakty: [
+            fakt('czas', L('Pukanie trwa', 'Knocking takes'), czasTickow(PUKANIE_TICKS)),
+            fakt('halas', L('Hałas pukania', 'Noise of knocking'), m(HALAS.pukanie)),
+          ],
+          jak: [
+            polecenie(c, ['cudzych drzwiach', 'someone else’s door'], [MENU.zapukaj.pl, MENU.zapukaj.en]),
+            // drzwi mieszkania są tylko w bloku z klatką: dom ma same drzwi na zewnątrz
+            ...(d
+              ? []
+              : [
+                  L(
+                    `Przy drzwiach mieszkania menu mówi ${wCyt(MENU.zapukajMieszkanie.pl)}.`,
+                    `At a flat door the menu says ${wCyt(MENU.zapukajMieszkanie.en)}.`,
+                  ),
+                ]),
+          ],
+          zobacz: ['sasiedzi:lokatorzy', 'sasiedzi:wywazanie', 'sasiedzi:drzwi'],
+        };
+      },
+      'pukanie pukać lokator sąsiad drzwi knock door residents neighbours',
     ),
-
     def(
       'sasiedzi:wywazanie',
       'sasiedzi',
       () => L('Wyważanie drzwi', 'Forcing a door'),
-      (c): Tresc => ({
-        zdania: [
-          L(
-            `Wyważenie trwa ${czasTickow(WYWAZ_KLATKA_TICKS)} przy drzwiach budynku i ${czasTickow(WYWAZ_MIESZKANIE_TICKS)} przy drzwiach mieszkania, a z łomem w rękach o połowę krócej.`,
-            `Forcing a door takes ${czasTickow(WYWAZ_KLATKA_TICKS)} at a building door and ${czasTickow(WYWAZ_MIESZKANIE_TICKS)} at a flat door, and half as long with a crowbar in hand.`,
+      (c): Tresc => {
+        const d = sasiedziWDomach(c);
+        const h = ludzie(c);
+        return {
+          zdania: [
+            d
+              ? L(
+                  `Wyważenie trwa ${czasTickow(WYWAZ_KLATKA_TICKS)}, a z łomem w rękach o połowę krócej.`,
+                  `Forcing a door takes ${czasTickow(WYWAZ_KLATKA_TICKS)}, and half as long with a crowbar in hand.`,
+                )
+              : L(
+                  `Wyważenie trwa ${czasTickow(WYWAZ_KLATKA_TICKS)} przy drzwiach budynku i ${czasTickow(WYWAZ_MIESZKANIE_TICKS)} przy drzwiach mieszkania, a z łomem w rękach o połowę krócej.`,
+                  `Forcing a door takes ${czasTickow(WYWAZ_KLATKA_TICKS)} at a building door and ${czasTickow(WYWAZ_MIESZKANIE_TICKS)} at a flat door, and half as long with a crowbar in hand.`,
+                ),
+            d
+              ? L(
+                  `Jest głośne: słychać je na ${m(HALAS.wywazanie)}, z łomem na ${m(HALAS.wywazanieLom)}.`,
+                  `It is loud: it carries ${m(HALAS.wywazanie)}, and ${m(HALAS.wywazanieLom)} with a crowbar.`,
+                )
+              : L(
+                  `Jest głośne: słychać je na ${m(HALAS.wywazanie)} przy drzwiach budynku i ${m(HALAS.mieszkanie)} przy mieszkaniu, z łomem na ${m(HALAS.wywazanieLom)} i ${m(HALAS.mieszkanieLom)}.`,
+                  `It is loud: it carries ${m(HALAS.wywazanie)} at a building door and ${m(HALAS.mieszkanie)} at a flat, and ${m(HALAS.wywazanieLom)} and ${m(HALAS.mieszkanieLom)} with a crowbar.`,
+                ),
+            L(
+              'Wyważone drzwi zostają wyważone na stałe, chyba że ktoś zabije je deskami.',
+              'A forced door stays forced for good, unless somebody nails it shut.',
+            ),
+            L(
+              `${wielka(h.m)}, którzy są w domu, słyszą hałas: ich stosunek do was spada, a nocą są przestraszeni albo wściekli, i wrodzy rzucają się na was od razu.`,
+              `${wielka(h.en)} who are at home hear the noise: how they feel about you drops, at night they are scared or furious, and hostile ones attack you at once.`,
+            ),
+            L(
+              `Po wydaniu polecenia gra ostrzega: ${wCyt(PO_POLECENIU.force[0].pl)}`,
+              `After you give the order the game warns: ${wCyt(PO_POLECENIU.force[0].en)}`,
+            ),
+          ],
+          uwaga: uwagaZombie(
+            c,
+            `hałas wyważania ściąga szwendaczy, więc gra dopisuje ${wCyt(HALAS_ZOMBIE.pl.trim())}, a za drzwiami ${d ? 'domu' : 'mieszkania'} może czekać szwendacz.`,
+            `the noise of forcing a door draws shamblers, so the game adds ${wCyt(HALAS_ZOMBIE.en.trim())}, and a shambler may be waiting behind a ${d ? 'house' : 'flat'} door.`,
           ),
-          L(
-            `Jest głośne: słychać je na ${m(HALAS.wywazanie)} przy drzwiach budynku i ${m(HALAS.mieszkanie)} przy mieszkaniu, z łomem na ${m(HALAS.wywazanieLom)} i ${m(HALAS.mieszkanieLom)}.`,
-            `It is loud: it carries ${m(HALAS.wywazanie)} at a building door and ${m(HALAS.mieszkanie)} at a flat, and ${m(HALAS.wywazanieLom)} and ${m(HALAS.mieszkanieLom)} with a crowbar.`,
-          ),
-          L(
-            'Wyważone drzwi zostają wyważone na stałe, chyba że ktoś zabije je deskami.',
-            'A forced door stays forced for good, unless somebody nails it shut.',
-          ),
-          L(
-            'Lokatorzy, którzy są w domu, słyszą hałas: ich stosunek do was spada, a nocą są przestraszeni albo wściekli, i wrodzy rzucają się na was od razu.',
-            'Residents who are at home hear the noise: how they feel about you drops, at night they are scared or furious, and hostile ones attack you at once.',
-          ),
-          L(
-            `Po wydaniu polecenia gra ostrzega: ${wCyt(PO_POLECENIU.force[0].pl)}`,
-            `After you give the order the game warns: ${wCyt(PO_POLECENIU.force[0].en)}`,
-          ),
-        ],
-        uwaga: uwagaZombie(
-          c,
-          `hałas wyważania ściąga szwendaczy, więc gra dopisuje ${wCyt(HALAS_ZOMBIE.pl.trim())}, a za drzwiami mieszkania może czekać szwendacz.`,
-          `the noise of forcing a door draws shamblers, so the game adds ${wCyt(HALAS_ZOMBIE.en.trim())}, and a shambler may be waiting behind a flat door.`,
-        ),
-        fakty: [
-          fakt('czas-budynek', L('Drzwi budynku', 'Building door'), czasTickow(WYWAZ_KLATKA_TICKS)),
-          fakt('czas-mieszkanie', L('Drzwi mieszkania', 'Flat door'), czasTickow(WYWAZ_MIESZKANIE_TICKS)),
-          fakt('halas-budynek', L('Hałas: drzwi budynku', 'Noise: building door'), m(HALAS.wywazanie)),
-          fakt(
-            'halas-budynek-lom',
-            L('Hałas: drzwi budynku z łomem', 'Noise: building door with a crowbar'),
-            m(HALAS.wywazanieLom),
-          ),
-          fakt('halas-mieszkanie', L('Hałas: drzwi mieszkania', 'Noise: flat door'), m(HALAS.mieszkanie)),
-          fakt(
-            'halas-mieszkanie-lom',
-            L('Hałas: drzwi mieszkania z łomem', 'Noise: flat door with a crowbar'),
-            m(HALAS.mieszkanieLom),
-          ),
-        ],
-        jak: [polecenie(c, ['cudzych drzwiach', 'someone else’s door'], [MENU.wywaz.pl, MENU.wywaz.en])],
-        zobacz: ['zombie:halas', 'sasiedzi:pukanie', 'sasiedzi:lokatorzy', 'sasiedzi:drzwi'],
-      }),
+          fakty: [
+            fakt('czas-budynek', L('Drzwi budynku', 'Building door'), czasTickow(WYWAZ_KLATKA_TICKS)),
+            ...(d
+              ? []
+              : [fakt('czas-mieszkanie', L('Drzwi mieszkania', 'Flat door'), czasTickow(WYWAZ_MIESZKANIE_TICKS))]),
+            fakt('halas-budynek', L('Hałas: drzwi budynku', 'Noise: building door'), m(HALAS.wywazanie)),
+            fakt(
+              'halas-budynek-lom',
+              L('Hałas: drzwi budynku z łomem', 'Noise: building door with a crowbar'),
+              m(HALAS.wywazanieLom),
+            ),
+            ...(d
+              ? []
+              : [
+                  fakt('halas-mieszkanie', L('Hałas: drzwi mieszkania', 'Noise: flat door'), m(HALAS.mieszkanie)),
+                  fakt(
+                    'halas-mieszkanie-lom',
+                    L('Hałas: drzwi mieszkania z łomem', 'Noise: flat door with a crowbar'),
+                    m(HALAS.mieszkanieLom),
+                  ),
+                ]),
+          ],
+          jak: [polecenie(c, ['cudzych drzwiach', 'someone else’s door'], [MENU.wywaz.pl, MENU.wywaz.en])],
+          zobacz: ['zombie:halas', 'sasiedzi:pukanie', 'sasiedzi:lokatorzy', 'sasiedzi:drzwi'],
+        };
+      },
       'wyważanie łom drzwi hałas force crowbar door noise',
     ),
-
     def(
       'sasiedzi:przeszukiwanie',
       'sasiedzi',
       () => L('Przeszukiwanie sąsiadów', 'Searching the neighbours'),
-      (c): Tresc => ({
-        zdania: [
-          L(
-            'W otwartym budynku przeszukujecie pomieszczenia po jednym i każde tylko raz: sale, hale, zaplecza i puste mieszkania.',
-            'In an open building you search rooms one at a time and each only once: halls, sheds, back rooms and empty flats.',
-          ),
-          L(
-            `Przeszukanie trwa od ${czasTickow(searchTicks(0))} do ${czasTickow(searchTicks(1e6))}, zależnie od wielkości pomieszczenia, a łup osoba sama niesie na podwórko, bo dopóki leży w cudzym budynku, nie jest wasz.`,
-            `Searching takes ${czasTickow(searchTicks(0))} to ${czasTickow(searchTicks(1e6))} depending on the size of the room, and the person carries the loot into the yard on their own, because while it lies in someone else’s building it is not yours.`,
-          ),
-          L(
-            `Mieszkanie lokatorów można przeszukać tylko pod ich nieobecność i to jest szaber: polecenie ${wCyt(MENU.okradnij.pl)} pyta o potwierdzenie, a okradzeni stają się wrodzy.`,
-            `You can only search a residents’ flat while they are away, and that is robbery: the order ${wCyt(MENU.okradnij.en)} asks for confirmation, and the people you rob turn hostile.`,
-          ),
-          L(
-            `Na schodach otwartego budynku piętro zajmuje ${czasTickow(PIETRO_TICKS)}, daje łup z pustych mieszkań i bywa niebezpieczne: w zwykłej grze lokatorzy zastają was w ${proc(PIETRO_LUDZIE)} przypadków, w trybie zombie czeka szwendacz w ${proc(PIETRO_SZWENDACZ)}.`,
-            `On the stairs of an open building a floor takes ${czasTickow(PIETRO_TICKS)}, yields loot from the empty flats and can be dangerous: in the normal game residents catch you in ${proc(PIETRO_LUDZIE)} of cases, in Zombie mode a shambler waits in ${proc(PIETRO_SZWENDACZ)}.`,
-          ),
-          L(
-            `Z sąsiadów niesie się do siedziby ${listaI([...LUP_MATS].map((mat) => matNazwa(mat as Mat)))}.`,
-            `From the neighbours you carry back ${listaI([...LUP_MATS].map((mat) => matNazwa(mat as Mat)))}.`,
-          ),
-        ],
-        uwaga: uwagaZombie(
-          c,
-          'w pustych mieszkaniach po wymarciu jest dwa razy więcej jedzenia, a na piętrze może czekać szwendacz.',
-          'empty flats left by the die-off hold twice as much food, and a shambler may be waiting upstairs.',
-        ),
-        fakty: [
-          fakt(
-            'czas-min',
-            L('Przeszukanie pomieszczenia, najkrócej', 'Searching a room, shortest'),
-            czasTickow(searchTicks(0)),
-          ),
-          fakt(
-            'czas-max',
-            L('Przeszukanie pomieszczenia, najdłużej', 'Searching a room, longest'),
-            czasTickow(searchTicks(1e6)),
-          ),
-          fakt('pietro', L('Przeszukanie piętra', 'Searching a floor'), czasTickow(PIETRO_TICKS)),
-          fakt(
-            'pietro-lokatorzy',
-            L('Lokatorzy zastają na piętrze', 'Residents catch you upstairs'),
-            proc(PIETRO_LUDZIE),
-          ),
-          fakt(
-            'pietro-szwendacz',
-            L('Szwendacz na piętrze (zombie)', 'Shambler upstairs (Zombie mode)'),
-            proc(PIETRO_SZWENDACZ),
-          ),
-          fakt(
-            'lup',
-            L('Łup z sąsiadów', 'Loot from the neighbours'),
-            [...LUP_MATS].map((mat) => matNazwa(mat as Mat)).join(', '),
-          ),
-        ],
-        jak: [
-          polecenie(
-            c,
-            ['pomieszczeniu otwartego budynku', 'a room in an open building'],
-            ['Przeszukać …', 'Search the …'],
-          ),
-          polecenie(
-            c,
-            ['schodach otwartego budynku', 'the stairs of an open building'],
-            ['Przeszukać piętro', 'Search a floor upstairs'],
-          ),
-          polecenie(c, ['stercie łupu', 'a heap of loot'], ['Zanieść na podwórko', 'Carry into the yard']),
-        ],
-        zobacz: ['sasiedzi:budynki', 'sasiedzi:lokatorzy', 'zasob:odzysk', 'praca:szaber'],
-      }),
+      (c): Tresc => {
+        const d = sasiedziWDomach(c);
+        return {
+          zdania: [
+            d
+              ? L(
+                  'W otwartym budynku przeszukujecie pomieszczenia po jednym i każde tylko raz: sale, hale, zaplecza i pokoje pustych domów.',
+                  'In an open building you search rooms one at a time and each only once: halls, sheds, back rooms and the rooms of empty houses.',
+                )
+              : L(
+                  'W otwartym budynku przeszukujecie pomieszczenia po jednym i każde tylko raz: sale, hale, zaplecza i puste mieszkania.',
+                  'In an open building you search rooms one at a time and each only once: halls, sheds, back rooms and empty flats.',
+                ),
+            L(
+              `Przeszukanie trwa od ${czasTickow(searchTicks(0))} do ${czasTickow(searchTicks(1e6))}, zależnie od wielkości pomieszczenia, a łup osoba sama niesie na podwórko, bo dopóki leży w cudzym budynku, nie jest wasz.`,
+              `Searching takes ${czasTickow(searchTicks(0))} to ${czasTickow(searchTicks(1e6))} depending on the size of the room, and the person carries the loot into the yard on their own, because while it lies in someone else’s building it is not yours.`,
+            ),
+            d
+              ? L(
+                  `Dom, w którym ktoś mieszka, można przeszukać tylko pod nieobecność domowników i to jest szaber: polecenie ${wCyt('Okraść …')} pyta o potwierdzenie, a okradzeni stają się wrodzy.`,
+                  `You can only search a house where somebody lives while they are away, and that is robbery: the order ${wCyt('Rob …')} asks for confirmation, and the people you rob turn hostile.`,
+                )
+              : L(
+                  `Mieszkanie lokatorów można przeszukać tylko pod ich nieobecność i to jest szaber: polecenie ${wCyt(MENU.okradnij.pl)} pyta o potwierdzenie, a okradzeni stają się wrodzy.`,
+                  `You can only search a residents’ flat while they are away, and that is robbery: the order ${wCyt(MENU.okradnij.en)} asks for confirmation, and the people you rob turn hostile.`,
+                ),
+            // piętra są tylko w bloku: ze schodów klatki; dom nie ma ani klatki, ani schodów
+            ...(d
+              ? []
+              : [
+                  L(
+                    `Na schodach otwartego budynku piętro zajmuje ${czasTickow(PIETRO_TICKS)}, daje łup z pustych mieszkań i bywa niebezpieczne: w zwykłej grze lokatorzy zastają was w ${proc(PIETRO_LUDZIE)} przypadków, w trybie zombie czeka szwendacz w ${proc(PIETRO_SZWENDACZ)}.`,
+                    `On the stairs of an open building a floor takes ${czasTickow(PIETRO_TICKS)}, yields loot from the empty flats and can be dangerous: in the normal game residents catch you in ${proc(PIETRO_LUDZIE)} of cases, in Zombie mode a shambler waits in ${proc(PIETRO_SZWENDACZ)}.`,
+                  ),
+                ]),
+            L(
+              `Z sąsiadów niesie się do siedziby ${listaI([...LUP_MATS].map((mat) => matNazwa(mat as Mat)))}.`,
+              `From the neighbours you carry back ${listaI([...LUP_MATS].map((mat) => matNazwa(mat as Mat)))}.`,
+            ),
+          ],
+          uwaga: d
+            ? uwagaZombie(
+                c,
+                'w pustych domach po wymarciu jest dwa razy więcej jedzenia.',
+                'empty houses left by the die-off hold twice as much food.',
+              )
+            : uwagaZombie(
+                c,
+                'w pustych mieszkaniach po wymarciu jest dwa razy więcej jedzenia, a na piętrze może czekać szwendacz.',
+                'empty flats left by the die-off hold twice as much food, and a shambler may be waiting upstairs.',
+              ),
+          fakty: [
+            fakt(
+              'czas-min',
+              L('Przeszukanie pomieszczenia, najkrócej', 'Searching a room, shortest'),
+              czasTickow(searchTicks(0)),
+            ),
+            fakt(
+              'czas-max',
+              L('Przeszukanie pomieszczenia, najdłużej', 'Searching a room, longest'),
+              czasTickow(searchTicks(1e6)),
+            ),
+            ...(d
+              ? []
+              : [
+                  fakt('pietro', L('Przeszukanie piętra', 'Searching a floor'), czasTickow(PIETRO_TICKS)),
+                  fakt(
+                    'pietro-lokatorzy',
+                    L('Lokatorzy zastają na piętrze', 'Residents catch you upstairs'),
+                    proc(PIETRO_LUDZIE),
+                  ),
+                  fakt(
+                    'pietro-szwendacz',
+                    L('Szwendacz na piętrze (zombie)', 'Shambler upstairs (Zombie mode)'),
+                    proc(PIETRO_SZWENDACZ),
+                  ),
+                ]),
+            fakt(
+              'lup',
+              L('Łup z sąsiadów', 'Loot from the neighbours'),
+              [...LUP_MATS].map((mat) => matNazwa(mat as Mat)).join(', '),
+            ),
+          ],
+          jak: [
+            polecenie(
+              c,
+              ['pomieszczeniu otwartego budynku', 'a room in an open building'],
+              ['Przeszukać …', 'Search the …'],
+            ),
+            ...(d
+              ? []
+              : [
+                  polecenie(
+                    c,
+                    ['schodach otwartego budynku', 'the stairs of an open building'],
+                    ['Przeszukać piętro', 'Search a floor upstairs'],
+                  ),
+                ]),
+            polecenie(c, ['stercie łupu', 'a heap of loot'], ['Zanieść na podwórko', 'Carry into the yard']),
+          ],
+          zobacz: ['sasiedzi:budynki', 'sasiedzi:lokatorzy', 'zasob:odzysk', 'praca:szaber'],
+        };
+      },
       'przeszukiwanie łup szaber piętro sąsiedzi search loot rob floor',
     ),
-
     def(
       'sasiedzi:lokatorzy',
       'sasiedzi',
-      () => L('Lokatorzy za drzwiami', 'People behind the door'),
+      (c) =>
+        sasiedziWDomach(c)
+          ? L('Sąsiedzi za drzwiami', 'People behind the door')
+          : L('Lokatorzy za drzwiami', 'People behind the door'),
       (c): Tresc => {
+        const h = ludzie(c);
         const sz = (n: number) => proc(szansaWalki(n));
         const sp = (n: number) => proc(szansaPrzegonienia(n));
         return {
           zdania: [
             L(
-              `Gdy lokatorzy otworzą drzwi albo wyważycie im je, pojawia się karta ${wCyt(tr(KARTA.naglowek))}: widać na niej, czy ich znacie, jak na was patrzą, w jakim są nastroju i jaki mają do was stosunek.`,
-              `When the residents open the door, or you force it, the ${wCyt(tr(KARTA.naglowek))} card appears: it shows whether you know them, how they look at you, their mood and how they feel about you.`,
+              `Gdy ${h.m} otworzą drzwi albo wyważycie im je, pojawia się karta ${wCyt(tr(KARTA.naglowek))}: widać na niej, czy ich znacie, jak na was patrzą, w jakim są nastroju i jaki mają do was stosunek.`,
+              `When the ${h.en} open the door, or you force it, the ${wCyt(tr(KARTA.naglowek))} card appears: it shows whether you know them, how they look at you, their mood and how they feel about you.`,
             ),
             L(
               `Zwykle możecie ${wCyt(rdzen(WYBOR.rozmowa()))}, ${wCyt(tr(WYBOR.jedzenie()))}, ${wCyt(rdzen(WYBOR.zaproszenie('')))}, ${wCyt(rdzen(WYBOR.zabranie('')))} albo ${wCyt(rdzen(WYBOR.odejscie()))}.`,
@@ -402,8 +493,8 @@ export function definicjeSasiedzi(): Def[] {
               'The invitation is offered when you know them well or they are friendly or desperate, and for choices with a risk the card shows the chance.',
             ),
             L(
-              'Zabranie zapasów psuje stosunki na dobre: lokatorzy stają się wrodzy i wściekli, a gdy się postawią, wynik rozstrzyga szarpanina.',
-              'Taking their supplies sours things for good: the residents turn hostile and furious, and if they resist, a scuffle decides it.',
+              `Zabranie zapasów psuje stosunki na dobre: ${h.m} stają się wrodzy i wściekli, a gdy się postawią, wynik rozstrzyga szarpanina.`,
+              `Taking their supplies sours things for good: the ${h.en} turn hostile and furious, and if they resist, a scuffle decides it.`,
             ),
             L(
               `Szansa szarpaniny rośnie z uzbrojonymi z waszej strony: bez broni ${sz(0)}, z jednym ${sz(1)}, z dwoma ${sz(2)}.`,
@@ -448,7 +539,7 @@ export function definicjeSasiedzi(): Def[] {
           zobacz: ['sasiedzi:pukanie', 'sasiedzi:wywazanie', 'sasiedzi:noc', 'wydarzenia:goscie', 'zasob:jedzenie'],
         };
       },
-      'lokatorzy spotkanie zaproszenie jedzenie zapasy szarpanina residents meeting invite supplies',
+      'lokatorzy sąsiedzi spotkanie zaproszenie jedzenie zapasy szarpanina residents neighbours meeting invite supplies',
     ),
 
     def(
@@ -579,7 +670,10 @@ export function definicjeSasiedzi(): Def[] {
           ),
           L(
             `Ci, którzy zostali, czekają w środku, a gra mówi o nich: ${wCyt(tr(KARTA.szabrownicy))}`,
-            `The ones who stayed wait inside, and the game says of them: ${wCyt(tr(KARTA.szabrownicy))}`,
+            // angielskie zdanie gry mówi o „residents”, słowie z bloku: w domu opis własnymi słowami
+            sasiedziWDomach(c)
+              ? 'The ones who stayed wait inside, and the card says they are looters who have been there since last night, guarding what they took.'
+              : `The ones who stayed wait inside, and the game says of them: ${wCyt(tr(KARTA.szabrownicy))}`,
           ),
           L(
             `Budynek za wspólnym płotem i taki bez wejścia od ulicy są bezpieczne, a rano gra daje znać: ${cytatGry('noc')}`,

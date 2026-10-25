@@ -5,7 +5,9 @@
    src/sim/bron.ts (`WEAPONS`: zasięg, obrażenia, hałas, czy sięga przez siatkę), hałas ze stałych wraków, drzwi
    (`HALAS` z src/sim/sasiedzi.ts) i psa. Czas złamania świeżego kafelka siatki przy tłoku liczy się z `pushOf`, tak jak w
    symulacji. Te zasady działają tylko w trybie zombie, więc każdy artykuł ma uwagę o trybie gry (`WikiCtx.zombie`): w zwykłej
-   grze mówi, że nic z tego się w niej nie dzieje (dzida i warta istnieją w obu trybach i mają własną uwagę). */
+   grze mówi, że nic z tego się w niej nie dzieje (dzida i warta istnieją w obu trybach i mają własną uwagę). Tabela hałasu przy
+   drzwiach sąsiadów ma wiersze o drzwiach mieszkania tylko tam, gdzie sąsiedzi stoją w blokach (`sasiedziWDomach` z
+   src/ui/wiki-sasiedzi.ts): dom sąsiada ma same drzwi na zewnątrz. */
 
 import { L, mnogaPl, wielka } from '../core/jezyk.ts';
 import { AMMO_EN, type AMMO_NAMES, START_KIT, WEAPONS, WEAPONS_EN, type WeaponId } from '../sim/bron.ts';
@@ -65,6 +67,7 @@ import {
 } from '../sim/zombie.ts';
 import { SZCZEK_HALAS } from '../sim/zwierzeta.ts';
 import { manyEn, num } from './tekst.ts';
+import { sasiedziWDomach } from './wiki-sasiedzi.ts';
 import { czasTickow, listaI, polecenie, proc, wCyt } from './wiki-slowa.ts';
 import { type Def, def, fakt, type Tresc, type WikiCtx } from './wiki-typy.ts';
 
@@ -143,7 +146,8 @@ const NOCE = [1, 2, 3, 5, 10];
 /** klucz tabeli w identyfikatorze faktu: małe litery z łącznikiem (`wywazanieLom` → `wywazanie-lom`), jak wszystkie fakty */
 export const idKlucza = (k: string): string => k.replace(/[A-Z]/g, (x) => `-${x.toLowerCase()}`);
 
-/** hałas przy drzwiach sąsiednich budynków (`HALAS` z src/sim/sasiedzi.ts): klucz tabeli i opis po polsku i angielsku */
+/** hałas przy drzwiach sąsiednich budynków (`HALAS` z src/sim/sasiedzi.ts): klucz tabeli i opis po polsku i angielsku; drzwi
+    mieszkania (dwa ostatnie wiersze o mieszkaniu) są tylko w bloku z klatką, więc sąsiedzi w domach ich nie mają */
 const DRZWI: readonly [keyof typeof HALAS, string, string][] = [
   ['otwieranie', 'otwieranie drzwi', 'opening a door'],
   ['pukanie', 'pukanie', 'knocking'],
@@ -154,6 +158,9 @@ const DRZWI: readonly [keyof typeof HALAS, string, string][] = [
   ['deski', 'zabijanie drzwi deskami', 'nailing a door shut'],
   ['odbijanie', 'odbijanie desek z drzwi', 'prising the boards off a door'],
 ];
+
+/** wiersze tabeli hałasu o drzwiach mieszkania (blok z klatką); sąsiednie domy mają tylko drzwi na zewnątrz */
+export const DRZWI_MIESZKANIA: ReadonlySet<keyof typeof HALAS> = new Set(['mieszkanie', 'mieszkanieLom']);
 
 /** amunicja z liczbą: „12 naboi”, „12 rounds” (formy mnogie do odmiany, bo AMMO_NAMES ma tylko mianownik) */
 const AMMO_PL: Record<keyof typeof AMMO_NAMES, [string, string, string]> = {
@@ -390,7 +397,7 @@ export function definicjeZombie(): Def[] {
             fakt('wrak-szukanie', L('Hałas: przeszukanie wraku', 'Noise: searching a wreck'), m(WRECK_SEARCH_NOISE)),
             fakt('wrak-rozbiorka', L('Hałas: rozbiórka wraku', 'Noise: stripping a wreck'), m(WRECK_STRIP_NOISE)),
             fakt('pies', L('Hałas: szczekanie psa', 'Noise: a dog barking'), m(SZCZEK_HALAS)),
-            ...DRZWI.map(([klucz, pl, en]) =>
+            ...DRZWI.filter(([klucz]) => !(sasiedziWDomach(c) && DRZWI_MIESZKANIA.has(klucz))).map(([klucz, pl, en]) =>
               fakt(`drzwi-${idKlucza(klucz)}`, L(`Hałas: ${pl}`, `Noise: ${en}`), m(HALAS[klucz])),
             ),
             fakt(
