@@ -76,7 +76,7 @@ import { populacja } from '../src/sim/snapshot.ts';
 import { ukladZGeo } from '../src/world/kwadraty.ts';
 import { buildWorld, type World } from '../src/world/world.ts';
 import { okolicaZGeo } from '../tests/unit/miasto-play.ts';
-import { daneDema, wczytajDemo } from './osada-kwadraty.ts';
+import { DEMA, daneDema, PUBLIC, parsujZiarna, wczytajDemo } from './osada-kwadraty.ts';
 import {
   type BlednyPrzebieg,
   bezOdwolaniaPrzed,
@@ -92,9 +92,6 @@ import {
   werdykt,
 } from './osada-ocena.ts';
 
-const PUBLIC = path.resolve(import.meta.dirname, '../public');
-/** dema z public/demo/ (trzy osiedla gry), w kolejności tabel */
-export const DEMA = ['przymorze', 'lanciego', 'zielonki'] as const;
 /** osoby zarządu: tyle co domyślnie w grze */
 const CORE = 4;
 /** dni, w których tabela pokazuje ludność (ostatnią kolumną jest zawsze ostatni dzień przebiegu) */
@@ -125,21 +122,6 @@ export interface Opcje {
 
 const UZYCIE =
   'Użycie: node tools/bot-osada.ts [--ziarna=11-15] [--dni=45] [--demo=przymorze,lanciego,zielonki] [--prosto] [--bez-lancuchow] [--bez-progu] [--procesy=N] [--limit=MIN]';
-
-/** Ziarna z `11-15`, `11` albo listy `11,13,15-16`. Rzuca na pustą listę, złą liczbę i odwrócony zakres. */
-export function parsujZiarna(tekst: string): number[] {
-  const out: number[] = [];
-  for (const czesc of tekst.split(',')) {
-    const m = /^(\d+)(?:-(\d+))?$/.exec(czesc.trim());
-    if (!m) throw new Error(`zła lista ziaren „${tekst}” (np. 11-15, 7 albo 11,13,15-16)`);
-    const od = Number(m[1]);
-    const doZiarna = m[2] === undefined ? od : Number(m[2]);
-    if (doZiarna < od) throw new Error(`odwrócony zakres ziaren „${czesc}”`);
-    if (doZiarna - od > 999) throw new Error(`za dużo ziaren w zakresie „${czesc}”`);
-    for (let z = od; z <= doZiarna; z++) if (!out.includes(z)) out.push(z);
-  }
-  return out;
-}
 
 function liczbaDodatnia(nazwa: string, tekst: string): number {
   if (!/^\d+$/.test(tekst) || Number(tekst) < 1)
@@ -471,12 +453,13 @@ export function opisPowoduOdrzucenia(r: OdrzucenieOsady): string {
 
 /** Czy dom dema stoi na miejscu, na którym osada mogłaby powstać: `swiatOsady` z geo domu jako kandydat (0, 0), z układem
     domu z jego geo i tabelami mieszkańców dema (public/data). null: spełnia regułę; inaczej powód (`opisPowoduOdrzucenia`).
-    Pomiar jest pełny, więc powód zawsze podaje jedzenie, jeśli się je dało policzyć. Wynik nie zależy od ziarna (ziarno
-    zmienia tylko wnętrze siedziby, nie jedzenie ani mieszkańców; sprawdza to test), ale podaje się je, bo `swiatOsady` je bierze. */
+    Produkcyjne `swiatOsady` liczy to, co powód opisuje (jedzenie przy odrzuceniu z powodu jedzenia, lokatorów przy mieszkańcach,
+    próby przy siedzibie). Wynik nie zależy od ziarna (ziarno zmienia tylko wnętrze siedziby, nie jedzenie ani mieszkańców;
+    sprawdza to test), ale podaje się je, bo `swiatOsady` je bierze. */
 export async function pozaRegula(demoKlucz: string, ziarno: number): Promise<string | null> {
   const demo = wczytajDemo(demoKlucz);
   const dane = await daneDema(demoKlucz);
-  const r = swiatOsady(demo.geo, 0, 0, dane, ziarno, ukladZGeo(demo.geo), { pelny: true });
+  const r = swiatOsady(demo.geo, 0, 0, dane, ziarno, ukladZGeo(demo.geo));
   return 'odrzucony' in r ? opisPowoduOdrzucenia(r) : null;
 }
 

@@ -1,40 +1,59 @@
 /* Reguła miejsca osady AI na kwadratach dem, etap 2 osady AI (docs/superpowers/plans/2026-10-24-osada-ai-etap-2.md, zadanie 2,
    krok 4): dla 20 sąsiednich kwadratów trzech dem (public/demo/*-kwadraty.json: Przymorze 8, Lanciego 4 boczne, Zielonki 8)
-   tabela z tym, co mierzy `swiatOsady` (src/ai/kwadrat.ts): ile budynków mieszkalnych leży w promieniu wyboru siedziby, ile
-   prób (światów) zbudowano, pole i pokoje siedziby (w nawiasie pokoje mieszkania zarządu), osoby z generatora mieszkańców
-   (razem i lokatorzy poza zarządem), porcje jedzenia w zasięgu 720 m i wynik reguły z powodem odrzucenia. Wiersz „dom” to geo
-   domu potraktowane jak kandydat (0, 0): z niego uprząż `npm run bot:osada` wie, czy demo jest „poza regułą miejsca”. Na końcu
-   demo: ile kwadratów spełnia regułę i który kwadrat wybiera `wybierzOsade` dla każdego ziarna. Tabela liczy się
-   z pełnym pomiarem (`pelny`: wszystkie kolumny także po pierwszym powodzie odrzucenia), dla pierwszego ziarna; ostatnia
-   kolumna mówi, w ilu ziarnach z listy kwadrat spełnia regułę (ziarno wpływa na wnętrze siedziby, więc na liczbę pokoi, nie
-   na jedzenie ani mieszkańców). To narzędzie pomiarowe: kod wyjścia 0 niezależnie od wyniku, 2 przy złych argumentach.
+   tabela z tym, co mierzy reguła z src/ai/kwadrat.ts: ile budynków mieszkalnych leży w promieniu wyboru siedziby, ile prób
+   (światów) zbudowano, pole i pokoje siedziby (w nawiasie pokoje mieszkania zarządu), osoby z generatora mieszkańców (razem i
+   lokatorzy poza zarządem), porcje jedzenia w zasięgu 720 m i wynik reguły z powodem odrzucenia. Wiersz „dom” to geo domu
+   potraktowane jak kandydat (0, 0): z niego uprząż `npm run bot:osada` wie, czy demo jest „poza regułą miejsca”. Na końcu
+   demo: ile kwadratów spełnia regułę i który kwadrat wybiera `wybierzOsade` dla każdego ziarna.
 
-   Moduł da się zaimportować (testy): `wczytajDemo` i `daneDema` czytają dema i tabele mieszkańców z public/ (bez sieci), reszta
-   to czyste funkcje tabeli. Uprząż rusza tylko wtedy, gdy skrypt uruchomiono wprost.
+   Wynik reguły w tabeli to wynik produkcyjnego `swiatOsady`. Produkcja staje na pierwszym powodzie odrzucenia i zostawia
+   puste pola dalszych etapów (kwadrat bez siedziby nie ma jedzenia, kwadrat bez jedzenia nie ma lokatorów), a tabela ma pokazać
+   wszystkie kolumny, żeby było widać, jak daleko od progu 300 porcji leży każdy kwadrat. Dlatego `pomiarPelny` składa te same
+   etapy (`szukajSiedziby`, `okolicaOsady`, `policzMieszkancow`) bez zatrzymywania się: jedzenie liczy od siedziby, a bez niej od
+   pierwszego kandydata albo ze środka kwadratu. Tryb pełnego pomiaru jest tylko tu, nie w ścieżce produkcyjnej. Pełny
+   pomiar i wynik liczą się dla pierwszego ziarna z listy; ostatnia kolumna mówi, w ilu ziarnach z listy kwadrat spełnia
+   regułę (ziarno wpływa na wnętrze siedziby, więc na liczbę pokoi, nie na jedzenie ani mieszkańców). To narzędzie
+   pomiarowe: kod wyjścia 0 niezależnie od wyniku, 2 przy złych argumentach.
+
+   Moduł da się zaimportować (testy, uprząż bot:osada): `wczytajDemo` i `daneDema` czytają dema i tabele mieszkańców z public/
+   (bez sieci), `PUBLIC`, `DEMA` i `parsujZiarna` są wspólne z tools/bot-osada.ts, reszta to czyste funkcje tabeli. Skrypt
+   rusza tylko wtedy, gdy uruchomiono go wprost.
 
    Uruchomienie: node tools/osada-kwadraty.ts [--ziarna=11-15] [--demo=przymorze,lanciego,zielonki] */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  jedzenieWZasiegu,
   kandydaciOsady,
   MIN_LOKATORZY_SIEDZIBY,
   MIN_POKOI_SIEDZIBY,
   type OdrzucenieOsady,
+  okolicaOsady,
+  type PomiarKwadratu,
   PROBY_SIEDZIBY,
   PROG_JEDZENIA_OSADY,
   PROMIEN_SIEDZIBY_M,
+  policzMieszkancow,
+  pomiarSiedziby,
+  przesunGeo,
   type SwiatOsady,
   swiatOsady,
+  szukajSiedziby,
   wybierzOsade,
+  ZARZAD_OSADY,
+  ziarnoOsady,
 } from '../src/ai/kwadrat.ts';
 import { MAX_OKOLICA_M } from '../src/gov/wyprawy.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow } from '../src/mieszkancy/wczytaj.ts';
+import { mieszkancyNowejGry } from '../src/sim/osiedle.ts';
 import type { Geo } from '../src/world/geo.ts';
-import { kluczKwadratu, sasiedzi8, ukladZGeo, zKlucza } from '../src/world/kwadraty.ts';
+import { kluczKwadratu, sasiedzi8, srodekKwadratu, type Uklad, ukladZGeo, zKlucza } from '../src/world/kwadraty.ts';
+import { uzupelnijKlucze } from '../src/world/miasto.ts';
 
-const PUBLIC = path.resolve(import.meta.dirname, '../public');
-/** dema z public/demo/ (trzy osiedla gry), w kolejności tabel */
+/** katalog public/ (dema i tabele mieszkańców): wspólny z tools/bot-osada.ts */
+export const PUBLIC = path.resolve(import.meta.dirname, '../public');
+/** dema z public/demo/ (trzy osiedla gry), w kolejności tabel: wspólne z tools/bot-osada.ts */
 export const DEMA = ['przymorze', 'lanciego', 'zielonki'] as const;
 
 /** Demo z plików: geo domu, adres i geo sąsiednich kwadratów po kluczu „sx,sy” (Lanciego ma cztery boczne, reszta osiem). */
@@ -79,7 +98,7 @@ export function daneDema(klucz: string): Promise<DaneMieszkancow | null> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Tabela
+// Argumenty
 // ---------------------------------------------------------------------------------------------------------------------
 
 export interface Opcje {
@@ -90,7 +109,8 @@ export interface Opcje {
 
 const UZYCIE = 'Użycie: node tools/osada-kwadraty.ts [--ziarna=11-15] [--demo=przymorze,lanciego,zielonki]';
 
-/** Ziarna z `11-15`, `11` albo listy `11,13,15-16` (jak w tools/bot-osada.ts); rzuca na pustą listę i odwrócony zakres. */
+/** Ziarna z `11-15`, `11` albo listy `11,13,15-16` (wspólne z tools/bot-osada.ts). Rzuca na pustą listę, złą liczbę, odwrócony
+    zakres i zakres szerszy niż tysiąc ziaren. */
 export function parsujZiarna(tekst: string): number[] {
   const out: number[] = [];
   for (const czesc of tekst.split(',')) {
@@ -99,7 +119,7 @@ export function parsujZiarna(tekst: string): number[] {
     const od = Number(m[1]);
     const doZiarna = m[2] === undefined ? od : Number(m[2]);
     if (doZiarna < od) throw new Error(`odwrócony zakres ziaren „${czesc}”`);
-    if (doZiarna - od > 99) throw new Error(`za dużo ziaren w zakresie „${czesc}”`);
+    if (doZiarna - od > 999) throw new Error(`za dużo ziaren w zakresie „${czesc}”`);
     for (let z = od; z <= doZiarna; z++) if (!out.includes(z)) out.push(z);
   }
   return out;
@@ -126,6 +146,53 @@ export function parsujArgumenty(argv: readonly string[]): Opcje {
   return o;
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Pomiar i tabela
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Jeden kwadrat w tabeli: wynik reguły (z produkcyjnego `swiatOsady`) i pełny pomiar (wszystkie kolumny). */
+export interface WierszKwadratu {
+  wynik: SwiatOsady | OdrzucenieOsady;
+  pomiar: PomiarKwadratu;
+}
+
+/** środek kwadratu zaokrąglony do 0,5 m jak punkt siedziby */
+const naPolmetry = (v: number): number => Math.round(v * 2) / 2;
+
+/** Pełny pomiar kwadratu do tabeli. Wynik reguły to wynik `swiatOsady` (ta sama funkcja co w grze), a `pomiar` ma wszystkie
+    pola: kandydaci, próby, pole i pokoje siedziby z szukania siedziby, jedzenie w zasięgu 720 m od siedziby (bez siedziby od
+    pierwszego kandydata, a bez kandydata od środka kwadratu) i osoby z lokatorami z generatora (tylko z siedzibą). Bez tabel
+    mieszkańców (`dane` null) pomiar jest pusty jak w `swiatOsady`. Szukanie siedziby liczy się drugi raz (narzędzie, nie gra). */
+export function pomiarPelny(
+  geo: Geo,
+  sx: number,
+  sy: number,
+  dane: DaneMieszkancow | null,
+  seed: number,
+  uklad: Uklad,
+): WierszKwadratu {
+  const wynik = swiatOsady(geo, sx, sy, dane, seed, uklad);
+  if (!dane) return { wynik, pomiar: wynik.pomiar };
+  const srodek = srodekKwadratu(uklad, sx, sy);
+  const szukanie = szukajSiedziby(geo, srodek, dane, ziarnoOsady(seed, sx, sy));
+  const pomiar = pomiarSiedziby(szukanie);
+  const siedziba = szukanie.siedziba;
+  const geoOkolicy =
+    siedziba?.geo ??
+    szukanie.pierwszaPrzesunieta ??
+    (() => {
+      const g = przesunGeo(geo, naPolmetry(srodek[0]), naPolmetry(srodek[1]));
+      uzupelnijKlucze(g);
+      return g;
+    })();
+  pomiar.jedzenie = jedzenieWZasiegu(okolicaOsady(geoOkolicy, dane));
+  if (siedziba) {
+    const l = mieszkancyNowejGry(siedziba.world, siedziba.oznaczone, dane, ZARZAD_OSADY);
+    Object.assign(pomiar, policzMieszkancow(l));
+  }
+  return { wynik, pomiar };
+}
+
 const lewo = (t: string | number, szer: number): string => String(t).padEnd(szer);
 const prawo = (t: string | number | null, szer: number): string => String(t ?? '-').padStart(szer);
 
@@ -139,13 +206,13 @@ export const wynikSlowem = (w: SwiatOsady | OdrzucenieOsady): string =>
 
 /** Wiersz tabeli jednego kwadratu: klucz, kandydaci i próby, siedziba (pole, pokoje i pokoje zarządu), osoby i lokatorzy z
     generatora („-”, gdy nie liczono), jedzenie w zasięgu (zaokrąglone do porcji), wynik i liczba ziaren, w których kwadrat
-    spełnia regułę (`spelnia` z `ziaren`). */
-export function wierszTabeli(klucz: string, w: SwiatOsady | OdrzucenieOsady, spelnia: number, ziaren: number): string {
+    spełnia regułę (`spelnia` z `ziaren`). Kolumny z pełnego pomiaru, wynik z produkcyjnego `swiatOsady`. */
+export function wierszTabeli(klucz: string, w: WierszKwadratu, spelnia: number, ziaren: number): string {
   const p = w.pomiar;
   const siedziba = p.proby ? p.pole : null;
   const pokoje = p.proby ? `${p.pokoje} (${p.pokojeZarzadu})` : null;
   const jedzenie = p.jedzenie === null ? null : Math.round(p.jedzenie);
-  return `${lewo(klucz, 7)}${prawo(p.kandydatow, 6)}${prawo(p.proby, 6)}${prawo(siedziba, 12)}${prawo(pokoje, 15)}${prawo(p.osoby, 7)}${prawo(p.lokatorzy, 7)}${prawo(jedzenie, 10)}  ${lewo(wynikSlowem(w), 18)}${prawo(`${spelnia}/${ziaren}`, 8)}`;
+  return `${lewo(klucz, 7)}${prawo(p.kandydatow, 6)}${prawo(p.proby, 6)}${prawo(siedziba, 12)}${prawo(pokoje, 15)}${prawo(p.osoby, 7)}${prawo(p.lokatorzy, 7)}${prawo(jedzenie, 10)}  ${lewo(wynikSlowem(w.wynik), 18)}${prawo(`${spelnia}/${ziaren}`, 8)}`;
 }
 
 /** Opis reguły do nagłówka wyjścia (stałe z src/ai/kwadrat.ts). */
@@ -156,8 +223,6 @@ export function opisReguly(): string {
 // ---------------------------------------------------------------------------------------------------------------------
 // Proces główny
 // ---------------------------------------------------------------------------------------------------------------------
-
-type Wynik = SwiatOsady | OdrzucenieOsady;
 
 /** Jedno demo: tabela kwadratów (pełny pomiar dla pierwszego ziarna), spełnianie reguły w ziarnach i wybory `wybierzOsade`. */
 async function demo(klucz: string, ziarna: readonly number[]): Promise<void> {
@@ -171,19 +236,15 @@ async function demo(klucz: string, ziarna: readonly number[]): Promise<void> {
   });
   console.log(`\n${klucz} (${d.addr}; kąt domu ${uklad.kat.toFixed(3)} rad; sąsiednich kwadratów ${kwadraty.length})`);
   console.log(naglowekTabeli());
-  const wiersze: { klucz: string; wynik: Wynik; spelnia: number }[] = [];
+  const wiersze: { klucz: string; wynik: SwiatOsady | OdrzucenieOsady; spelnia: number }[] = [];
   const geoDla = (k: string): Geo => (k === 'dom' ? d.geo : d.kwadraty[k]);
   for (const k of ['dom', ...kwadraty]) {
     const [sx, sy] = k === 'dom' ? [0, 0] : zKlucza(k);
-    let pierwszy: Wynik | null = null;
-    let spelnia = 0;
-    for (const z of ziarna) {
-      const w = swiatOsady(geoDla(k), sx, sy, dane, z, uklad, { pelny: true });
-      pierwszy ??= w;
-      if (!('odrzucony' in w)) spelnia++;
-    }
-    wiersze.push({ klucz: k, wynik: pierwszy!, spelnia });
-    console.log(wierszTabeli(k, pierwszy!, spelnia, ziarna.length));
+    const pierwszy = pomiarPelny(geoDla(k), sx, sy, dane, ziarna[0], uklad);
+    let spelnia = 'odrzucony' in pierwszy.wynik ? 0 : 1;
+    for (const z of ziarna.slice(1)) if (!('odrzucony' in swiatOsady(geoDla(k), sx, sy, dane, z, uklad))) spelnia++;
+    wiersze.push({ klucz: k, wynik: pierwszy.wynik, spelnia });
+    console.log(wierszTabeli(k, pierwszy, spelnia, ziarna.length));
   }
   const sasiedzi = wiersze.filter((w) => w.klucz !== 'dom');
   const dom = wiersze.find((w) => w.klucz === 'dom')!;

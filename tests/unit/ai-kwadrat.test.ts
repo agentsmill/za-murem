@@ -33,6 +33,7 @@ import { silnik } from '../../src/ai/silnik.ts';
 import { POICAT } from '../../src/content/data.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { celZMiejsca, MAX_OKOLICA_M } from '../../src/gov/wyprawy.ts';
+import { pierscienieBudynku, wObrysie } from '../../src/mieszkancy/obrys.ts';
 import type { DaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
 import { TICKS_PER_HOUR } from '../../src/sim/clock.ts';
 import { houseOf } from '../../src/sim/house.ts';
@@ -170,6 +171,24 @@ describe('kandydaciOsady', () => {
       expect(kandydaciOsady(seed)).toEqual(kandydaciOsady(seed));
       expect(kandydaciOsady(seed)).toHaveLength(8);
     }
+  });
+
+  it('złote kolejności ziaren 11 i 12: Fisher–Yates z rngOf, a nie sort z losowym porównaniem ani przesunięcie cykliczne', () => {
+    // Kolejność jest częścią gry (od niej zależy, gdzie staje osada), więc przypięta literalnie. Sort z losowym porównaniem
+    // (kolejność porównań zależy od silnika JS: raz dał inną noc na Node 24 niż na 25) i wariant Sattolo (`rng() * k` zamiast
+    // `rng() * (k + 1)`) dają tu inne kolejności i ten test pada.
+    expect(klucze(kandydaciOsady(11))).toEqual(['0,-1', '-1,-1', '-1,1', '1,-1', '0,1', '-1,0', '1,0', '1,1']);
+    expect(klucze(kandydaciOsady(12))).toEqual(['1,0', '0,1', '1,1', '-1,0', '1,-1', '-1,-1', '-1,1', '0,-1']);
+  });
+
+  it('tasowanie dopuszcza kwadrat na swoim miejscu z `sasiedzi8` (Sattolo, czyli jeden cykl, tego nie daje)', () => {
+    // wśród 60 ziaren jest kolejność, w której co najmniej jeden kwadrat stoi tam, gdzie w `sasiedzi8(0, 0)`; dla losowej
+    // permutacji ośmiu elementów ma tak około 63%, więc wszystkie 60 bez takiej to prawdopodobieństwo rzędu 1e-26
+    const bazowa = klucze(sasiedzi8(0, 0));
+    const zPunktemStalym = Array.from({ length: 60 }, (_, s) => klucze(kandydaciOsady(s + 1))).filter((k) =>
+      k.some((x, i) => x === bazowa[i]),
+    );
+    expect(zPunktemStalym.length).toBeGreaterThan(20);
   });
 });
 
@@ -395,40 +414,33 @@ describe('kierunek i nazwa osady', () => {
     expect(k.kierunek.en.length).toBeGreaterThan(0);
   });
 
-  it('nazwa z ulicy siedziby: „Osada przy ul. …” po polsku, „… settlement” po angielsku, z formą „z osady …”', () => {
-    const n = nazwaOsady('Lanciego', 1, 0);
-    expect(n.nazwa).toEqual({ pl: 'Osada przy ul. Lanciego', en: 'Lanciego settlement' });
-    expect(n.nazwaZ).toEqual({ pl: 'z osady przy ul. Lanciego', en: 'from the Lanciego settlement' });
-    // nazwa ulicy z rodzajem w środku (aleja, plac) nie dostaje „przy ul.”, tylko idzie w cudzysłowie
-    expect(nazwaOsady('Aleja Grunwaldzka', 0, 1).nazwa).toEqual({
-      pl: 'Osada „Aleja Grunwaldzka”',
-      en: 'Aleja Grunwaldzka settlement',
-    });
-    expect(nazwaOsady('plac Wolności', 0, 1).nazwaZ.pl).toBe('z osady „plac Wolności”');
-    // „Aleksandra” zaczyna się od „Al”, ale nie jest rodzajem ulicy
-    expect(nazwaOsady('Aleksandra Fredry', 0, 1).nazwa.pl).toBe('Osada przy ul. Aleksandra Fredry');
-    // biały znak ściśnięty i przycięty, cudzysłowy typograficzne w obu językach
-    expect(nazwaOsady('  Obrońców   Wybrzeża ', 0, 1).nazwa.en).toBe('Obrońców Wybrzeża settlement');
-    expect(nazwaOsady('Ks. "Jana"', 0, 1).nazwa.pl).toBe('Osada przy ul. Ks. „Jana”');
-    expect(nazwaOsady('Ks. "Jana"', 0, 1).nazwa.en).toBe('Ks. “Jana” settlement');
-  });
-
-  it('bez ulicy (kafelki jej nie niosą) nazwa idzie z kierunku od domu, a pusta albo biała ulica to też brak', () => {
-    const polnoc = nazwaOsady(undefined, 0, -1);
+  it('nazwa osady idzie tylko z kierunku od domu: „Osada na północy” / “Settlement to the north”, z formą „z osady …”', () => {
+    const polnoc = nazwaOsady(0, -1);
     expect(polnoc.nazwa).toEqual({ pl: 'Osada na północy', en: 'Settlement to the north' });
     expect(polnoc.nazwaZ).toEqual({ pl: 'z osady na północy', en: 'from the settlement to the north' });
-    expect(nazwaOsady('', 1, 1).nazwa.pl).toBe('Osada na południowym wschodzie');
-    expect(nazwaOsady('   ', -1, 0).nazwa.pl).toBe('Osada na zachodzie');
-    for (const [x, y] of sasiedzi8(0, 0)) {
-      const n = nazwaOsady(undefined, x, y);
-      expect(n.nazwa.en).not.toMatch(/[ąćęłńóśźż]/i);
-      expect(n.nazwaZ.en).not.toMatch(/[ąćęłńóśźż]/i);
-    }
+    expect(nazwaOsady(1, 1).nazwa.pl).toBe('Osada na południowym wschodzie');
+    expect(nazwaOsady(-1, 0).nazwa.pl).toBe('Osada na zachodzie');
+    expect(nazwaOsady(-1, 1).nazwaZ.en).toBe('from the settlement to the south-west');
   });
 
-  it('bardzo długa ulica jest ucięta do 40 znaków', () => {
-    const n = nazwaOsady('X'.repeat(200), 0, 1);
-    expect(n.nazwa.en).toBe(`${'X'.repeat(40)} settlement`);
+  it('osiem sąsiadów ma osiem różnych nazw, a angielskie wersje nie mają polskich liter', () => {
+    const nazwy = sasiedzi8(0, 0).map(([x, y]) => nazwaOsady(x, y));
+    for (const kolumna of ['nazwa', 'nazwaZ'] as const) {
+      expect(new Set(nazwy.map((n) => n[kolumna].pl)).size, `${kolumna} po polsku`).toBe(8);
+      expect(new Set(nazwy.map((n) => n[kolumna].en)).size, `${kolumna} po angielsku`).toBe(8);
+      for (const n of nazwy) {
+        expect(n[kolumna].en).not.toMatch(/[ąćęłńóśźż]/i);
+        expect(n[kolumna].pl).toMatch(/^(?:Osada|z osady) na /);
+      }
+    }
+    // nazwa wynika z kierunku: ta sama strona świata, ten sam miejscownik
+    for (const [x, y] of sasiedzi8(0, 0)) {
+      const { miejscownik } = kierunekOsady(x, y);
+      expect(nazwaOsady(x, y).nazwa).toEqual({
+        pl: `Osada ${miejscownik.pl}`,
+        en: `Settlement ${miejscownik.en}`,
+      });
+    }
   });
 });
 
@@ -472,12 +484,27 @@ describe('swiatOsady: reguła miejsca na dem', () => {
     expect(['jedzenie', 'mieszkancy']).toContain(r.odrzucony);
   });
 
-  it('Zielonki: żaden z ośmiu sąsiadów nie spełnia reguły (w zasięgu prawie nie ma jedzenia)', () => {
+  it('Zielonki: żaden z ośmiu sąsiadów nie spełnia reguły, a każde odrzucenie ma w pomiarze to, co je tłumaczy', () => {
     expect(zakwaterowane('zielonki')).toEqual([]);
-    for (const w of dla('zielonki').wyniki.values()) {
+    const powody: string[] = [];
+    for (const [klucz, w] of dla('zielonki').wyniki) {
       if (jestSwiat(w)) continue;
-      expect(['siedziba', 'mieszkancy', 'jedzenie']).toContain(w.odrzucony);
+      powody.push(w.odrzucony);
+      const p = w.pomiar;
+      if (w.odrzucony === 'siedziba') {
+        // brak budynku mieszkalnego w 120 m albo żaden ze sprawdzonych (najwyżej cztery) nie ma trzech pokoi; jedzenia nie liczono
+        expect(p.proby, klucz).toBe(Math.min(p.kandydatow, PROBY_SIEDZIBY));
+        expect(p.kandydatow === 0 || p.pokoje < MIN_POKOI_SIEDZIBY, klucz).toBe(true);
+        expect(p.jedzenie, klucz).toBeNull();
+      } else if (w.odrzucony === 'jedzenie') {
+        // siedziba jest, jedzenia za mało, generator jeszcze nie liczony
+        expect(p.pokoje, klucz).toBeGreaterThanOrEqual(MIN_POKOI_SIEDZIBY);
+        expect(p.jedzenie ?? Number.POSITIVE_INFINITY, klucz).toBeLessThan(PROG_JEDZENIA_OSADY);
+        expect(p.osoby, klucz).toBeNull();
+      }
     }
+    // siedem kwadratów bez siedziby (sześć bez 3 pokoi albo bez budynków, plus (1,0) z czterema próbami) i (−1,0) bez jedzenia
+    expect(powody.sort()).toEqual(['jedzenie', ...Array(7).fill('siedziba')]);
   });
 
   it('Przymorze i Lanciego: dom spełnia regułę miejsca (855 i 1167 porcji, blok z mieszkańcami)', () => {
@@ -525,22 +552,6 @@ describe('swiatOsady: reguła miejsca na dem', () => {
     expect(drugi.nazwa).toEqual(wygrany.nazwa);
     expect(drugi.pomiar).toEqual(wygrany.pomiar);
     expect(worldKey(drugi.world)).toBe(worldKey(wygrany.world));
-  });
-
-  it('pełny pomiar (do tabeli) liczy wszystkie pola także dla odrzuconego kwadratu', () => {
-    const p = dla('zielonki');
-    const [klucz, geo] = Object.entries(p.demo.kwadraty).find(([k]) => k === '-1,0')!;
-    const [sx, sy] = klucz.split(',').map(Number);
-    const krotko = swiatOsady(geo, sx, sy, p.dane, ZIARNO, p.uklad);
-    const pelny = swiatOsady(geo, sx, sy, p.dane, ZIARNO, p.uklad, { pelny: true });
-    expect(jestSwiat(krotko)).toBe(false);
-    expect(jestSwiat(pelny)).toBe(false);
-    if (jestSwiat(krotko) || jestSwiat(pelny)) return;
-    // ten sam powód i te same pola policzone wcześniej; pełny pomiar dolicza resztę
-    expect(pelny.odrzucony).toBe(krotko.odrzucony);
-    expect(pelny.pomiar.jedzenie).not.toBeNull();
-    expect(pelny.pomiar.osoby).not.toBeNull();
-    expect(pelny.pomiar.pokoje).toBeGreaterThanOrEqual(MIN_POKOI_SIEDZIBY);
   });
 });
 
@@ -593,8 +604,9 @@ describe('swiatOsady: świat osady', () => {
         }
         expect(w.nazwa.pl).not.toBe(w.nazwa.en);
         expect(w.kierunek).toEqual(kierunekOsady(w.sx, w.sy).kierunek);
-        // dema z kafelków nie mają nazw ulic, więc nazwa idzie z kierunku
-        expect(w.nazwa).toEqual(nazwaOsady(undefined, w.sx, w.sy).nazwa);
+        // nazwa idzie z kierunku od domu do kwadratu
+        expect(w.nazwa).toEqual(nazwaOsady(w.sx, w.sy).nazwa);
+        expect(w.nazwaZ).toEqual(nazwaOsady(w.sx, w.sy).nazwaZ);
       }
     }
   });
@@ -681,16 +693,20 @@ describe('swiatOsady: świat osady', () => {
     expect(siedzibaWystarcza(opiszSiedzibe(swiat.world))).toBe(false);
   });
 
-  it('nazwa idzie z ulicy siedziby, gdy budynki mają tag addr:street (dane z Overpass), inaczej z kierunku', () => {
+  it('tag addr:street (dane z Overpass) nie wchodzi do nazwy osady: nazwy ulic z OSM nie trafiają do tekstów z generatora', () => {
     const p = dla('przymorze');
     const wygrany = zakwaterowane('przymorze')[0];
     const geo = structuredClone(p.demo.kwadraty[wygrany.klucz]);
-    for (const b of geo.b) b.t['addr:street'] = 'Testowa';
+    for (const b of geo.b) b.t['addr:street'] = 'Spacerowa';
     const r = swiatOsady(geo, wygrany.sx, wygrany.sy, p.dane, ZIARNO, p.uklad);
     expect(jestSwiat(r)).toBe(true);
     if (!jestSwiat(r)) return;
-    expect(r.nazwa).toEqual({ pl: 'Osada przy ul. Testowa', en: 'Testowa settlement' });
-    expect(r.nazwaZ.pl).toBe('z osady przy ul. Testowa');
+    // hq ma tag ulicy w świecie, a nazwa osady i tak jest tylko z kierunku
+    expect(r.world.buildings[r.world.hq].tags['addr:street']).toBe('Spacerowa');
+    expect(r.nazwa).toEqual(wygrany.nazwa);
+    expect(r.nazwaZ).toEqual(wygrany.nazwaZ);
+    expect(r.kierunek).toEqual(wygrany.kierunek);
+    expect(JSON.stringify([r.nazwa, r.nazwaZ, r.kierunek])).not.toContain('Spacerowa');
     // ten sam świat co bez tagu ulicy (nazwa nie wpływa na budowę)
     expect(r.jedzenie).toBe(wygrany.jedzenie);
     expect(r.world.hq).toBe(wygrany.world.hq);
@@ -726,10 +742,6 @@ describe('swiatOsady: powody odrzucenia', () => {
     // jedzenie sprawdza się przed generatorem (tańsze), więc mieszkańców jeszcze nie liczono
     expect(r.pomiar.osoby).toBeNull();
     expect(r.pomiar.lokatorzy).toBeNull();
-    // pełny pomiar liczy ich i tak, a powód zostaje ten sam
-    const pelny = swiatOsady(geo, 0, -1, p.dane, ZIARNO, p.uklad, { pelny: true });
-    expect('odrzucony' in pelny && pelny.odrzucony).toBe('jedzenie');
-    expect(pelny.pomiar.lokatorzy).toBeGreaterThan(0);
   });
 
   it('dom z jednym mieszkaniem (Zielonki) ma jedzenie, ale nie ma lokatorów: odrzucony z powodu mieszkańców', () => {
@@ -746,15 +758,11 @@ describe('swiatOsady: powody odrzucenia', () => {
     expect(r.pomiar.lokatorzy).toBe(0);
   });
 
-  it('bez siedziby (kwadrat bez budynków mieszkalnych blisko środka): siedziba, także w pełnym pomiarze', () => {
+  it('bez siedziby (kwadrat bez budynków mieszkalnych blisko środka): siedziba, bez żadnej próby i bez liczenia jedzenia', () => {
     const p = dla('zielonki');
     const r = swiatOsady(p.demo.kwadraty['0,-1'], 0, -1, p.dane, ZIARNO, p.uklad);
     expect('odrzucony' in r && r.odrzucony).toBe('siedziba');
     expect(r.pomiar).toMatchObject({ kandydatow: 0, proby: 0, pole: 0, pokoje: 0, jedzenie: null });
-    // pełny pomiar mierzy jedzenie ze środka kwadratu, ale powód zostaje
-    const pelny = swiatOsady(p.demo.kwadraty['0,-1'], 0, -1, p.dane, ZIARNO, p.uklad, { pelny: true });
-    expect('odrzucony' in pelny && pelny.odrzucony).toBe('siedziba');
-    expect(pelny.pomiar.jedzenie).not.toBeNull();
   });
 
   it('najwyżej cztery próby: siedem domów o dwóch pokojach to cztery światy i powód „siedziba”', () => {
@@ -765,6 +773,19 @@ describe('swiatOsady: powody odrzucenia', () => {
     expect(r.pomiar.proby).toBe(PROBY_SIEDZIBY);
     expect(r.pomiar.pokoje).toBeLessThan(MIN_POKOI_SIEDZIBY);
     expect(r.pomiar.jedzenie).toBeNull();
+  });
+
+  it('błąd generatora albo budowy świata nie jest połykany: uszkodzone geo rzuca ze swiatOsady i z wybierzOsade', () => {
+    // zadanie 3 łapie wyjątek i zapisuje „brak: blad”; cicha odpowiedź „siedziba” ukryłaby błąd generatora
+    const p = dla('przymorze');
+    const uszkodzone = structuredClone(p.demo.kwadraty['0,-1']);
+    uszkodzone.b[0].p = undefined as unknown as Geo['b'][number]['p'];
+    expect(() => swiatOsady(uszkodzone, 0, -1, p.dane, ZIARNO, p.uklad)).toThrow();
+    expect(() => wybierzOsade(ZIARNO, { '0,-1': uszkodzone }, p.dane, p.uklad)).toThrow();
+    // tak samo bez tabel mieszkańców nie ma czego liczyć i nie rzuca (reguła ich wymaga)
+    expect(jestSwiat(swiatOsady(uszkodzone, 0, -1, null, ZIARNO, p.uklad))).toBe(false);
+    // dobre geo tego samego kwadratu przechodzi (to uszkodzenie, a nie kwadrat, rzuca)
+    expect(jestSwiat(swiatOsady(p.demo.kwadraty['0,-1'], 0, -1, p.dane, ZIARNO, p.uklad))).toBe(true);
   });
 
   it('siedziba wystarcza: budynek mieszkalny, co najmniej 3 pokoje, pokój zarządu i suche drzewo (każdy warunek osobno)', () => {
@@ -781,6 +802,10 @@ describe('swiatOsady: powody odrzucenia', () => {
     expect(siedzibaWystarcza({ ...s, pokojeZarzadu: 0 })).toBe(false);
     expect(siedzibaWystarcza({ ...s, sucheDrzewo: false })).toBe(false);
     expect(s.sucheDrzewo).toBe(true);
+    // suche drzewo liczy się tak jak w silniku (`dryTreeOf`): numer w granicach drzew świata, a nie samo „nieujemny”
+    expect(opiszSiedzibe({ ...w, dryTree: -1 }).sucheDrzewo).toBe(false);
+    expect(opiszSiedzibe({ ...w, dryTree: w.trees.length }).sucheDrzewo).toBe(false);
+    expect(opiszSiedzibe({ ...w, dryTree: w.trees.length - 1 }).sucheDrzewo).toBe(true);
     // świat bez wnętrza: same zera
     expect(opiszSiedzibe({ ...w, interior: undefined } as unknown as typeof w)).toEqual({
       pole: 0,
@@ -858,8 +883,9 @@ describe('kandydaciSiedziby', () => {
         expect(x.odl, klucz).toBeLessThanOrEqual(PROMIEN_SIEDZIBY_M);
         expect(x.pole, klucz).toBeGreaterThan(0);
         expect(geo.b[x.indeks], klucz).toBeDefined();
-        // punkt na siatce 0,5 m
+        // punkt na siatce 0,5 m i wewnątrz obrysu (któregoś z pierścieni budynku)
         expect(Number.isInteger(x.punkt[0] * 2) && Number.isInteger(x.punkt[1] * 2), klucz).toBe(true);
+        expect(wObrysie(x.punkt[0], x.punkt[1], pierscienieBudynku(geo.b[x.indeks])), klucz).toBe(true);
       }
     }
     // kwadrat (1, −1) Przymorza leży na morzu: bez budynków mieszkalnych blisko środka
@@ -903,6 +929,25 @@ describe('wybierzOsade', () => {
     }
   }, 120_000);
 
+  it('złote wybory na dem: literalne klucze dla ziaren, także gdy pierwszy kandydat to morze albo kwadrat bez geo', () => {
+    // kolejność z ziarna daje pierwszego kandydata, a wybór bierze pierwszego, który ma geo i spełnia regułę; wartości
+    // przypięte literalnie (nie przeliczane tą samą pętlą), więc zmiana tasowania albo reguły musi tu być widoczna
+    const wybory = (d: Demo, ziarna: number[]): (string | null)[] =>
+      ziarna.map((z) => wybierzOsade(z, dla(d).demo.kwadraty, dla(d).dane, dla(d).uklad)?.klucz ?? null);
+    // Przymorze: pierwszy kandydat zawsze spełnia (ziarna 11–15)
+    expect(wybory('przymorze', [11, 12, 13, 14, 15])).toEqual(['0,-1', '1,0', '0,1', '-1,0', '1,0']);
+    // Przymorze: pierwszy kandydat to morze (1,−1), więc wygrywa drugi w kolejności
+    expect(kandydaciOsady(10)[0]).toEqual([1, -1]);
+    expect(wybory('przymorze', [10, 16, 17, 21])).toEqual(['0,-1', '-1,1', '-1,-1', '0,-1']);
+    // Lanciego: te same ziarna 11–15 dają te same kwadraty (wszystkie cztery boczne spełniają regułę)
+    expect(wybory('lanciego', [11, 12, 13, 14, 15])).toEqual(['0,-1', '1,0', '0,1', '-1,0', '1,0']);
+    // Lanciego ma tylko cztery boczne: pierwszy kandydat bez geo (przekątna) jest pomijany
+    expect(kandydaciOsady(1)[0]).toEqual([1, 1]);
+    expect(wybory('lanciego', [1, 2, 8])).toEqual(['0,-1', '1,0', '0,1']);
+    // Zielonki: żaden kwadrat nie spełnia reguły
+    expect(wybory('zielonki', [11, 12, 13, 14, 15])).toEqual([null, null, null, null, null]);
+  }, 120_000);
+
   it('brak geo jednego kandydata (jak na Lanciego, gdzie są tylko cztery boczne) pomija go, a nie przerywa wyboru', () => {
     const p = dla('przymorze');
     const wygrany = wybierzOsade(ZIARNO, p.demo.kwadraty, p.dane, p.uklad)!;
@@ -910,12 +955,12 @@ describe('wybierzOsade', () => {
     const bez = { ...p.demo.kwadraty };
     delete bez[wygrany.klucz];
     const drugi = wybierzOsade(ZIARNO, bez, p.dane, p.uklad);
-    expect(drugi?.klucz).not.toBe(wygrany.klucz);
-    // wygrany leży w kolejności z ziarna przed drugim
-    if (drugi) {
-      const kolejnosc = kandydaciOsady(ZIARNO).map(([x, y]) => kluczKwadratu(x, y));
-      expect(kolejnosc.indexOf(wygrany.klucz)).toBeLessThan(kolejnosc.indexOf(drugi.klucz));
-    }
+    // na Przymorzu spełnia siedem z ośmiu kwadratów, więc po zabraniu pierwszego jest następny w kolejności z ziarna
+    expect(drugi).not.toBeNull();
+    expect(drugi!.klucz).not.toBe(wygrany.klucz);
+    const kolejnosc = kandydaciOsady(ZIARNO).map(([x, y]) => kluczKwadratu(x, y));
+    expect(kolejnosc.indexOf(wygrany.klucz)).toBe(0);
+    expect(drugi!.klucz).toBe(kolejnosc[1]);
   }, 120_000);
 
   it('wynik jest deterministyczny: ten sam kwadrat, to samo geo, ta sama nazwa i jedzenie', () => {

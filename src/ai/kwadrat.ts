@@ -7,14 +7,15 @@
 
    Reguła miejsca (Mateusz, 24.10.2026). Kandydaci to osiem kwadratów wokół domu w kolejności z ziarna gry (`kandydaciOsady`,
    Fisher–Yates z `rngOf`). Kwadrat spełnia regułę, gdy ma siedzibę, mieszkańców i jedzenie:
-   - siedziba: budynki mieszkalne kwadratu (te, które generator mieszkańców uznaje za bloki i domy: `budynkiZCzlonkami`, więc
-     to samo co dostanie tag `zm:bud`) o środku w promieniu `PROMIEN_SIEDZIBY_M` (120 m) od środka kwadratu, malejąco po polu
-     obrysu; dla kolejnych (najwyżej `PROBY_SIEDZIBY` = 4) geo przesuwa się tak, że punkt wewnątrz obrysu wypada w (0, 0), i
-     buduje świat (siedzibą zostaje budynek najbliżej środka, nie zawsze ten sam, który wybrano); pierwszy, który ma co najmniej
-     `MIN_POKOI_SIEDZIBY` (3) pokoje w całym wnętrzu, pokój w mieszkaniu zarządu i suche drzewo w świecie, wygrywa, i na nim kończą się
-     próby. Dwa ostatnie warunki są dodatkiem do reguły z decyzji, żeby osada miała jak wystartować: bez pokoju zarządu
-     `pokojZarzadu` (src/ai/miejsca.ts) daje −1 i silnik nie postawi kozy z beczki, a bez suchego drzewa (świat bez podwórka,
-     Przymorze (1,0): podwórko 8 kafelków) nie ma pierwszego drewna i zarząd marznie od drugiej doby, w grze od dnia 13 do odwołania;
+   - siedziba (`szukajSiedziby`): budynki mieszkalne kwadratu (te, które generator mieszkańców uznaje za bloki i domy:
+     `budynkiZCzlonkami`, więc to samo co dostanie tag `zm:bud`) o środku w promieniu `PROMIEN_SIEDZIBY_M` (120 m) od środka
+     kwadratu, malejąco po polu obrysu; dla kolejnych (najwyżej `PROBY_SIEDZIBY` = 4) geo przesuwa się tak, że punkt wewnątrz
+     obrysu wypada w (0, 0), i buduje świat (siedzibą zostaje budynek najbliżej środka, nie zawsze ten sam, który wybrano);
+     pierwszy, który ma co najmniej `MIN_POKOI_SIEDZIBY` (3) pokoje w całym wnętrzu, pokój w mieszkaniu zarządu i suche drzewo
+     w świecie, wygrywa, i na nim kończą się próby. Dwa ostatnie warunki są dodatkiem do reguły z decyzji, żeby osada miała jak
+     wystartować: bez pokoju zarządu `pokojZarzadu` (src/ai/miejsca.ts) daje −1 i silnik nie postawi kozy z beczki, a bez
+     suchego drzewa (świat bez podwórka, Przymorze (1,0): podwórko 8 kafelków) nie ma pierwszego drewna i zarząd marznie od
+     drugiej doby, w grze od dnia 13 do odwołania;
    - mieszkańcy: generator mieszkańców (`mieszkancyNowejGry`) daje wynik dla tej siedziby i jest w niej co najmniej
      `MIN_LOKATORZY_SIEDZIBY` osób poza zarządem (blok z lokatorami; dom z jednym mieszkaniem ich nie ma). Bez tabel
      mieszkańców (`dane` null) żaden kwadrat nie spełnia reguły, bo reguła ich wymaga;
@@ -23,6 +24,14 @@
      idzie; to miara z raportu etapu 1: Przymorze 855, Lanciego 1167, Zielonki 17).
    Pierwszy kandydat, który spełnia całość, wygrywa (`wybierzOsade`); żaden: gra idzie bez osady. Powód odrzucenia jednego
    kwadratu to pierwszy z kolei: siedziba, jedzenie, mieszkańcy (jedzenie liczy się przed generatorem, bo jest tańsze).
+
+   Etapy reguły (`szukajSiedziby`, `okolicaOsady`, `policzMieszkancow`) są osobnymi, eksportowanymi funkcjami: `swiatOsady`
+   składa je po kolei i staje na pierwszym powodzie odrzucenia, a narzędzie `tools/osada-kwadraty.ts` składa te same etapy bez
+   zatrzymywania się, żeby w tabeli pokazać wszystkie kolumny (pełny pomiar nie wchodzi do ścieżki produkcyjnej).
+
+   Błędy nie są połykane. Wyjątek generatora mieszkańców albo budowy świata (uszkodzone geo) idzie do wołającego; zadanie 3
+   łapie go w kroku osady i zapisuje „brak: blad”. Rzuca więc to, co jest błędem danych albo kodu, a „siedziba” w odrzuceniu
+   znaczy zawsze, że kwadrat naprawdę nie ma dobrej siedziby (generator ostrzega w konsoli sam, gdy nie umie oznaczyć mapy).
 
    Układ domu (`Uklad`: adres i kąt obrotu domu) jest argumentem `swiatOsady` i `wybierzOsade`, bo środek kwadratu w geo
    (w metrach od adresu, bez obrotu) zależy od kąta domu (`srodekKwadratu`), a geo sąsiada tego kąta nie zna. Wołający ma go z
@@ -35,23 +44,34 @@
    tą samą drogą co `swiatOsady`. Stany mieszkań siedziby z generatora (`mieszkancyNowejGry`) świat dostaje przy wyborze, a
    przy wczytaniu zapisu `mieszkancyZapisu` ze stanu gry.
 
-   Nazwa osady (`nazwaOsady`) idzie z ulicy siedziby (tag `addr:street`; kafelki i dema jej nie niosą, Overpass tak), inaczej z
-   kierunku od domu do kwadratu (`kierunekOsady`, z numerów kwadratu w układzie świata gry, bez trygonometrii). To strona
-   świata, jaką widać na ekranie, gdzie siatka kwadratów leży wzdłuż ścian domu, a nie na geograficznej północy (tak samo
-   gra mówi o dziurach w siatce: „od północy” w src/ui/siatka.ts to góra ekranu); kąt domu jest do 45° od północy, więc na
-   mapie miasta (północ u góry) osada może wypaść o jedną stronę świata dalej. Obie formy nazwy są gotowymi zdaniami:
-   `nazwa` („Osada przy ul. Lanciego”) i `nazwaZ` („z osady przy ul. Lanciego”). */
+   Nazwa osady (`nazwaOsady`) to opis kierunku od domu do kwadratu (`kierunekOsady`, z numerów kwadratu w układzie świata
+   gry, bez trygonometrii): „Osada na północy”, „z osady na północy”. Nazw ulic z OSM w niej nie ma i nie będzie: spec każe
+   zmyślić nazwę osady, a zasada projektu zabrania prawdziwych nazw ulic w tekstach z generatora (src/mieszkancy/kronika.ts:
+   ulice noszą nazwiska, także polityków, a filtr nie rozpozna odmienionej formy). Zmyślona nazwa osady to decyzja do
+   przejrzenia w zadaniu 6. Strona świata jest taka, jaką widać na ekranie, gdzie siatka kwadratów leży wzdłuż ścian domu, a
+   nie na geograficznej północy (tak samo gra mówi o dziurach w siatce: „od północy” w src/ui/siatka.ts to góra ekranu); kąt
+   domu jest do 45° od północy, więc na mapie miasta (północ u góry) osada może wypaść o jedną stronę świata dalej. Obie formy
+   nazwy są gotowymi zdaniami: `nazwa` („Osada na północy”) i `nazwaZ` („z osady na północy”). */
 
-import { cudzyslowy, type Tx, tx } from '../core/jezyk.ts';
+import { type Tx, tx } from '../core/jezyk.ts';
 import { hashString, type RngState, rngOf } from '../core/rng.ts';
 import { type Cel, celZMiejsca, MAX_OKOLICA_M } from '../gov/wyprawy.ts';
 import { budynkiZCzlonkami, metryNaStopien } from '../mieszkancy/budynki.ts';
 import { nazwaDoOkolicyZDanych } from '../mieszkancy/kronika.ts';
+import {
+  type Pierscienie,
+  pierscienieBudynku,
+  pole,
+  ramka,
+  srodek as srodekObrysu,
+  wObrysie,
+} from '../mieszkancy/obrys.ts';
 import { TAG_BUDYNKU } from '../mieszkancy/oznacz.ts';
 import type { DaneMieszkancow } from '../mieszkancy/wczytaj.ts';
-import { houseOf } from '../sim/house.ts';
+import { dryTreeOf, houseOf } from '../sim/house.ts';
+import type { LokatorzyGry } from '../sim/lokatorzy.ts';
 import { ludnoscSpisu2021, mapaMieszkancow, mieszkancyNowejGry, opcjaMieszkancow } from '../sim/osiedle.ts';
-import { type Geo, type Pt, pip, polyArea } from '../world/geo.ts';
+import type { Geo, Pt } from '../world/geo.ts';
 import { kluczKwadratu, sasiedzi8, srodekKwadratu, type Uklad } from '../world/kwadraty.ts';
 import { type Miejsce, miejscaZPoi, naMapieLokalnej, uzupelnijKlucze } from '../world/miasto.ts';
 import { buildWorld, type World } from '../world/world.ts';
@@ -69,8 +89,6 @@ export const MIN_POKOI_SIEDZIBY = 3;
 export const MIN_LOKATORZY_SIEDZIBY = 1;
 /** osoby zarządu osady */
 export const ZARZAD_OSADY = 4;
-/** nazwa ulicy w nazwie osady jest ucinana do tylu znaków */
-const MAX_ULICY = 40;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Jedzenie w zasięgu, kolejność kandydatów, ziarno
@@ -120,7 +138,7 @@ export function ziarnoOsady(seed: number, sx: number, sy: number): number {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Przesunięcie geo i siedziba
+// Przesunięcie geo i kandydaci na siedzibę
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** Kopia geo, w której początek układu leży w punkcie (dx, dy) starego układu (metry: x na wschód, y na południe): każdy
@@ -145,68 +163,21 @@ export function przesunGeo(geo: Geo, dx: number, dy: number): Geo {
   };
 }
 
-type Pierscienie = readonly (readonly Pt[])[];
-
-/** Środek obrysu: środek ciężkości pierścieni ważony polem (pierścień bez pola: średnia wierzchołków wszystkich). */
-function srodekObrysu(pierscienie: Pierscienie): Pt {
-  // podwojone pole i sumy do wzoru na środek ciężkości wielokąta, każdy pierścień z dodatnim polem niezależnie od kierunku
-  let pole2 = 0;
-  let cx = 0;
-  let cy = 0;
-  for (const r of pierscienie) {
-    let a = 0;
-    let sx = 0;
-    let sy = 0;
-    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-      const f = r[j][0] * r[i][1] - r[i][0] * r[j][1];
-      a += f;
-      sx += (r[j][0] + r[i][0]) * f;
-      sy += (r[j][1] + r[i][1]) * f;
-    }
-    const znak = a < 0 ? -1 : 1;
-    pole2 += znak * a;
-    cx += znak * sx;
-    cy += znak * sy;
-  }
-  if (pole2 > 1e-9) return [cx / (3 * pole2), cy / (3 * pole2)];
-  let n = 0;
-  let mx = 0;
-  let my = 0;
-  for (const r of pierscienie)
-    for (const [x, y] of r) {
-      mx += x;
-      my += y;
-      n++;
-    }
-  return n ? [mx / n, my / n] : [0, 0];
-}
-
 const naPolmetry = (v: number): number => Math.round(v * 2) / 2;
 
 /** Punkt na siatce 0,5 m wewnątrz obrysu (w którymkolwiek pierścieniu), najbliżej `cel` (pierwszy w kolejności x, y przy
     remisie): zaokrąglony środek, jeśli leży w obrysie, inaczej najbliższy punkt siatki w ramce obrysu. null, gdy obrys nie ma
     żadnego (zdegenerowany). */
-function punktWewnatrz(pierscienie: Pierscienie, cel: Pt): Pt | null {
-  const w = (x: number, y: number): boolean => pierscienie.some((r) => pip(x, y, r));
+function punktWewnatrz(p: Pierscienie, cel: Pt): Pt | null {
   const [zx, zy] = [naPolmetry(cel[0]), naPolmetry(cel[1])];
-  if (w(zx, zy)) return [zx, zy];
-  let x0 = Number.POSITIVE_INFINITY;
-  let x1 = Number.NEGATIVE_INFINITY;
-  let y0 = Number.POSITIVE_INFINITY;
-  let y1 = Number.NEGATIVE_INFINITY;
-  for (const r of pierscienie)
-    for (const [x, y] of r) {
-      if (x < x0) x0 = x;
-      if (x > x1) x1 = x;
-      if (y < y0) y0 = y;
-      if (y > y1) y1 = y;
-    }
+  if (wObrysie(zx, zy, p)) return [zx, zy];
+  const r = ramka(p);
   let najlepszy: Pt | null = null;
   let odl = Number.POSITIVE_INFINITY;
-  for (let x = Math.ceil(x0 * 2) / 2; x <= x1; x += 0.5)
-    for (let y = Math.ceil(y0 * 2) / 2; y <= y1; y += 0.5) {
+  for (let x = Math.ceil(r.x0 * 2) / 2; x <= r.x1; x += 0.5)
+    for (let y = Math.ceil(r.y0 * 2) / 2; y <= r.y1; y += 0.5) {
       const d = (x - cel[0]) * (x - cel[0]) + (y - cel[1]) * (y - cel[1]);
-      if (d < odl && w(x, y)) {
+      if (d < odl && wObrysie(x, y, p)) {
         odl = d;
         najlepszy = [x, y];
       }
@@ -228,7 +199,8 @@ export interface KandydatSiedziby {
 
 /** Budynki mieszkalne geo (bloki i domy według generatora mieszkańców: ten sam zbiór, który dostaje tag `zm:bud`) o środku
     obrysu najdalej `PROMIEN_SIEDZIBY_M` od `srodek` (metry od adresu, układ geo), malejąco po polu, przy remisie bliższy
-    środkowi, potem niższy numer. Budynek bez punktu wewnątrz obrysu odpada. `dane` tylko przez tabele gminy i kraju. */
+    środkowi, potem niższy numer. Budynek bez punktu wewnątrz obrysu odpada. `dane` tylko przez tabele gminy i kraju.
+    Geometria (pole, środek ciężkości, ramka, punkt w obrysie) z src/mieszkancy/obrys.ts, tak jak w generatorze. */
 export function kandydaciSiedziby(
   geo: Geo,
   srodek: Pt,
@@ -237,14 +209,13 @@ export function kandydaciSiedziby(
   const out: KandydatSiedziby[] = [];
   for (const { czlonkowie } of budynkiZCzlonkami(geo, dane.gmina, dane.kraj)) {
     for (const indeks of czlonkowie) {
-      const b = geo.b[indeks];
-      const pierscienie: Pierscienie = [b.p, ...(b.pp ?? [])];
-      const c = srodekObrysu(pierscienie);
+      const obrys = pierscienieBudynku(geo.b[indeks]);
+      const c = srodekObrysu(obrys);
       const odl = Math.sqrt((c[0] - srodek[0]) * (c[0] - srodek[0]) + (c[1] - srodek[1]) * (c[1] - srodek[1]));
       if (!(odl <= PROMIEN_SIEDZIBY_M)) continue;
-      const punkt = punktWewnatrz(pierscienie, c);
+      const punkt = punktWewnatrz(obrys, c);
       if (!punkt) continue;
-      out.push({ indeks, pole: pierscienie.reduce((s, r) => s + polyArea(r), 0), odl, punkt });
+      out.push({ indeks, pole: pole(obrys), odl, punkt });
     }
   }
   return out.sort((a, b) => b.pole - a.pole || a.odl - b.odl || a.indeks - b.indeks);
@@ -283,25 +254,9 @@ export function kierunekOsady(sx: number, sy: number): { kierunek: Tx; miejscown
   return { kierunek: tx(kierunek, en), miejscownik: tx(miejscownik, en) };
 }
 
-/** nazwa ulicy zaczyna się od rodzaju (aleja, plac…): „przy ul.” przed nią byłoby błędem */
-const RODZAJ_ULICY =
-  /^(?:aleja|aleje|al\.|plac|pl\.|rondo|skwer|bulwar|osiedle|os\.|droga|trakt|szosa|park|ulica|ul\.)(?:\s|$)/i;
-
-/** Nazwa osady i forma „z osady …” w obu językach. Z ulicy siedziby: „Osada przy ul. Lanciego”, „Lanciego settlement” (nazwa
-    ulicy z rodzajem w środku, np. „Aleja Grunwaldzka”, idzie w cudzysłowie: „Osada „Aleja Grunwaldzka””); biały znak ściśnięty,
-    napis ucięty do `MAX_ULICY` znaków. Bez ulicy (pusta, biała, brak) z kierunku od domu: „Osada na północy”, „Settlement to
-    the north”. */
-export function nazwaOsady(ulica: string | undefined, sx: number, sy: number): { nazwa: Tx; nazwaZ: Tx } {
-  const u = (ulica ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_ULICY).trim();
-  if (u) {
-    const pl = cudzyslowy(u, 'pl');
-    const en = cudzyslowy(u, 'en');
-    const polska = RODZAJ_ULICY.test(u) ? `„${pl}”` : `przy ul. ${pl}`;
-    return {
-      nazwa: tx(`Osada ${polska}`, `${en} settlement`),
-      nazwaZ: tx(`z osady ${polska}`, `from the ${en} settlement`),
-    };
-  }
+/** Nazwa osady i forma „z osady …” w obu językach, tylko z kierunku od domu do kwadratu: „Osada na północy” / “Settlement to
+    the north” i „z osady na północy” / “from the settlement to the north”. Bez nazw ulic (nagłówek modułu). */
+export function nazwaOsady(sx: number, sy: number): { nazwa: Tx; nazwaZ: Tx } {
   const { miejscownik } = kierunekOsady(sx, sy);
   return {
     nazwa: tx(`Osada ${miejscownik.pl}`, `Settlement ${miejscownik.en}`),
@@ -361,7 +316,7 @@ export interface SwiatOsady {
   /** opcje gry osady: cztery osoby zarządu, obcy, mieszkańcy z generatora, okolica i ludność 2021 z jej kwadratu, tempo
       przeglądarki, bez łańcuchów kart, odpowiedź na każde okno zarządu */
   opcje: OpcjeGryAi;
-  /** nazwa osady do kart i mapy: „Osada przy ul. Lanciego” albo „Osada na północy” */
+  /** nazwa osady do kart i mapy: „Osada na północy” (z kierunku od domu) */
   nazwa: Tx;
   /** forma „z osady …” do zdań („Poseł z osady na północy”) */
   nazwaZ: Tx;
@@ -382,7 +337,8 @@ export interface OpisSiedziby {
   sucheDrzewo: boolean;
 }
 
-/** Opis siedziby świata (`World.hq`); świat bez wnętrza albo siedziby to same zera. */
+/** Opis siedziby świata (`World.hq`); świat bez wnętrza albo siedziby to same zera. Suche drzewo liczy się tak jak w silniku
+    (`dryTreeOf`: numer w granicach drzew świata). */
 export function opiszSiedzibe(w: World): OpisSiedziby {
   const h = houseOf(w);
   if (!h || w.hq < 0) return { pole: 0, pokoje: 0, pokojeZarzadu: 0, mieszkalna: false, sucheDrzewo: false };
@@ -393,7 +349,7 @@ export function opiszSiedzibe(w: World): OpisSiedziby {
     pokoje: pokoje.length,
     pokojeZarzadu: pokoje.filter((r) => r.apt === h.home).length,
     mieszkalna: TAG_BUDYNKU in hq.tags,
-    sucheDrzewo: w.dryTree >= 0,
+    sucheDrzewo: dryTreeOf(w) >= 0,
   };
 }
 
@@ -402,13 +358,98 @@ export function opiszSiedzibe(w: World): OpisSiedziby {
 export const siedzibaWystarcza = (s: OpisSiedziby): boolean =>
   s.mieszkalna && s.pokoje >= MIN_POKOI_SIEDZIBY && s.pokojeZarzadu >= 1 && s.sucheDrzewo;
 
+/** Zwycięska próba szukania siedziby. */
+export interface WygranaSiedziba {
+  /** geo kwadratu przesunięte do siedziby, bez tagów generatora (to geo idzie do zapisu) */
+  geo: Geo;
+  /** to samo geo z tagami `zm:bud` (czyta je generator mieszkańców) */
+  oznaczone: Geo;
+  /** świat bez stanów mieszkań z generatora (te dokłada `mieszkancyNowejGry`) */
+  world: World;
+  opis: OpisSiedziby;
+}
+
+/** Wynik szukania siedziby w kwadracie. */
+export interface SzukanieSiedziby {
+  /** ile budynków mieszkalnych leży w promieniu wyboru siedziby */
+  kandydatow: number;
+  /** ile światów zbudowano (najwyżej `PROBY_SIEDZIBY`) */
+  proby: number;
+  /** opis wygranej próby, a bez wygranej najlepszej (najwięcej pokoi, przy remisie wcześniejszej); null bez prób */
+  opis: OpisSiedziby | null;
+  /** wygrana próba albo null (kwadrat bez siedziby) */
+  siedziba: WygranaSiedziba | null;
+  /** geo przesunięte do pierwszego kandydata (do pomiaru jedzenia w kwadracie bez siedziby); null bez kandydatów */
+  pierwszaPrzesunieta: Geo | null;
+}
+
+/** Szukanie siedziby w kwadracie: do `PROBY_SIEDZIBY` największych budynków mieszkalnych (`kandydaciSiedziby`) po kolei, dla
+    każdego geo przesunięte do jego punktu, świat z ziarnem `ziarno` (`swiatZGeo`) i `siedzibaWystarcza`; pierwszy, który
+    spełnia, wygrywa i kończy próby. Wyjątki generatora i `buildWorld` idą do wołającego. `srodek` to środek kwadratu w geo
+    (`srodekKwadratu`). Nie zmienia wejścia. */
+export function szukajSiedziby(geoKwadratu: Geo, srodek: Pt, dane: DaneMieszkancow, ziarno: number): SzukanieSiedziby {
+  const kandydaci = kandydaciSiedziby(geoKwadratu, srodek, dane);
+  const wynik: SzukanieSiedziby = {
+    kandydatow: kandydaci.length,
+    proby: 0,
+    opis: null,
+    siedziba: null,
+    pierwszaPrzesunieta: null,
+  };
+  for (const k of kandydaci.slice(0, PROBY_SIEDZIBY)) {
+    const przesunieta = przesunGeo(geoKwadratu, k.punkt[0], k.punkt[1]);
+    uzupelnijKlucze(przesunieta);
+    wynik.pierwszaPrzesunieta ??= przesunieta;
+    wynik.proby++;
+    const z = swiatZGeo(przesunieta, ziarno, dane);
+    const opis = opiszSiedzibe(z.world);
+    if (siedzibaWystarcza(opis)) {
+      wynik.opis = opis;
+      wynik.siedziba = { geo: przesunieta, oznaczone: z.geo, world: z.world, opis };
+      break;
+    }
+    if (!wynik.opis || opis.pokoje > wynik.opis.pokoje) wynik.opis = opis;
+  }
+  return wynik;
+}
+
+/** Pomiar z wyniku szukania siedziby: kandydaci, próby, pole i pokoje; osoby, lokatorzy i jedzenie jeszcze nie policzone
+    (null). Bez szukania (null, np. bez tabel mieszkańców) same zera. Nowy obiekt przy każdym wywołaniu. */
+export function pomiarSiedziby(s: SzukanieSiedziby | null): PomiarKwadratu {
+  return {
+    kandydatow: s?.kandydatow ?? 0,
+    proby: s?.proby ?? 0,
+    pole: s?.opis?.pole ?? 0,
+    pokoje: s?.opis?.pokoje ?? 0,
+    pokojeZarzadu: s?.opis?.pokojeZarzadu ?? 0,
+    osoby: null,
+    lokatorzy: null,
+    jedzenie: null,
+  };
+}
+
+/** Miejsca okolicy osady z geo przesuniętego do jej siedziby (odległości od siedziby), z nazwami przez filtr z
+    `nazwaDoOkolicyZDanych` (RODO: bez tabel gminy same kategorie). */
+export function okolicaOsady(geoPrzesuniete: Geo, dane: DaneMieszkancow): Miejsce[] {
+  return miejscaZPoi(geoPrzesuniete.poi, nazwaDoOkolicyZDanych(dane));
+}
+
+/** Osoby siedziby z wyniku generatora: zarząd i lokatorzy razem oraz sami lokatorzy (osoby w mieszkaniach poza zarządem);
+    bez wyniku generatora (null) obie liczby null. */
+export function policzMieszkancow(l: LokatorzyGry | null): { osoby: number | null; lokatorzy: number | null } {
+  if (!l) return { osoby: null, lokatorzy: null };
+  const lokatorzy = l.lokatorzy.reduce((a, m) => a + m.osoby.length, 0);
+  return { osoby: l.zarzad.length + lokatorzy, lokatorzy };
+}
+
 /** Świat osady dla jednego kandydata albo powód odrzucenia (siedziba, jedzenie, mieszkańcy: pierwszy z kolei). `geoKwadratu`
     to geo kwadratu (sx, sy) w układzie domu (metry od adresu, bez obrotu: dema `*-kwadraty.json`, `geoKwadratu` z
-    kafelków), `uklad` to układ domu, `seed` ziarno naszej gry. Siedziba: do `PROBY_SIEDZIBY` największych budynków
-    mieszkalnych w `PROMIEN_SIEDZIBY_M` od środka kwadratu, pierwszy z `MIN_POKOI_SIEDZIBY` pokojami i pokojem zarządu wygrywa.
-    `dane` null: odrzucone od razu jako „mieszkancy”. Dla (0, 0) kandydatem jest sam dom (reguła miejsca dla jego geo, do oceny
-    dema). Z `pelny` pomiar liczy wszystko także po pierwszym powodzie (tabela narzędzia: jedzenie nawet bez siedziby, z
-    punktu pierwszego kandydata albo ze środka kwadratu), powód i wynik zostają te same. Nie zmienia wejścia. */
+    kafelków), `uklad` to układ domu, `seed` ziarno naszej gry. Siedziba (`szukajSiedziby`): do `PROBY_SIEDZIBY` największych
+    budynków mieszkalnych w `PROMIEN_SIEDZIBY_M` od środka kwadratu, pierwszy z `MIN_POKOI_SIEDZIBY` pokojami, pokojem zarządu
+    i suchym drzewem w świecie wygrywa. Potem jedzenie w zasięgu (`PROG_JEDZENIA_OSADY`), potem lokatorzy z generatora;
+    na pierwszym powodzie funkcja staje, a `pomiar` ma to, co do tej pory policzono. `dane` null: odrzucone od razu jako
+    „mieszkancy”. Dla (0, 0) kandydatem jest sam dom (reguła miejsca dla jego geo, do oceny dema). Wyjątki generatora i
+    `buildWorld` nie są łapane. Nie zmienia wejścia. */
 export function swiatOsady(
   geoKwadratu: Geo,
   sx: number,
@@ -416,97 +457,30 @@ export function swiatOsady(
   dane: DaneMieszkancow | null,
   seed: number,
   uklad: Uklad,
-  opcje: { pelny?: boolean } = {},
 ): SwiatOsady | OdrzucenieOsady {
-  const pomiar: PomiarKwadratu = {
-    kandydatow: 0,
-    proby: 0,
-    pole: 0,
-    pokoje: 0,
-    pokojeZarzadu: 0,
-    osoby: null,
-    lokatorzy: null,
-    jedzenie: null,
-  };
-  const odrzuc = (odrzucony: PowodOdrzucenia): OdrzucenieOsady => ({ odrzucony, pomiar });
-  if (!dane) return odrzuc('mieszkancy');
-  const pelny = opcje.pelny === true;
-  const ziarno = ziarnoOsady(seed, sx, sy);
-  const srodek = srodekKwadratu(uklad, sx, sy);
-  let kandydaci: KandydatSiedziby[];
-  try {
-    kandydaci = kandydaciSiedziby(geoKwadratu, srodek, dane);
-  } catch {
-    kandydaci = [];
-  }
-  pomiar.kandydatow = kandydaci.length;
+  if (!dane) return { odrzucony: 'mieszkancy', pomiar: pomiarSiedziby(null) };
+  const szukanie = szukajSiedziby(geoKwadratu, srodekKwadratu(uklad, sx, sy), dane, ziarnoOsady(seed, sx, sy));
+  const pomiar = pomiarSiedziby(szukanie);
+  const siedziba = szukanie.siedziba;
+  if (!siedziba) return { odrzucony: 'siedziba', pomiar };
 
-  // siedziba: pierwszy z największych budynków, który ma pokoje
-  let wybrana: { geo: Geo; z: { geo: Geo; world: World } } | null = null;
-  let pierwszaPrzesunieta: Geo | null = null;
-  let najlepsze = -1;
-  for (const k of kandydaci.slice(0, PROBY_SIEDZIBY)) {
-    const przesunieta = przesunGeo(geoKwadratu, k.punkt[0], k.punkt[1]);
-    uzupelnijKlucze(przesunieta);
-    pierwszaPrzesunieta ??= przesunieta;
-    pomiar.proby++;
-    let z: { geo: Geo; world: World };
-    try {
-      z = swiatZGeo(przesunieta, ziarno, dane);
-    } catch {
-      continue;
-    }
-    const s = opiszSiedzibe(z.world);
-    // w pomiarze zostaje najlepsza próba (najwięcej pokoi, przy remisie wcześniejsza), a przy sukcesie ta, która wygrała
-    if (s.pokoje > najlepsze) {
-      najlepsze = s.pokoje;
-      Object.assign(pomiar, { pole: s.pole, pokoje: s.pokoje, pokojeZarzadu: s.pokojeZarzadu });
-    }
-    if (siedzibaWystarcza(s)) {
-      Object.assign(pomiar, { pole: s.pole, pokoje: s.pokoje, pokojeZarzadu: s.pokojeZarzadu });
-      wybrana = { geo: przesunieta, z };
-      break;
-    }
-  }
-
-  // jedzenie w zasięgu 720 m od siedziby (z pelnym pomiarem także bez siedziby: z punktu pierwszego kandydata albo ze środka kwadratu)
-  const nazwaOkolicy = nazwaDoOkolicyZDanych(dane);
-  let okolica: Miejsce[] | null = null;
-  if (wybrana || pelny) {
-    const geoOkolicy =
-      wybrana?.geo ??
-      pierwszaPrzesunieta ??
-      (() => {
-        const g = przesunGeo(geoKwadratu, naPolmetry(srodek[0]), naPolmetry(srodek[1]));
-        uzupelnijKlucze(g);
-        return g;
-      })();
-    okolica = miejscaZPoi(geoOkolicy.poi, nazwaOkolicy);
-    pomiar.jedzenie = jedzenieWZasiegu(okolica);
-  }
-  if (!wybrana) return odrzuc('siedziba');
-  const zaMalo = (pomiar.jedzenie ?? 0) < PROG_JEDZENIA_OSADY;
-  if (zaMalo && !pelny) return odrzuc('jedzenie');
+  // jedzenie w zasięgu 720 m od siedziby
+  const okolica = okolicaOsady(siedziba.geo, dane);
+  pomiar.jedzenie = jedzenieWZasiegu(okolica);
+  if (pomiar.jedzenie < PROG_JEDZENIA_OSADY) return { odrzucony: 'jedzenie', pomiar };
 
   // mieszkańcy z generatora w siedzibie (stany mieszkań idą od razu na świat)
-  const { geo: oznaczone, world } = wybrana.z;
-  const l = mieszkancyNowejGry(world, oznaczone, dane, ZARZAD_OSADY);
-  if (l) {
-    const lokatorzy = l.lokatorzy.reduce((a, m) => a + m.osoby.length, 0);
-    pomiar.lokatorzy = lokatorzy;
-    pomiar.osoby = l.zarzad.length + lokatorzy;
-  }
-  if (zaMalo) return odrzuc('jedzenie');
-  if (!l || (pomiar.lokatorzy ?? 0) < MIN_LOKATORZY_SIEDZIBY) return odrzuc('mieszkancy');
+  const l = mieszkancyNowejGry(siedziba.world, siedziba.oznaczone, dane, ZARZAD_OSADY);
+  Object.assign(pomiar, policzMieszkancow(l));
+  if (!l || (pomiar.lokatorzy ?? 0) < MIN_LOKATORZY_SIEDZIBY) return { odrzucony: 'mieszkancy', pomiar };
 
-  const hq = world.buildings[world.hq];
-  const { nazwa, nazwaZ } = nazwaOsady(hq.tags['addr:street'], sx, sy);
-  const ludnosc = ludnoscSpisu2021(oznaczone, dane);
+  const { nazwa, nazwaZ } = nazwaOsady(sx, sy);
+  const ludnosc = ludnoscSpisu2021(siedziba.oznaczone, dane);
   const opcjeGry: OpcjeGryAi = {
     core: ZARZAD_OSADY,
     obcy: true,
     mieszkancy: opcjaMieszkancow(l),
-    okolica: okolica!,
+    okolica,
     ...(ludnosc !== undefined ? { ludnosc2021: ludnosc } : {}),
     tempoPrzegladarki: true,
     lancuchy: false,
@@ -516,13 +490,13 @@ export function swiatOsady(
     klucz: kluczKwadratu(sx, sy),
     sx,
     sy,
-    geo: wybrana.geo,
-    world,
+    geo: siedziba.geo,
+    world: siedziba.world,
     opcje: opcjeGry,
     nazwa,
     nazwaZ,
     kierunek: kierunekOsady(sx, sy).kierunek,
-    jedzenie: pomiar.jedzenie ?? 0,
+    jedzenie: pomiar.jedzenie,
     pomiar,
   };
 }
@@ -530,7 +504,7 @@ export function swiatOsady(
 /** Pierwszy kandydat w kolejności z ziarna gry (`kandydaciOsady`), który spełnia regułę miejsca, albo null (gra bez osady).
     `kandydaci` to geo kwadratów po kluczu „sx,sy”; kwadrat bez geo jest pomijany (dema mają osiem sąsiadów, Lanciego cztery
     boczne, prawdziwy adres tylko te, które się pobrały), więc wołający wybiera, kiedy dane są kompletne. Bez tabel mieszkańców
-    (`dane` null) null od razu. */
+    (`dane` null) null od razu. Wyjątek z jednego kwadratu (uszkodzone geo) przerywa wybór i idzie do wołającego. */
 export function wybierzOsade(
   seed: number,
   kandydaci: Readonly<Record<string, Geo>>,

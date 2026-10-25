@@ -27,7 +27,6 @@ import {
   opisZawieszonych,
   ostatniePoranki,
   parsujArgumenty,
-  parsujZiarna,
   poranek as poranekGry,
   poranekTick,
   pozaRegula,
@@ -36,6 +35,7 @@ import {
   wierszPrzebiegu,
   zagraj,
 } from '../../tools/bot-osada.ts';
+import { parsujZiarna } from '../../tools/osada-kwadraty.ts';
 import {
   type BlednyPrzebieg,
   bezOdwolaniaPrzed,
