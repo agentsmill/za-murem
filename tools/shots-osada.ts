@@ -557,6 +557,56 @@ const zoomPowyzej = (page: Page, prog: number): Promise<boolean> =>
       () => false,
     );
 
+/** Ogonek etykiety wskazuje kotwicę (siedzibę), także gdy napis jedzie do środka ekranu przy jego brzegu: kamera ustawia kotwicę w
+    punkcie ekranu (gx, gy), potem ogonek (pseudoelement `::after` napisu: jego `left` to środek trójkąta) leży w kotwicy, a gdyby
+    wypadła dalej niż 12 px od krawędzi napisu, przy najbliższym takim miejscu. Wymaga, żeby napis rzeczywiście się przesunął (`--shift`
+    ponad 20 px), inaczej próba nic by nie dowodziła. Zmienia kamerę (wołający ustawia ją od nowa). */
+async function sprawdzOgonek(page: Page, opis: string, gx: number, gy: number): Promise<void> {
+  await page.evaluate(
+    ([x, y]) => {
+      const zm = window.zm!;
+      const e = zm.osada()!.siedziba!.etykieta;
+      const z = zm.view.cam.zoom;
+      zm.setCam(e.x - (x - innerWidth / 2) / (z * 32), e.y - (y - innerHeight / 2) / (z * 32), z);
+    },
+    [gx, gy] as const,
+  );
+  // etykieta doszła do kotwicy (pozycja liczy się w klatce, nakładki co 150 ms) i jest widoczna
+  const doszla = await page
+    .waitForFunction(
+      () => {
+        const wm = document.getElementById('osadaMark')!;
+        const e = window.zm!.osada()!.siedziba!.etykieta;
+        const [ax] = window.zm!.screenOf(e.x, e.y);
+        return !wm.hidden && Math.abs(Number(/translate\(([-\d.]+)px/.exec(wm.style.transform)?.[1]) - ax) < 1.5;
+      },
+      null,
+      { timeout: 3000 },
+    )
+    .then(
+      () => true,
+      () => false,
+    );
+  wymagaj(doszla, `${opis}: etykieta jest widoczna przy kotwicy blisko brzegu ekranu (${gx}, ${gy})`);
+  const m = await page.evaluate(() => {
+    const wm = document.getElementById('osadaMark')!;
+    const t = wm.querySelector<HTMLElement>('.treemark-t')!;
+    const q = t.getBoundingClientRect();
+    const e = window.zm!.osada()!.siedziba!.etykieta;
+    const [ax] = window.zm!.screenOf(e.x, e.y);
+    return {
+      kotwica: ax,
+      lewy: q.left,
+      prawy: q.right,
+      ogonek: q.left + Number.parseFloat(getComputedStyle(t, '::after').left),
+      przesuniecie: Number.parseFloat(wm.style.getPropertyValue('--shift')),
+    };
+  });
+  wymagaj(Math.abs(m.przesuniecie) > 20, `${opis}: napis jedzie do środka ekranu (przesunięcie ponad 20 px)`, m);
+  const oczekiwany = Math.min(Math.max(m.kotwica, m.lewy + 12), m.prawy - 12);
+  wymagaj(Math.abs(m.ogonek - oczekiwany) <= 1, `${opis}: ogonek etykiety stoi przy kotwicy, nie pośrodku napisu`, m);
+}
+
 /** Wskaźnik zaczęty na napisie etykiety trafia do mapy (etykieta go przepuszcza, a nie pochłania jak przycisk): kółko nad napisem
     przybliża tak samo jak obok niego, a przeciągnięcie myszą od napisu przesuwa mapę i nie otwiera karty. Wymaga zamkniętej karty i
     kamery, przy której etykieta jest widoczna; zmienia kamerę (wołający ustawia ją od nowa). */
@@ -1006,6 +1056,10 @@ function widokOsadyShots(out: string): ShotCele[] {
         await zamknieta();
         // wskaźnik zaczęty na napisie etykiety trafia do mapy (kółko, przeciąganie), zanim zacznie się nim otwierać kartę
         await sprawdzPrzepuszczanieMyszy(page, 'komputer');
+        // przy brzegu ekranu napis jedzie do środka, a ogonek zostaje przy kotwicy
+        await naSiedzibe(page, 0.45);
+        await sprawdzOgonek(page, 'komputer, lewy brzeg', 10, 520);
+        await sprawdzOgonek(page, 'komputer, prawy brzeg', 1430, 520);
         await naSiedzibe(page, 0.45);
         // etykieta otwiera kartę, a po kliknięciu myszą spacja dalej zatrzymuje i puszcza grę
         await kliknijEtykiete(page, false);
@@ -1120,6 +1174,8 @@ function widokOsadyShots(out: string): ShotCele[] {
         // palec zaczęty na napisie etykiety przesuwa mapę, a dwa przybliżają; potem kamera wraca i stuknięcie w napis otwiera kartę
         await sprawdzEtykiete(page, 'telefon po zamknięciu karty');
         await sprawdzPrzepuszczaniePalcow(page, 'telefon');
+        await naSiedzibe(page, 0.4, 2);
+        await sprawdzOgonek(page, 'telefon, lewy brzeg', 10, 520);
         await naSiedzibe(page, 0.4, 2);
         await poHudzie(page);
         await sprawdzEtykiete(page, 'telefon po powrocie kamery');
