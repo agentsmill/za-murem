@@ -3,9 +3,12 @@
    a bez obu angielski, niezależnie od języka przeglądarki. Napisy statyczne z index.html są tu w jednej tablicy
    (STATYCZNE): index.html ma wersję angielską, a nalozStatyczne() wpisuje teksty w bieżącym języku przy starcie
    i po każdej zmianie. Przełącznik EN/PL (karta startowa i Menu) woła zmienJezyk(): zapis w pamięci, `<html lang>`,
-   napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. */
+   napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. Dwa napisy z tablicy to
+   tylko stan początkowy, który gra nadpisuje, gdy zna zegar i świat: podpis pory roku `#hSeason` (`sezonPodpis`
+   w src/ui/pasek.ts, przy każdym odświeżeniu paska) i podpowiedź `#btnAlarm` (`alarmTytul`: w domu „z komitetu”, nie „z zarządu”). */
 
 import { type Lang, poZmianieJezyka, type Tx, tr, tx, ustawJezyk } from '../core/jezyk.ts';
+import type { Words, WordsEn } from '../gov/miejsce.ts';
 import { esc } from './tekst.ts';
 
 export const JEZYK_KEY = 'za-murem-0.4-jezyk';
@@ -115,6 +118,7 @@ export const STATYCZNE: readonly Statyczny[] = [
   },
   // ekran gry
   { sel: '#treeMark .treemark-t', tekst: tx('Suche drzewo', 'Dead tree') },
+  // napis początkowy (dzień 1): w grze `hud()` w src/main.ts podmienia go na porę roku z zegara (`sezonPodpis`, src/ui/pasek.ts)
   { sel: '#hSeason', tekst: tx('jesień 2051', 'autumn 2051') },
   { sel: '#speed .sr', tekst: tx('Tempo gry', 'Game speed') },
   { sel: '#speed [data-s="0"]', tekst: tx('Pauza', 'Pause') },
@@ -195,6 +199,11 @@ export const STATYCZNE: readonly Statyczny[] = [
     ),
   },
 ];
+
+/** Podpowiedź przycisku „Do broni!” ze słowami miejsca: w domu „z komitetu” zamiast „z zarządu”. Napis statyczny
+    (STATYCZNE, `#btnAlarm`) ma wersję z bloku, a gra nadpisuje nią podpowiedź, kiedy zna świat (`alarmButton` w src/main.ts). */
+export const alarmTytul = (w: Pick<Words, 'zarzad'>, e: Pick<WordsEn, 'krotko'>): Tx =>
+  tx(`Wszyscy zdolni z ${w.zarzad.dk} na wartę`, `Everyone fit on ${e.krotko} goes on watch`);
 
 /** wpisuje napisy statyczne w bieżącym języku (brakujące elementy pomija) */
 export function nalozStatyczne(root: ParentNode = document): void {

@@ -161,10 +161,10 @@ describe('personCard: mieszkaniec tylko do odczytu', () => {
     expect(personCard(p, 0, undefined, true, lokator)).toContain('aria-expanded="true"');
     expect(zwinieta).not.toContain('Tej nocy');
   });
-  it('jedynymi przyciskami są historia i zmiana imienia', () => {
+  it('jedynymi przyciskami są historia, zmiana imienia i rozwijanie potrzeb na telefonie (żaden nie wydaje polecenia)', () => {
     const html = personCard(generowana(), 0, undefined, false, lokator);
     const karty = [...html.matchAll(/data-card="([a-z]+)"/g)].map((m) => m[1]).sort();
-    expect(karty).toEqual(['imie', 'story']);
+    expect(karty).toEqual(['imie', 'potrzeby', 'story']);
   });
 });
 

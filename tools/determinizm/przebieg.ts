@@ -4,7 +4,7 @@
    skróty. Moduł jest czysty: bez node:*, DOM, sieci i zegara, a losowanie idzie tylko z ziarna w stanie gry.
 
    Scenariusz: świat z geo osiedla (`buildWorld`), symulacja z zarządem 4 osób i handlarzem pod bramą jak w grze
-   (`createSim`), zarząd (`newGov`) z polityką „zawsze warta” jak w tests/unit/gov-play.ts: zarząd co sekundę przy
+   (`createSim`), zarząd (`newGov`, z łańcuchami kart jak w grze, która wychodzi do graczy) z polityką „zawsze warta” jak w tests/unit/gov-play.ts: zarząd co sekundę przy
    ekranie (1×), okna odpowiadane od razu (raport przeczytany, uchwała o wartach albo pierwsza możliwa, karta nocy
    z jedną osobą na warcie, wydarzenie: pierwszy wybór, który się opłaca). Do tego stałe polecenia: w kroku 0 zaznaczenie
    i ścięcie suchego drzewa (samouczek), a w drugiej dobie, od 8:00, przeszukanie pierwszego pomieszczenia, które wolno
@@ -129,7 +129,8 @@ export function graj(d: DanePrzebiegu, haki: HakiPrzebiegu = {}): WynikGry {
   const swiat = buildWorld(d.geo, { seed: d.seed, street: d.street });
   const st = createSim(swiat, d.seed, { core: 4, mode: d.tryb, obcy: true, ...(d.tlum ? { crowd: d.tlum } : {}) });
   const sim = new Sim(swiat, st);
-  const gov = newGov(d.seed, d.tryb);
+  // zarząd jak w grze, która wychodzi do graczy: łańcuchy kart włączone (src/main.ts, wyłącza je `?lancuchy=0`)
+  const gov = newGov(d.seed, d.tryb, true);
   const skroty: string[] = [];
 
   // samouczek: zaznaczyć kogoś z zarządu i kliknąć suche drzewo

@@ -16,8 +16,8 @@ import { NASTROJE_EN } from '../../src/content/nastroje.en.ts';
 import { hashString } from '../../src/core/rng.ts';
 import { stronyOf } from '../../src/gov/miejsce.ts';
 import type { GovInput, GovLokator, GovPerson } from '../../src/gov/typy.ts';
-import { emptyEffects } from '../../src/gov/wspolne.ts';
-import { M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
+import { emptyEffects, gameMin } from '../../src/gov/wspolne.ts';
+import { eventTick, M1_EVENTS, makeHost } from '../../src/gov/wydarzenia.ts';
 import { chooseEvent, newGov } from '../../src/gov/zarzad.ts';
 import { wczytajDaneMieszkancow } from '../../src/mieszkancy/wczytaj.ts';
 import { applyGov, govInput } from '../../src/sim/gov.ts';
@@ -133,6 +133,26 @@ describe('fachowiec z klatki', () => {
     const odpoczynek = wybierz('fachowiec', d, 1);
     expect(odpoczynek.fx.awans).toBeUndefined();
     expect(odpoczynek.fx.join).toEqual([]);
+  });
+
+  it('w trybie zombie przy dużym stadzie przy siatce karta fachowca z klatki nadal się otwiera (nikt nie idzie ulicą: rozpoczęła się tam, gdzie siedzi)', () => {
+    // Task 16: zasada „goście czekają na spokój przy siatce” (dziś zdjęta) odcinała każdą kartę z polem `gosc`, a w bloku
+    // `gosc` fachowca oddaje null, bo to mieszkaniec; ten test pilnuje, żeby żadna zasada o ulicy nie dotknęła takiej karty
+    const { i } = setup({
+      hour: 19,
+      goscie: [],
+      horde: { near: 14, pressing: 9, killed: 0, breaches: 0, bites: 0, tonight: 20 },
+    });
+    const gov = newGov(1, 'zombie');
+    for (const e of M1_EVENTS) if (e.id !== 'fachowiec') gov.ev.last[e.id] = gameMin(i);
+    gov.ev.next = 0;
+    gov.ev.warm = 0;
+    gov.ev.lit = -1;
+    expect(ev('fachowiec').tryby).toBeUndefined();
+    for (let k = 0; k < 30 && !gov.ev.active; k++)
+      eventTick(gov, { ...i, screen: i.screen + 10 * k }, emptyEffects(), false);
+    expect(gov.ev.active?.id).toBe('fachowiec');
+    expect(gov.goscie?.aktywny).toBeUndefined();
   });
 
   it('bez kandydata karty nie ma: zarząd zna wszystkie dziedziny albo nikt z klatki nie ma żadnej umiejętności', () => {
@@ -362,7 +382,7 @@ describe('kradzież z głodu', () => {
         .map((c) => c.label),
     ).toEqual(['Wyrzucić sprawcę z osiedla', 'Przymknąć oko']);
     expect(ev('kradziez').text(h, d).en).toBe(
-      'Overnight, someone made off with 5 food from the basement of Atrapia 7. The footprints lead to a ground-floor flat.',
+      'Overnight, someone made off with 5 portions of food from the basement of Atrapia 7. The footprints lead to a ground-floor flat.',
     );
     // wyrzucenie bez sprawcy po staremu: jeden mieszkaniec mniej
     const { fx } = wybierz('kradziez', d, 0, bez);

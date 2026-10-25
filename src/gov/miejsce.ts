@@ -4,7 +4,8 @@
    teksty spoza zarządu. Odległości w kwadratach liczb całkowitych, bez Math.hypot, żeby wynik był ten sam w każdej
    przeglądarce. Ze świata tylko typy: zarząd nie ciągnie za sobą kodu świata ani symulacji. `stronyOf` liczy ze świata,
    gdzie przy siatce jest strona garaży i strona najbliższego budynku mieszkalnego (kafelki dla „Sprawdzić” z krzyku
-   i hałasu); wołają ją `govInput` (src/sim/gov.ts) i testy. */
+   i hałasu); wołają ją `govInput` (src/sim/gov.ts) i testy. `waszeLokum` zamienia „naszego mieszkania” (domu) ze słownika
+   na „waszego …” w zdaniach, które mówią do zarządu na „wy”: drogi do zwycięstwa i cele ścieżki. */
 
 import type { EndingId } from '../content/data.ts';
 import type { World } from '../world/world.ts';
@@ -203,10 +204,10 @@ export const sasiedzi = (p: GovPlace): 'bloki' | 'domy' | null => (p.near === 'n
 export interface Words {
   /** spółdzielnia | ulica: mianownik, dopełniacz i „w czym” (w spółdzielni | na ulicy) */
   wspolnota: { m: string; d: string; w: string };
-  /** zarząd | komitet ulicy: mianownik, dopełniacz, narzędnik, krótko (zarząd | komitet), krótki dopełniacz
-      (zarządu | komitetu, np. „Zebranie komitetu przy kozie”) i pełna nazwa w bierniku (zarząd spółdzielni |
-      komitet ulicy, „Prowadzicie …”) */
-  zarzad: { m: string; d: string; n: string; krotko: string; dk: string; pelny: string };
+  /** zarząd | komitet ulicy: mianownik, dopełniacz, narzędnik („pod zarządem | pod komitetem ulicy”), krótko (zarząd |
+      komitet), krótki dopełniacz (zarządu | komitetu, np. „Zebranie komitetu przy kozie”), krótki miejscownik („w zarządzie |
+      w komitecie”: l bez przyimka) i pełna nazwa w bierniku (zarząd spółdzielni | komitet ulicy, „Prowadzicie …”) */
+  zarzad: { m: string; d: string; n: string; krotko: string; dk: string; l: string; pelny: string };
   /** na początek zdania */
   Zarzad: string;
   /** zebranie, które może odwołać zarząd */
@@ -227,15 +228,24 @@ export interface Words {
   /** Nasze lokum w siedzibie: w bloku mieszkanie zarządu, w domu jednorodzinnym cały dom komitetu (jedyne mieszkanie
       siedziby). M: na początek zdania („Mieszkanie zarządu”), d: „w pokoju naszego mieszkania”, w: „Tylko w kuchni
       w naszym mieszkaniu.”, nr: nazwa na karcie („Mieszkanie 3”; dom bez numeru), menu: gdzie jesteśmy w nagłówku
-      menu poleceń, ze stanem lokum małą literą („mieszkanie 3, puste od 2034, wyjazd”; w domu sam stan). */
-  lokal: { M: string; d: string; w: string; nr: (n: number) => string; menu: (n: number, stan: string) => string };
+      menu poleceń, ze stanem lokum małą literą („mieszkanie 3, puste od 2034, wyjazd”; w domu sam stan), wiele: gdzie
+      zarząd naprawia („w naszych mieszkaniach”: w bloku może zająć więcej niż jedno; w domu „w naszym domu”). */
+  lokal: {
+    M: string;
+    d: string;
+    w: string;
+    wiele: string;
+    nr: (n: number) => string;
+    menu: (n: number, stan: string) => string;
+  };
   /** Co przeszukiwać: w bloku puste mieszkania, w domu pomieszczenia domu komitetu (decyzja Mateusza 18.10.2026).
       b: cel („Przeszukajcie puste mieszkanie.”), d: „przeszukiwanie pustych mieszkań”, w: gdzie leży mebel do spalenia,
       kiedy drzewa stoją wśród szwendaczy („w pustym mieszkaniu” | „w domu”), jak: podpowiedź do celu drugiego dnia
       (najpierw zaznaczyć osobę, potem polecenie „Przeszukać …” w pomieszczeniu, karta jako sposób na znalezienie pustego),
       obok: dopisek do podpowiedzi pierwszej budowli o sąsiednich domach jako drugim źródle desek i złomu (w bloku null),
       karta: polecenia na karcie lokum, pomoc: zdanie o karcie w pomocy, naglowek: sekcja pomocy, wersja: co jest
-      w wersji 0.4, zrodla: skąd deski, złom i części („Deski daje …”, „Dają je …”). */
+      w wersji 1.0, zrodla: skąd deski, złom i części, w dopełniaczu po „pochodzą z” („Deski pochodzą z przeszukiwania pustych
+      mieszkań i rozbiórki mebli.”; rzeczownik w mianowniku z czasownikiem „daje” czytał się jak „deski dają przeszukiwanie”). */
   szukanie: {
     b: string;
     d: string;
@@ -251,6 +261,11 @@ export interface Words {
   /** skąd przychodzi sąsiad z innego budynku: z bloku obok | zza płotu (według sąsiadów, w samotnym miejscu według
       siedziby). Wydarzenia mówią o sąsiadach tylko wtedy, gdy są (GovHost.neighbour: także „z waszej klatki”). */
   sasiad: string;
+  /** epilog zwycięstwa (src/ui/zwyciestwo.ts), kawałki zdań, które w domu mówią o płotach, domach i trawnikach zamiast
+      o klatkach i trzepaku. grafiki: gdzie wiszą grafiki dyżurów („Na klatkach” | „Na płotach”), kazda: „Każda klatka |
+      Każdy dom” (ma swoje zebranie), regulamin: czego regulamin ktoś już pisze („regulamin trzepaka” | „regulamin
+      koszenia trawników”). */
+  epilog: { grafiki: string; kazda: string; regulamin: string };
 }
 
 const BLOKOWE: Omit<Words, 'sasiad'> = {
@@ -261,6 +276,7 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
     n: 'zarządem',
     krotko: 'zarząd',
     dk: 'zarządu',
+    l: 'zarządzie',
     pelny: 'zarząd spółdzielni',
   },
   Zarzad: 'Zarząd',
@@ -276,6 +292,7 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
     M: 'Mieszkanie',
     d: 'naszego mieszkania',
     w: 'w naszym mieszkaniu',
+    wiele: 'w naszych mieszkaniach',
     nr: (n) => `Mieszkanie ${n}`,
     menu: (n, stan) => `mieszkanie ${n}, ${stan}`,
   },
@@ -303,11 +320,12 @@ const BLOKOWE: Omit<Words, 'sasiad'> = {
     naglowek: 'Budowa i puste mieszkania',
     wersja: 'puste mieszkania do przeszukania i naprawy',
     zrodla: {
-      deski: 'przeszukiwanie pustych mieszkań i rozbiórka mebli',
-      zlom: 'przeszukiwanie i rozbiórka śmieci i sprzętów',
-      czesci: 'przeszukiwanie i rozbiórka sprzętów',
+      deski: 'przeszukiwania pustych mieszkań i rozbiórki mebli',
+      zlom: 'przeszukiwania i rozbiórki śmieci i sprzętów',
+      czesci: 'przeszukiwania i rozbiórki sprzętów',
     },
   },
+  epilog: { grafiki: 'Na klatkach', kazda: 'Każda klatka', regulamin: 'regulamin trzepaka' },
 };
 
 const ULICZNE: Omit<Words, 'sasiad'> = {
@@ -318,6 +336,7 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
     n: 'komitetem ulicy',
     krotko: 'komitet',
     dk: 'komitetu',
+    l: 'komitecie',
     pelny: 'komitet ulicy',
   },
   Zarzad: 'Komitet ulicy',
@@ -334,6 +353,7 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
     M: 'Dom',
     d: 'naszego domu',
     w: 'w naszym domu',
+    wiele: 'w naszym domu',
     nr: () => 'Dom',
     menu: (_n, stan) => stan,
   },
@@ -362,11 +382,12 @@ const ULICZNE: Omit<Words, 'sasiad'> = {
     naglowek: 'Budowa i przeszukiwanie domu',
     wersja: 'dom do przeszukania',
     zrodla: {
-      deski: 'przeszukiwanie domu i rozbiórka gruzu',
-      zlom: 'przeszukiwanie domu i rozbiórka gruzu',
-      czesci: 'przeszukiwanie domu',
+      deski: 'przeszukiwania domu i rozbiórki gruzu',
+      zlom: 'przeszukiwania domu i rozbiórki gruzu',
+      czesci: 'przeszukiwania domu',
     },
   },
+  epilog: { grafiki: 'Na płotach', kazda: 'Każdy dom', regulamin: 'regulamin koszenia trawników' },
 };
 
 /** słownik dla miejsca: w domu ulica i komitet ulicy, w bloku spółdzielnia i zarząd (decyzja Mateusza, 17.10.2026) */
@@ -381,6 +402,11 @@ export const placeOfWorld = (w: PlaceWorld): GovPlace => (w.buildings[w.hq] ? pl
 
 /** słownik dla świata gry (teksty symulacji i interfejsu); świat bez siedziby (atrapy w testach) mówi jak blok */
 export const wordsOfWorld = (w: PlaceWorld): Words => wordsOf(placeOfWorld(w));
+
+/** Lokum zarządu w dopełniaczu, w drugiej osobie: „waszego mieszkania” w bloku, „waszego domu” w domu jednorodzinnym.
+    Słownik (`Words.lokal.d`) mówi „naszego …”, a zdania „co dalej” dróg do zwycięstwa (src/gov/zwyciestwo.ts) i cele
+    ścieżki (src/ui/sciezka-rozdzialy.ts) zwracają się do zarządu na „wy”; ta jedna funkcja robi tę zamianę dla obu. */
+export const waszeLokum = (w: Pick<Words, 'lokal'>): string => w.lokal.d.replace(/^naszego /, 'waszego ');
 
 /** Słowa wspólnoty po angielsku, jak Words (docs/SLOWNICZEK-EN.md), z tych samych warunków. Bez przypadków,
     z rodzajnikiem tam, gdzie zdanie go potrzebuje; wielka litera na początek zdania przez `Zarzad`. */
@@ -419,7 +445,14 @@ export interface WordsEn {
   /** Nasze lokum w siedzibie jak Words.lokal: noun flat | house („The board’s flat”, „The committee’s house”),
       w: „Only in a room of your flat.”, nr: nazwa na karcie („Flat 3” | „The house”), menu: nagłówek menu poleceń
       ze stanem lokum („flat 3, empty since 2034, moved out”; w domu sam stan). */
-  lokal: { noun: string; w: string; nr: (n: number) => string; menu: (n: number, stan: string) => string };
+  lokal: {
+    noun: string;
+    w: string;
+    /** gdzie zarząd naprawia, po „in”: „our flats” (w bloku może zająć więcej niż jedno) | „our house” */
+    wiele: string;
+    nr: (n: number) => string;
+    menu: (n: number, stan: string) => string;
+  };
   /** co przeszukiwać, jak Words.szukanie: puste mieszkania albo dom komitetu */
   szukanie: {
     /** cel: „Search an empty flat.” | „Search the house.” */
@@ -440,6 +473,10 @@ export interface WordsEn {
   };
   /** from the block next door | from over the fence (jak Words.sasiad) */
   sasiad: string;
+  /** epilog zwycięstwa jak Words.epilog. grafiki: „Rotas hang ___” (in the stairwells | on the fences), kazda: „Every
+      stairwell | Every house” (has its own meeting), regulamin: „rules for ___” (the carpet rack | mowing the lawns),
+      jeszcze: „a settlement now or still ___” (a housing co-op | a street) */
+  epilog: { grafiki: string; kazda: string; regulamin: string; jeszcze: string };
 }
 
 const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
@@ -462,6 +499,7 @@ const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
   lokal: {
     noun: 'flat',
     w: 'your flat',
+    wiele: 'our flats',
     nr: (n) => `Flat ${n}`,
     menu: (n, stan) => `flat ${n}, ${stan}`,
   },
@@ -492,6 +530,12 @@ const BLOKOWE_EN: Omit<WordsEn, 'sasiad'> = {
       czesci: 'searching and taking appliances apart',
     },
   },
+  epilog: {
+    grafiki: 'in the stairwells',
+    kazda: 'Every stairwell',
+    regulamin: 'the carpet rack',
+    jeszcze: 'a housing co-op',
+  },
 };
 
 const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
@@ -515,6 +559,7 @@ const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
   lokal: {
     noun: 'house',
     w: 'your house',
+    wiele: 'our house',
     nr: () => 'The house',
     menu: (_n, stan) => stan,
   },
@@ -547,6 +592,12 @@ const ULICZNE_EN: Omit<WordsEn, 'sasiad'> = {
       zlom: 'searching the house and clearing rubble',
       czesci: 'searching the house',
     },
+  },
+  epilog: {
+    grafiki: 'on the fences',
+    kazda: 'Every house',
+    regulamin: 'mowing the lawns',
+    jeszcze: 'a street',
   },
 };
 

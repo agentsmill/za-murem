@@ -227,11 +227,11 @@ describe('Jak grać: „Na razie” nie przeczy temu, co jest w grze (U12)', () 
       const e = wordsEnOfWorld(w);
       const pl = sekcja(pomoc('pl', { dom }), 'Na razie');
       expect(pl).toBe(
-        `Na razie W wersji 0.4 są noce za siatką, budowa, ${words.szukanie.wersja}, sąsiedzi, mapa miasta, badania w pracowni, drogi do zwycięstwa i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.`,
+        `Na razie W wersji 1.0 są noce za siatką, budowa, ${words.szukanie.wersja}, sąsiedzi, mapa miasta, praca ludzi, badania w pracowni, wydarzenia z łańcuchami historii, cele prowadzące po grze, drogi do zwycięstwa, wiki i tryb zombie. Prąd w erach 3–6 i reszta gospodarki przyjdą później.`,
       );
       const en = sekcja(pomoc('en', { dom }), 'For now');
       expect(en).toBe(
-        `For now Version 0.4 has nights behind the fence, building, ${e.szukanie.wersja}, neighbours, the city map, research, roads to victory and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.`,
+        `For now Version 1.0 has nights behind the fence, building, ${e.szukanie.wersja}, neighbours, the city map, work, research, events with story chains, goals that walk you through the game, roads to victory, the wiki and Zombie mode. Power in eras 3–6 and the rest of the economy will come later.`,
       );
       for (const t of [pl, en]) {
         expect(t).not.toMatch(/Badania, zima|przyjdą w kolejnych wersjach|Research, winter|in later versions/);

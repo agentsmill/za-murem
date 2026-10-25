@@ -16,14 +16,21 @@
    nic), a `pending` oddaje epilog zwycięstwa przed raportem (pierwszy z kolejki `epilogi`). `grajDalej` zdejmuje pierwszy
    epilog, następny z kolejki pokazuje się zaraz po nim; zapis i gra zostają.
 
+   Pies i kot (src/gov/zwierzeta.ts): flaga `dog` albo `cat` bez wpisu symulacji o zwierzęciu (`GovInput.zwierzeta`) prosi o jego
+   wystawienie (`GovEffects.zwierze`), a śmierć psa gasi flagę `dog`, dopisuje kronikę i obniża nastrój zarządu.
+
+   Narrator (src/gov/narrator.ts): `napiecie` co krok, tuż przed wydarzeniami, przesuwa `GovState.napiecie` (krzywą z napadów,
+   zgonów, ran, głodu i przerwań siatki), a `mnoznik` przestawia wagi kart z tagiem `ton` w losowaniu (wydarzenia.ts).
+
    Odkrycia z badań i książki znalezione w przeszukanych pomieszczeniach wchodzą do kroniki w kroku zarządu
    (`znaleziska` z src/gov/znaleziska.ts, wejście GovInput.odkrycia i znaleziska), odkrycie podnosi zaufanie o 1. */
 
 import { ENDINGS_EN, przyczynaEn } from '../content/data.en.ts';
-import { TECH_DOMS } from '../content/data.ts';
+import { ENDINGS, TECH_DOMS } from '../content/data.ts';
 import { isTx, type Tx, tx, txOf } from '../core/jezyk.ts';
 import { wyprawyTick } from './dzienne.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
+import { napiecie } from './narrator.ts';
 import { CARD_DEADLINE, CARD_HOUR, confirm, makeCard, nightTick, resetAssign, setAssign } from './noc.ts';
 import { FIRST_LAWS, PRZYCZYNA } from './tresc.ts';
 import type { GameMode, GovEffects, GovInput, GovState, LawEffects, LawOption, Prompt } from './typy.ts';
@@ -32,6 +39,7 @@ import { przyjeciaZUlicy, wiesci } from './wiesci.ts';
 import { atHour, decision, emptyEffects, gameMin, logGov, mood, rnd, zeroStock } from './wspolne.ts';
 import { choose, eventTick, eventView, FIRST_EVENT } from './wydarzenia.ts';
 import { znaleziska } from './znaleziska.ts';
+import { zwierzeta } from './zwierzeta.ts';
 import { krokZwyciestwa } from './zwyciestwo.ts';
 
 export const GOV_VERSION = 1;
@@ -39,7 +47,10 @@ export const GOV_VERSION = 1;
 export const LAW_HOUR = 19;
 export const LAW_MINUTE = 30;
 
-export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
+/** Nowy zarząd. `lancuchy`: łańcuchy kart i wątki sezonu włączone (pole `GovState.lancuchy`, zapis je zachowuje). Gra w przeglądarce
+    włącza je zawsze, chyba że adres ma `?lancuchy=0` (src/main.ts); sam `newGov` bez trzeciego argumentu daje zarząd bez łańcuchów
+    (testy samej puli kart), a wtedy stan i losowania są takie, jak z pustą listą łańcuchów. */
+export function newGov(seed: number, mode: GameMode = 'zwykly', lancuchy = false): GovState {
   const st: GovState = {
     v: 1,
     seed,
@@ -69,6 +80,7 @@ export function newGov(seed: number, mode: GameMode = 'zwykly'): GovState {
     deadN: 0,
   };
   st.ev.next = FIRST_EVENT + Math.floor(rnd(st) * 11);
+  if (lancuchy) st.lancuchy = true;
   return st;
 }
 
@@ -132,9 +144,12 @@ export function govUpdate(st: GovState, i: GovInput): GovEffects {
   if (st.night && !st.night.confirmed && (i.hour >= CARD_DEADLINE || i.day > st.night.day)) confirm(st, i, fx, true);
   nightTick(st, i, fx);
   mourn(st, i, fx);
+  zwierzeta(st, i, fx);
   znaleziska(st, i);
   wiesci(st, i, fx);
   przyjeciaZUlicy(st, i, fx);
+  // narrator: napięcie z tego, co zarząd już widzi (napad z raportu, zgony, rany, głód, siatka), tuż przed losowaniem kart
+  napiecie(st, i);
   eventTick(st, i, fx, busy(st));
   checkOver(st, i, fx);
   // drogi do zwycięstwa (bez wlaczZwyciestwo nic); w przegranej grze nikt już nie wygrywa
@@ -161,7 +176,7 @@ function mourn(st: GovState, i: GovInput, fx: GovEffects): void {
       d.id || d.f !== undefined
         ? tx(`${d.name} nie żyje, ${why}.`, `${d.name} has died ${whyEn}.`)
         : tx(
-            `Nie żyje jeden z mieszkańców, ${why}.`,
+            `Nie żyje jeden z ${wordsOf(placeIn(i)).mieszkancy.d}, ${why}.`,
             `One of the ${wordsEn(placeIn(i)).mieszkancy} has died ${whyEn}.`,
           );
     if (d.id) mood(st, -5, 8);
@@ -177,9 +192,13 @@ function checkOver(st: GovState, i: GovInput, fx: GovEffects): void {
   else if (st.anger >= 100) st.over = 'odwolanie';
   else if (st.trust <= 0) st.over = 'exodus';
   if (!st.over) return;
-  // po angielsku tytuł zakończenia według miejsca („Game over: the street meeting recalled the committee.”)
-  const t = (wordsEn(placeIn(i)).koniec[st.over] ?? ENDINGS_EN[st.over]).title;
-  logGov(st, i, tx(`Koniec gry: ${st.over}.`, `Game over: ${t[0].toLowerCase()}${t.slice(1)}.`), true, fx);
+  // tytuł zakończenia według miejsca w obu językach („Koniec gry: zebranie ulicy odwołało komitet.”, „Game over: the street
+  // meeting recalled the committee.”); wcześniej po polsku stał tu surowy identyfikator („Koniec gry: odwolanie.”)
+  const place = placeIn(i);
+  const tPl = (wordsOf(place).koniec[st.over] ?? ENDINGS[st.over]).title;
+  const tEn = (wordsEn(place).koniec[st.over] ?? ENDINGS_EN[st.over]).title;
+  const malaLitera = (t: string): string => `${t[0].toLowerCase()}${t.slice(1)}`;
+  logGov(st, i, tx(`Koniec gry: ${malaLitera(tPl)}.`, `Game over: ${malaLitera(tEn)}.`), true, fx);
 }
 
 /** co czeka na decyzję gracza, w kolejności: epilog zwycięstwa (pierwszy z kolejki, kolejne po „Graj dalej”), raport rano,
@@ -273,7 +292,9 @@ const optTxt = (t: unknown): Tx | undefined => (t === undefined || t === null ? 
 
 /** Zapis sprzed angielskiej wersji ma w kronice, raportach, karcie nocy i liniach na rano zwykłe polskie napisy.
     Zamienia je w miejscu na Tx z tym samym tekstem w obu językach (stare wpisy zostają po polsku także po
-    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. */
+    angielsku); zapis z Tx przechodzi bez zmian. Zwraca ten sam stan. Dane haków łańcuchów (`watki.haki[].d`,
+    src/gov/watki.ts) są zwykłym JSON od początku, więc `Tx` w nich to obiekt `{ pl, en }`, który przechodzi zapis bez
+    normalizacji (pilnuje tego tests/unit/watki.test.ts). */
 export function normalizujTeksty(st: GovState): GovState {
   for (const l of st.log ?? []) l.txt = txt(l.txt);
   for (const l of st.later ?? []) l.line = txt(l.line);

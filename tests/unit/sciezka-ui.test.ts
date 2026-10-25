@@ -30,9 +30,9 @@ import {
   celWOknie,
   type KluczRozdzialu,
   type OknoCelu,
-  potrzebaDrewna,
   type WidokSciezki,
 } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { esc, liniaCelu } from '../../src/ui/tekst.ts';
 import { FORBIDDEN_DOM, demoWorld as swiat } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
@@ -560,6 +560,18 @@ describe('style.css: reguły dla klas, które rysują celeHtml, sheetHtml i tabl
     // klasa jest podmiotem jakiejś reguły (kończy selektor, ewentualnie z pseudoelementem), a nie tylko stoi w środku cudzego
     for (const k of znalezione)
       expect(css, `.${k}`).toMatch(new RegExp(`\\.${k}(?:::?[\\w-]+|\\[[^\\]]*\\])*\\s*[,{]`));
+  });
+
+  it('etykieta „Cel:” linii celu na tablicy badań ma 12 px także na telefonie: reguła o swoistości wyższej niż `.tb-tytul b`', () => {
+    // `.tb-tytul b` (22 px, a w media query do 760 px 19 px) i `.tb-linia-celu b` (12 px) mają tę samą swoistość, więc na
+    // telefonie wygrywała późniejsza reguła z media query i etykieta rosła do 19 px; reguła z dwiema klasami je przebija
+    const regula = css.match(/\.tb-tytul \.tb-linia-celu b\s*\{([^}]*)\}/);
+    expect(regula, 'reguła `.tb-tytul .tb-linia-celu b`').not.toBeNull();
+    expect(regula![1]).toMatch(/font:\s*700 12px/);
+    // media query telefonu zmienia tylko `.tb-tytul b`, więc nie ma w niej reguły o wyższej swoistości dla tej etykiety
+    const telefon = css.slice(css.indexOf('@media (max-width: 760px) {\n  .tb-bar {'));
+    expect(telefon).toContain('.tb-tytul b {');
+    expect(telefon.slice(0, telefon.indexOf('.tb-glowna'))).not.toContain('.tb-linia-celu');
   });
 
   it('zwijanie jest w HTML: strzałka nagłówka idzie za aria-expanded, a CSS nie chowa celów po klasie .open', () => {

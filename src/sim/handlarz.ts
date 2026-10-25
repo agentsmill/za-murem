@@ -2,12 +2,17 @@
    Czyste dane i funkcje dla symulacji, menu i rysowania. Handlarz chodzi tylko w grze z opcją SimOpts.obcy, więc
    losowanie ze st.rng (termin, oferty, wygląd) nie rusza gier i botów bez niej. Złom jest walutą, bo po wrakach
    i rozbiórce jest go za dużo, a deski i jedzenie są wąskim gardłem. Napisy w obu językach: menu, opisy prac
-   i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd). */
+   i podpowiedzi biorą je przez tr() w bieżącym języku (deski to „planks”, bo „board” to zarząd).
+
+   Zarząd zmienia ofertę handlarza, który stoi pod bramą, w łańcuchu „Dług” (src/gov/watki-tresc.ts, skutek `GovEffects.handlarz`
+   stosuje src/sim/gov.ts): `lepszeOferty` robi każdą bieżącą ofertę tańszą o jedną czwartą (to, co handlarz bierze, nigdy poniżej 1)
+   i o jedną wymianę dłuższą, a `zlaSlawa` podnosi zła sławę o jeden poziom (bieżące oferty o połowę drożej, kolejne wizyty drożej
+   i rzadziej, `priced` i `nextTraderVisit`). Obie dotyczą tylko ofert, które stoją pod bramą; następna wizyta losuje towar jak dotąd. */
 
 import type { Person } from '../content/people.ts';
 import { nextRandom, type RngState } from '../core/rng.ts';
 import type { Mat } from './budowle.ts';
-import { START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
+import { START_MINUTES, TICKS_PER_DAY, TICKS_PER_HOUR } from './clock.ts';
 
 /** oferta: co handlarz daje (give), co bierze od nas (take) i ile razy jeszcze ją przyjmie */
 export interface Offer {
@@ -87,19 +92,39 @@ export function priced(o: Offer, lvl: number): Offer {
   for (const [m, n] of Object.entries(o.take) as [Mat, number][]) take[m] = Math.ceil(n * (1 + 0.5 * lvl));
   return { ...o, take };
 }
+/** Lepsza oferta od zarządu (łańcuch „Dług”, src/gov/watki-tresc.ts): każda bieżąca oferta tańsza o jedną czwartą (to, co
+    handlarz bierze, nigdy poniżej 1) i o jedną wymianę dłuższa. Zmienia ofertę, która stoi pod bramą; następne wizyty losują
+    towar jak dotąd. */
+export function lepszeOferty(o: Pick<Obcy, 'offers'>): void {
+  o.offers = o.offers.map((x) => {
+    const take: Partial<Record<Mat, number>> = {};
+    for (const [m, n] of Object.entries(x.take) as [Mat, number][]) take[m] = Math.max(1, Math.floor(n * 0.75));
+    return { ...x, take, left: x.left + 1 };
+  });
+}
+
+/** Zła sława u handlarzy z woli zarządu (łańcuch „Dług”): poziom o jeden w górę (do `SLAWA_MAX`), licznik spadku od nowa,
+    jak po napaści, którą handlarz przeżył; bieżące oferty o połowę drożej, następne wizyty dostaną ceny i terminy ze sławy
+    (`priced`, `nextTraderVisit`). */
+export function zlaSlawa(o: Pick<Obcy, 'offers' | 'slawa'>, tick: number): void {
+  const lvl = Math.min(SLAWA_MAX, (o.slawa?.lvl ?? 0) + 1);
+  o.slawa = { lvl, until: tick + SLAWA_DAYS * TICKS_PER_DAY };
+  o.offers = o.offers.map((x) => priced(x, 1));
+}
+
 /** nastrój po napaści: napastnik i reszta zarządu, na dobę */
 export const ROB_MOOD = -6;
 export const ROB_MOOD_OTHERS = -3;
 
-type Deal = [Partial<Record<Mat, number>>, Partial<Record<Mat, number>>];
+export type Deal = [Partial<Record<Mat, number>>, Partial<Record<Mat, number>>];
 /** oferty kupujące złom (pierwsza oferta każdej wizyty jest stąd): [bierze, daje] */
-const BUYS_SCRAP: Deal[] = [
+export const BUYS_SCRAP: Deal[] = [
   [{ zlom: 6 }, { deski: 3 }],
   [{ zlom: 4 }, { jedzenie: 3 }],
   [{ zlom: 8 }, { czesci: 3 }],
 ];
 /** reszta tabeli */
-const OTHER: Deal[] = [
+export const OTHER: Deal[] = [
   [{ czesci: 3 }, { leki: 2 }],
   [{ leki: 2 }, { jedzenie: 5 }],
   [{ drewno: 8 }, { jedzenie: 4 }],

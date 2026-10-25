@@ -5,7 +5,8 @@
    `noweBudowle`), treść panelu po prawej (buildPanelHtml: zakładki, kafelki z miniaturą, szczegóły),
    skróty stanu panelu (stockKey, placeKey), dozwolone miejsca w trybie stawiania z canPlace symulacji i polecenia
    przy planach i gotowych budowlach w menu pod prawym przyciskiem. Czyste funkcje stanu i świata, bez DOM
-   (DOM robi panelbudowy.ts). Napisy w bieżącym języku: polskie tablice zostają tutaj, angielskie leżą obok
+   (DOM robi panelbudowy.ts). Szczegóły budowli mają znaczek „i” (`data-wiki="budowla:<rodzaj>"`), który otwiera jej artykuł
+   w wiki (obsługa na dokumencie w src/ui/wiki-okno.ts). Napisy w bieżącym języku: polskie tablice zostają tutaj, angielskie leżą obok
    (budowa.en.ts, src/sim/budowle.en.ts, src/sim/mieszkania.en.ts). */
 
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
@@ -310,10 +311,10 @@ const CAT_TITLE: Record<BuildCat, Tx> = {
 
 /** skąd brać materiał, do powodu „brakuje”, w obu językach (w domu przeszukiwanie domu i gruz ze słownika) */
 const source = (w: Words, e: WordsEn): Partial<Record<Mat, Tx>> => ({
-  deski: tx(`Deski daje ${w.szukanie.zrodla.deski}.`, `Planks come from ${e.szukanie.zrodla.deski}.`),
-  zlom: tx(`Złom daje ${w.szukanie.zrodla.zlom}.`, `Scrap comes from ${e.szukanie.zrodla.zlom}.`),
-  czesci: tx(`Części daje ${w.szukanie.zrodla.czesci}.`, `Parts come from ${e.szukanie.zrodla.czesci}.`),
-  drewno: tx('Drewno daje ścinanie drzew.', 'Wood comes from chopping down trees.'),
+  deski: tx(`Deski pochodzą z ${w.szukanie.zrodla.deski}.`, `Planks come from ${e.szukanie.zrodla.deski}.`),
+  zlom: tx(`Złom pochodzi z ${w.szukanie.zrodla.zlom}.`, `Scrap comes from ${e.szukanie.zrodla.zlom}.`),
+  czesci: tx(`Części pochodzą z ${w.szukanie.zrodla.czesci}.`, `Parts come from ${e.szukanie.zrodla.czesci}.`),
+  drewno: tx('Drewno pochodzi ze ścinania drzew.', 'Wood comes from chopping down trees.'),
 });
 
 /** Menu budowy: zakładki z budowlami (zakładka bez pozycji znika); niedostępne z powodem (limit „już stoi”, nie ma gdzie
@@ -414,7 +415,7 @@ export function buildPanelHtml(
   const detail = (b: BuildItem) =>
     `<section class="bd" data-kind="${b.kind}"${b.kind === sel.kind ? '' : ' hidden'}><div class="build-head"><b class="build-n">${esc(
       b.name,
-    )}</b><small class="build-size">${esc(b.size)}</small></div><p class="build-d">${esc(b.effect)}</p><p class="build-m"><span class="build-cost">${esc(
+    )}</b><small class="build-size">${esc(b.size)}</small><span class="build-i" data-wiki="budowla:${b.kind}" role="button" tabindex="0" title="${L('Opis w wiki', 'Read it in the wiki')}" aria-label="${L('Opis w wiki', 'Read it in the wiki')}"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="8" cy="3.3" r="1.5"/><rect x="6.7" y="6.4" width="2.6" height="7.2" rx="1.1"/></svg></span></div><p class="build-d">${esc(b.effect)}</p><p class="build-m"><span class="build-cost">${esc(
       b.cost,
     )}</span> · <span>${esc(b.time)}</span> · <span>${esc(b.place)}</span></p>${
       b.ok

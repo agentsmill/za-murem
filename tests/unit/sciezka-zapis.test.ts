@@ -60,9 +60,20 @@ const bogaty = (): StanSciezki => ({
   v: 1,
   rozdzial: 'r4',
   od: 98765,
-  start: { uchwaly: 2, raporty: 3, ludnosc: 7, lup: 11, spotkania: 4, kamienLudnosci: 1 },
+  odEkran: 4938.25,
+  start: {
+    uchwaly: 2,
+    raporty: 3,
+    ludnosc: 7,
+    lup: 11,
+    spotkania: 4,
+    kamienLudnosci: 1,
+    osoby: [1, 2, 3, 4, 17, 18, 19],
+    zarzad: [1, 2, 3, 4],
+  },
   zrobione: { 'r0.drewno': 2081, 'r1.przeszukaj': 40000, 'o2.wymiana': 61000 },
   przepadle: ['r1.drewno2'],
+  zapasem: ['r4.nowi'],
   ui: { lista: 51000, drogi: 70000 },
   okazja: { k: 'o4', od: 97000, zabici: 5, cel: 12 },
 });
@@ -174,6 +185,41 @@ describe('kształt stanu ścieżki', () => {
     expect(jestStanSciezki({ ...bogaty(), nowe: 1 })).toBe(true);
   });
 
+  it('numery pionków z chwili otwarcia są opcjonalne (zapis sprzed nich), ale jeśli są, to listy liczb', () => {
+    const bezPionkow = (): StanSciezki => {
+      const s = bogaty();
+      delete s.start.osoby;
+      delete s.start.zarzad;
+      return s;
+    };
+    expect(jestStanSciezki(bezPionkow())).toBe(true);
+    expect(jestStanSciezki({ ...bezPionkow(), start: { ...bezPionkow().start, osoby: [1, 2] } })).toBe(true);
+    for (const zle of ['1,2', {}, [1, 'a'], [1, Number.NaN], [[1]], null]) {
+      expect(jestStanSciezki({ ...bogaty(), start: { ...bogaty().start, osoby: zle } }), `osoby ${String(zle)}`).toBe(
+        false,
+      );
+      expect(jestStanSciezki({ ...bogaty(), start: { ...bogaty().start, zarzad: zle } }), `zarzad ${String(zle)}`).toBe(
+        false,
+      );
+    }
+  });
+
+  it('czas przy ekranie z otwarcia i lista celów zaliczonych zapasem są opcjonalne, ale jeśli są, to liczba i lista tekstów', () => {
+    const stary = (): StanSciezki => {
+      const s = bogaty();
+      delete s.odEkran;
+      delete s.zapasem;
+      return s;
+    };
+    expect(jestStanSciezki(stary())).toBe(true);
+    expect(jestStanSciezki({ ...stary(), odEkran: 0 })).toBe(true);
+    expect(jestStanSciezki({ ...stary(), zapasem: [] })).toBe(true);
+    for (const zle of ['12', Number.NaN, Number.POSITIVE_INFINITY, null, {}, [1]])
+      expect(jestStanSciezki({ ...stary(), odEkran: zle }), `odEkran ${String(zle)}`).toBe(false);
+    for (const zle of ['r4.nowi', {}, [1], [null], [['r4.nowi']], null])
+      expect(jestStanSciezki({ ...stary(), zapasem: zle }), `zapasem ${String(zle)}`).toBe(false);
+  });
+
   it('odrzuca to, co nie jest stanem', () => {
     for (const zle of [undefined, null, 0, 5, 'r1', true, [], [bogaty()], () => 1])
       expect(jestStanSciezki(zle), String(zle)).toBe(false);
@@ -283,6 +329,14 @@ describe('stan ścieżki z zapisu', () => {
     expect(s).toEqual(raw);
     expect(s).not.toBe(raw);
     expect(s.start).not.toBe(raw.start);
+    // listy numerów pionków z chwili otwarcia: równe, ale osobne tablice
+    expect(s.start.osoby).toEqual(raw.start.osoby);
+    expect(s.start.osoby).not.toBe(raw.start.osoby);
+    expect(s.start.zarzad).not.toBe(raw.start.zarzad);
+    // czas przy ekranie z otwarcia i cele zaliczone zapasem przechodzą przez kopię, lista jako osobna tablica
+    expect(s.odEkran).toBe(raw.odEkran);
+    expect(s.zapasem).toEqual(raw.zapasem);
+    expect(s.zapasem).not.toBe(raw.zapasem);
     expect(s.zrobione).not.toBe(raw.zrobione);
     expect(s.przepadle).not.toBe(raw.przepadle);
     expect(s.ui).not.toBe(raw.ui);
@@ -329,6 +383,8 @@ describe('stan ścieżki z zapisu', () => {
     // pusty stan gry i zarządu (bez mapy miasta, dróg i sąsiadów): same zera poza ludnością i raportami
     const ludzie = sim.st.pawns.filter((p) => p.kind === 'core' || p.kind === 'resident').length;
     expect(ludzie).toBeGreaterThanOrEqual(4);
+    // numery pionków zarządu i mieszkańców z chwili otwarcia (cel „Przyjmijcie kogoś nowego” liczy od nich przyjęcia)
+    const numery = (rodzaje: string[]) => sim.st.pawns.filter((p) => rodzaje.includes(p.kind)).map((p) => p.id);
     expect(licznikiStartu(sim.st, gov)).toEqual({
       uchwaly: 0,
       raporty: 1,
@@ -336,6 +392,8 @@ describe('stan ścieżki z zapisu', () => {
       lup: 0,
       spotkania: 0,
       kamienLudnosci: 0,
+      osoby: numery(['core', 'resident']),
+      zarzad: numery(['core']),
     });
     // zapełniony: podpisane uchwały (fałsz się nie liczy), łup z miejsc, kamienie ludności, spotkania z sąsiadami
     gov.laws.signed = { u_kociol: true, u_ognisko: true, u_cofnieta: false };
@@ -354,6 +412,9 @@ describe('stan ścieżki z zapisu', () => {
       lup: 5,
       spotkania: 3,
       kamienLudnosci: 2,
+      // idący do bramy pionek jest jeszcze pionkiem zarządu, więc lista z chwili otwarcia go ma (ludność już nie)
+      osoby: numery(['core', 'resident']),
+      zarzad: numery(['core']),
     });
   });
 

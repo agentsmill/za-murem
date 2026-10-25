@@ -51,11 +51,27 @@
    pionki powstają i ruszają od następnego kroku, a zapis niczego nie gubi. Plan idzie jako kopia osób, bo kolejka jest
    częścią stanu symulacji, a osoby gościa zostają też w stanie zarządu.
 
+   Znajomi (src/gov/znajomi.ts): `RaidPlan.znajomy` niesie wygląd ujemnego znajomego, z którym szabrownicy przychodzą na
+   napad; `planRaid` zapisuje go w `Raid.znajomy`, a pierwszy szabrownik dostaje ten wygląd (`spawnRaid`: `look` dla kodu,
+   `Pawn.wyglad` dla postaci PixelLab, tak samo jak gość z planu, więc to ta sama twarz). `GovInput.napadWystawiony` mówi, czy
+   szabrownicy z planu zostali wystawieni (nie było skąd podejść: nie). Mieszkaniec
+   w `lokatorzy` ma `look`, wygląd swojego pionka, żeby zarząd zapamiętał go przy wyrzuceniu.
+
+   Pies i kot (src/sim/zwierzeta.ts): `GovInput.zwierzeta` to wpis symulacji o zwierzętach (`SimState.zwierzeta`: pies żyje albo
+   zginął, kot żyje), a `fx.zwierze` idzie do kolejki poleceń jako 'zwierze'. Zwierząt nie liczy żaden odczyt ludzi: ani `people`,
+   `lokatorzy`, `residents`, `ludnosc`, ani `dead`.
+
+   Handlarz (src/sim/handlarz.ts): `GovInput.handlarz` jest, gdy handlarz stoi pod bramą z wózkiem (faza 1 pracy `trader`; tylko
+   w grze z obcymi), z jego kafelkiem i punktem mapy; `fx.handlarz` zmienia wtedy jego ofertę (`lepszeOferty`) albo daje złą
+   sławę (`zlaSlawa`), bezpośrednio w stanie, bez kolejki poleceń, bo nic tu nie przelicza dróg. Czyta to łańcuch „Dług”
+   (src/gov/watki-tresc.ts).
+
    Zmarli (`dead`, `zmarli`): zarząd i mieszkańcy po kolei; do karty „Pogrzeb” każdy wpis niesie płeć `f` (gdy zmarły miał
    osobę w `st.people`), minutę gry zgonu `min` i w trybie zombie los zwłok `cialo` (leżą, dobite, nie ma ich), liczone ze
    zwłok na mapie (`Thing.dead`), bez nowych pól w stanie symulacji. */
 
 import { TECH_DOMS, type TechDom } from '../content/data.ts';
+import { type Wyglad, wygladMieszkanca } from '../content/people.ts';
 import { nextRandom } from '../core/rng.ts';
 import { placeOf, stronyOf, wordsOfWorld } from '../gov/miejsce.ts';
 import type {
@@ -84,6 +100,7 @@ import {
 } from './badania.ts';
 import { type AmmoKey, WEAPONS, type WeaponId, weaponOf } from './bron.ts';
 import { dayOf, minutesAt, START_MINUTES, TICKS_PER_HOUR } from './clock.ts';
+import { lepszeOferty, zlaSlawa } from './handlarz.ts';
 import { frontTile, houseOf, inHomeApt } from './house.ts';
 import { nearestFree } from './path.ts';
 import { fenceShape, gateTiles } from './perimeter.ts';
@@ -201,7 +218,7 @@ function kafelekKozy(st: SimState, w: World): number | undefined {
 }
 
 /** mieszkaniec siedziby dla zarządu: tylko pola `GovLokator` (bez historii, odnośnika, rodziny, nastrojów i pracy) */
-const lokatorZarzadu = (p: SimPerson): GovLokator => ({
+const lokatorZarzadu = (p: SimPerson, look?: number, wyglad?: Wyglad): GovLokator => ({
   pawn: p.pawn,
   id: p.id,
   name: p.name,
@@ -215,6 +232,8 @@ const lokatorZarzadu = (p: SimPerson): GovLokator => ({
   asleep: p.asleep,
   inside: p.inside,
   tile: p.tile,
+  ...(look !== undefined ? { look } : {}),
+  ...(wyglad !== undefined ? { wyglad } : {}),
 });
 
 /** Zmarli z zarządu i mieszkańcy (`GovInput.dead`), po kolei, z tym, czego potrzebuje pogrzeb: płeć `f` zmarłego, który
@@ -253,7 +272,8 @@ function zmarli(st: SimState, zombie: boolean): NonNullable<GovInput['dead']> {
 }
 
 /** Wizyty gości dla zarządu (`GovInput.goscie`): wszystkie po kolei, z fazą, kafelkiem mówiącego (a gdy już go nie ma,
-    pierwszego żywego albo ostatnim znanym), numerami żywych pionków (mówiący pierwszy) i porcjami wziętymi przez grupę. */
+    pierwszego żywego albo ostatnim znanym), numerami żywych pionków (mówiący pierwszy), porcjami wziętymi przez grupę
+    i indeksami zmarłych w planie (`zmarli`, także po `poszedl` i `zginal`, kiedy żywych już nie ma). */
 function goscieOdczyt(st: SimState, w: World): GovGosc[] {
   return (st.goscie ?? []).map((g) => {
     // po `poszedl` i `zginal` nikogo już nie ma (zakończone wizyty zostają w liście, więc nie szukamy po próżnicy)
@@ -276,8 +296,26 @@ function goscieOdczyt(st: SimState, w: World): GovGosc[] {
       zywi: zywi.map((z) => z.k),
       ukradl: g.ukradl,
       ...(g.przyjety ? { przyjety: true } : {}),
+      ...(g.zmarli?.length ? { zmarli: [...g.zmarli] } : {}),
     };
   });
+}
+
+/** Handlarz, który stoi pod bramą z wózkiem i czeka na wymianę (`traderTick`, faza 1), albo undefined: idzie, odszedł,
+    uciekł, nie żyje, a w grze bez obcych nie ma go wcale. */
+function handlarzPodBrama(st: SimState): Pawn | undefined {
+  const t = st.obcy?.trader ?? -1;
+  if (t < 0) return undefined;
+  const p = st.pawns.find((q) => q.id === t && q.kind === 'handlarz');
+  return p?.job?.t === 'trader' && p.job.phase === 1 ? p : undefined;
+}
+
+/** `GovInput.handlarz`: kafelek handlarza pod bramą i ten sam punkt mapy; puste, gdy go nie ma. */
+function handlarzOdczyt(st: SimState, w: World): Pick<GovInput, 'handlarz'> {
+  const p = handlarzPodBrama(st);
+  if (!p) return {};
+  const tile = Math.floor(p.y) * w.size + Math.floor(p.x);
+  return { handlarz: { tile, gdzie: { x: tile % w.size, y: Math.floor(tile / w.size) } } };
 }
 
 /** Odczyt dla zarządu: snapshot w kształcie GovInput. screen: sekundy przy ekranie od startu gry bez pauzy
@@ -306,7 +344,17 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
   const residents = s.residents;
   // mieszkańcy siedziby z osobą; odczyt dla interfejsu ma też lokatorów sąsiadów, których zarząd nie widzi
   const mieszkancy = new Set(st.pawns.filter((p) => p.kind === 'resident' && !odchodza.has(p.id)).map((p) => p.id));
-  const lokatorzy = s.lokatorzy.filter((l) => mieszkancy.has(l.pawn)).map(lokatorZarzadu);
+  // wygląd pionka mieszkańca (numer stroju i postać PixelLab: pole gościa albo wybór widoku dla osoby z generatora) idzie do
+  // zarządu, który zapamięta go, gdy wyrzuci mieszkańca (`Znajomy.look`, `Znajomy.wyglad`)
+  const pionki = new Map(st.pawns.map((q) => [q.id, q]));
+  const lokatorzy = s.lokatorzy
+    .filter((l) => mieszkancy.has(l.pawn))
+    .map((l) => {
+      const q = pionki.get(l.pawn);
+      const osoba = q && q.person >= 0 ? st.people[q.person] : undefined;
+      const wyglad = q?.wyglad ? { ...q.wyglad } : osoba ? wygladMieszkanca(q!.person, osoba) : undefined;
+      return lokatorZarzadu(l, q?.look, wyglad);
+    });
   return {
     tick: s.tick,
     day: s.day,
@@ -319,6 +367,7 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     kozaLit: s.kozaLit,
     people: people.map((p) => ({ ...p, arm: armOf(p.weapon, s.stock.ammo), bitten: !!p.bite })),
     ...(lokatorzy.length ? { lokatorzy } : {}),
+    ...(st.raid ? { napadWystawiony: st.raid.spot >= 0 } : {}),
     stock: {
       wood: s.stock.wood,
       woodSklad: s.stock.woodSklad,
@@ -358,6 +407,10 @@ export function govInput(st: SimState, w: World, screen: number, hqName?: string
     ...(st.obcy?.napady?.length ? { napady: st.obcy.napady.map((n) => ({ kto: n.kto, tick: n.tick })) } : {}),
     ...(st.obcy?.werbunek ? { werbunek: zwerbowani(st) } : {}),
     ...(st.obcy ? { goscie: goscieOdczyt(st, w) } : {}),
+    // pies i kot: wpis o zwierzęciu, które symulacja już wystawiła (albo zabiła); bez wpisu zarząd z flagą dog albo cat prosi o nie
+    ...(st.zwierzeta ? { zwierzeta: { ...st.zwierzeta } } : {}),
+    // handlarz z wózkiem pod bramą (kroki łańcucha „Dług”); bez niego pola nie ma
+    ...handlarzOdczyt(st, w),
     dead: zmarli(st, zombie),
     // warunki zwycięstwa (src/gov/zwyciestwo.ts): ludzie pod zarządem to zarząd i mieszkańcy siedziby (`populacja`, ta
     // sama liczba, którą czyta EventHost.pop(); kto wychodzi bramą, już się nie liczy), a przyłączone budynki to te, które
@@ -512,7 +565,16 @@ function give(st: SimState, w: World, k: keyof Loot, n: number): void {
 export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   const cmd = (c: SimState['cmds'][number]) => st.cmds.push(c);
   // napad: plan na tę noc, a w minucie napadu rozstrzygnięcie (łup wyniosą szabrownicy, nie znika od razu)
-  if (fx.raid) planRaid(st, tickOfMinute(fx.raid.at), fx.raid.post, true, fx.raid.people ?? 0, fx.raid.attack ?? 0);
+  if (fx.raid)
+    planRaid(
+      st,
+      tickOfMinute(fx.raid.at),
+      fx.raid.post,
+      true,
+      fx.raid.people ?? 0,
+      fx.raid.attack ?? 0,
+      fx.raid.znajomy ? { look: fx.raid.znajomy.look, wyglad: fx.raid.znajomy.wyglad } : undefined,
+    );
   const res = raidOutcome(st, fx);
   const loot: Loot = { wood: 0, supplies: 0, scrap: 0 };
   if (res && st.raid) {
@@ -561,6 +623,13 @@ export function applyGov(st: SimState, w: World, fx: GovEffects): void {
   // goście z klocków: plan wizyty i rozkazy po kolei, przez kolejkę poleceń (pionki powstają i ruszają od następnego kroku)
   if (fx.gosc) cmd({ t: 'gosc', ids: [], plan: kopiaPlanu(fx.gosc) });
   for (const r of fx.goscRozkaz ?? []) cmd({ t: 'goscrozkaz', ids: [], id: r.id, co: r.co });
+  // pies i kot z flag zarządu: pionek powstaje od następnego kroku (idempotentnie, symulacja pomija zwierzę z wpisem)
+  for (const z of fx.zwierze ?? []) cmd({ t: 'zwierze', ids: [], co: z });
+  // handlarz stoi pod bramą z wózkiem: lepsza oferta albo zła sława z woli zarządu (łańcuch „Dług”); bez niego nic
+  if (fx.handlarz && st.obcy && handlarzPodBrama(st)) {
+    if (fx.handlarz.oferta) lepszeOferty(st.obcy);
+    if (fx.handlarz.slawa) zlaSlawa(st.obcy, st.tick);
+  }
   // hałas z zarządu (pościg za gościem w trybie zombie): jak każdy hałas, słychać go przez NOISE_TICKS
   if (fx.halas) {
     const noise = (st.noise ??= []);

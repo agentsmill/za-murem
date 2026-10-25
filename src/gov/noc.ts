@@ -34,12 +34,18 @@
    `GovState.wskazowki`): `expRisk` mnoży ryzyko tego miejsca przez `WSKAZOWKA_RYZYKO`, a `rozliczWyprawe` łup przez
    `WSKAZOWKA_LUP` i zużywa wskazówkę. Pościg za gościem wpuszczonym na noc (`poscigNocy`, zwykły tryb): `raidChance`
    ×1,5 i napad przy bramie tej nocy (`GovState.tonight.poscig`); po zatwierdzeniu karty nocy daje jeszcze jedno losowanie,
-   gdy napad nie przyszedł. Poranny raport dolicza chorych od gościa (`GovState.later[].sick`). */
+   gdy napad nie przyszedł. Poranny raport dolicza chorych od gościa (`GovState.later[].sick`).
+
+   Znajomi (src/gov/znajomi.ts): plan napadu (`planNapadu`, z `confirm` i z `poscigNocy`) bierze w zwykłym trybie jednego
+   ujemnego znajomego (`wrogDoNapadu`, raz na znajomego): `RaidPlan.znajomy` niesie jego imię, epitet i wygląd (jeden
+   szabrownik w symulacji dostaje ten wygląd), a raport rano dostaje zaraz po opisie napadu linię „Wśród nich był X, ten od
+   słoików” (`znajomyWNapadzie`, w obu wynikach napadu; gdy w nocy tylko ktoś kręcił się przy siatce, „To był…”; bez linii, gdy
+   symulacja nie wystawiła szabrowników: `GovInput.napadWystawiony`). W zombie napadów nie ma i znajomi nie dołączają do niczego. */
 
 import { NOTE_HOLD_FIRE_EN } from '../content/napisy-zombie.en.ts';
 import { NOTE_HOLD_FIRE } from '../content/napisy-zombie.ts';
 import { g } from '../content/people.ts';
-import { type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
+import { stopnie, type Tx, tx, txJoin, txOf } from '../core/jezyk.ts';
 import { clamp } from '../core/rng.ts';
 import { placeIn, wordsEn, wordsOf } from './miejsce.ts';
 import { peopleNamesTx, TARGETS } from './tresc.ts';
@@ -53,6 +59,7 @@ import type {
   NightCard,
   NightOption,
   NightReport,
+  RaidPlan,
   StockDelta,
 } from './typy.ts';
 import { dailyDrift, law } from './uchwaly.ts';
@@ -88,6 +95,7 @@ import {
   wybierzCeleNocy,
   zostaloZMiejsca,
 } from './wyprawy.ts';
+import { liniaWsrod, obecniWOsiedlu, wPlanieNapadu, wrogDoNapadu } from './znajomi.ts';
 
 export const CARD_HOUR = 20;
 /** do tej godziny karta czeka na decyzję, potem zostaje propozycja zarządu */
@@ -402,7 +410,8 @@ export function makeCard(st: GovState, i: GovInput): { card: NightCard; assign: 
         why: ok
           ? undefined
           : tx(g(p, 'Za słaby na czuwanie.', 'Za słaba na czuwanie.'), 'Too weak to sit up all night.'),
-        // noc bez snu zjada około 50 sił (symulacja: 5 na godzinę od karty do 6:00)
+        // noc bez snu zjada około 35 sił (symulacja: `REST_AWAKE` 3,5 na godzinę od karty do 6:00), więc kto ma mniej niż 50,
+        // rano schodzi poniżej progu zmęczenia (`TIRED` 15)
         note: tx(
           `Nie śpi i pilnuje ognia w kozie, ${wn.pl}${p.needs.rest < 50 ? ' Rano będzie bez sił.' : ''}`,
           `Stays up and keeps the stove going, and ${wn.en}${p.needs.rest < 50 ? ' Will be exhausted in the morning.' : ''}`,
@@ -677,11 +686,11 @@ function kozaAdvice(i: GovInput, card: NightCard, assign: Record<string, string>
     );
   }
   if (wd.have < WOOD_PER_HOUR) return NIC;
-  const deg = Math.round(i.kitchen);
+  const deg = stopnie(i.kitchen);
   const now = !i.kozaLit
-    ? tx(`Koza jest zimna, w kuchni ${deg}°C.`, `The stove is cold, and the kitchen is at ${deg}°C.`)
-    : deg < 16
-      ? tx(`W kuchni już tylko ${deg}°C.`, `The kitchen is down to ${deg}°C.`)
+    ? tx(`Koza jest zimna, w kuchni ${deg}.`, `The stove is cold, and the kitchen is at ${deg}.`)
+    : Math.round(i.kitchen) < 16
+      ? tx(`W kuchni już tylko ${deg}.`, `The kitchen is down to ${deg}.`)
       : tx(
           'Bez dyżuru koza zgaśnie w nocy i rano w kuchni będzie zimno.',
           'Without a stove watch the fire will go out in the night, and the kitchen will be cold by morning.',
@@ -773,7 +782,7 @@ export function confirm(st: GovState, i: GovInput, fx: GovEffects, auto: boolean
   const attack = come ? round1(2 + rnd(st) * (2 + 0.55 * n.day)) : 0;
   if (!zombieMode(st)) {
     n.raid = { come, at, post: post.key, resolved: false, outcome: 'brak', attack, defense: 0, stolen: zeroStock() };
-    if (come) fx.raid = { day: n.day, at, post: post.key, where: post.name, attack, people: raidersOf(attack) };
+    if (come) fx.raid = planNapadu(st, i, n.raid, { day: n.day, at, post: post.key, where: post.name, attack });
   }
   // kronika
   n.fire = { on: 0, all: 0, at: gameMin(i) };
@@ -830,7 +839,22 @@ export function poscigNocy(st: GovState, i: GovInput, fx: GovEffects): void {
   n.raid.post = brama.key;
   n.raid.attack = attack;
   n.raid.at = Math.max(n.raid.at, gameMin(i) + 20);
-  fx.raid = { day: n.day, at: n.raid.at, post: brama.key, where: brama.name, attack, people: raidersOf(attack) };
+  fx.raid = planNapadu(st, i, n.raid, { day: n.day, at: n.raid.at, post: brama.key, where: brama.name, attack });
+}
+
+/** Plan napadu dla symulacji: szabrownicy z siły napadu, a z nimi znajomy, jeśli jakiś jest ujemny (`wrogDoNapadu`, tylko
+    w zwykłym trybie, raz na znajomego): wpis `Znajomy.napad` i `NightPlan.raid.znajomy` (raport rano) zaznaczają go od razu. */
+function planNapadu(
+  st: GovState,
+  i: GovInput,
+  raid: NonNullable<NonNullable<GovState['night']>['raid']>,
+  plan: Omit<RaidPlan, 'people' | 'znajomy'> & { attack: number },
+): RaidPlan {
+  const wrog = wrogDoNapadu(st, plan.day, obecniWOsiedlu(i), st.mode ?? 'zwykly');
+  if (!wrog) return { ...plan, people: raidersOf(plan.attack) };
+  wrog.napad = plan.day;
+  raid.znajomy = wrog.id;
+  return { ...plan, people: raidersOf(plan.attack), znajomy: wPlanieNapadu(wrog) };
 }
 
 /** Wynik rozliczenia wyprawy: wpisy raportu (kłopoty albo powrót, potem ewentualne znaleziska), kto oberwał
@@ -862,6 +886,8 @@ export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: C
   for (const [k, [a, b]] of Object.entries(cel.lup) as [LootKey, [number, number]][])
     got[k] = Math.round(rint(st, a, b) * m * wsk * (ppl.length > 1 ? 1.6 : 1));
   const risk = Math.max(...ppl.map((p) => expRisk(st, p, cel, ppl.length)));
+  // wskazówka o miejscu z bronią (łańcuch „Głos z radia”): zużywa się razem z wyprawą i daje pewne znalezisko
+  const zBronia = !!st.wskazowki?.[cel.klucz]?.bron;
   wskazowka(st, cel.klucz);
   const trouble = rnd(st) < risk;
   if (trouble) for (const k of Object.keys(got) as LootKey[]) got[k] = Math.floor(got[k] / 2);
@@ -914,7 +940,7 @@ export function rozliczWyprawe(st: GovState, i: GovInput, fx: GovEffects, cel: C
     }
   }
   for (const k of Object.keys(got) as LootKey[]) fx.stock[k] += got[k];
-  const found = finds(st, fx);
+  const found = [...finds(st, fx), ...(zBronia ? znalezionaBron(st, fx) : [])];
   if (found.length) {
     const all = txJoin(found, ', ');
     lines.push(
@@ -982,6 +1008,36 @@ function finds(st: GovState, fx: GovEffects): Tx[] {
     if (w === 'kusza') ammo('belty', rint(st, 6, 10));
   }
   return out;
+}
+
+/** Pewne znalezisko z miejsca z bronią (wskazówka z `bron`): rewolwer z nabojami albo strzelba z loftkami, w tej kolejności
+    losowań: broń, amunicja. Losuje tylko wtedy, gdy wyprawa miała taką wskazówkę. */
+function znalezionaBron(st: GovState, fx: GovEffects): Tx[] {
+  const rewolwer = rnd(st) < 0.5;
+  const w = rewolwer ? 'rewolwer' : 'strzelba';
+  const k = rewolwer ? 'naboje' : 'loftki';
+  const n = rewolwer ? rint(st, 6, 12) : rint(st, 5, 9);
+  (fx.arms ??= []).push(w);
+  fx.ammo ??= {};
+  fx.ammo[k] = (fx.ammo[k] ?? 0) + n;
+  return [
+    tx(ARM_ACC[w], ARM_ACC_EN[w]),
+    tx(`${n} ${rewolwer ? 'naboi' : 'loftek'}`, `${n} ${rewolwer ? 'rounds' : 'buckshot shells'}`),
+  ];
+}
+
+/** Linia raportu o znajomym w napadzie (jeśli plan napadu go niósł), zaraz po opisie przebiegu napadu: „Wśród nich był…” albo,
+    gdy w nocy tylko ktoś kręcił się przy siatce, „To był…”. Bez linii, gdy symulacja nie wystawiła szabrowników
+    (`GovInput.napadWystawiony` jest fałszem: nie było skąd podejść), bo wtedy nikogo wśród nich nie było. */
+function znajomyWNapadzie(
+  st: GovState,
+  i: GovInput,
+  r: NonNullable<NonNullable<GovState['night']>['raid']>,
+  wariant: 'wsrod' | 'to',
+): void {
+  if (i.napadWystawiony === false) return;
+  const z = r.znajomy ? st.znajomi?.find((x) => x.id === r.znajomy) : undefined;
+  if (z) st.night!.lines.push(liniaWsrod(z, wariant));
 }
 
 function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
@@ -1068,6 +1124,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     for (const p of here) fx.moods.push({ id: p.id, why: 'Przegoniliśmy szabrowników', d: 6, hours: 12 });
     for (const p of i.people) addNeeds(fx, p.id, { safe: 8 });
     logGov(st, i, n.lines[n.lines.length - 1], true, fx);
+    znajomyWNapadzie(st, i, r, here.length ? 'wsrod' : 'to');
     result('odparty');
     return;
   }
@@ -1088,6 +1145,7 @@ function resolveRaid(st: GovState, i: GovInput, fx: GovEffects): void {
     ),
   );
   logGov(st, i, n.lines[n.lines.length - 1], true, fx);
+  znajomyWNapadzie(st, i, r, 'wsrod');
   mood(st, -2, 4);
   for (const p of i.people) {
     addNeeds(fx, p.id, { safe: -25 });
@@ -1235,7 +1293,7 @@ export function nightTick(st: GovState, i: GovInput, fx: GovEffects): void {
 
 /** linia raportu o kuchni rano: jak długo paliła się koza, kto przy niej czuwał i ile stopni o 6:00 */
 function kitchenLine(t: number, fire: number, koza: GovPerson[], wood: number): Tx {
-  const deg = `${Math.round(t)}°C`;
+  const deg = stopnie(t);
   const warm = t >= 18 ? 'ciepło' : t >= 15 ? 'chłodno' : 'zimno';
   const warmEn = t >= 18 ? 'warm' : t >= 15 ? 'chilly' : 'cold';
   const rano = `Rano w kuchni ${warm}, ${deg}.`;

@@ -34,7 +34,7 @@
 
 import { POICAT, type Res } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
-import { type Tx, tx } from '../core/jezyk.ts';
+import { cudzyslowy, type Tx, tx } from '../core/jezyk.ts';
 import { hashString, mulberry } from '../core/rng.ts';
 import { type Miejsce, naMapieLokalnej } from '../world/miasto.ts';
 import { placeIn } from './miejsce.ts';
@@ -62,23 +62,23 @@ export const LUP_03: Readonly<Partial<Record<Res, LootKey>>> = {
 };
 
 /** 3 km/h w metrach na minutę */
-const METROW_NA_MIN = 50;
+export const METROW_NA_MIN = 50;
 /** ulice są dłuższe niż linia prosta */
-const KRZYWIZNA_ULIC = 1.4;
+export const KRZYWIZNA_ULIC = 1.4;
 /** przeszukanie: jedna osoba 3 godziny, każda następna godzinę mniej, najkrócej godzina */
-const PRZESZUKANIE_MIN = 180;
-const PRZESZUKANIE_KROK_MIN = 60;
-const PRZESZUKANIE_NAJKROCEJ_MIN = 60;
+export const PRZESZUKANIE_MIN = 180;
+export const PRZESZUKANIE_KROK_MIN = 60;
+export const PRZESZUKANIE_NAJKROCEJ_MIN = 60;
 /** wyprawa, która wraca po 20:00, wraca o 6:00 następnego dnia */
 const GODZINA_ZMIERZCHU = 20;
 const GODZINA_SWITU = 6;
 /** ryzyko rośnie z odległością: razy (1 + odl / tyle) */
-const RYZYKO_ODL_M = 900;
+export const RYZYKO_ODL_M = 900;
 /** zapas startowy: ułamek miejsc pustych, mnożnik łupu (od, rozstęp) i górna granica */
-const PUSTE_MIEJSCA = 0.25;
-const ZAPAS_MNOZNIK_OD = 3;
-const ZAPAS_MNOZNIK_ROZSTEP = 3;
-const ZAPAS_MAX = 60;
+export const PUSTE_MIEJSCA = 0.25;
+export const ZAPAS_MNOZNIK_OD = 3;
+export const ZAPAS_MNOZNIK_ROZSTEP = 3;
+export const ZAPAS_MAX = 60;
 
 /** Cel wyprawy: miejsce z OSM albo cel z TARGETS. Siedzi w stanie zarządu (JSON), więc same liczby i napisy Tx. */
 export interface Cel {
@@ -147,12 +147,14 @@ export function zapasStartowy(klucz: string, kat: string): number {
 }
 
 /** Nazwa celu z miejsca: kategoria, a z niepustą nazwą (po filtrze nazw wywołującego) kategoria z nazwą w nawiasie.
-    Nazwa równa kategorii w którymkolwiek języku nie powtarza się. */
+    Nazwa równa kategorii w którymkolwiek języku nie powtarza się. Proste cudzysłowy w nazwie z OSM zamieniają się na
+    polskie („…”) w polskim napisie i angielskie (“…”) w angielskim. */
 function nazwaCelu(kat: string, wlasna: string): Tx {
   const k = nazwaKategorii(kat);
   const n = wlasna.trim();
   if (!n || n.toLowerCase() === k.pl.toLowerCase() || n.toLowerCase() === k.en.toLowerCase()) return k;
-  return tx(`${k.pl} (${n})`, `${k.en} (${n})`);
+  // nazwa z OSM bywa w prostych cudzysłowach (Przedszkole "Chatka"): w napisie typograficzne, osobne dla każdego języka
+  return tx(`${k.pl} (${cudzyslowy(n, 'pl')})`, `${k.en} (${cudzyslowy(n, 'en')})`);
 }
 
 /** Cel z miejsca z OSM: ryzyko POICAT.risk razy (1 + odl / 900), łup z POICAT razy SKALA_LUPU, zapas z klucza.

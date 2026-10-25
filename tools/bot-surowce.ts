@@ -8,6 +8,8 @@
    ludzi) którego dnia stać na najtańszy wspólny płot na Lanciego, 65 desek i 65 złomu naraz (albo 130 sztuk jednego
    z nich), liczone co 10 sekund przy ekranie z zapasów razem z tym, co leży na ulicy; dłuższy bieg (dni) pokaże, kiedy
    to nastąpi, jeśli nie w pięciu dniach. Zwykłe boty (npm run bot, npm run bot:zombie) nie dotykają niczego stąd.
+   Gra bez łańcuchów kart (`playWithGov` bez opcji `lancuchy`, zarząd z `newGov` bez przełącznika): bot mierzy zapasy i budowle,
+   a nie pulę kart, więc łańcuchy dokładałyby tylko gości; gra w przeglądarce ma je domyślnie, boty `bot` i `bot:zombie` też.
    Uruchomienie: npm run bot:surowce [-- ziarno [dni]] */
 
 import fs from 'node:fs';

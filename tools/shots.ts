@@ -10,8 +10,10 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { stworzSerwer } from '../server/app.ts';
+import { type Wyglad, wygladZnajomego } from '../src/content/people.ts';
 import { mnogaPl, type Tx } from '../src/core/jezyk.ts';
 import type { GameMode } from '../src/gov/typy.ts';
+import type { Znajomy } from '../src/gov/znajomi.ts';
 import { DROGI, type Droga, nazwaDrogi } from '../src/gov/zwyciestwo.ts';
 import type { ZajetaKlatka } from '../src/net/protokol.ts';
 import { LOOKI } from '../src/render/art/lookBudynku.ts';
@@ -26,7 +28,12 @@ import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
+import { celeShots } from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
+import { tekstyShots } from './shots-teksty.ts';
+import { telefonShots } from './shots-telefon.ts';
+import { ukladShots } from './shots-uklad.ts';
+import { wikiShots } from './shots-wiki.ts';
 
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
@@ -743,8 +750,19 @@ const SHOTS: Shot[] = [
   // Lista „moich ludzi” (src/ui/lista.ts): układ przy 1440, 1280, 1024 i na telefonie, angielski, tryb zombie, wszystkie
   // znaczniki stanu, klik i śledzenie kamery, klawisze E i Q, wyprawa, dwanaście osób, przybysze, panel budowy, język
   ...listaShots(OUT),
+  // Okienko celów ze ścieżki (src/ui/sciezka.ts): drugi dzień w bloku, w domu i w zombie, okazje, linia celu w oknach, drogi po
+  // ostatnim rozdziale, telefon, angielski, zaliczenie drewna po przeładowaniu; układ względem paska, listy ludzi, karty i budowy
+  ...celeShots(OUT),
+  ...ukladShots(OUT),
+  ...telefonShots(OUT),
+  // Wiki w grze (src/ui/wiki.ts): lista i artykuły z Menu i z czipów paska na komputerze i telefonie, po polsku i angielsku,
+  // dom i blok; każdy scenariusz sprawdza układ, atrybucję map i słowa z bloku w domu
+  ...wikiShots(OUT),
   // Fokus przycisków paska po kliknięciu myszą: spacja dalej zatrzymuje grę, z klawiatury fokus zostaje
   ...pasekShots(),
+  // Poprawki tekstów po przeglądzie spójności: pora roku na pasku w zimie, słowa domu (komitet, furtka) w drogach, epilogach, planie
+  // wyprawy, alarmie i Pracy, karta miejsca wybranego do cna, koniec gry w kronice, atrybucja w /v03/
+  ...tekstyShots(),
   {
     name: 'zombie-dzien',
     query: '',
@@ -1499,6 +1517,9 @@ const SHOTS: Shot[] = [
             if (ok) break;
             await page.evaluate(() => window.zm!.ff(2));
           }
+          // handlarz pod bramą otwiera krok łańcucha „Handlarz na kredyt” (pilny, gdy łańcuch „Dług” jest wątkiem sezonu): okno
+          // nad grą zasłania menu, więc scenariusz odpowiada na okna zarządu, jak gracz
+          await odpowiedzNaOkna(page);
           const at = await page.evaluate(() => {
             const zm = window.zm!;
             const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
@@ -1590,6 +1611,9 @@ const SHOTS: Shot[] = [
             if (ok) break;
             await page.evaluate(() => window.zm!.ff(2));
           }
+          // handlarz pod bramą otwiera krok łańcucha „Handlarz na kredyt” (pilny, gdy łańcuch „Dług” jest wątkiem sezonu): okno
+          // nad grą zasłania menu, więc scenariusz odpowiada na okna zarządu, jak gracz
+          await odpowiedzNaOkna(page);
           const at = await page.evaluate(() => {
             const zm = window.zm!;
             const t = zm.sim!.st.pawns.find((p) => p.kind === 'handlarz')!;
@@ -2420,6 +2444,27 @@ const SHOTS: Shot[] = [
         run: async (page, base) => {
           await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
           await waitIdle(page);
+          // Warunek wstępny jawnie: karta z klatki przychodzi tylko wtedy, gdy któryś mieszkaniec z osobą ma nastrój poniżej progu
+          // (src/gov/warianty.ts, `sprawcaKradziezy`), a w grze z ziarna adresu jedzenie i ciepło mogą go utrzymać wyżej przez
+          // całe sto pięćdziesiąt godzin, które scenariusz czeka (bez tego zrzut zależał od przebiegu losowań: padał z łańcuchami
+          // i bez nich nie, a kradzież w zwykłych grach wypada około razu na grę). Każdy mieszkaniec dostaje chwilowy nastrój −40
+          // na dwieście godzin gry, jak „Choroba” w symulacji.
+          await page.evaluate(() => {
+            const st = window.zm!.sim!.st;
+            for (const p of st.pawns)
+              if (p.kind === 'resident' && p.person >= 0)
+                p.moods.push({ why: 'Głód w piwnicy', d: -40, until: st.tick + 200 * 800 });
+          });
+          // Pula zarządu tylko z tą jedną kartą (jak w `wyd-przyjety`): „Kradzież z piwnicy” jest rzadką kartą nocy, więc
+          // czekanie na nią w całej puli zależy od przebiegu losowań. Raz już nie wypadła w 150 godzin, gdy zmiana imion
+          // gości (dwie różne osoby nie mają tego samego imienia) przesunęła losowania w tej grze, a scenariusz sprawdza
+          // samą kartę i jej wybory, nie szansę, że wypadnie.
+          await page.evaluate(async () => {
+            const url = '/src/gov/wydarzenia.ts';
+            const m = (await import(/* @vite-ignore */ url)) as { M1_EVENTS: { id: string }[] };
+            const gov = window.zm!.gov!;
+            for (const e of m.M1_EVENTS) if (e.id !== 'kradziez') gov.ev.last[e.id] = 1e9;
+          });
           const krok = await doKarty(page, 'kradziez');
           await waitIdle(page);
           const przed = await page.evaluate(() => {
@@ -2746,6 +2791,42 @@ const SHOTS: Shot[] = [
         },
       },
       {
+        // karta gościa w trybie zombie (Task 16): szwendacze przy siatce (`stado=3`) już nie płoszą grupy z 6 m, tylko dopiero na
+        // zasięgu ugryzienia (`SPOOK_GOSC`), więc grupa dochodzi pod bramę i otwiera się karta; zrzut karty z „Pokaż” na grupie
+        // pod bramą (wyd-gosc-zombie.png) i liczba szwendaczy w 10 m od grupy w logu.
+        // `lancuchy=0`: scenariusz czeka na kartę `gosc` z puli, a ta ma przyjść, zanim stado zapełni podejście do bramy (po kilku
+        // dobach szwendaczy jest kilkadziesiąt i żadna grupa nie dochodzi). Łańcuchy kart (domyślnie włączone) zmieniają kolejność
+        // losowań i w tym ziarnie pierwszy gość z puli wypada dopiero po tym czasie (spłoszone: 18 wizyt w 11 dób, żadna karta
+        // `gosc`), więc bez nich scenariusz bada to, o co chodzi: grupa z puli przy szwendaczach pod siatką.
+        name: 'wyd-gosc-zombie',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=9&stado=3&cam=hq,1.3&lancuchy=0`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 600);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const a = zm.gov!.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const m = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            const zombie = st.pawns.filter((p) => p.kind === 'zombie');
+            const blisko = zombie.filter((z) => m.some((p) => Math.hypot(z.x - p.x, z.y - p.y) <= 10)).length;
+            return { faza: wpis.faza, pionki: m.length, osoby: a.gosc.osoby.length, szwendaczy: zombie.length, blisko };
+          });
+          console.log(
+            `  karta po ${krok} krokach: faza ${stan.faza}, ${stan.pionki} pionków, szwendaczy ${stan.szwendaczy}, w 10 m od grupy ${stan.blisko}`,
+          );
+          if (stan.faza !== 'brama') throw new Error(`karta gościa, ale faza ${stan.faza}`);
+          if (stan.pionki !== stan.osoby)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await page.screenshot({ path: path.join(OUT, 'wyd-gosc-zombie.png') });
+        },
+      },
+      {
         // karta gościa w prawdziwej grze (Przymorze, obcy włączeni): zarząd planuje gościa, ten idzie ulicą pod bramę i dopiero
         // wtedy otwiera się karta z „Pokaż”; „Pokaż” jedzie kamerą do gości (okno zostaje), „Wpuścić na noc” wpuszcza ich
         // bramą na podwórko. Zrzuty: karta (wyd-gosc-karta-okno.png), po „Pokaż” (wyd-gosc-karta-pokaz.png) i goście na
@@ -2851,6 +2932,634 @@ const SHOTS: Shot[] = [
           await waitIdle(page);
           await frames(page, 3);
           await gosciNarysowani(page, 'na podwórku po „Wpuścić na noc”');
+        },
+      },
+      {
+        // karta gościa pod bramą po angielsku (Przymorze, obcy włączeni): ta sama wizyta co w wyd-gosc-karta, ale cały ekran
+        // i karta w języku angielskim, bez polskich liter poza imionami i nazwami z mapy (en-wyd-gosc.png)
+        name: 'en-wyd-gosc',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          const krok = await doKarty(page, 'gosc', 400);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 400)}`);
+          console.log(`  buttons: ${foot.join(' | ')}`);
+          if (!foot.some((f) => f.startsWith('event-show:'))) throw new Error('card without a Show button');
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, []);
+          if (pl.length) throw new Error(`Polish letters on the English guest card: ${pl.join(', ')}`);
+          await page.screenshot({ path: path.join(OUT, 'en-wyd-gosc.png') });
+        },
+      },
+      {
+        // adres gry steruje łańcuchami kart: bez parametru nowa gra ma je włączone (pole `lancuchy` w stanie zarządu i wątki sezonu
+        // wybrane przy pierwszym kroku zarządu), z `?lancuchy=0` nie ma ich wcale (bez pola i bez wątków), jak zapis sprzed łańcuchów
+        name: 'wyd-lancuchy-adres',
+        query: '',
+        run: async (page, base) => {
+          const stan = () =>
+            page.evaluate(() => {
+              const g = window.zm!.gov!;
+              return { lancuchy: g.lancuchy ?? null, wybrane: g.watki?.wybrane ?? null };
+            });
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          const domyslnie = await stan();
+          console.log(`  bez parametru: ${JSON.stringify(domyslnie)}`);
+          if (domyslnie.lancuchy !== true || !domyslnie.wybrane?.length)
+            throw new Error(
+              `bez parametru łańcuchy mają być włączone z wybranymi wątkami: ${JSON.stringify(domyslnie)}`,
+            );
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3&lancuchy=0`);
+          await waitIdle(page);
+          await page.evaluate(() => window.zm!.govTick());
+          const wylaczone = await stan();
+          console.log(`  z ?lancuchy=0: ${JSON.stringify(wylaczone)}`);
+          if (wylaczone.lancuchy !== null || wylaczone.wybrane !== null)
+            throw new Error(`?lancuchy=0 ma wyłączyć łańcuchy: ${JSON.stringify(wylaczone)}`);
+        },
+      },
+      {
+        // krok łańcucha historii z gościem pod bramą (Przymorze, obcy włączeni): „Światło w oknie naprzeciwko”, krok drugi,
+        // „Chłopak z babcią”. Wątek sezonu ustawiony ręcznie z hakiem po kroku pierwszym; dwie osoby naprawdę stoją pod bramą
+        // (faza brama, dwa pionki o imionach z karty), karta ma „Pokaż”, który jedzie kamerą do nich, nie zamykając okna.
+        // Zrzuty: karta (wyd-watek-okno.png) i po „Pokaż” (końcowy wyd-watek.png)
+        name: 'wyd-watek',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await ustawWatekSwiatlo(page);
+          const krok = await doKarty(page, 'swiatlo_2', 400);
+          await waitIdle(page);
+          const stan = await watekGosci(page);
+          const tekst = await sheetText(page);
+          console.log(
+            `  krok łańcucha po ${krok} krokach: faza ${stan.faza}, ${stan.pionki} pionków: ${stan.imiona.join(', ')}`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          if (stan.faza !== 'brama') throw new Error(`krok łańcucha, ale faza ${stan.faza}`);
+          if (stan.pionki !== 2) throw new Error(`chłopak z babcią to dwie osoby, na mapie ${stan.pionki} pionków`);
+          for (const imie of stan.imiona)
+            if (!tekst.includes(imie)) throw new Error(`karta nie zna imienia ${imie} z mapy`);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-watek-okno.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          const po = await page.evaluate(() => {
+            const zm = window.zm!;
+            const a = zm.gov!.goscie!.aktywny!;
+            const p = zm.sim!.st.pawns.find(
+              (q) => q.kind === 'gosc' && q.id === zm.sim!.st.goscie!.find((g) => g.id === a.gosc.id)!.pawns[0],
+            )!;
+            const [sx, sy] = zm.screenOf(p.x, p.y);
+            const r = document.getElementById('sheet')!.getBoundingClientRect();
+            const bar = document.getElementById('top')!.getBoundingClientRect().bottom;
+            return {
+              open: !document.getElementById('modal')!.hidden,
+              ev: zm.gov!.ev.active?.id ?? null,
+              pod: sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom,
+              widac: sx > 0 && sx < zm.view.width && sy > bar && sy < zm.view.height,
+            };
+          });
+          if (!po.open || po.ev !== 'swiatlo_2') throw new Error('„Pokaż” zamknęło okno kroku łańcucha');
+          if (po.pod || !po.widac) throw new Error('po „Pokaż” gościa nie widać: jest pod oknem albo poza ekranem');
+          await waitIdle(page);
+          await frames(page, 3);
+          await gosciNarysowani(page, 'po „Pokaż”');
+        },
+      },
+      {
+        // ten sam krok łańcucha po angielsku: cała karta bez polskich liter poza imionami z mapy (en-wyd-watek.png)
+        name: 'en-wyd-watek',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await ustawWatekSwiatlo(page);
+          const krok = await doKarty(page, 'swiatlo_2', 400);
+          await waitIdle(page);
+          const stan = await watekGosci(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 420)}`);
+          console.log(`  buttons: ${foot.join(' | ')}`);
+          if (stan.faza !== 'brama' || stan.pionki !== 2)
+            throw new Error('English chain card without two people at the gate');
+          if (!foot.some((f) => f.startsWith('event-show:'))) throw new Error('card without a Show button');
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, stan.imiona);
+          if (pl.length) throw new Error(`Polish letters on the English chain card: ${pl.join(', ')}`);
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await frames(page, 3);
+        },
+      },
+      {
+        // znajomy wśród szabrowników (Przymorze): zarząd pamięta Henryka Kowalskiego, złapanego na kradzieży (ujemny wpis
+        // w GovState.znajomi). Szukamy ziarna, przy którym pierwszej nocy szabrownicy przychodzą; wtedy plan napadu niesie
+        // znajomego, jeden z szabrowników ma jego wygląd (wyd-powrot-szabrownicy.png), a poranny raport ma linię
+        // „Wśród nich był Henryk Kowalski, …” (końcowy wyd-powrot.png)
+        name: 'wyd-powrot',
+        query: '',
+        run: async (page, base) => {
+          let wybrane = 0;
+          for (let seed = 1; seed <= 60 && !wybrane; seed++) {
+            await page.goto(`${base}?demo=przymorze&speed=0&godzina=19.5&cam=hq,1.3&seed=${seed}`);
+            await waitIdle(page);
+            await page.evaluate((z) => {
+              window.zm!.gov!.znajomi = [z];
+            }, HENRYK_WROG);
+            await page.evaluate(() => window.zm!.govTick());
+            await page.click('#sheet [data-act="law-skip"]');
+            await page.evaluate(() => window.zm!.ff(31));
+            await page.click('#sheet [data-act="night-go"]');
+            const plan = await page.evaluate(() => {
+              const r = window.zm!.gov!.night?.raid;
+              return r ? { come: r.come, znajomy: r.znajomy ?? null } : null;
+            });
+            if (plan?.come && plan.znajomy) wybrane = seed;
+          }
+          if (!wybrane) throw new Error('w 60 grach pierwszej nocy nie przyszli szabrownicy z znajomym');
+          console.log(`  ziarno ${wybrane}: napad ze znajomym w planie`);
+          // szabrownicy podchodzą pod siatkę: jeden z nich ma wygląd Henryka
+          const stoja = async () =>
+            page.evaluate((look) => {
+              const zm = window.zm!;
+              const st = zm.sim!.st;
+              const sz = st.pawns.filter((p) => p.kind === 'szabrownik');
+              return {
+                n: sz.length,
+                ten: sz.filter((p) => p.look === look).length,
+                faza: st.raid?.phase ?? -1,
+                za: st.raid ? st.raid.at - st.tick : 0,
+              };
+            }, HENRYK_WROG.look);
+          let st = await stoja();
+          // do kilku minut przed napadem, kiedy stoją już pod siatką
+          for (let k = 0; k < 120 && (st.n === 0 || st.faza < 1 || st.za > 60); k++) {
+            const p = await page.evaluate(() => window.zm!.ff(5));
+            if (p) await answerFirst(page, p);
+            st = await stoja();
+          }
+          if (st.n === 0) throw new Error('szabrownicy się nie pojawili');
+          console.log(`  szabrownicy: ${st.n}, z wyglądem znajomego ${st.ten}, do napadu ${st.za} kroków`);
+          if (st.ten !== 1) throw new Error(`wygląd znajomego ma ${st.ten} szabrowników zamiast jednego`);
+          // ten sam człowiek jako gość: osobna wizyta Henryka (plan jak od zarządu), a jego pionek stawiamy obok szabrownika
+          // ze znajomego, żeby na zrzucie widać było dwie takie same twarze; postać z widoku musi być ta sama
+          await page.evaluate(
+            ([osoba, look]) => {
+              const sim = window.zm!.sim!;
+              sim.st.cmds.push({
+                t: 'gosc',
+                ids: [],
+                plan: {
+                  id: 'g99',
+                  strona: 'n',
+                  looks: [look],
+                  osoby: [
+                    {
+                      id: 'g99p0',
+                      ...osoba,
+                      prof: 'Hydraulik',
+                      skills: {},
+                      traits: [],
+                      home: -1,
+                      assign: null,
+                      sick: false,
+                      dead: false,
+                      gone: false,
+                    },
+                  ],
+                },
+              } as never);
+              sim.step();
+            },
+            [HENRYK_WROG.osoba, HENRYK_WROG.look] as const,
+          );
+          const wzorzec = wygladZnajomego(HENRYK_WROG.look, HENRYK_WROG.osoba);
+          const fig = await figury(page, HENRYK_WROG.osoba.name, wzorzec);
+          if (!fig) throw new Error('widok bez postaci PixelLab (?grafika=kod): zrzut nie sprawdzi twarzy');
+          console.log(`  postać gościa ${fig.gosc}, szabrownika ${fig.szabrownik}, wzorca ${fig.wzorzec}`);
+          if (!fig.gosc || fig.gosc === 'kod' || fig.gosc !== fig.szabrownik || fig.gosc !== fig.wzorzec)
+            throw new Error(`gość, szabrownik ze znajomego i wzorzec mają różne postacie: ${JSON.stringify(fig)}`);
+          // po ciemku nie widać ich bez światła: ognisko obok miejsca, gdzie czekają pod siatką
+          await page.evaluate((look) => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const st = sim.st;
+            const spot = st.raid!.spot;
+            // dwa kafelki obok, żeby dym ogniska nie zasłaniał szabrownika
+            const x = (spot % sim.w.size) + 2;
+            const y = Math.floor(spot / sim.w.size) + 1;
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'ognisko',
+              x,
+              y,
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 0,
+              fuel: 100000,
+              by: -1,
+              owner: -1,
+            });
+            const on = st.pawns.find((p) => p.kind === 'szabrownik' && p.look === look)!;
+            // gość o tym samym wyglądzie stoi tuż obok (bez własnej drogi, na jedną klatkę zrzutu)
+            const gosc = st.pawns.find((p) => p.kind === 'gosc' && p.look === look);
+            if (gosc) {
+              gosc.x = on.x + 1.3;
+              gosc.y = on.y;
+              gosc.path = [];
+              gosc.pi = 0;
+            }
+            zm.setCam(on.x + 0.6, on.y, 3.2);
+          }, HENRYK_WROG.look);
+          await waitIdle(page);
+          await frames(page, 4);
+          await page.screenshot({ path: path.join(OUT, 'wyd-powrot-szabrownicy.png') });
+          // rano: raport z linią o znajomym
+          for (let k = 0; k < 60; k++) {
+            const p = await page.evaluate(() => window.zm!.ff(30));
+            if (p === 'raport') break;
+            if (p) await answerFirst(page, p);
+          }
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          console.log(`  raport: ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          if (!tekst.includes('Wśród nich był Henryk Kowalski, ')) throw new Error('raport bez linii o znajomym');
+        },
+      },
+      {
+        // powrót znajomego jako gość (Przymorze, obcy włączeni): zarząd pamięta, że Henryk Kowalski spał kiedyś u nas przy
+        // ogniu (dodatni wpis). Po dwóch dobach wraca pod bramę: ten sam człowiek i wygląd, karta rozpoznaje go po imieniu
+        // i epitecie, ma „Pokaż”. Zrzuty: karta (wyd-powrot-gosc-karta.png), po „Pokaż” kamera jedzie do gościa (końcowy
+        // wyd-powrot-gosc.png)
+        name: 'wyd-powrot-gosc',
+        query: '',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate((z) => {
+            window.zm!.gov!.znajomi = [z];
+          }, HENRYK_DOBRY);
+          const krok = await doPowrotu(page);
+          await waitIdle(page);
+          const stan = await page.evaluate(() => {
+            const zm = window.zm!;
+            const st = zm.sim!.st;
+            const a = zm.gov!.goscie!.aktywny!;
+            const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+            const pionki = st.pawns.filter((p) => p.kind === 'gosc' && wpis.pawns.includes(p.id));
+            const mow = pionki[0];
+            return {
+              godzina: document.getElementById('hTime')?.textContent ?? '',
+              faza: wpis.faza,
+              pionki: pionki.length,
+              osoby: a.gosc.osoby.length,
+              wraca: a.gosc.wraca,
+              imie: mow ? st.people[mow.person].name : null,
+              look: mow?.look ?? -1,
+              dar: a.gosc.porcje !== undefined ? 'jedzenie' : a.gosc.osoby.length > 1 ? 'rodzenstwo' : 'wiadomosc',
+            };
+          });
+          const tekst = await sheetText(page);
+          console.log(
+            `  powrót po ${krok} krokach (${stan.godzina}): ${stan.imie}, wygląd ${stan.look}, dar ${stan.dar}, faza ${stan.faza}, ${stan.pionki} pionków`,
+          );
+          console.log(`  ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          if (stan.faza !== 'brama') throw new Error(`karta powrotu, ale faza ${stan.faza}`);
+          if (stan.imie !== 'Henryk Kowalski' || stan.look !== HENRYK_DOBRY.look)
+            throw new Error(`pod bramą nie ten człowiek: ${stan.imie}, wygląd ${stan.look}`);
+          if (stan.pionki !== stan.osoby)
+            throw new Error(`karta o ${stan.osoby} osobach, na mapie ${stan.pionki} pionków`);
+          if (!tekst.includes('Pod bramą znowu stoi Henryk Kowalski, '))
+            throw new Error('karta nie rozpoznaje znajomego');
+          // twarz powracającego z widoku to ta sama funkcja danych co u gościa sprzed lat i u szabrownika ze znajomego
+          const fig = await figury(
+            page,
+            HENRYK_DOBRY.osoba.name,
+            wygladZnajomego(HENRYK_DOBRY.look, HENRYK_DOBRY.osoba),
+          );
+          if (!fig) throw new Error('widok bez postaci PixelLab (?grafika=kod): zrzut nie sprawdzi twarzy');
+          console.log(`  postać powracającego ${fig.gosc}, wzorca ${fig.wzorzec}`);
+          if (!fig.gosc || fig.gosc === 'kod' || fig.gosc !== fig.wzorzec)
+            throw new Error(`powracający i wzorzec mają różne postacie: ${JSON.stringify(fig)}`);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          console.log(`  przyciski: ${foot.join(' | ')}`);
+          if (foot[0] !== 'event-show:Pokaż') throw new Error(`pierwszy przycisk karty to nie „Pokaż”: ${foot[0]}`);
+          await page.screenshot({ path: path.join(OUT, 'wyd-powrot-gosc-karta.png') });
+          await page.click('#sheet [data-act="event-show"]');
+          await page.waitForTimeout(1400);
+          await waitIdle(page);
+          await frames(page, 3);
+          await gosciNarysowani(page, 'powracający pod bramą po „Pokaż”');
+        },
+      },
+      {
+        // ta sama karta powrotu po angielsku (en-wyd-powrot-gosc.png): epitet i dar bez polskich liter poza imionami
+        name: 'en-wyd-powrot-gosc',
+        query: '',
+        lang: 'en',
+        run: async (page, base) => {
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=9&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate((z) => {
+            window.zm!.gov!.znajomi = [z];
+          }, HENRYK_DOBRY);
+          const krok = await doPowrotu(page);
+          await waitIdle(page);
+          const tekst = await sheetText(page);
+          const foot = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .sheet-foot button')].map(
+              (b) => `${b.getAttribute('data-act')}:${b.textContent}`,
+            ),
+          );
+          const wyb = await page.evaluate(() =>
+            [...document.querySelectorAll('#sheet .choices [data-act="event"]')].map((b) => b.textContent ?? ''),
+          );
+          const imiona = await page.evaluate(() => window.zm!.gov!.goscie!.aktywny!.gosc.osoby.map((o) => o.name));
+          console.log(`  card after ${krok} steps: ${tekst.replace(/\s+/g, ' ').slice(0, 500)}`);
+          console.log(`  buttons: ${foot.join(' | ')}; choices: ${wyb.join(' | ')}`);
+          if (!tekst.includes('Henryk Kowalski, ')) throw new Error('the card does not recognise the returning guest');
+          if (!/ is back at /.test(tekst)) throw new Error('the card does not say the guest is back');
+          const pl = polskieLitery(`${tekst} ${foot.join(' ')} ${wyb.join(' ')}`, imiona);
+          if (pl.length) throw new Error(`Polish letters on the English return card: ${pl.join(', ')}`);
+          await page.screenshot({ path: path.join(OUT, 'en-wyd-powrot-gosc.png') });
+        },
+      },
+      {
+        // pies z karty „Pies przy siatce” jako prawdziwy pionek (Przymorze): przygarnięty za dnia wchodzi zza siatki bramą i
+        // kręci się po podwórku przy bramie (wyd-pies-dzien.png), nocą leży przy bramie jako ciemny zarys (wyd-pies-noc.png),
+        // a w trybie zombie z szwendaczem pod siatką szczeka: napis „Hau!” nad psem i hałas 12 m (wyd-pies-szczek.png).
+        // Sprite psa sprawdzany przed każdym zrzutem
+        name: 'wyd-pies',
+        query: '',
+        run: async (page, base) => {
+          const pies = (page: Page) =>
+            page.evaluate(() => {
+              const zm = window.zm!;
+              const p = zm.sim!.st.pawns.find((q) => q.kind === 'pies');
+              return p ? { x: p.x, y: p.y, what: p.job?.what ?? '' } : null;
+            });
+          /** dopóki warunek nie zajdzie, kroki symulacji (najwyżej max); zwraca liczbę kroków */
+          const krokiDo = (page: Page, warunek: string, max: number) =>
+            page.evaluate(
+              ([w, n]) => {
+                const zm = window.zm!;
+                const sim = zm.sim!;
+                const ok = new Function('sim', 'st', `return (${w as string});`) as (s: unknown, t: unknown) => boolean;
+                let k = 0;
+                while (k < (n as number) && !ok(sim, sim.st)) {
+                  for (const p of sim.st.pawns)
+                    if (p.kind === 'core' && p.needs) Object.assign(p.needs, { food: 100, warm: 100, rest: 100 });
+                  sim.step();
+                  k++;
+                }
+                return k;
+              },
+              [warunek, max] as const,
+            );
+          const wBramie = `(() => { const d = st.pawns.find((p) => p.kind === 'pies'); return !!d && sim.w.fence.yard.includes(Math.floor(d.y) * sim.w.size + Math.floor(d.x)); })()`;
+          // dzień: przygarnięty pies wchodzi bramą i kręci się po podwórku
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=10&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'pies' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          const start = await pies(page);
+          console.log(`  pies po pierwszym kroku: (${start?.x.toFixed(1)}, ${start?.y.toFixed(1)}) ${start?.what}`);
+          const za = await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const d = sim.st.pawns.find((q) => q.kind === 'pies')!;
+            return !sim.w.fence.yard.includes(Math.floor(d.y) * sim.w.size + Math.floor(d.x));
+          });
+          if (!za) throw new Error('pies nie zaczyna za siatką');
+          const wszedl = await krokiDo(page, wBramie, 4000);
+          console.log(`  pies na podwórku po ${wszedl} krokach`);
+          await krokiDo(page, 'false', 900);
+          const dzien = await pies(page);
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y - 0.6, 3), [dzien!.x, dzien!.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'pies', 'dzień, na podwórku przy bramie');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-dzien.png') });
+          // noc: pies leży przy bramie od środka
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=23&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'pies' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          const lezy = await krokiDo(page, `st.pawns.some((p) => p.kind === 'pies' && p.job?.what === 'lezy')`, 4000);
+          const noc = await pies(page);
+          console.log(`  pies leży po ${lezy} krokach: (${noc?.x.toFixed(1)}, ${noc?.y.toFixed(1)}) ${noc?.what}`);
+          if (noc?.what !== 'lezy') throw new Error('pies nocą nie leży przy bramie');
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y, 3.2), [noc.x, noc.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'pies', 'noc, leży przy bramie');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-noc.png') });
+          // to samo z ogniskiem na podwórku 3 m od bramy: pies leży w jego świetle
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const w = sim.w;
+            const st = sim.st;
+            const g = w.fence.gate;
+            const gx = g.x + g.w / 2;
+            const gy = g.y;
+            const cel = w.fence.yard
+              .filter(
+                (i) => !w.blocked[i] && !st.things.some((t) => t.x === i % w.size && t.y === Math.floor(i / w.size)),
+              )
+              .sort(
+                (a, b) =>
+                  Math.abs(Math.hypot((a % w.size) - gx, Math.floor(a / w.size) - gy) - 3) -
+                    Math.abs(Math.hypot((b % w.size) - gx, Math.floor(b / w.size) - gy) - 3) || a - b,
+              )[0];
+            st.things.push({
+              id: st.nextThing++,
+              kind: 'ognisko',
+              x: cel % w.size,
+              y: Math.floor(cel / w.size),
+              w: 1,
+              h: 1,
+              rot: 0,
+              n: 0,
+              fuel: 100000,
+              by: -1,
+              owner: -1,
+            });
+          });
+          await waitIdle(page);
+          await frames(page, 4);
+          await zwierzeNarysowane(page, 'pies', 'noc, leży w świetle ogniska');
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-noc-ognisko.png') });
+          // tryb zombie: pies na podwórku, szwendacze pod siatką przy bramie, szczeka (napis i hałas)
+          await page.goto(`${base}?demo=przymorze&tryb=zombie&speed=0&godzina=11&cam=hq,1`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            const sim = window.zm!.sim!;
+            const st = sim.st;
+            st.pawns = st.pawns.filter((p) => p.kind !== 'zombie');
+            st.cmds.push({ t: 'zwierze', ids: [], co: 'pies' } as never);
+            sim.step();
+          });
+          await krokiDo(page, wBramie, 4000);
+          await krokiDo(page, 'false', 300);
+          const szczek = await page.evaluate(() => {
+            const zm = window.zm!;
+            const sim = zm.sim!;
+            const st = sim.st;
+            const g = sim.w.fence.gate;
+            // szwendacze pod siatką przy bramie (trzech)
+            sim.spawnAtFence(3, (g.y - 1) * sim.w.size + g.x);
+            let k = 0;
+            while (k < 400 && !st.szczek) {
+              for (const p of st.pawns)
+                if (p.kind === 'core' && p.needs) Object.assign(p.needs, { food: 100, warm: 100, rest: 100 });
+              sim.step();
+              k++;
+            }
+            const d = st.pawns.find((q) => q.kind === 'pies')!;
+            const zs = st.pawns.filter((q) => q.kind === 'zombie');
+            const najblizszy = Math.min(...zs.map((q) => Math.hypot(q.x - d.x, q.y - d.y)));
+            const halas = (st.noise ?? []).filter((n) => n.r === 12).length;
+            zm.setCam(d.x, d.y - 2, 2.2);
+            return {
+              k,
+              szczek: st.szczek?.tick ?? null,
+              tick: st.tick,
+              najblizszy: Math.round(najblizszy * 10) / 10,
+              halas,
+              zombi: zs.length,
+            };
+          });
+          console.log(`  szczeknięcie po ${szczek.k} krokach: ${JSON.stringify(szczek)}`);
+          if (szczek.szczek === null) throw new Error('pies nie zaszczekał na szwendaczy pod siatką');
+          if (szczek.halas < 1) throw new Error('szczekanie nie dało hałasu 12 m w trybie zombie');
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'pies', 'szczeka na szwendaczy', true);
+          await page.screenshot({ path: path.join(OUT, 'wyd-pies-szczek.png') });
+        },
+      },
+      {
+        // kot z karty „Kot w piwnicy” jako prawdziwy pionek (Przymorze, przekrój siedziby): nocą śpi zwinięty przy kozie
+        // zarządu (wyd-kot-noc.png), za dnia chodzi po mieszkaniu zarządu (wyd-kot-dzien.png). Sprite kota sprawdzany
+        // przed każdym zrzutem
+        name: 'wyd-kot',
+        query: '',
+        run: async (page, base) => {
+          const gdzieKot = (page: Page) =>
+            page.evaluate(() => {
+              const zm = window.zm!;
+              const sim = zm.sim!;
+              const k = sim.st.pawns.find((q) => q.kind === 'kot');
+              const koza = sim.st.things.find((t) => t.kind === 'koza')!;
+              return k ? { x: k.x, y: k.y, what: k.job?.what ?? '', koza: { x: koza.x, y: koza.y } } : null;
+            });
+          const kroki = (page: Page, warunek: string, max: number) =>
+            page.evaluate(
+              ([w, n]) => {
+                const sim = window.zm!.sim!;
+                const ok = new Function('st', `return (${w as string});`) as (t: unknown) => boolean;
+                let k = 0;
+                while (k < (n as number) && !ok(sim.st)) {
+                  for (const p of sim.st.pawns)
+                    if (p.kind === 'core' && p.needs) Object.assign(p.needs, { food: 100, warm: 100, rest: 100 });
+                  sim.step();
+                  k++;
+                }
+                return k;
+              },
+              [warunek, max] as const,
+            );
+          // noc: kot śpi przy kozie
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=23&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'kot' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          // zarząd na wyprawie (poza kadrem): w kuchni stoją przy kozie i zasłaniają kota, który leży im pod nogami
+          await page.evaluate(() => {
+            for (const p of window.zm!.sim!.st.pawns) if (p.kind === 'core') p.away = true;
+          });
+          // koza pali się (noc przy ogniu: okna świecą, w pokoju jasno)
+          await page.evaluate(() => {
+            for (const t of window.zm!.sim!.st.things) if (t.kind === 'koza') t.fuel = 20000;
+          });
+          await kroki(page, `st.pawns.some((p) => p.kind === 'kot' && p.job?.what === 'lezy')`, 4000);
+          await kroki(page, 'false', 200);
+          const noc = await gdzieKot(page);
+          const wokol = await page.evaluate(
+            ([x, y]) => {
+              const st = window.zm!.sim!.st;
+              return st.things
+                .filter((t) => t.x <= x + 2 && t.x + t.w >= x - 2 && t.y <= y + 2 && t.y + t.h >= y - 2)
+                .map((t) => `${t.kind}(${t.x},${t.y},${t.w}x${t.h})`);
+            },
+            [Math.floor(noc!.x), Math.floor(noc!.y)] as const,
+          );
+          console.log(`  rzeczy wokół kota: ${wokol.join(' ')}`);
+          console.log(
+            `  kot nocą: (${noc?.x.toFixed(1)}, ${noc?.y.toFixed(1)}) ${noc?.what}, koza (${noc?.koza.x}, ${noc?.koza.y})`,
+          );
+          if (noc?.what !== 'lezy') throw new Error('kot nocą nie śpi przy kozie');
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y - 0.5, 4), [noc.x, noc.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'kot', 'noc, śpi przy kozie');
+          await page.screenshot({ path: path.join(OUT, 'wyd-kot-noc.png') });
+          // dzień: kot chodzi po mieszkaniu zarządu
+          await page.goto(`${base}?demo=przymorze&speed=0&godzina=10&cam=hq,1.3`);
+          await waitIdle(page);
+          await page.evaluate(() => {
+            window.zm!.sim!.st.cmds.push({ t: 'zwierze', ids: [], co: 'kot' } as never);
+          });
+          await page.evaluate(() => window.zm!.sim!.step());
+          await kroki(page, `st.pawns.some((p) => p.kind === 'kot' && p.job?.what === 'wloczy')`, 4000);
+          await kroki(page, 'false', 40);
+          const dzien = await gdzieKot(page);
+          console.log(`  kot za dnia: (${dzien?.x.toFixed(1)}, ${dzien?.y.toFixed(1)}) ${dzien?.what}`);
+          await page.evaluate(([x, y]) => window.zm!.setCam(x, y - 0.5, 4), [dzien!.x, dzien!.y] as const);
+          await waitIdle(page);
+          await frames(page, 3);
+          await zwierzeNarysowane(page, 'kot', 'dzień, chodzi po mieszkaniu');
+          await page.screenshot({ path: path.join(OUT, 'wyd-kot-dzien.png') });
         },
       },
       {
@@ -5660,7 +6369,9 @@ const SHOTS: Shot[] = [
         for (const p of core) if (p.job?.t === 'research') p.job = null;
         const inny = core[core.length - 1];
         const ok = sim.startResearch(inny, true);
-        zm.setCam(lab.x + 1, lab.y + 0.5, 1.4);
+        // kamera półtora kafelka wyżej niż pracownia: żaden z zaznaczanych (jeden stoi siedem kafelków nad stołem) nie wypada
+        // pod górnym paskiem, który ma od 1100 px stałe 105 px (kliknięcie w pionka pod paskiem trafia w pasek)
+        zm.setCam(lab.x + 1, lab.y - 1, 1.4);
         return {
           lab: { x: lab.x, y: lab.y },
           inny: inny.id,
@@ -7833,6 +8544,16 @@ async function answerFirst(page: Page, p: string) {
   else if (p === 'raport') await page.click('#sheet [data-act="report-ok"]');
 }
 
+/** Odpowiada na okna zarządu, które czekają teraz (pierwszy dostępny wybór), najwyżej cztery po kolei: gra nad otwartym oknem
+    nie przyjmuje poleceń z menu. */
+async function odpowiedzNaOkna(page: Page) {
+  for (let k = 0; k < 4; k++) {
+    const p = await page.evaluate(() => window.zm!.govTick());
+    if (!p) return;
+    await answerFirst(page, p);
+  }
+}
+
 /** Przewija grę (po pół godziny gry), odpowiadając na okna zarządu, aż wypadnie karta wydarzenia o danym id (z `kto`:
     tylko taka, której dane mają ten napis, np. imię zmarłego); zwraca, po ilu krokach. Rzuca, gdy przez `ile` kroków jej
     nie było. */
@@ -7852,6 +8573,107 @@ async function doKarty(page: Page, id: string, ile = 300, kto = ''): Promise<num
     await answerFirst(page, p);
   }
   throw new Error(`przez ${ile / 2} godzin gry nie wypadła karta „${id}”${kto ? ` dla „${kto}”` : ''}`);
+}
+
+/** Wątek sezonu „Światło w oknie naprzeciwko” ustawiony ręcznie po kroku pierwszym (hak z odpowiedzią latarką, czas sprzed
+    gry): krok drugi, „Chłopak z babcią”, czeka tylko na porę dnia i na wizytę pod bramą. Zwykła pula zostaje, bo bez niej
+    gra nie ma okien do odpowiadania. */
+async function ustawWatekSwiatlo(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const g = window.zm!.gov!;
+    // nowa gra bez parametru ma łańcuchy włączone (src/main.ts); bez tego pola krok `swiatlo_2` by nie wypadł
+    if (g.lancuchy !== true) throw new Error('nowa gra bez ?lancuchy=0 ma mieć włączone łańcuchy kart');
+    g.watki = {
+      wybrane: ['swiatlo'],
+      haki: { swiatlo_1: { t: 0 }, 'swiatlo.znak': { t: 0, d: { odp: 'latarka' } } },
+      krok: { swiatlo: 1 },
+    };
+  });
+}
+
+/** Wizyta kroku łańcucha z gośćmi: faza w symulacji, pionki o imionach z mapy (kolejność jak w planie) */
+async function watekGosci(page: Page): Promise<{ faza: string; pionki: number; imiona: string[] }> {
+  return page.evaluate(() => {
+    const zm = window.zm!;
+    const st = zm.sim!.st;
+    const a = zm.gov!.goscie!.aktywny!;
+    const wpis = st.goscie!.find((g) => g.id === a.gosc.id)!;
+    const pionki = wpis.pawns.map((id) => st.pawns.find((p) => p.id === id)!).filter((p) => p.kind === 'gosc');
+    return {
+      faza: wpis.faza,
+      pionki: pionki.length,
+      imiona: pionki.map((p) => st.people[p.person].name),
+    };
+  });
+}
+
+/** Znajomi do zrzutów powrotu (docs/superpowers/specs/2026-10-19-wydarzenia-design.md, sekcja 4): Henryk Kowalski, który
+    dawno temu spał u nas przy ogniu (dodatni, wraca jako gość), i ten sam człowiek złapany na kradzieży (ujemny, idzie
+    z szabrownikami). Wygląd 9 jak w planie gościa (4–15). */
+const HENRYK = {
+  id: 'g0p0',
+  osoba: { first: 'Henryk', name: 'Henryk Kowalski', f: false, age: 47 },
+  prof: 'Hydraulik',
+  look: 9,
+  kto: 'wedrowiec',
+  dzien: 0,
+  wizyty: 1,
+  ostatnio: 0,
+} as const;
+const HENRYK_DOBRY: Znajomy = { ...HENRYK, osoba: { ...HENRYK.osoba }, jak: 'nocleg', nastawienie: 2 };
+const HENRYK_WROG: Znajomy = { ...HENRYK, osoba: { ...HENRYK.osoba }, jak: 'zlapany', nastawienie: -2 };
+
+/** Przewija grę (po pół godziny gry), odpowiadając na okna zarządu, aż pod bramą stanie powracający gość: otwarta karta
+    `gosc` z gościem, który ma `wraca`. Zwraca liczbę kroków. Rzuca, gdy przez `ile` kroków powrót nie przyszedł. */
+async function doPowrotu(page: Page, ile = 800): Promise<number> {
+  for (let k = 0; k < ile; k++) {
+    const p = await page.evaluate(() => window.zm!.ff(30));
+    if (!p) continue;
+    if (p === 'wydarzenie') {
+      const wraca = await page.evaluate(() => {
+        const zm = window.zm!;
+        return zm.gov!.ev.active?.id === 'gosc' && !!zm.gov!.goscie?.aktywny?.gosc.wraca;
+      });
+      if (wraca) return k + 1;
+    }
+    await answerFirst(page, p);
+  }
+  throw new Error(`przez ${ile / 2} godzin gry znajomy nie wrócił pod bramę`);
+}
+
+/** Postać PixelLab pionków z widoku gry (id postaci i wersja kolorystyczna, jak je wybiera `LudziePixellab`): gościa o danym
+    imieniu i nazwisku, szabrownika z polem `wyglad` (ze znajomego) i pionka-wzorca z wyglądem `wzorzec` (to, co dostałby
+    człowiek o tych danych w każdym pionku). null: widok nie ma postaci PixelLab (grafika z kodu). Pionki wybierane po numerach,
+    bo widok pamięta wybór po numerze pionka. */
+async function figury(
+  page: Page,
+  imie: string,
+  wzorzec: Wyglad,
+): Promise<{ gosc: string | null; szabrownik: string | null; wzorzec: string } | null> {
+  return page.evaluate(
+    ([imie, wzorzec]) => {
+      const zm = window.zm!;
+      const st = zm.sim!.st;
+      type Dane = {
+        postacPionka(p: unknown, osoby: unknown): { id: string } | null;
+        wersjaPionka(p: unknown, po: unknown): number;
+      };
+      const dane = (zm.view as unknown as { ludzie?: { dane: Dane } }).ludzie?.dane;
+      if (!dane) return null;
+      const fig = (p: unknown) => {
+        const po = dane.postacPionka(p, st.people);
+        return po ? `${po.id}:${dane.wersjaPionka(p, po)}` : 'kod';
+      };
+      const gosc = st.pawns.find((p) => p.kind === 'gosc' && st.people[p.person]?.name === imie);
+      const sz = st.pawns.find((p) => p.kind === 'szabrownik' && p.wyglad);
+      return {
+        gosc: gosc ? fig(gosc) : null,
+        szabrownik: sz ? fig(sz) : null,
+        wzorzec: fig({ id: 987654, kind: 'szabrownik', person: -1, look: 9, wyglad: wzorzec }),
+      };
+    },
+    [imie, wzorzec] as const,
+  );
 }
 
 /** nazwy domowych celów z TARGETS na karcie nocy w domu jednorodzinnym (tresc.ts: `targetName`) */
@@ -8679,6 +9501,38 @@ async function gosciNarysowani(page: Page, co: string): Promise<void> {
   if (r.sprites.some((x) => !x.visible || x.alpha <= 0)) throw new Error(`${co}: gość nie jest narysowany`);
 }
 
+/** Czy pies albo kot jest narysowany: sprite w widoku ma `visible` i `alpha` > 0 (nocą psa chowa ciemność tylko do ciemnego
+    zarysu, nie całkiem). Z `napis`: nad psem jest też napis szczekania („Hau!” albo „Woof!”) w warstwie napisów widoku.
+    Rzuca, gdy nie ma zwierzęcia, jest ukryte albo brakuje napisu; `co` do komunikatu. */
+async function zwierzeNarysowane(page: Page, rodzaj: 'pies' | 'kot', co: string, napis = false): Promise<void> {
+  const r = await page.evaluate((rodzaj) => {
+    const zm = window.zm!;
+    const v = zm.view as unknown as {
+      pawnSprites: Map<
+        number,
+        { visible: boolean; alpha: number; texture: { frame: { width: number; height: number } } }
+      >;
+      zwierzeta: { teksty: Map<number, { text: string; alpha: number }> };
+    };
+    const p = zm.sim!.st.pawns.find((q) => q.kind === rodzaj);
+    const sp = p ? v.pawnSprites.get(p.id) : undefined;
+    return {
+      godzina: document.getElementById('hTime')?.textContent ?? '',
+      jest: !!p,
+      visible: !!sp?.visible,
+      alpha: sp ? Math.round(sp.alpha * 100) / 100 : 0,
+      ramka: sp ? [sp.texture.frame.width, sp.texture.frame.height] : null,
+      napisy: [...v.zwierzeta.teksty.values()].map((t) => `${t.text} (${Math.round(t.alpha * 100) / 100})`),
+    };
+  }, rodzaj);
+  console.log(`  ${co} (${r.godzina}): ${rodzaj} narysowany ${JSON.stringify(r)}`);
+  if (!r.jest) throw new Error(`${co}: nie ma pionka ${rodzaj}`);
+  if (!r.visible || r.alpha <= 0) throw new Error(`${co}: ${rodzaj} nie jest narysowany`);
+  const [szer, wys] = r.ramka ?? [0, 0];
+  if (szer !== 32 || wys !== 32) throw new Error(`${co}: klatka ${rodzaj} spoza atlasu zwierząt`);
+  if (napis && !r.napisy.length) throw new Error(`${co}: brak napisu szczekania nad psem`);
+}
+
 /** Czy pionki o tych numerach są narysowane (sprite w widoku z `visible` i `alpha` > 0), niezależnie od rodzaju: goście
     pod bramą mają rodzaj `gosc`, a po przyjęciu mieszkańca albo zarządu (te same pionki). Rzuca, gdy któryś jest ukryty. */
 async function pionkiNarysowane(page: Page, ids: number[], co: string): Promise<void> {
@@ -9294,6 +10148,16 @@ async function zrzut(shot: Shot): Promise<void> {
       // strona bez pamięci: gra wybierze język domyślny
     }
   }, shot.lang ?? 'pl');
+  // błędy okna „ResizeObserver loop completed with undelivered notifications” nie są wyjątkami, więc Playwright ich nie zgłasza
+  // (`pageerror`), a serwer Vite pisze je tylko jako „[Unhandled error]”: liczy je słuchacz zdarzenia `error` z początku strony,
+  // a scenariusz z choć jednym pada (src/main.ts nie obserwuje okienka celów, tylko mierzy je przy przepisywaniu treści)
+  await page.addInitScript(() => {
+    const okno = window as unknown as { __zmRo: string[] };
+    okno.__zmRo = [];
+    window.addEventListener('error', (e) => {
+      if (/ResizeObserver/.test(e.message)) okno.__zmRo.push(e.message);
+    });
+  });
   // --kod: każda strona gry dostaje ?grafika=kod, zanim ruszą jej skrypty (adres w pasku, który czyta main.ts)
   if (KOD)
     await page.addInitScript(() => {
@@ -9325,6 +10189,10 @@ async function zrzut(shot: Shot): Promise<void> {
     }
     const file = path.join(OUT, `${shot.name}.png`);
     await page.screenshot({ path: file });
+    const ro = await page
+      .evaluate(() => (window as unknown as { __zmRo?: string[] }).__zmRo?.length ?? 0)
+      .catch(() => 0);
+    if (ro) errors.push(`${ro}× „ResizeObserver loop completed with undelivered notifications”`);
     console.log(`${shot.name}: ${Date.now() - t0} ms${errors.length ? `, BŁĘDY: ${errors.join(' | ')}` : ''}`);
     // błąd na stronie to nieudany zrzut, także dla CI
     if (errors.length) process.exitCode = 1;
@@ -9757,6 +10625,12 @@ function druzynaShots(): Shot[] {
     żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
     z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
     prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
+/** przycisk karty mieszkańca tylko do odczytu, który nie wydaje polecenia: historia, imię i (na telefonie) rozwijanie potrzeb;
+    funkcja, nie stała, bo scenariusze karty ruszają, zanim moduł dojdzie do stałych z końca pliku */
+function bezRozkazu(przycisk: string | undefined): boolean {
+  return przycisk === 'story' || przycisk === 'imie' || przycisk === 'potrzeby';
+}
+
 function kartaShots(): Shot[] {
   const RODO = /\bm\.\s?\d|\bmieszkani[ea] nr|\bpiętr/i;
   const FIKCJA = 'Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL.';
@@ -10065,7 +10939,7 @@ function kartaShots(): Shot[] {
     if (tap) await page.touchscreen.tap(b.x, b.y);
     else await page.mouse.click(b.x, b.y);
     const m = await sprawdz(page, r.name);
-    if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+    if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
     console.log(`  rodzina: ${m.rodzina?.shown ? m.rodzina.text : 'brak'}`);
     await historia(page, nazwa, tap);
     if (!tap) await page.mouse.move(b.x + 400, b.y - 250);
@@ -10395,7 +11269,7 @@ function kartaShots(): Shot[] {
         const b = await ekran(page, r.id);
         await page.mouse.click(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         if ((await cmds(page)) !== przed) throw new Error('kliknięcie mieszkańca wysłało polecenie');
         // zaznaczenie zostało: prawy przycisk na ziemi daje polecenie, a nie „Najpierw zaznaczcie”
         await page.mouse.click(b.x + 120, b.y + 90, { button: 'right' });
@@ -10535,7 +11409,7 @@ function kartaShots(): Shot[] {
         const b = await naPionku(r.id);
         await page.touchscreen.tap(b.x, b.y);
         const m = await sprawdz(page, r.name);
-        if (m.buttons.some((x) => x !== 'story' && x !== 'imie')) throw new Error(`rozkazy na karcie: ${m.buttons}`);
+        if (m.buttons.some((x) => !bezRozkazu(x))) throw new Error(`rozkazy na karcie: ${m.buttons}`);
         await historia(page, 'karta-mieszkanca-telefon', true);
       },
     },
@@ -12498,7 +13372,8 @@ function zwyciestwoShots(): Shot[] {
       pl: 'Otoczcie wspólnym płotem pierwszy sąsiedni budynek.',
       en: 'Put a shared fence round the first building next door.',
     },
-    ludnosc: { pl: 'Zbierzcie 10 osób pod zarządem.', en: 'Get 10 people under the board.' },
+    // w domu słowo zarządu idzie ze słownika miejsca: komitet ulicy
+    ludnosc: { pl: 'Zbierzcie 10 osób pod komitetem ulicy.', en: 'Get 10 people under the street committee.' },
   };
   /** ostatni kamień ludności z licznikiem poranków `n`: zdanie o siedmiu porankach dosłownie */
   const dalejSeria = (n: number): Tx => ({
@@ -13701,6 +14576,9 @@ function pietraShots(): Shot[] {
       await podstawAtrape(page);
       await page.goto(`${base}?demo=${DEMO_ATRAPA}&pietra=1&speed=0&cam=${cam}`);
       await waitIdle(page);
+      // licznik klatek na pasku (`.fps`) zmienia się sam, a obrys budynku z zapasem sięga pod pasek (dwa wiersze od 1100 px, 105 px):
+      // bez tego dwa zrzuty tego samego budynku różnią się cyframi licznika (0 i 38 kl/s), nie budynkiem
+      await page.addStyleTag({ content: '.fps { visibility: hidden !important; }' });
       /** widoczne w całości budynki z wyglądem: obrys z zapasem na ozdoby (wieża nad dachem, portyk przed frontem) */
       const lista = await page.evaluate(() => {
         const zm = window.zm!;

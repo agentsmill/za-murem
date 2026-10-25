@@ -1,7 +1,7 @@
 /* Wydarzenia w M1: wybrane z 0.3 (bez zmiany treści, przez EventHost) i nowe z tresc.ts, z porą dnia.
    Harmonogram liczony w sekundach przy ekranie, nie w godzinach gry: w 0.3 wydarzenie przychodziło co
    14–30 godzin gry, czyli co 35–75 s, a przy nowym zegarze (godzina gry trwa 40 s) byłoby to co 9–20
-   minut. Przez pierwsze 10 minut wydarzenie co 38–56 s, potem co 100–180 s. Nowe nie przychodzi,
+   minut. Przez pierwsze 10 minut wydarzenie co 38–56 s, potem co 110–200 s (`GAP_PO`). Nowe nie przychodzi,
    kiedy na decyzję czeka karta nocy, uchwała, raport albo poprzednie wydarzenie.
    Pierwszy dzień (decyzja Mateusza, 17.10.2026): dopóki kuchnia się nie nagrzeje, cisza bez losowych wydarzeń;
    koza pierwszy raz się pali, więc po chwili ktoś widzi dym i przychodzi; do rana drugiego dnia tylko wydarzenia
@@ -40,19 +40,35 @@
    zjada odstępu między kartami), a `goscTick` co sekundę przy ekranie pokazuje
    kartę dopiero wtedy, gdy gość stoi pod bramą i nic innego nie czeka na decyzję (tak samo „Złapany”, gdy symulacja złapała
    kradnącego). Wybór z `GChoice.zostaje` (np. „Obejrzeć ręce”) nie zamyka okna. Host dostaje metody gości z `goscHost`.
+   Pamięć o znajomych (src/gov/znajomi.ts): wydarzenie `powrot` (`POWROT_EVENT`) działa jak `gosc`: wypadnięcie planuje powrót
+   znajomego jako gościa (`planujPowrot`) i od razu losuje jeszcze raz; wyrzucenie mieszkańca z osobą z generatora (`wyrzuc`)
+   zapisuje go jako znajomego `wyrzucony`, osoba zarządu, która odchodzi sama (kłótnia, „Niech idzie”), nie jest zapisywana.
    Karty z 0.3 z gościem (`GEventDef.gosc` z nakładek w warianty.ts: `uchodzcy`, `influencer`, `aktywisci`, `dzieci`,
    `krypto`, w domu `fachowiec`) idą tą samą drogą: gdy wypadną z puli, `planujKarte` wystawia ich grupę zamiast karty, a
    karta (z `gid` w danych) otwiera się w `goscTick`, gdy grupa stoi pod bramą. W odróżnieniu od gościa z klocków taka wizyta
    zajmuje miejsce karty (to stare karty z puli, nie dodatkowe): po planie nie losuje się drugiej, odstęp do następnej
    liczy się od tego losowania, więc liczba kart na dobę zostaje jak przed wizytami. `gdzie` takiej karty to kafelek grupy
-   (przycisk „Pokaż”). */
+   (przycisk „Pokaż”).
+   Łańcuchy kart (src/gov/watki.ts): przy pierwszym `eventTick` z niepustą listą pasujących łańcuchów zarząd wybiera wątki
+   sezonu, `porzadkuj` co sekundę kończy po cichu łańcuch, którego rozpoczęty krok przepadł (gość nie doszedł do bramy), a
+   losowanie `pickGovEvent` ma dwa dodatki: krok z dojrzałym hakiem wypada przed zwykłą pulą z szansą 0,6 (jedna liczba
+   z ziarna zarządu, tylko gdy taki krok jest dostępny: jego pora dnia, tryb, waga i, dla kroku z gościem, wolne miejsce
+   wizyty), a pierwsze kroki wybranych łańcuchów wchodzą do puli z wagą 1. Kroki to karty jak inne (ten sam odstęp,
+   `activate`, okno, wybór, `GEventDef.gosc` przez `planujKarte`; krok z gościem, któremu `gosc` nikogo nie wystawiło, nie
+   otwiera się bez gościa, tylko kończy łańcuch); wybór zamykający kartę kroku rozstrzyga go
+   (`rozstrzygnijKrok`), a `GovHost.hak` ustawia hak, który zwalnia następny. Bez łańcuchów nic z tego niczego nie losuje
+   ani nie zapisuje.
+   Narrator (src/gov/narrator.ts, Task 16): karta z tagiem `GEventDef.ton` ma w losowaniu wagę razy `mnoznik(st, ton)` (powyżej
+   napięcia 60 ostre ×0,3 i łagodne ×2, po dobie spokoju ostre ×2), pierwszy krok łańcucha tak samo od wagi 1, a szansa dojrzałego
+   kroku (`SZANSA_KROKU`) mnoży się przez ten sam mnożnik (z góry 1); jedna liczba z ziarna na losowanie jak dotąd. */
 
 import type { Cost, Res, TechDom } from '../content/data.ts';
 import { type ActiveEvent, eventDef } from '../content/events.ts';
 import { makePerson, type Person } from '../content/people.ts';
 import { type Tx, tx, txCat } from '../core/jezyk.ts';
-import { rngOf } from '../core/rng.ts';
+import { hashString, rngOf } from '../core/rng.ts';
 import { freePlaces, placeIn, sasiedzi, wordsEn, wordsOf } from './miejsce.ts';
+import { mnoznik } from './narrator.ts';
 import { KOZA } from './noc.ts';
 import {
   type DanePogrzebu,
@@ -68,7 +84,21 @@ import type { GovEffects, GovInput, GovLokator, GovPerson, GovState, LootKey, Pu
 import { law } from './uchwaly.ts';
 import { STREET_EVENTS } from './ulica.ts';
 import { EVENTS_EN } from './warianty.en.ts';
-import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte } from './wizyta.ts';
+import {
+  hakDane,
+  jestKrok,
+  krokiGotowe,
+  krokPoId,
+  porzadkuj,
+  rozpocznijKrok,
+  rozstrzygnijKrok,
+  SZANSA_KROKU,
+  hak as ustawHak,
+  wybierzWatki,
+  zajeciLudzie,
+} from './watki.ts';
+import { GOSC_EVENTS, goscHost, goscTick, planujGoscia, planujKarte, planujPowrot } from './wizyta.ts';
+import { POWROT_EVENT, zapamietaj } from './znajomi.ts';
 
 /** wydarzenia ulicy (M2): żywi sąsiedzi i wyjścia za siatkę bez ryzyka, w trybie zombie nie pasują */
 const STREET_IDS: ReadonlySet<string> = new Set(STREET_EVENTS.map((e) => e.id));
@@ -90,6 +120,7 @@ import {
   logGov,
   mood,
   nightDay,
+  QUIET,
   rnd,
   stockNow,
 } from './wspolne.ts';
@@ -152,6 +183,7 @@ export const M1_EVENTS: GEventDef[] = [
       when: o.when,
       tryby: o.tryby,
       first: o.first,
+      ton: o.ton,
       gap: o.gap,
       w: w ? (h) => w(h, d.w(h)) : d.w,
       make: o.make ?? d.make,
@@ -187,10 +219,13 @@ export const M1_EVENTS: GEventDef[] = [
   ...NEW_EVENTS,
   ...STREET_EVENTS,
   ...GOSC_EVENTS,
+  POWROT_EVENT,
 ];
 const byId = new Map(M1_EVENTS.map((e) => [e.id, e]));
 // „Słoik od sąsiadki” z M1 to teraz dym z komina: stary zapis z tym oknem otwartym albo już zamkniętym działa dalej
 byId.set('sasiadka', byId.get('dym')!);
+/** definicja karty o tym id: zwykła pula albo krok łańcucha (src/gov/watki.ts) */
+const defOf = (id: string): GEventDef | undefined => byId.get(id) ?? krokPoId(id);
 
 /** to samo co w wejściu, ale z własnymi obiektami w środku */
 const kopiaOsoby = (p: GovPerson): GovPerson => ({
@@ -328,6 +363,8 @@ export function makeHost(
     addSick: (n) => {
       fx.sick += n;
     },
+    hak: (id, d) => ustawHak(st, id, gameMin(i), d),
+    hakDane: (id) => hakDane(st, id),
     log: (txt, big) => {
       if (typeof txt !== 'string') return logGov(st, i, txt, !!big, fx);
       let line = drewno(txt);
@@ -401,7 +438,14 @@ export function makeHost(
     moodOf: (id, why, d, hours) => {
       fx.moods.push({ id, why, d, hours });
     },
-    flag: (k) => st.flags[k],
+    pies: () => !!st.flags.dog || i.zwierzeta?.pies !== undefined,
+    watek: (id) => !!st.lancuchy && !!st.watki?.wybrane.includes(id),
+    napadNocy: (dzien) => (st.reports ?? []).find((r) => r.day === dzien)?.raid ?? null,
+    handlarz: () => (i.handlarz ? { tile: i.handlarz.tile, gdzie: { ...i.handlarz.gdzie } } : null),
+    handlarzEfekt: (co) => {
+      fx.handlarz = { ...fx.handlarz, [co === 'oferta' ? 'oferta' : 'slawa']: true };
+    },
+    flag: (k) => !!st.flags[k],
     setFlag: (k) => {
       st.flags[k] = true;
     },
@@ -419,7 +463,27 @@ export function makeHost(
       if (!fx.awans?.includes(id)) (fx.awans ??= []).push(id);
     },
     wyrzuc: (id) => {
-      if (!fx.wyrzuc?.includes(id)) (fx.wyrzuc ??= []).push(id);
+      if (fx.wyrzuc?.includes(id)) return;
+      (fx.wyrzuc ??= []).push(id);
+      // wyrzucony mieszkaniec to znajomy (−2): idzie z szabrownikami; osoba zarządu, która odchodzi sama, nie
+      const l = lokatorzy.find((x) => x.id === id);
+      if (l)
+        zapamietaj(
+          st,
+          {
+            id: l.id,
+            osoba: { first: l.first, name: l.name, f: l.f, age: l.age },
+            prof: l.prof,
+            pion: l.pawn,
+            ...(l.wyglad ? { wyglad: l.wyglad } : {}),
+            look: l.look ?? 4 + (Number.parseInt(hashString(l.id), 16) % 12),
+            kto: 'lokator',
+            jak: 'wyrzucony',
+            dzien: i.day,
+          },
+          i.day,
+          { wizyta: `w${l.id}` },
+        );
     },
     sprawdz: (id, tile) => {
       (fx.sprawdz ??= []).push({ id, tile });
@@ -452,7 +516,7 @@ export function makeHost(
       return s === null ? null : s === 'bloki' ? 'from the block next door' : 'from over the fence';
     },
     neighbours: () => sasiedzi(placeIn(i)),
-    ...goscHost(st, i, fx),
+    ...goscHost(st, i, fx, zajeciLudzie(st)),
   };
   return h;
 }
@@ -466,21 +530,55 @@ function activate(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
   return { id: e.id, d };
 }
 
-/** losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first */
+/** wydarzenie przychodzi; krok łańcucha dostaje przy tym numer w swoim łańcuchu (`rozpocznijKrok`), więc nie wypadnie drugi raz
+    i następny krok czeka na jego rozstrzygnięcie */
+function start(st: GovState, h: GovHost, e: GEventDef): ActiveEvent | null {
+  const ev = activate(st, h, e);
+  if (ev && jestKrok(e)) rozpocznijKrok(st, e);
+  return ev;
+}
+
+/** krok łańcucha wypada, jeśli pasuje do pory, trybu i wagi, a krok z gościem ma gdzie go zaplanować (obcy w grze, wolna wizyta) */
+const krokDostepny = (st: GovState, h: GovHost, pora: Pora, first: boolean, k: GEventDef): boolean =>
+  k.when.includes(pora) &&
+  (!first || !!k.first) &&
+  fitsMode(st, k) &&
+  k.w(h) > 0 &&
+  (!k.gosc || (h.goscie() !== null && !h.goscAktywny()));
+
+/** Losowanie wydarzenia z puli pory dnia, jak pickEvent w 0.3; pierwszej nocy tylko z flagą first. Kroki łańcuchów: krok
+    z dojrzałym hakiem, który pasuje teraz (pora, tryb, waga, wolna wizyta dla kroku z gościem), wypada przed pulą z szansą
+    `SZANSA_KROKU` (jedna liczba z ziarna zarządu, tylko gdy taki krok jest; z kilku ten, który dojrzał najwcześniej), a pierwsze
+    kroki wybranych łańcuchów, które pasują, wchodzą do puli z wagą 1 (warunek dostępności to `w(h) > 0`). */
 function pickGovEvent(st: GovState, h: GovHost, pora: Pora, first: boolean): ActiveEvent | null {
   const fresh = (e: GEventDef) =>
     st.ev.last[e.id] === undefined || h.t - st.ev.last[e.id] >= (e.gap ?? REPEAT_GAP) * 60;
-  const pool = M1_EVENTS.filter(
-    (e) => e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
-  )
-    .map((e) => [e, e.w(h)] as const)
-    .filter((x) => x[1] > 0);
+  const dostepny = (k: GEventDef) => krokDostepny(st, h, pora, first, k);
+  const gotowe = krokiGotowe(st, h.t, st.mode ?? 'zwykly').filter(dostepny);
+  const dojrzale = gotowe.filter((k) => k.nr > 1);
+  // jedna liczba z ziarna jak dotąd; narrator przestawia szansę kroku według jego tonu (ostry krok czeka przy wysokim napięciu)
+  if (dojrzale.length) {
+    const los = h.rng();
+    for (const k of dojrzale) {
+      if (los >= Math.min(1, SZANSA_KROKU * mnoznik(st, k.ton))) continue;
+      const ev = start(st, h, k);
+      if (ev) return ev;
+    }
+  }
+  // wagi z narratorem: ton karty mnoży jej wagę (mnoznik niczego nie losuje)
+  const pool = [
+    ...M1_EVENTS.filter(
+      (e) =>
+        e.when.includes(pora) && (!first || e.first) && !(e.once && st.ev.done[e.id]) && fresh(e) && fitsMode(st, e),
+    ).map((e) => [e, e.w(h) * mnoznik(st, e.ton)] as const),
+    ...gotowe.filter((k) => k.nr === 1).map((k) => [k, mnoznik(st, k.ton)] as const),
+  ].filter((x) => x[1] > 0);
   const tot = pool.reduce((a, x) => a + x[1], 0);
   if (!tot) return null;
   let r = h.rng() * tot;
   for (const [e, w] of pool) {
     r -= w;
-    if (r <= 0) return activate(st, h, e);
+    if (r <= 0) return start(st, h, e);
   }
   return null;
 }
@@ -492,7 +590,7 @@ const dymWaits = (st: GovState, h: GovHost): boolean =>
 /** zgon starszy niż tyle minut gry (dwie doby) nie dostaje już pogrzebu: karta o dawnej śmierci nie ma sensu */
 export const POGRZEB_DO = 2 * 1440;
 /** Czekający pogrzeb przychodzi najpóźniej tyle sekund przy ekranie po ostatniej decyzji gracza, nie dopiero po pełnym
-    odstępie między wydarzeniami (100–180 s przy ekranie to przy tempie 8× nawet 36 godzin gry, a karta ma przyjść w ciągu
+    odstępie między wydarzeniami (110–200 s przy ekranie to przy tempie 8× nawet 40 godzin gry, a karta ma przyjść w ciągu
     doby). Kilka zgonów naraz to kilka kart co tyle sekund. */
 export const POGRZEB_ODSTEP = 15;
 
@@ -537,21 +635,33 @@ function pogrzeb(st: GovState, i: GovInput, fx: GovEffects, pora: Pora): ActiveE
   return { id: 'pogrzeb', d };
 }
 
+/** Odstęp po pierwszych 10 minutach: od `GAP_PO` do `GAP_PO + GAP_ROZRZUT − 1` sekund przy ekranie (przez pierwsze 10 minut 38–56 s).
+    Było 100–180 s; zadanie 16 (`tools/spis-kart.ts`: 20 ziaren po 5 dób, gracz odpowiada od razu) przesunęło na 110–200 s, bo
+    w zwykłym trybie wychodziło 40,6 kart na grę przy celu 30–40. Po zmianie (z łańcuchami i bez) zwykły ma 38,1–38,4, a zombie
+    31,7–35,8 (gry zakończone pustką wliczone); spis odpowiada od razu, więc w prawdziwej grze, gdzie gracz czyta karty, liczby będą
+    niższe. Zombie nie dostaje osobnego odstępu: nie schodzi poniżej 30. */
+export const GAP_PO = 110;
+export const GAP_ROZRZUT = 91;
+
 /** odstęp do następnego wydarzenia w sekundach przy ekranie */
 export const nextGap = (st: GovState, screen: number): number =>
-  screen < EARLY ? 38 + Math.floor(rnd(st) * 19) : 100 + Math.floor(rnd(st) * 81);
+  screen < EARLY ? 38 + Math.floor(rnd(st) * 19) : GAP_PO + Math.floor(rnd(st) * GAP_ROZRZUT);
 
 /** harmonogram: nowe wydarzenie, gdy minął odstęp, jest pora dnia z pulą i nic nie czeka na decyzję; pierwszego
     dnia cisza do ciepłej kuchni i dym z komina z sytuacji */
 export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boolean): void {
+  // wątki sezonu raz na grę, przy pierwszym wywołaniu (także w starym zapisie bez `watki`); bez łańcuchów nic nie robi
+  wybierzWatki(st, st.mode ?? 'zwykly', !i.goscie, !i.lokatorzy?.length);
   // okno z zapisu, którego gra już nie zna (zmieniona pula), znika zamiast blokować grę
-  if (st.ev.active && !byId.has(st.ev.active.id)) st.ev.active = null;
+  if (st.ev.active && !defOf(st.ev.active.id)) st.ev.active = null;
   // pierwsze rozpalenie kozy widać zawsze; dym tylko wtedy, gdy stało się pierwszego dnia albo pierwszej nocy
   if (st.ev.lit === undefined && i.kozaLit) st.ev.lit = firstNight(i) ? i.screen : -1;
   const quiet = calm(st, i);
   // gość: wizyta idzie co sekundę, także gdy coś czeka (karta, której gość odszedł, znika); karta gościa pod bramą
   // przychodzi, gdy nic innego nie czeka na decyzję
   const gosc = goscTick(st, i, fx, busy);
+  // łańcuch, którego krok przepadł razem z gościem, kończy się po cichu (po `goscTick`, który zwalnia przepadłą wizytę)
+  porzadkuj(st, i);
   if (st.ev.active || busy) return;
   if (gosc) {
     show(st, i, fx, gosc);
@@ -576,6 +686,16 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
       return;
     }
   }
+  // krok „pilny” (handlarz pod bramą stoi najwyżej kilka godzin): wypada, gdy tylko jest dojrzały i dostępny, bez czekania na
+  // odstęp i losowanie, ale nie szybciej niż `QUIET` sekund po ostatniej decyzji; niczego nie losuje
+  if (!firstNight(i) && i.screen >= ostatnia + QUIET) {
+    const krok = krokiGotowe(st, h.t, st.mode ?? 'zwykly').find((k) => k.pilny && krokDostepny(st, h, pora, false, k));
+    const ev = krok && start(st, h, krok);
+    if (ev) {
+      show(st, i, fx, ev);
+      return;
+    }
+  }
   if (i.screen < st.ev.next) return;
   st.ev.next = i.screen + nextGap(st, i.screen);
   let ev = pickGovEvent(st, h, pora, firstNight(i));
@@ -585,12 +705,21 @@ export function eventTick(st: GovState, i: GovInput, fx: GovEffects, busy: boole
   if (ev?.id === 'gosc') {
     planujGoscia(st, i, fx, pora);
     ev = pickGovEvent(st, h, pora, firstNight(i));
-  } else if (ev) {
-    // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`): wizyta zajmuje miejsce tej karty, więc nie losujemy
-    // drugiej (inaczej każda taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy
-    // grupa stanie pod bramą; odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) karta idzie od razu.
-    const def = byId.get(ev.id);
-    if (def?.gosc && planujKarte(st, i, fx, def, h, ev.d)) return;
+  } else if (ev?.id === 'powrot') {
+    // powrót znajomego: tak samo plan wizyty tego samego człowieka (src/gov/znajomi.ts), karta przychodzi pod bramą
+    planujPowrot(st, i, fx, zajeciLudzie(st));
+    ev = pickGovEvent(st, h, pora, firstNight(i));
+  }
+  // Karta z 0.3, w której ktoś przychodzi pod bramę (`GEventDef.gosc`), albo krok łańcucha z gościem, wylosowana za pierwszym
+  // razem albo po ponownym losowaniu wyżej: wizyta zajmuje miejsce tej karty, więc nie pokazujemy jej od razu (inaczej każda
+  // taka karta dawałaby dwie, jedną od razu i jedną pod bramą). Karta przyjdzie w `goscTick`, gdy grupa stanie pod bramą;
+  // odstęp do następnej liczy się od tego losowania. Bez gościa tym razem (null) zwykła karta idzie od razu.
+  const def = ev ? defOf(ev.id) : undefined;
+  if (def?.gosc) {
+    if (planujKarte(st, i, fx, def, h, ev?.d)) return;
+    // krok łańcucha z gościem nigdy nie otwiera się bez gościa (`gosc` nie wystawiło nikogo): krok jest rozpoczęty, a że nie
+    // ma karty ani wizyty, `porzadkuj` zakończy łańcuch po cichu w następnym kroku
+    if (jestKrok(def)) return;
   }
   // nic nie pasowało (pusta pula tej pory albo warunek wydarzenia): następna próba niedługo, nie po pełnym odstępie
   if (!ev) {
@@ -605,7 +734,7 @@ function show(st: GovState, i: GovInput, fx: GovEffects, ev: ActiveEvent | null)
   if (!ev) return;
   st.ev.active = ev;
   st.ev.when = i.screen;
-  const def = byId.get(ev.id)!;
+  const def = defOf(ev.id)!;
   const h = makeHost(st, i, fx);
   logGov(st, i, def.title(h, ev.d), false, fx, def.gdzie?.(h, ev.d));
 }
@@ -616,7 +745,7 @@ export function eventView(
   i: GovInput,
 ): { id: string; title: Tx; text: Tx; choices: { label: Tx; ok: boolean }[]; gdzie?: Punkt } | null {
   const ev = st.ev.active;
-  const def = ev && byId.get(ev.id);
+  const def = ev && defOf(ev.id);
   if (!ev || !def) return null;
   const h = makeHost(st, i, emptyEffects());
   const gdzie = def.gdzie?.(h, ev.d);
@@ -633,7 +762,7 @@ export function eventView(
 export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): boolean {
   const ev = st.ev.active;
   if (!ev) return false;
-  const def = byId.get(ev.id);
+  const def = defOf(ev.id);
   if (!def) {
     st.ev.active = null;
     return false;
@@ -646,6 +775,8 @@ export function choose(st: GovState, i: GovInput, fx: GovEffects, k: number): bo
   logGov(st, i, txCat(def.title(h, ev.d), ': ', c.label, '.'), false, fx);
   c.run();
   if (c.zostaje) return true;
+  // karta kroku łańcucha zamknięta wyborem: krok rozstrzygnięty (od teraz liczy się odstęp następnego bez haka)
+  rozstrzygnijKrok(st, def.id, h.t);
   decision(st, i, 'wydarzenie');
   // odstęp liczy się od decyzji, żeby wydarzenia nie przychodziły jedno za drugim
   st.ev.next = Math.max(st.ev.next, i.screen + nextGap(st, i.screen));

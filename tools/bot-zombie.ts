@@ -21,6 +21,9 @@
    Z flagą --opal bot co 10 sekund gry dokłada do kozy, kiedy ognia zostaje na mniej niż dwie godziny, jakby opału
    nie brakowało (w grze brakuje: bez drewna koza gaśnie, warta marznie przy siatce i po dwóch nocach schodzi
    z posterunku, więc od nocy 4–5 siatka zostaje sama). Z tą flagą mierzy się samą siatkę z działającą wartą.
+   Zarząd gra z łańcuchami kart i wątkami sezonu włączonymi (`newGov(…, true)`), tak jak w grze, która wychodzi do graczy
+   (src/main.ts; wyłącza je `?lancuchy=0`): skróty i liczby uwzględniają karty łańcuchów, które w zombie wypadają za gościem,
+   za dachem albo za dobiciem.
    Uruchomienie: npm run bot:zombie [-- ziarno [noce [osoby]]] [--demo=NAZWA] [--mieszkancy] [--sasiedzi] [--opal] */
 
 import fs from 'node:fs';
@@ -119,7 +122,8 @@ function play(policy: Policy): {
   });
   const start = osiedle ? opisMieszkancow(st) : '';
   const sim = new Sim(world, st);
-  const gov = newGov(SEED, 'zombie');
+  // zarząd jak w grze, która wychodzi do graczy: łańcuchy kart włączone (src/main.ts, wyłącza je `?lancuchy=0`)
+  const gov = newGov(SEED, 'zombie', true);
   const nights: Night[] = [];
   const end = NIGHTS * TICKS_PER_DAY + 16 * TICKS_PER_HOUR;
   const core = () => st.pawns.filter((p) => p.kind === 'core' && !p.away);

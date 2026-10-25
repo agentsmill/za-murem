@@ -20,6 +20,9 @@ export const tx = (pl: string, en: string): Tx => ({ pl, en });
 /** ten sam napis w obu językach (imiona, liczby, nazwy miejsc) */
 export const txSame = (s: string): Tx => ({ pl: s, en: s });
 
+/** pierwsza litera wielka, reszta bez zmian (początek zdania; pusty napis zostaje pusty) */
+export const wielka = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
 export const isTx = (v: unknown): v is Tx =>
   typeof v === 'object' && v !== null && typeof (v as Tx).pl === 'string' && typeof (v as Tx).en === 'string';
 
@@ -78,6 +81,25 @@ export function liczba(v: number, cyfry: number, lang: Lang): string {
   const s = String(Math.abs(r));
   return (r < 0 ? '−' : '') + (lang === 'pl' ? s.replace('.', ',') : s);
 }
+
+/** Proste cudzysłowy z nazw spoza gry (OSM: `Przedszkole "Chatka"`) zamienione na typograficzne w języku napisu: po polsku
+    „…”, po angielsku “…”. Pierwszy cudzysłów w parze otwiera, drugi zamyka. Nieparzysta liczba prostych cudzysłowów (brak
+    zamknięcia, cal po liczbie) to nazwa, której nie da się sparować bez zgadywania, więc zostaje bez zmian. */
+export function cudzyslowy(n: string, lang: Lang): string {
+  const ile = n.split('"').length - 1;
+  if (ile === 0 || ile % 2 === 1) return n;
+  const [otwarcie, zamkniecie] = lang === 'pl' ? ['\u201e', '\u201d'] : ['\u201c', '\u201d'];
+  let otwarty = false;
+  return n.replace(/"/g, () => {
+    otwarty = !otwarty;
+    return otwarty ? otwarcie : zamkniecie;
+  });
+}
+
+/** Stopnie Celsjusza do zdania zapisanego w obu językach (Tx), np. w stanie zarządu: całkowite, z prawdziwym minusem
+    („−1°C”, nie „-1°C”). Liczba całkowita brzmi tak samo po polsku i po angielsku, więc jeden napis na oba języki; w
+    interfejsie, który czyta bieżący język, jest `deg` z src/ui/tekst.ts. */
+export const stopnie = (t: number): string => `${liczba(Math.round(t), 0, 'pl')}°C`;
 
 /** polska liczba mnoga z liczbą: forma dla 1 („1 osoba”), dla 2–4 poza 12–14 („3 osoby”, „22 osoby”) i dla reszty
     („5 osób”, „12 osób”, „0 osób”); wołający podaje trzy formy, liczba jest zaokrąglona do całkowitej */

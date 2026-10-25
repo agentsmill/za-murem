@@ -1,4 +1,5 @@
-/* Karta osoby: paski potrzeb, chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
+/* Karta osoby: paski potrzeb (na telefonie, w oknie węższym niż 768 px, zwinięte do linii z ostrzeżeniami, `potrzebyLinia`;
+   rozwija je stuknięcie, stan trzyma main.ts; pasek potrzeby otwiera artykuł wiki dopiero po rozwinięciu, zwinięte są schowane), chwilowe nastroje z powodami, co teraz robi i co ma tej nocy, a dla osoby z własnej
    drużyny albo z generatora mieszkańców historia pod zawodem (jedna linijka, cała po kliknięciu; stan rozwinięcia
    trzyma main.ts). Osoba z generatora (`ref`) ma jeszcze wiersz rodziny pod zawodem, napis, że mieszkańcy są
    wymyśleni, i przycisk zmiany imienia (`data-card="imie"`: main.ts otwiera w karcie edytor z src/ui/imiona.ts, także
@@ -12,6 +13,9 @@
    zombie jedno zdanie, że za siatką są szwendacze. Opis pracy wziętej bez polecenia dostaje dopisek „(sam)”, „(sama)”
    albo „(on own)”, żeby było widać, że to ustawienia z panelu Pracy, a nie rozkaz; snu, posiłku i grzania się nie
    oznaczamy, bo to nie praca. Karta mieszkańca (tylko do odczytu) nie ma ani ustawień, ani dopisku.
+
+   Wiki (src/ui/wiki.ts): każdy pasek potrzeby niesie `data-wiki="potrzeba:<klucz>"`, więc klik w niego otwiera artykuł o tej
+   potrzebie (obsługa na dokumencie w src/ui/wiki-okno.ts, bez własnego kodu w karcie).
 
    Język: karta rysuje się w bieżącym języku (src/core/jezyk.ts). Polskie napisy ze stanu (zawód, cechy, powody
    nastrojów) to identyfikatory tłumaczone tutaj (zawodEn, TRAITS_EN, nastrojEn), opis pracy (`doing`) przychodzi już
@@ -37,6 +41,21 @@ export const NEED_ORDER: readonly (keyof Needs)[] = ['food', 'warm', 'rest', 'he
 
 /** poziom paska: źle poniżej 25, uwaga poniżej 50 */
 export const needLevel = (v: number): 'bad' | 'mid' | 'ok' => (v < 25 ? 'bad' : v < 50 ? 'mid' : 'ok');
+
+/** Linia potrzeb na karcie osoby na telefonie (okno węższe niż 768 px; na komputerze jej nie widać, src/style.css): potrzeby w stanie
+    „uwaga” i „źle” w jednej linijce („Ciepło 22 · Najedzenie 45”), a gdy żadnej nie ma, „Potrzeby w normie”. Stuknięcie w nią
+    rozwija paski i nastroje (`data-card="potrzeby"`, main.ts); jej kolor to najgorszy stan, a `aria-expanded` ustawia main.ts
+    według klasy karty (HTML nie zna stanu zwinięcia). */
+export function potrzebyLinia(needs: Needs, en: boolean): string {
+  const zle = NEED_ORDER.map((k) => ({ k, v: Math.round(needs[k]) })).filter((x) => needLevel(x.v) !== 'ok');
+  const poziom = zle.some((x) => needLevel(x.v) === 'bad') ? 'bad' : zle.length ? 'mid' : 'ok';
+  const tekst = zle.length
+    ? zle.map((x) => `${en ? NEED_LABELS_EN[x.k] : NEED_LABELS[x.k]} ${x.v}`).join(' · ')
+    : en
+      ? 'Needs are fine'
+      : 'Potrzeby w normie';
+  return `<button type="button" class="potrzeby-linia ${poziom}" data-card="potrzeby" aria-expanded="false"><span class="potrzeby-t">${esc(tekst)}</span></button>`;
+}
 
 /** liczba z odmianą: 1 nabój, 2 naboje, 5 naboi */
 export function many(n: number, one: string, few: string, lots: string): string {
@@ -205,7 +224,7 @@ export function personCard(
     : '';
   const bars = NEED_ORDER.map((k) => {
     const v = Math.round(p.needs[k]);
-    return `<div class="need ${needLevel(v)}"><span class="need-k">${en ? NEED_LABELS_EN[k] : NEED_LABELS[k]}</span><i class="need-bar" style="--v:${v}%"></i><b class="need-v">${v}</b></div>`;
+    return `<div class="need ${needLevel(v)}" data-wiki="potrzeba:${k}" title="${L('Co to znaczy: opis w wiki', 'What this means: read it in the wiki')}"><span class="need-k">${en ? NEED_LABELS_EN[k] : NEED_LABELS[k]}</span><i class="need-bar" style="--v:${v}%"></i><b class="need-v">${v}</b></div>`;
   }).join('');
   const moods = p.moods
     .filter((m) => m.until > tick)
@@ -224,6 +243,7 @@ export function personCard(
     storyHtml(en ? (opts.en?.story ?? p.story) : p.story, storyOpen),
     `<div class="tags">${skills}${traits}${maimed}</div>`,
     opts.lokator ? biteHtml(p, tick, false, words, e) : armHtml(p, tick, words, e),
+    potrzebyLinia(p.needs, en),
     `<div class="needs">${bars}</div>`,
     moods ? `<ul class="moods">${moods}</ul>` : '',
     tonight ? `<p class="tonight">${esc(tonight)}</p>` : '',

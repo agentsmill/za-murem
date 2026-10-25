@@ -30,6 +30,16 @@ export const emptyEffects = (): GovEffects => ({
   raidResult: null,
 });
 
+/** „1 porcja”, „2 porcje”, „5 porcji” (mianownik) */
+export const porcje = (n: number): string => {
+  if (n === 1) return '1 porcja';
+  const d = n % 10;
+  const t = n % 100;
+  return `${n} ${d >= 2 && d <= 4 && (t < 12 || t > 14) ? 'porcje' : 'porcji'}`;
+};
+/** „1 portion”, „2 portions” */
+export const portions = (n: number): string => `${n} ${n === 1 ? 'portion' : 'portions'}`;
+
 /** minuta gry od północy pierwszego dnia */
 export const gameMin = (i: Pick<GovInput, 'day' | 'hour' | 'minute'>): number =>
   (i.day - 1) * 1440 + i.hour * 60 + i.minute;

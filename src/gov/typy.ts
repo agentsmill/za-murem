@@ -7,12 +7,13 @@
 
 import type { Dom, EndingId, LawPath, TechDom } from '../content/data.ts';
 import type { ActiveEvent } from '../content/events.ts';
-import type { Person } from '../content/people.ts';
+import type { Person, Wyglad } from '../content/people.ts';
 import type { Tx } from '../core/jezyk.ts';
 import type { RngState } from '../core/rng.ts';
 import type { Miejsce } from '../world/miasto.ts';
 import type { Gosc, Strona } from './goscie.ts';
 import type { Cel } from './wyprawy.ts';
+import type { Znajomy } from './znajomi.ts';
 import type { Droga, StanZwyciestwa } from './zwyciestwo.ts';
 
 // ---------------------------------------------------------------- wejście
@@ -141,6 +142,12 @@ export interface GovLokator {
   inside: boolean;
   /** kafelek mapy, na którym stoi */
   tile: number;
+  /** wygląd pionka (numer stroju): zarząd zapamiętuje go, gdy wyrzuca mieszkańca, żeby znajomy miał twarz na mapie
+      (`Znajomy.look`); atrapy w testach mogą go nie podawać (wtedy wygląd z hasha id) */
+  look?: number;
+  /** postać PixelLab mieszkańca (`Pawn.wyglad`, a bez niego `wygladMieszkanca` z numeru osoby): zarząd zapamiętuje ją przy
+      wyrzuceniu (`Znajomy.wyglad`), żeby ten sam człowiek w napadzie wyglądał jak za życia w osiedlu */
+  wyglad?: Wyglad;
 }
 
 /** Faza wizyty gościa w symulacji (faza grupy to faza mówiącego, gdy żyje, a gdy zginie, następnego żywego):
@@ -169,6 +176,10 @@ export interface GovGosc {
   zywi: number[];
   ukradl: number;
   przyjety?: boolean;
+  /** indeksy w `PlanGoscia.osoby` członków grupy, którzy zginęli jako goście (szwendacz, dobicie, strzał); zostają po `poszedl`
+      i `zginal`, gdy `zywi` jest już puste. Zarząd oznacza po nich zmarłych znajomych (`Znajomy.idx`). Pole tylko wtedy, gdy ktoś
+      zginął; stary stan go nie ma. */
+  zmarli?: number[];
 }
 
 /** Polecenie zarządu dla gościa (`GovEffects.goscRozkaz`), dotyczy całej grupy:
@@ -268,6 +279,15 @@ export interface GovInput {
   /** goście z klocków (src/gov/goscie.ts) w symulacji, po kolei, od najstarszego; lista tylko rośnie. Pole jest (choćby
       puste) tylko w grze z obcymi (`SimOpts.obcy`), bez niego zarząd nie planuje gości */
   goscie?: readonly GovGosc[];
+  /** zwierzęta w symulacji (pies i kot jako pionki, src/sim/zwierzeta.ts): `zyje` to pionek już wystawiony, `zginal` to
+      pies zabity przez szwendacza. Bez wpisu o zwierzęciu symulacja go nie zna: zarząd, który ma flagę `dog` albo
+      `cat`, wysyła wtedy `GovEffects.zwierze` (świeże przygarnięcie i stary zapis z flagą bez pionka to ten sam
+      przypadek). Bez pola (gra bez zwierząt): żadnego. */
+  zwierzeta?: ZwierzetaStan;
+  /** handlarz pod bramą (tylko w grze z obcymi, `SimOpts.obcy`): stoi z wózkiem i czeka (kroki łańcucha „Dług”,
+      src/gov/watki-tresc.ts); `tile` to kafelek handlarza, `gdzie` ten sam jako punkt mapy (przycisk „Pokaż”). Pola nie ma,
+      gdy handlarza nie ma pod bramą (idzie, odszedł, uciekł, nie żyje) i w grze bez obcych. */
+  handlarz?: { tile: number; gdzie: Punkt };
   /** mapa miasta: wszystkie miejsca z okolicy (sklepy i usługi z OSM do około 720 m od adresu), także te z mapy
       lokalnej (koło 192 m), posortowane po odległości. Miejsc z mapy lokalnej nie wybiera karta nocy
       (`wybierzCeleNocy`) i nie wysyła się do nich wyprawy (`powodOdmowy`), ale karta miejsca je pokazuje. Bez pola
@@ -330,6 +350,10 @@ export interface GovInput {
   wieza?: number;
   /** ile palenisk (koza zarządu, kozy z beczek, kocioł liczony jako kilka) pali drewno nocą; bez pola jedno */
   paleniska?: number;
+  /** napad z planu zarządu (`RaidPlan`): czy symulacja wystawiła szabrowników (spawnRaid znalazł skąd podejść). Pole jest
+      tylko, gdy napad jest zaplanowany; fałsz przed wystawieniem i gdy nie było skąd podejść (świat bez ulicy przy siatce).
+      Z tego zarząd wie, czy w raporcie wolno mówić, że szabrownicy byli (`znajomyWNapadzie`); bez pola jak z wystawionymi. */
+  napadWystawiony?: boolean;
 }
 
 // ---------------------------------------------------------------- wyjście
@@ -407,6 +431,20 @@ export interface GovEffects {
   /** hałas na kafelku (numer kafelka mapy) w promieniu `r` metrów, np. pościg za gościem wpuszczonym na noc w trybie
       zombie przyciąga szwendaczy; symulacja dopisuje go do `st.noise` jak każdy hałas (`NOISE_TICKS`, `applyGov`) */
   halas?: { tile: number; r: number };
+  /** zwierzęta, które symulacja ma wystawić jako pionki: pies (z flagi `dog`) i kot (z flagi `cat`), gdy symulacja nie
+      ma o nich wpisu w `GovInput.zwierzeta`; wystawienie jest idempotentne. Tablica powstaje przy pierwszym zwierzęciu */
+  zwierze?: ('pies' | 'kot')[];
+  /** skutki dla handlarza pod bramą, który stoi z wózkiem (`GovInput.handlarz`; bez niego symulacja nic nie robi):
+      `oferta` to lepsza oferta (każda jego oferta tańsza o jedną czwartą i o jedną wymianę dłuższa), `slawa` to zła sława u
+      handlarzy (poziom +1, jak po napaści: ceny następnych wizyt w górę, wizyty rzadziej, a bieżące oferty o połowę drożej) */
+  handlarz?: { oferta?: boolean; slawa?: boolean };
+}
+
+/** Stan zwierząt w symulacji (`SimState.zwierzeta`, odczyt `GovInput.zwierzeta`): pies żyje albo zginął, kot żyje i nie
+    ginie. Pole zwierzęcia pojawia się przy jego wystawieniu i zostaje do końca gry. */
+export interface ZwierzetaStan {
+  pies?: 'zyje' | 'zginal';
+  kot?: 'zyje';
 }
 
 export interface RaidPlan {
@@ -420,6 +458,10 @@ export interface RaidPlan {
   attack?: number;
   /** ilu szabrowników przychodzi (1–3, z siły) */
   people?: number;
+  /** znajomy, który dołącza do napadu (src/gov/znajomi.ts, `wrogDoNapadu`): jeden z szabrowników dostaje jego wygląd
+      (`look`) i postać PixelLab (`wyglad`: płeć, wiek i ziarno z `wygladZnajomego`, te same co u gościa), a raport rano mówi,
+      kto to był (imię i epitet w obu językach) */
+  znajomy?: { id: string; imie: Tx; epitet: Tx; look: number; wyglad: Wyglad };
 }
 
 /** wynik napadu dla symulacji: co się stało, gdzie, przy jakiej sile i obronie, co zabrali */
@@ -566,6 +608,8 @@ export interface NightPlan {
     attack: number;
     defense: number;
     stolen: StockDelta;
+    /** id znajomego (`Znajomy.id`), który idzie z szabrownikami; raport rano czyta jego imię i epitet ze stanu */
+    znajomy?: string;
   } | null;
   /** wyprawy: grupy po celu; `cel` to opis celu (stare grupy bez niego szukają w TARGETS po `target`) */
   exp: { key: string; ids: string[]; target: string; cel?: Cel }[];
@@ -647,7 +691,10 @@ export interface GovState {
   reports: NightReport[];
   /** czy ognisko paliło się wieczorem i ile mebli spalono do poprzedniego rana */
   evening: { campfire: boolean; burned: number };
-  flags: { dog: boolean; flashlight: boolean; torch: boolean };
+  /** `dog`: pies przygarnięty (obrona nocy w noc.ts) i, dopóki żyje, pionek na mapie; flaga gaśnie, gdy symulacja
+      zgłosi jego śmierć (`GovInput.zwierzeta.pies === 'zginal'`). `cat`: kot przygarnięty (karta „Kot w piwnicy” albo
+      „Kot w szopie”), pionek, który nie ginie; pole od przygarnięcia, stary zapis go nie ma i liczy się jako fałsz */
+  flags: { dog: boolean; flashlight: boolean; torch: boolean; cat?: boolean };
   /** na tę noc: podwójna warta (dzień), szabrownicy zachęceni (dzień), premia do obrony, pościg za gościem wpuszczonym
       na noc (dzień nocy: szansa napadu ×1,5 i napad przy bramie; pole od pierwszego takiego gościa) */
   tonight: { alert: number; boost: number; bonus: number; bonusDay: number; poscig?: number };
@@ -691,8 +738,41 @@ export interface GovState {
   goscie?: { n: number; czytane: number; aktywny?: AktywnyGosc };
   /** Wskazówki na miejsca (wiadomość od gościa): klucz miejsca z okolicy (`Cel.klucz`) albo id celu z TARGETS → dzień
       gry, w którym je dostaliśmy. Następna wyprawa do tego miejsca ma ryzyko ×0,5 i łup ×1,5, po rozliczeniu wskazówka
-      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki */
-  wskazowki?: Record<string, { dzien: number }>;
+      znika (`wskazowka` w src/gov/wyprawy.ts); pole od pierwszej wskazówki. `bron`: wskazówka o miejscu z bronią (łańcuch „Głos z
+      radia”): rozliczenie tej wyprawy dokłada do łupu pewną broń i amunicję (`znalezionaBron` w src/gov/noc.ts) */
+  wskazowki?: Record<string, { dzien: number; bron?: true }>;
+  /** pamięć o ludziach (src/gov/znajomi.ts): gość po decyzji zarządu o nim i mieszkaniec wyrzucony bramą, jeden wpis na
+      człowieka; dodatni wraca jako gość, ujemny w zwykłym trybie idzie z szabrownikami. Pole od pierwszego wpisu, gra bez
+      gości i stary zapis go nie mają. */
+  znajomi?: Znajomy[];
+  /** łańcuchy kart i wątki sezonu (src/gov/watki.ts): `wybrane` to id łańcuchów wybranych na tę grę (do trzech, z ziarna
+      zarządu przy pierwszym wydarzeniu; puste: jeszcze nie wybierano), `haki` to fakty ustawiane wyborami na kartach
+      (id → minuta gry `t` i zwykłe dane JSON `d`; silnik dopisuje hak o id każdego rozstrzygniętego kroku), `krok` to numer
+      ostatniego rozpoczętego kroku łańcucha (równy liczbie kroków: łańcuch skończony albo cicho zakończony). Pole od
+      pierwszego wyboru wątków albo haka; gra bez łańcuchów i stary zapis go nie mają. */
+  watki?: { wybrane: string[]; haki: Record<string, { t: number; d?: unknown }>; krok: Record<string, number> };
+  /** łańcuchy kart i wątki sezonu są włączone (nowa gra w przeglądarce ma je domyślnie, wyłącza je `?lancuchy=0`; ustawia je start gry w `newGov`); brak pola albo fałsz: wyłączone,
+      zarząd zachowuje się jak z pustą listą łańcuchów (żadnego wyboru wątków, losowania z ziarna ani stanu `watki`) */
+  lancuchy?: boolean;
+  /** narrator (src/gov/narrator.ts): krzywa napięcia, która przestawia wagi kart; pole powstaje przy pierwszym kroku narratora,
+      w starym zapisie go nie ma (wtedy mnożniki wag to 1) */
+  napiecie?: Napiecie;
+}
+
+/** Napięcie narratora: `v` 0–100, `t` minuta gry ostatniej aktualizacji, `spokoj` minuty gry z `v` poniżej 20 (zerowane, gdy
+    `v` dojdzie do 20). Reszta to liczniki zdarzeń już policzonych, żeby każde liczyło się raz (także po zapisie i wczytaniu):
+    `zgony` (długość `GovInput.dead`), `raport` (dzień ostatniego policzonego raportu rano), `siatka` (`horde.breaches`), `zdrowie`
+    (zdrowie osób przy poprzednim kroku: nagły spadek to rana) i `ugryzieni` (id ugryzionych już policzonych). Brak liczników
+    (stan złożony ręcznie, zapis sprzed narratora) znaczy: pierwszy krok narratora ustawia je na stan teraźniejszy. */
+export interface Napiecie {
+  v: number;
+  t: number;
+  spokoj: number;
+  zgony?: number;
+  raport?: number;
+  siatka?: number;
+  zdrowie?: Record<string, number>;
+  ugryzieni?: string[];
 }
 
 /** Wizyta gościa prowadzona przez zarząd: `gosc` (klocki, osoby; ten sam co w planie dla symulacji), `od` (sekunda przy
@@ -700,10 +780,15 @@ export interface GovState {
     pokazało obejrzenie rąk w trybie zombie), `noc` (wpuszczony na noc: zarząd śledzi wizytę do końca), `kradl` (linia
     o kradzieży już wpisana), `liniaNocy` (linia o nocy już w raporcie), `koniec` (zarząd wydał ostatni rozkaz, wizyta przestaje być jego sprawą),
     `kartaId` i `dane` (wizyta zaplanowana przez kartę z 0.3 z gościem, `GEventDef.gosc`: id tej karty i jej dane z `make`;
-    pod bramą otwiera się ta karta z danymi i `gid`, a nie karta `gosc`) */
+    pod bramą otwiera się ta karta z danymi i `gid`, a nie karta `gosc`), `looks` (wygląd osób z planu, w kolejności osób;
+    z nich zarząd bierze wygląd znajomego; stary zapis ich nie ma), `znajomy` (id wpisu `Znajomy`, który ta wizyta
+    zostawiła: późniejsza decyzja albo kradzież poprawia go, nie dokłada drugiego) */
 export interface AktywnyGosc {
   gosc: Gosc;
   od: number;
+  looks?: number[];
+  /** id wpisu `Znajomy`, który zrobiła ta wizyta (mówiący z chwili decyzji) */
+  znajomy?: string;
   karta: boolean;
   kartaId?: string;
   dane?: unknown;

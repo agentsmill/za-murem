@@ -12,14 +12,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { CARD_HOUR, KOZA_KEY, nightWood, WOOD_PER_HOUR } from '../../src/gov/noc.ts';
 import type { GovInput, NightCard } from '../../src/gov/typy.ts';
+import { emptyEffects, zeroStock } from '../../src/gov/wspolne.ts';
 import { setNight } from '../../src/gov/zarzad.ts';
 import { BUILDS } from '../../src/sim/budowle.ts';
+import { applyGov } from '../../src/sim/gov.ts';
 import { commandsAt } from '../../src/sim/orders.ts';
 import { nowyBudynek } from '../../src/sim/sasiedzi.ts';
 import type { Command } from '../../src/sim/sim.ts';
 import type { GameMode } from '../../src/sim/tryb.ts';
 import { allowedAnchors } from '../../src/ui/budowa.ts';
-import { potrzebaDrewna } from '../../src/ui/sciezka.ts';
+import { potrzebaDrewna } from '../../src/ui/sciezka-rozdzialy.ts';
 import { FORBIDDEN_DOM } from './miejsce-pomoc.ts';
 import { polskieSlowa } from './po-angielsku.ts';
 import { doorWhere, core as rdzen } from './sasiedzi-pomoc.ts';
@@ -69,8 +71,10 @@ function postawZasieki(g: Gra): void {
   const { st, w } = sim;
   const koszt = BUILDS.zasieki.cost.zlom ?? 10;
   const sterta = st.things.find((t) => t.kind === 'zlom');
-  if (!sterta) throw new Error('na podwórku nie ma sterty złomu');
-  sterta.n = koszt + 2;
+  // karta „Ślady przy siatce” łata za 3 złomu jak menu: Zielonki startują z trzema sztukami, więc po niej (gdy gra odpowiedziała
+  // łatą) nie zostaje żadna sterta; wtedy złom dochodzi jak z wyprawy, na podwórko przy bramie
+  if (sterta) sterta.n = koszt + 2;
+  else applyGov(st, w, { ...emptyEffects(), stock: { ...zeroStock(), scrap: koszt + 2 } });
   const a = allowedAnchors(st, w, 'zasieki', 0)[0];
   sim.push({ t: 'build', ids: [rdzen(sim)[0].id], kind: 'zasieki', x: a % w.size, y: Math.floor(a / w.size), rot: 0 });
   graj(g, (x) => x.sim.st.things.some((t) => t.kind === 'zasieki'), {}, 1500);
@@ -262,7 +266,7 @@ describe.each(KOMBINACJE)('R1: podpowiedzi z liczbami %s %s', (key, mode) => {
       'Budowa (przycisk u góry albo B): dowolna budowla. Najmniej materiału biorą zasieki (złom 10) i ogródek (deski 14). ',
     );
     expect(c('budowla').how).toContain(
-      `${dom ? 'Komitet ulicy' : 'Zarząd'} sam przyniesie materiały i zbuduje. Materiał daje przeszukiwanie i rozbiórka.`,
+      `${dom ? 'Komitet ulicy' : 'Zarząd'} sam przyniesie materiały i zbuduje. Materiał pochodzi z przeszukiwania i rozbiórki.`,
     );
     if (mode === 'zwykly') {
       expect(c('budowla').how).toContain('Zasieki liczą się też do obwodu.');
@@ -274,7 +278,7 @@ describe.each(KOMBINACJE)('R1: podpowiedzi z liczbami %s %s', (key, mode) => {
       expect(c('budowla').how).not.toContain('Zasieki liczą się też do obwodu.');
       expect(c('dzida').text).toBe('Zróbcie dzidę dla warty.');
       expect(c('dzida').how).toBe(
-        `Prawy przycisk na stercie desek albo złomu: „Zrobić dzidę” (2 deski i 1 złom). Dzida sięga szwendaczy przez siatkę. Deski i złom dają przeszukiwanie ${dom ? 'domu' : 'pustych mieszkań'} i rozbiórka.`,
+        `Prawy przycisk na stercie desek albo złomu: „Zrobić dzidę” (2 deski i 1 złom). Dzida sięga szwendaczy przez siatkę. Deski i złom pochodzą z przeszukiwania ${dom ? 'domu' : 'pustych mieszkań'} i z rozbiórki.`,
       );
     }
     if (dom)
@@ -511,6 +515,11 @@ describe.each(KOMBINACJE)('R1: karta nocy, drewno i dyżur: %s %s', (key, mode) 
     // rozdział skończony: okienko pokazuje następny rozdział albo jest schowane, drugiego dnia już nie ma
     expect(widok(g).rozdzial?.k).not.toBe('r1');
     expect(widok(g).rozdzial?.k).not.toBe('r0');
+    // następny to R2 „Ludzie i noc”, otwarty w chwili zamknięcia R1, z licznikami z tej chwili
+    expect(g.sciezka.rozdzial).toBe('r2');
+    expect(g.sciezka.od).toBe(g.sim.st.tick);
+    expect(widok(g).rozdzial?.tytul).toBe('Ludzie i noc');
+    expect(g.sciezka.start.raporty).toBe(g.gov.reports.length);
   });
 });
 

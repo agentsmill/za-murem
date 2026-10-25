@@ -38,6 +38,10 @@ export interface M2Opts {
   /** polityka badań: pracownia na początku kolejki, najtańsza kartka, jedna osoba zarządu przy stole za dnia i budowle
       z odblokowanych technologii na końcu kolejki; bez pola bot gra jak przed badaniami */
   badania?: boolean;
+  /** kolejka budowy zamiast domyślnej (GOALS albo z badaniami); funkcja woła się przy każdej decyzji, więc wołający
+      zmienia kolejkę z czasem (gracz ścieżki celów w tools/bot-cele.ts buduje tylko to, o co prosi bieżący cel); pusta
+      kolejka zostawia przeszukiwanie, rozbiórkę, naprawy i zajmowanie mieszkań. Bez pola kolejka jak dotąd. */
+  kolejka?: () => readonly BuildKind[];
 }
 
 export interface M2Log {
@@ -168,9 +172,11 @@ export function m2Player(opts: M2Opts): { player: Player; log: M2Log } {
     const avail = (m: Mat) => mats[m] - (reserved[m] ?? 0);
     const covers = (cost: Partial<Record<Mat, number>>, extra: Partial<Record<Mat, number>> = {}) =>
       (Object.entries(cost) as [Mat, number][]).every(([m, n]) => avail(m) >= n + (extra[m] ?? 0));
-    const queue = opts.badania
-      ? ['pracownia' as BuildKind, ...GOALS, ...GOALS_TECH.filter((k) => isUnlocked(st, k))]
-      : GOALS;
+    const queue = opts.kolejka
+      ? opts.kolejka()
+      : opts.badania
+        ? ['pracownia' as BuildKind, ...GOALS, ...GOALS_TECH.filter((k) => isUnlocked(st, k))]
+        : GOALS;
     const open = queue.filter((k) => !placed.has(k));
     const cores = st.pawns.filter((p) => p.kind === 'core' && !p.away);
     const free = cores.filter((p) => !p.job || (!p.job.order && p.job.t === 'warm'));

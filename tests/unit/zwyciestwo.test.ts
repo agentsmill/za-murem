@@ -24,6 +24,7 @@ import {
   ludnoscOf,
   nazwaDrogi,
   ocenDrogi,
+  terenMozliwy,
   wlaczZwyciestwo,
   wygrajDroge,
 } from '../../src/gov/zwyciestwo.ts';
@@ -587,11 +588,32 @@ describe('zarząd bez opcji zwycięstwa', () => {
     // ca868e42 i 829d4a08) i z poprawkami trybu zombie w noc-integracja, 19.10.2026 wieczorem (14943f9b, 02636e00
     // i d2f68ad8). Szósty raz w zadaniu 11 wydarzeń (karty z 0.3 z gościem pod bramą: uchodźcy, influencerka, aktywiści,
     // dzieciaki, sąsiad od tokenów i fachowiec w domu mają wagę 0 bez GovInput.goscie, a atrapa nie ma obcych), czyli
-    // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); tu po scaleniu obu, 20.10.2026.
+    // inna pula, inne losowanie (na samych wydarzeniach 8587c921, 9c2d504c i f064e248); po scaleniu obu 20.10.2026
+    // aaa8b716, d1a8e423 i 76e72ff9. Siódmy raz w zadaniu 12 wydarzeń (pies i kot jako pionki): „Kot w piwnicy”
+    // z wyborem „Uwolnić i przygarnąć” ustawia flagę `cat` w stanie zarządu (na samych wydarzeniach cf77bec1, 0e44994c
+    // i f064e248); tu znów po scaleniu obu, 23.10.2026. Ósmy raz w zadaniu 15 wydarzeń (dwanaście łańcuchów historii,
+    // src/gov/watki-tresc.ts): pierwszy tick zarządu wybiera wątki sezonu z ziarna zarządu (`wybierzWatki`), a pierwsze kroki
+    // wybranych łańcuchów wchodzą do puli, czyli inne losowanie; atrapa nie ma obcych ani mieszkańców z generatora, więc do
+    // wyboru zostają tylko „List z 2026” i „Pies ujada nocami”, który zajmuje miejsce karty „Pies przy siatce” (były f90d5ef8, 949f8cf5
+    // i 76e72ff9; potem 668ba3fa, 4ce4129e i 65a73c2f). Dziewiąty raz w rundzie poprawek 1 zadania 15: „List z 2026” przestał
+    // być krokiem pierwszej nocy (satyra i lore dopiero od drugiego dnia), czyli inna pula tej nocy, inne losowanie.
+    // Dziesiąty raz w zadaniu 16 wydarzeń (narrator, src/gov/narrator.ts): stan zarządu ma teraz `napiecie` (powstaje przy pierwszym
+    // kroku, więc jest w skrócie każdej gry), a wagi kart z tagiem `ton` mnożą się przez mnożnik napięcia, czyli inne losowanie
+    // (były ef7e6dca, a38f0d27 i a76369a8; z samym narratorem 74657a83, 39b814b2 i 16fcaf6f). Do tego w tym samym zadaniu odstęp
+    // między wydarzeniami po pierwszych 10 minutach przesunięty ze 100–180 s na 110–200 s (spis kart na grę: 40,6 przy celu 30–40).
+    // Jedenasty raz w rundzie poprawek 1 zadania 16: łańcuchy kart dostały przełącznik (`GovState.lancuchy`). Ten test gra przez
+    // `run(…)` z atrapy, które bez piątego argumentu zaczyna od `newGov(ziarno, 'zwykly', false)`, czyli bez łańcuchów: zarząd nie
+    // wybiera wątków i nie losuje z ziarna, więc skróty niżej są skrótami gry sprzed łańcuchów (były 10242b95, f01804b8 i 53bab003).
+    // Sama gra w przeglądarce ma łańcuchy domyślnie włączone (`?lancuchy=0` wyłącza), a jej przebieg pilnują boty i
+    // lancuchy-przelacznik.test.ts; tu zostaje przebieg bez łańcuchów, żeby skróty mierzyły tylko drogi do zwycięstwa.
+    // Dwunasty raz w zadaniu 14 ścieżki celów: karty „Ślady przy siatce” łatają za 3 złomu jak menu (nie za 2) i wpisują
+    // „złomem i drutem” (nie „deskami i drutem”). W przebiegu z ziarnem 5 i polityką „losowo” wypada ta karta z łatą, a jedyne
+    // różnice w stanie zarządu to dwa wpisy kroniki (podpis wyboru z kosztem i wpis o łacie); losowanie się nie przesuwa, więc
+    // skróty ziarna 1 i 3 zostają, a ziarna 5 zmienia się z dc7b63fc na f1500b9a.
     const przebiegi = [
-      [1, 'propozycja', 'aaa8b716'],
-      [3, 'zawsze-warta', 'd1a8e423'],
-      [5, 'losowo', '76e72ff9'],
+      [1, 'propozycja', '401232fa'],
+      [3, 'zawsze-warta', '563c8664'],
+      [5, 'losowo', 'f1500b9a'],
     ] as const;
     for (const [ziarno, polityka, skrot] of przebiegi) {
       const { gov } = run(ziarno, polityka, at(5, 0));
@@ -849,6 +871,32 @@ describe('droga terenu na mapie, gdzie nie da się otoczyć żadnego sąsiada (G
     ocenDrogi(st, i);
     expect(JSON.stringify(st)).toBe(stPrzed);
     expect(JSON.stringify(i)).toBe(iPrzed);
+  });
+});
+
+describe('terenMozliwy: jeden predykat dla ekranu dróg i celu „otoczcie sąsiada” ścieżki celów', () => {
+  const teren = (st: GovState, i: GovInput) => ocenDrogi(st, i).find((x) => x.droga === 'teren')!;
+  const bezSasiada = (mozliwe?: number) => wej({ teren: { przylaczone: 0, mozliwe } });
+
+  it('brak pola `mozliwe` albo `teren` to „można” (atrapy i stare wejścia), zero i liczba ujemna to „nie można”', () => {
+    expect(terenMozliwy(wej())).toBe(true);
+    expect(terenMozliwy({ teren: undefined })).toBe(true);
+    expect(terenMozliwy(bezSasiada(undefined))).toBe(true);
+    expect(terenMozliwy(bezSasiada(1))).toBe(true);
+    expect(terenMozliwy(bezSasiada(5))).toBe(true);
+    expect(terenMozliwy(bezSasiada(0))).toBe(false);
+    expect(terenMozliwy(bezSasiada(-2))).toBe(false);
+    // liczba bez sensu (NaN) to jak brak pola, tak samo jak dotąd na ekranie dróg
+    expect(terenMozliwy(bezSasiada(Number.NaN))).toBe(true);
+  });
+
+  it('ekran dróg mówi „Wkrótce: wspólny płot przez jezdnię” dokładnie wtedy, gdy predykat mówi „nie można”', () => {
+    for (const mozliwe of [undefined, 0, 1, 4, -1, Number.NaN]) {
+      const i = bezSasiada(mozliwe);
+      const t = teren(wlaczony(), i);
+      expect(t.wkrotce !== null, `mozliwe ${mozliwe}`).toBe(!terenMozliwy(i));
+      expect(t.dalej !== null, `mozliwe ${mozliwe}`).toBe(terenMozliwy(i));
+    }
   });
 });
 

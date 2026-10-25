@@ -11,8 +11,8 @@
                osobę zarządu w promieniu GOSC_ZASIEG staje (`zlapany`); `zostan` i `zarzad` zamieniają pionki w
                mieszkańców (mówiący przy `zarzad` w zarząd) i na tym wizyta w symulacji się kończy (`przyjety`)
      odchodzi  idą do krawędzi mapy (praca `odejscie`, jak wyrzucony mieszkaniec; z ulicy do kafelka, z którego
-               przyszli), a gdy ostatni zniknie, faza to `poszedl`; w trybie zombie szwendacz do SPOOK_R m
-               płoszy grupę pod bramą (ucieka szybciej)
+               przyszli), a gdy ostatni zniknie, faza to `poszedl`; w trybie zombie szwendacz, który podejdzie do
+               kogoś z grupy na SPOOK_GOSC m (zasięg ugryzienia), płoszy ją w drodze i pod bramą (ucieka szybciej)
    `nie_doszedl`: grupa nie dotarła pod bramę w GOSC_DOJSCIE (droga zablokowana); `zginal`: nie żyje nikt.
 
    Kontrakt.
@@ -32,6 +32,7 @@ import type { FazaGoscia } from '../gov/typy.ts';
 import { dayOf, hourOf, TICKS_PER_HOUR } from './clock.ts';
 import { tickAt } from './handlarz.ts';
 import { WANDERER_HP } from './wedrowcy.ts';
+import { BITE_REACH } from './zombie.ts';
 
 /** wizyta w stanie symulacji (`SimState.goscie`) */
 export interface GoscSim {
@@ -53,6 +54,10 @@ export interface GoscSim {
   kafelek: number;
   /** ilu członków zginęło (wszyscy: faza `zginal`) */
   zgin?: number;
+  /** indeksy w `pawns` (w planie `PlanGoscia.osoby`) członków, którzy zginęli jako goście (szwendacz, dobicie, strzał), w kolejności
+      zgonów; zostają po końcu wizyty, bo odczyt dla zarządu po `poszedl` i `zginal` nie ma już żywych (`GovGosc.zywi` puste).
+      Kto odszedł za mapę albo został mieszkańcem, tu nie trafia. Pole opcjonalne: stary zapis go nie ma. */
+  zmarli?: number[];
   /** tick, od którego mówiący stoi na swoim miejscu pod bramą (reszta ma GOSC_ZBIERZ na dojście) */
   przy?: number;
   /** po rozkazie `noc`: tick porannego wyjścia i tick 2:00, o którym kłamca rusza po jedzenie */
@@ -68,6 +73,14 @@ export interface GoscSim {
   /** grupa została w osiedlu: mieszkańcami albo (mówiący) zarządem; symulacja już o niej nie decyduje */
   przyjety?: 'mieszkancy' | 'zarzad';
 }
+
+/** Tryb zombie: grupa (w drodze pod bramę i pod bramą) ucieka dopiero przed szwendaczem, który podszedł na zasięg ugryzienia
+    (`BITE_REACH`, 1,1 m) do któregoś z niej; wcześniej idzie dalej, a szwendacz, który ją widzi (10 m za dnia), ściga ją i może
+    ugryźć albo zagrodzić drogę. Było `SPOOK_R` = 6 m, jak u wędrowców, i przy stadzie, które za dnia siedzi przy bramie i na
+    ulicy dojścia (67% uciekających grup miało szwendacza w 10 m od bramy), kartę pod bramą widziało 13% wizyt (spis zadania 16:
+    20 gier po 5 dób; przy 3 m 26%, przy 2 m 35%, przy zasięgu ugryzienia 52% i 1,2 karty gościa na grę zamiast 4,7). Dalej płoszą
+    szwendacze wędrowców i ekipy (`SPOOK_R`). */
+export const SPOOK_GOSC = BITE_REACH;
 
 /** życie pionka gościa (jak wędrowca) */
 export const GOSC_HP = WANDERER_HP;

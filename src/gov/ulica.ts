@@ -1,11 +1,12 @@
 /* Wydarzenia ulicy domów i miejsc z mapy (projekt: docs/superpowers/specs/2026-10-17-wydarzenia-z-miejsca-design.md,
    punkt 6): ogród, garaże i szopy, sąsiedzi zza płotu, satyra na dzisiejszą technikę oglądaną z 2051 roku i to, co
    z niej przetrwało bakterię (szczelne: lakier, żywica, szkło). Od drugiego dnia, raz na grę, w dzień. Teksty to
-   pierwszy zestaw do przeczytania przez Mateusza. */
+   pierwszy zestaw do przeczytania przez Mateusza. „Kury sąsiadów” łatają dziurę wspólnym wyborem `lataDziury` z tresc.ts:
+   tyle złomu, co łata z menu (`PATCH_SCRAP`, 3 sztuki). */
 
 import { g } from '../content/people.ts';
 import { tx } from '../core/jezyk.ts';
-import type { GEventDef, GovHost } from './tresc.ts';
+import { type GEventDef, type GovHost, lataDziury } from './tresc.ts';
 
 const dom = (h: GovHost) => h.place().kind === 'dom';
 /** wydarzenie ulicy domów: w domu wśród domów, od drugiego dnia */
@@ -15,6 +16,7 @@ const W = 0.8;
 export const STREET_EVENTS: GEventDef[] = [
   {
     id: 'jablka',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     // październik: antonówki; tylko jesienią
@@ -65,6 +67,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'kury',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) && h.holes() > 0 ? W : 0),
@@ -105,24 +108,17 @@ export const STREET_EVENTS: GEventDef[] = [
           );
         },
       },
-      {
-        label: tx('Załatać dziurę (Złom 2)', 'Patch the hole (Scrap 2)'),
-        ok: h.res.zlom >= 2,
-        run: () => {
-          h.pay({ zlom: 2 });
-          h.patchHole();
-          h.log(
-            tx(
-              'Dziura załatana. Kury muszą szukać innej drogi.',
-              'Hole patched. The hens will have to find another way.',
-            ),
-          );
-        },
-      },
+      lataDziury(h, {
+        log: tx(
+          'Dziura załatana. Kury muszą szukać innej drogi.',
+          'Hole patched. The hens will have to find another way.',
+        ),
+      }),
     ],
   },
   {
     id: 'kosiarka',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) ? W : 0),
@@ -164,6 +160,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'szopa',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) ? W : 0),
@@ -255,6 +252,7 @@ export const STREET_EVENTS: GEventDef[] = [
   },
   {
     id: 'panele',
+    ton: 'lagodne',
     once: true,
     when: ['dzien'],
     w: (h) => (ulica(h) ? W : 0),

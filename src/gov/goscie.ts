@@ -22,6 +22,10 @@
      (`ostrzej`) ×1,5 dla każdego haczyka poza prawdą, fach, który zarząd już ma, kusi mniej, pora i dom przesuwają
      „czego chce” i archetyp rodziny. Każda napaść na obcego odbiera 20% szansy na gościa: to nie waga klocka, tylko
      mnożnik wydarzenia (`wagaGoscia`).
+   - Wątki sezonu (`KontekstGoscia.bez`, w wizyta.ts `bezPowtorek`): gdy zarząd ma włączone łańcuchy (`GovState.lancuchy`), a `dobicie`
+     albo `dach` jest wybranym wątkiem, archetyp „ktoś z ugryzionym bliskim” (dobicie) i haczyk „ugryziony” u kogoś innego niż on
+     (ocaleni z ukrytym ugryzieniem, dach) mają wagę 0, bo tę opowieść prowadzi łańcuch. Bez łańcuchów pole `bez` nie powstaje
+     i losowania są takie jak dotąd. `nazwiskoDla` (forma nazwiska dla płci) jest stąd eksportowane też łańcuchom.
    - Osoby: `makePerson` z listy imion 0.3 (zarząd nie ma tabel generatora), fach z puli archetypu (dezerter tylko jako
      ochroniarz), wiek mówiącego z `KTO[kto].wiek`, reszta grupy z wiekiem rodziny (dzieci 4–15, dziadkowie 65–85); w rodzinie
      partner jest płci przeciwnej niż mówiący; rodzina, dzieci i ktoś z ugryzionym bliskim mają nazwisko mówiącego (forma
@@ -42,7 +46,12 @@
      albo równa kategorii odpada.
    - Teksty (goscie-teksty.ts): wybór wariantu zdania zależy tylko od gościa (skrót z id, imienia mówiącego i archetypu),
      więc ten sam gość czyta się tak samo przy każdym otwarciu i po wczytaniu zapisu. Każdy klocek ma po 3 warianty
-     w obu językach, `wariantyGoscia` wystawia wszystkie (testy angielskiego sprawdzają każdy, nie tylko wybrany). */
+     w obu językach, `wariantyGoscia` wystawia wszystkie (testy angielskiego sprawdzają każdy, nie tylko wybrany).
+   - Powrót znajomego (`skladPowrotu`, etap 4): ten sam człowiek (imię, nazwisko, płeć, wiek, zawód z wpisu `Znajomy`) z tym
+     samym archetypem, o ile to archetyp pojedynczego człowieka (rodzina, ocaleni i ktoś z ugryzionym bliskim wracają jako
+     wędrowiec: ich karty mówią o liczbie osób w grupie), bez haczyka, z darem do wyboru: rodzeństwo do
+     przyjęcia (drugi gość, to samo nazwisko), worek jedzenia 2–4 porcji (`Gosc.porcje`) albo wiadomość o miejscu. Losowania
+     po kolei: dar, skąd, porcje, rodzeństwo; chory nie przyprowadza rodzeństwa (nie prosi o przyjęcie). */
 
 import { type Dom, NAMES, POICAT, PROFS, type Prof, SEASONS, SURN } from '../content/data.ts';
 import { KAT_EN } from '../content/miejsca.en.ts';
@@ -53,6 +62,7 @@ import type { Miejsce } from '../world/miasto.ts';
 import { AMUNICJA, BRON, frazaSkad, KATEGORIA_SKAD, KIERUNEK, SATYRA_KLUCZE } from './goscie-teksty.ts';
 import type { Pora } from './tresc.ts';
 import type { GameMode } from './typy.ts';
+import type { Znajomy } from './znajomi.ts';
 
 export {
   AMUNICJA,
@@ -95,8 +105,10 @@ export interface Gosc {
   skad: { strona: Strona; nazwa: Tx; klucz?: string };
   /** klucz linijki z `SATYRA` */
   satyra?: string;
-  /** id znajomego przy powrocie (etap 4) */
+  /** id znajomego (`Znajomy.id`), gdy to jego powrót (`skladPowrotu`): karta rozpoznaje go po imieniu i epitecie */
   wraca?: string;
+  /** powrót z darem w jedzeniu: tyle porcji (2–4) dostaje zarząd rano po wpuszczeniu, przyjęciu i nakarmieniu, nie po odprawie */
+  porcje?: number;
   rzecz?: { arms?: string; meds?: number; ammo?: Partial<Record<'naboje' | 'loftki' | 'belty', number>> };
 }
 
@@ -111,6 +123,10 @@ export interface KontekstGoscia {
   dom: boolean;
   /** narrator po długim spokoju (zadanie 16): haczyk inny niż 'prawda' ×1,5 */
   ostrzej?: boolean;
+  /** Czego goście z klocków nie powtarzają, bo to samo opowiada wybrany wątek sezonu (Task 15): archetypy i haczyki z wagą 0.
+      Prośba o dobicie ugryzionego dziecka to łańcuch „Prośba o dobicie” (`z_ugryzionym`), ocaleni z ukrytym ugryzieniem to
+      łańcuch „Ktoś woła z dachu” (haczyk `ugryziony` u kogoś innego niż `z_ugryzionym`, który go ma zawsze). */
+  bez?: { kto?: readonly KtoId[]; haczyk?: readonly HaczykId[] };
 }
 
 const TRYBY_OBA: readonly GameMode[] = ['zwykly', 'zombie'];
@@ -271,7 +287,7 @@ export const ZIMA = SEASONS.indexOf('zima');
 /** poziom umiejętności, od którego zawód gościa liczy się jako fach (`ma: fach`) */
 export const PROG_FACHU = 2;
 
-const BAZA_KTO: Record<KtoId, number> = {
+export const BAZA_KTO: Record<KtoId, number> = {
   wedrowiec: 5,
   rodzina: 3,
   dezerter: 1.5,
@@ -285,7 +301,7 @@ const BAZA_KTO: Record<KtoId, number> = {
 
 function wagiKto(ctx: KontekstGoscia): Opcje<KtoId> {
   return KTOS.filter((k) => KTO[k].tryby.includes(ctx.mode)).map((k) => {
-    let w = BAZA_KTO[k];
+    let w = ctx.bez?.kto?.includes(k) ? 0 : BAZA_KTO[k];
     if (k === 'chory' && ctx.season === ZIMA) w *= 2;
     // w domu mniej miejsca: duże rodziny przychodzą rzadziej
     if (k === 'rodzina' && ctx.dom) w *= 0.7;
@@ -293,11 +309,12 @@ function wagiKto(ctx: KontekstGoscia): Opcje<KtoId> {
   });
 }
 
-const BAZA_HACZYK: Record<HaczykId, number> = { prawda: 4, klamie: 1.4, chory: 1, poscig: 1, ugryziony: 1.4 };
+export const BAZA_HACZYK: Record<HaczykId, number> = { prawda: 4, klamie: 1.4, chory: 1, poscig: 1, ugryziony: 1.4 };
 
 function wagiHaczyka(ctx: KontekstGoscia, kto: KtoId): Opcje<HaczykId> {
   return haczykiMozliwe(kto, ctx.mode).map((h) => {
-    let w = BAZA_HACZYK[h];
+    // ktoś z ugryzionym bliskim ma ugryzienie zawsze (jedyny możliwy haczyk), więc jego nie wyłączamy
+    let w = ctx.bez?.haczyk?.includes(h) && kto !== 'z_ugryzionym' ? 0 : BAZA_HACZYK[h];
     if (h === 'klamie' && ctx.zapasy > 20) w *= 1.5;
     if (h === 'chory') {
       if (ctx.season === ZIMA) w *= 2;
@@ -462,7 +479,7 @@ const doroslyProf = (lo: number, hi: number): Prof => ['mieszkaniec', 'mieszkank
 const przytnij = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
 /** forma nazwiska dla płci: Kowalski ↔ Kowalska, Nowak ↔ Nowak */
-function nazwiskoDla(nazwisko: string, f: boolean): string {
+export function nazwiskoDla(nazwisko: string, f: boolean): string {
   const para = SURN.find((s) => s[0] === nazwisko || s[1] === nazwisko);
   return para ? para[f ? 1 : 0] : nazwisko;
 }
@@ -714,5 +731,92 @@ export function skladGoscia(rng: Rng, n: number, ctx: KontekstGoscia, used: Read
     skad,
     ...(satyra !== undefined ? { satyra } : {}),
     ...(rzecz ? { rzecz } : {}),
+  };
+}
+
+// ---------------------------------------------------------------- powrót znajomego
+
+/** archetypy całych grup: jeden powracający (z rodzeństwem co najwyżej) nie jest już rodziną ani ocalałymi, więc wraca jako
+    wędrowiec; karty tych archetypów mówią o liczbie osób, a powracający ma ją w zdaniu o darze */
+const GRUPOWE: ReadonlySet<KtoId> = new Set(['rodzina', 'ocaleni', 'z_ugryzionym']);
+
+/** dar powracającego znajomego: rodzeństwo do przyjęcia, worek jedzenia albo wiadomość o miejscu */
+export type DarPowrotu = 'rodzenstwo' | 'jedzenie' | 'wiesc';
+
+const BAZA_DAR: Record<DarPowrotu, number> = { rodzenstwo: 1, jedzenie: 1.2, wiesc: 1 };
+
+/** zawód z PROFS po nazwie w którejkolwiek formie (męskiej albo żeńskiej) */
+const profPoFormie = (nazwa: string | undefined): Prof | undefined =>
+  nazwa === undefined ? undefined : PROFS.find((p) => p[0] === nazwa || p[1] === nazwa);
+
+/** Ta sama osoba co w wpisie znajomego: imię, nazwisko, płeć i wiek z wpisu, zawód z jego nazwy (nieznany: dziecko
+    albo „mieszkaniec”), reszta (cechy) z ziarna. Id nadaje wywołujący. */
+function osobaZnajomego(rng: Rng, z: Pick<Znajomy, 'osoba' | 'prof'>, kto: KtoId, used: ReadonlySet<string>): Person {
+  const zawod = profPoFormie(z.prof);
+  const wiek = z.osoba.age;
+  const prof: Prof = zawod
+    ? [zawod[0], zawod[1], zawod[2], [wiek, wiek]]
+    : kto === 'dziecko' || wiek < 16
+      ? dziecieProf(wiek, wiek)
+      : doroslyProf(wiek, wiek);
+  const p = makePerson(rng, new Set([...used, z.osoba.first]), () => 0, { f: z.osoba.f, prof });
+  if (p.age < 16) p.traits = [];
+  return { ...p, first: z.osoba.first, name: z.osoba.name, age: wiek };
+}
+
+/** Brat albo siostra mówiącego: to samo nazwisko (w formie płci rodzeństwa), nowe imię, wiek blisko jego wieku. */
+function rodzenstwo(rng: Rng, mow: Person, used: ReadonlySet<string>): Person {
+  const f = rng() < 0.5;
+  const wiek = mow.age < 16 ? przytnij(mow.age + ri(-4, 3, rng), 4, 15) : przytnij(mow.age + ri(-8, 8, rng), 18, 80);
+  const prof = wiek < 16 ? dziecieProf(wiek, wiek) : doroslyProf(wiek, wiek);
+  const p = makePerson(rng, new Set([...used, mow.first]), () => 0, { f, prof });
+  if (p.age < 16) p.traits = [];
+  const nazwisko = mow.name.slice(mow.first.length + 1);
+  p.name = `${p.first} ${nazwiskoDla(nazwisko, f)}`;
+  return p;
+}
+
+/**
+ * Składa powrót znajomego (`GovState.znajomi`): ten sam człowiek co w wpisie, archetyp ten sam, jeśli da się go odtworzyć
+ * (rodzina, ocaleni, ktoś z ugryzionym bliskim, lokator i archetyp spoza trybu wracają jako wędrowiec), haczyk „prawda” i dar. `dar` wymusza rodzaj daru (testy);
+ * chory nie przyprowadza rodzeństwa, więc dostaje wtedy worek jedzenia. Losowanie w stałej kolejności: dar, skąd, porcje,
+ * rodzeństwo (płeć, wiek, imię). `n` to numer gościa (id `g<n>`), `used` imiona już zajęte na osiedlu.
+ */
+export function skladPowrotu(
+  rng: Rng,
+  n: number,
+  z: Pick<Znajomy, 'id' | 'osoba' | 'prof' | 'kto'>,
+  ctx: Pick<KontekstGoscia, 'mode' | 'okolica' | 'dom'>,
+  used: ReadonlySet<string>,
+  dar?: DarPowrotu,
+): Gosc {
+  const kto: KtoId =
+    z.kto === 'lokator' || GRUPOWE.has(z.kto) || !KTO[z.kto].tryby.includes(ctx.mode) ? 'wedrowiec' : z.kto;
+  const losowy = wybierz(
+    rng,
+    (Object.keys(BAZA_DAR) as DarPowrotu[]).map(
+      (d) => [d, d === 'rodzenstwo' && kto === 'chory' ? 0 : BAZA_DAR[d]] as const,
+    ),
+  );
+  let wybrany = dar ?? losowy;
+  if (wybrany === 'rodzenstwo' && kto === 'chory') wybrany = 'jedzenie';
+  const skad = wybierzSkad(rng, ctx.okolica);
+  const porcje = wybrany === 'jedzenie' ? ri(2, 4, rng) : undefined;
+  const mow = osobaZnajomego(rng, z, kto, used);
+  const osoby = wybrany === 'rodzenstwo' ? [mow, rodzenstwo(rng, mow, used)] : [mow];
+  const id = `g${n}`;
+  osoby.forEach((p, i) => {
+    p.id = `${id}p${i}`;
+  });
+  return {
+    id,
+    osoby,
+    kto,
+    chce: wybrany === 'rodzenstwo' ? 'dolaczyc' : 'nocleg',
+    ma: wybrany === 'wiesc' ? 'wiadomosc' : 'nic',
+    haczyk: 'prawda',
+    skad,
+    wraca: z.id,
+    ...(porcje !== undefined ? { porcje } : {}),
   };
 }
