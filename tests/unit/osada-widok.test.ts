@@ -19,12 +19,21 @@ import {
 import { hashString } from '../../src/core/rng.ts';
 import { mapaMieszkancow } from '../../src/sim/osiedle.ts';
 import { nowaOsadaGry, osadaZZapisu, type StanOsady, TICK_STARTU_OSADY } from '../../src/ui/osada.ts';
-import { naSiedzibie, obrysKwadratu, PROMIEN_SZUKANIA, siedzibaWKwadracie } from '../../src/ui/osadaWidok.ts';
+import {
+  MARGINES_ETYKIETY,
+  naSiedzibie,
+  obrysKwadratu,
+  PROMIEN_SZUKANIA,
+  polozenieEtykiety,
+  siedzibaWKwadracie,
+  zaslaniaNakladki,
+} from '../../src/ui/osadaWidok.ts';
 import type { Geo } from '../../src/world/geo.ts';
 import { kluczBudynku } from '../../src/world/klucze.ts';
-import { srodekKwadratu, type Uklad, ukladZGeo } from '../../src/world/kwadraty.ts';
+import { sasiedzi8, srodekKwadratu, type Uklad, ukladZGeo } from '../../src/world/kwadraty.ts';
 import { buildKwadrat, type World } from '../../src/world/world.ts';
 import { daneDema, wczytajDemo } from '../../tools/osada-kwadraty.ts';
+import { ADDRESSES, geoKwadratuTestowego, ukladTestowy } from './fixtures.ts';
 
 type Demo = ReturnType<typeof wczytajDemo>;
 type Dane = Awaited<ReturnType<typeof daneDema>>;
@@ -114,6 +123,31 @@ describe('przesunięcie i geo kwadratu osady z jej geo', () => {
     const przed = JSON.stringify(p.swiat.geo);
     geoKwadratuOsady(p.swiat.geo, demA[p.demo].uklad);
     expect(JSON.stringify(p.swiat.geo)).toBe(przed);
+  });
+
+  it('prawdziwy adres: geo kwadratu z kafelków przesunięte do punktu wraca co do wartości, a przesunięcie odczytuje się z c', () => {
+    // `c` geo z kafelków (`geoKwadratu` z src/world/geoKwadratu.ts) to środek układu domu, tak samo jak w demach
+    for (const a of ADDRESSES) {
+      const u = ukladTestowy(a);
+      for (const [sx, sy] of sasiedzi8(0, 0)) {
+        const g = geoKwadratuTestowego(a, sx, sy);
+        for (const [dx, dy] of [
+          [127.5, -203],
+          [-310, 88.5],
+          [0, 0],
+        ] as const) {
+          const przesuniete = przesunGeo(g, dx, dy);
+          expect(przesuniecieOsady(przesuniete, u), `${a.key} ${sx},${sy} (${dx}, ${dy})`).toEqual([dx, dy]);
+          const wraca = geoKwadratuOsady(przesuniete, u);
+          // co do wartości (minus zero z danych wraca jako zero, więc przez JSON, który ich nie rozróżnia)
+          expect(wraca.c).toEqual(g.c);
+          expect(JSON.stringify(wraca.b)).toBe(JSON.stringify(g.b));
+          expect(JSON.stringify(wraca.r)).toBe(JSON.stringify(g.r));
+          expect(JSON.stringify(wraca.a)).toBe(JSON.stringify(g.a));
+          expect(JSON.stringify(wraca.w)).toBe(JSON.stringify(g.w));
+        }
+      }
+    }
   });
 
   it('zapis i wczytanie geo (JSON) nie zmieniają wyniku', () => {
@@ -438,5 +472,49 @@ describe('obrysKwadratu: kwadrat osady na mapie miasta (metry od adresu bez obro
     const o = obrysKwadratu(u, 0, 0);
     expect(o.reduce((a, q) => a + q[0], 0) / 4).toBeCloseTo(0, 6);
     expect(o.reduce((a, q) => a + q[1], 0) / 4).toBeCloseTo(0, 6);
+  });
+});
+
+describe('położenie etykiety nad siedzibą i ustępowanie nakładkom', () => {
+  it('napis wyśrodkowany nad kotwicą, 10 px od niej, bez przesunięcia, gdy mieści się na ekranie', () => {
+    const { przesuniecie, rect } = polozenieEtykiety(500, 300, 160, 24, 1440);
+    expect(przesuniecie).toBe(0);
+    expect(rect).toEqual({ l: 420, t: 266, r: 580, b: 300 });
+  });
+
+  it('przy brzegu ekranu napis przesuwa się do środka o tyle, ile trzeba, z marginesem, a kotwica zostaje', () => {
+    // lewy brzeg: napis zaczynałby się w −30, a ma zacząć w 4
+    const lewo = polozenieEtykiety(50, 300, 160, 24, 1440);
+    expect(lewo.rect.l).toBe(MARGINES_ETYKIETY);
+    expect(lewo.przesuniecie).toBe(MARGINES_ETYKIETY - (50 - 80));
+    // prawy brzeg: napis kończyłby się w 1470, a ma kończyć się w 1436
+    const prawo = polozenieEtykiety(1390, 300, 160, 24, 1440);
+    expect(prawo.rect.r).toBe(1440 - MARGINES_ETYKIETY);
+    expect(prawo.przesuniecie).toBe(-34);
+    // w obu wypadkach napis ma ten sam rozmiar, a jego dolna krawędź leży na kotwicy
+    for (const w of [lewo, prawo]) {
+      expect(w.rect.r - w.rect.l).toBe(160);
+      expect(w.rect.b).toBe(300);
+    }
+  });
+
+  it('nakładka, na którą napis wchodzi, go zasłania; styk krawędzi i nakładki dalej nie', () => {
+    const napis = { l: 100, t: 100, r: 200, b: 130 };
+    expect(zaslaniaNakladki(napis, [])).toBe(false);
+    expect(zaslaniaNakladki(napis, [{ l: 150, t: 120, r: 400, b: 400 }])).toBe(true);
+    // wchodzi z każdej strony
+    expect(zaslaniaNakladki(napis, [{ l: 0, t: 0, r: 101, b: 101 }])).toBe(true);
+    expect(zaslaniaNakladki(napis, [{ l: 199, t: 129, r: 300, b: 300 }])).toBe(true);
+    // tylko się stykają
+    expect(zaslaniaNakladki(napis, [{ l: 200, t: 100, r: 300, b: 130 }])).toBe(false);
+    expect(zaslaniaNakladki(napis, [{ l: 100, t: 130, r: 200, b: 200 }])).toBe(false);
+    expect(zaslaniaNakladki(napis, [{ l: 0, t: 0, r: 100, b: 100 }])).toBe(false);
+    // jedna z wielu wystarczy
+    expect(
+      zaslaniaNakladki(napis, [
+        { l: 500, t: 500, r: 600, b: 600 },
+        { l: 190, t: 110, r: 250, b: 120 },
+      ]),
+    ).toBe(true);
   });
 });

@@ -39,8 +39,8 @@
 
    Widok ich kwadratu (zadanie 5) buduje kwadrat obok domu z geo kwadratu SPRZED przesunięcia, a zapis trzyma tylko geo przesunięte:
    `przesuniecieOsady` odczytuje przesunięcie z `c` obu geo (`przesunGeo` przesuwa środek geograficznie o tyle samo co punkty, a `c`
-   kwadratu to środek układu domu), `geoKwadratuOsady` oddaje z niego geo kwadratu punkt w punkt (współrzędne na siatce 0,5 m),
-   bez zmiany formatu zapisu.
+   kwadratu to środek układu domu), `geoKwadratuOsady` oddaje z niego geo kwadratu punkt w punkt (współrzędne na siatce 0,5 m
+   wracają co do wartości, minus zero jako zero), bez zmiany formatu zapisu.
 
    Geo osady (`SwiatOsady.geo`) to geo kwadratu przesunięte o punkt siedziby zaokrąglony do 0,5 m (zapis zostaje zwarty, a
    współrzędne na siatce, na której je podano), ze środkiem `c` przesuniętym geograficznie o tyle samo (generator
@@ -184,7 +184,8 @@ export function przesuniecieOsady(geoOsady: Pick<Geo, 'c'>, uklad: Pick<Uklad, '
 
 /** Geo kwadratu osady SPRZED przesunięcia do siedziby (metry od adresu w układzie domu, bez obrotu, `c` układu domu): to, z czego
     widok buduje jej kwadrat obok domu (`buildKwadrat`, jak kwadrat z `?kwadraty=`), a zapis osady go nie trzyma (ma geo
-    przesunięte, `SwiatOsady.geo`). Odwrotność `przesunGeo` o `przesuniecieOsady`: współrzędne na siatce 0,5 m wracają bit w bit.
+    przesunięte, `SwiatOsady.geo`). Odwrotność `przesunGeo` o `przesuniecieOsady`: współrzędne na siatce 0,5 m wracają co do wartości
+    (minus zero jako zero).
     Klucze miejsc dopisane do geo osady przy wyborze zostają. Wejście zostaje nietknięte. */
 export function geoKwadratuOsady(geoOsady: Geo, uklad: Pick<Uklad, 'c'>): Geo {
   const [dx, dy] = przesuniecieOsady(geoOsady, uklad);

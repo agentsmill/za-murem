@@ -699,6 +699,11 @@ function widokOsadyShots(out: string): ShotCele[] {
             karta: !document.getElementById('card')!.hidden,
             rozkazy: window.zm!.sim!.st.cmds.length,
           }));
+        // podpowiedź u dołu (wieść z nocy, kronika) mija sama po kilku sekundach: kontrola zaczyna od pustej, żeby jej zgaśnięcie
+        // w trakcie nie wyglądało jak reakcja na klik
+        await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, {
+          timeout: 15_000,
+        });
         const przed = await wBloku();
         const [mx, my] = await page.evaluate(() => window.zm!.screenOf(384 + 40, 192));
         wymagaj(mx > 20 && mx < 1390, 'punkt w mgle leży na ekranie', [mx, my]);
@@ -719,6 +724,20 @@ function widokOsadyShots(out: string): ShotCele[] {
           (await wBloku()).podpowiedz !== przed.podpowiedz,
           'kontrola: prawy klik w domu bez zaznaczonych daje podpowiedź, więc klik w mgłę naprawdę był ignorowany',
         );
+        // zapis i wczytanie przed odkryciem: osada nadal nieodkryta, jej kwadratu w widoku nie ma, mgła jak przed zapisem
+        wymagaj(await page.evaluate(() => window.zm!.save()), 'zapis gry się nie udał');
+        await page.goto(`${base}?speed=0`);
+        await page.waitForSelector('#resume:not([hidden])');
+        await page.click('#btnResume');
+        await waitIdle(page);
+        await page.waitForTimeout(300);
+        const wczytana = await stan(page);
+        wymagaj(
+          wczytana.o?.stan === 'jest' && wczytana.o.odkryta === false && wczytana.o.kwadrat === -1,
+          'po wczytaniu osada nadal nieodkryta, bez kwadratu w widoku',
+          wczytana.o,
+        );
+        wymagaj(wczytana.mgla === 8 && wczytana.obok.length === 0, 'po wczytaniu mgła na ośmiu sąsiadach', wczytana);
         // zrzut: zachodni brzeg domu i mgła obok niego, ze znakiem zapytania w środku kwadratu (podpowiedź z kontroli już zgasła)
         await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, {
           timeout: 15_000,
@@ -1574,6 +1593,18 @@ export function osadaShots(out: string): ShotCele[] {
           'w trybie zombie osady nie ma (brak, regula)',
           o.osada,
         );
+        // osady nie będzie, więc i mgły „nieodkrytego” nie ma: widok jak bez flagi
+        await page.waitForTimeout(300);
+        const widokZombie = await page.evaluate(() => ({
+          mgla: window.zm!.view.mgla.liczba,
+          maKwadraty: window.zm!.view.maKwadraty,
+          kwadrat: window.zm!.osada()?.kwadrat,
+        }));
+        wymagaj(
+          widokZombie.mgla === 0 && !widokZombie.maKwadraty && widokZombie.kwadrat === -1,
+          'tryb zombie z flagą bez mgły i bez kwadratu osady',
+          widokZombie,
+        );
         await page.evaluate(() => window.zm!.save());
         const zapis = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null')?.osada, SAVE);
         wymagaj(zapis?.stan === 'brak' && zapis.powod === 'regula', 'zapis pamięta, że zaczęto z flagą', zapis);
@@ -1593,6 +1624,19 @@ export function osadaShots(out: string): ShotCele[] {
         await chopDryTree(page);
         await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
         wymagaj((await page.evaluate(() => window.zm!.osada())) === null, 'o 7:00 drugiego dnia nadal null');
+        // widok jak dawniej: bez mgły wokół domu, bez kwadratów obok, bez etykiety osady, klik poza mapą trafia w brzeg
+        await page.waitForTimeout(300);
+        const widokBezFlagi = await page.evaluate(() => ({
+          mgla: window.zm!.view.mgla.liczba,
+          maKwadraty: window.zm!.view.maKwadraty,
+          obok: window.zm!.view.kwadratyObok().length,
+          etykieta: !document.getElementById('osadaMark')!.hidden,
+        }));
+        wymagaj(
+          widokBezFlagi.mgla === 0 && !widokBezFlagi.maKwadraty && widokBezFlagi.obok === 0 && !widokBezFlagi.etykieta,
+          'bez flagi widok bez mgły, kwadratów obok i etykiety osady',
+          widokBezFlagi,
+        );
         await page.evaluate(() => window.zm!.save());
         const tekst = await page.evaluate((k) => localStorage.getItem(k) ?? '', SAVE);
         wymagaj(tekst.length > 0, 'gra zapisała się');

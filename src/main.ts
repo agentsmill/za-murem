@@ -208,7 +208,16 @@ import {
 import { Modal } from './ui/okno.ts';
 import type { KwadratOsady, OsadaGry, PodgladOsady } from './ui/osada.ts';
 import { osadaBezKodu } from './ui/osada-brak.ts';
-import { naSiedzibie, obrysKwadratu, type SiedzibaWidoku, siedzibaWKwadracie } from './ui/osadaWidok.ts';
+import {
+  MARGINES_ETYKIETY,
+  naSiedzibie,
+  obrysKwadratu,
+  type Prostokat,
+  polozenieEtykiety,
+  type SiedzibaWidoku,
+  siedzibaWKwadracie,
+  zaslaniaNakladki,
+} from './ui/osadaWidok.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
 import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
@@ -2590,7 +2599,7 @@ let osadaMarkTekst = '';
 let osadaMarkW = 150;
 let osadaMarkH = 24;
 /** nakładki, z których etykieta osady ustępuje (prostokąty ekranu): liczone najwyżej co 150 ms, nie co klatkę */
-let osadaNakladki: { l: number; t: number; r: number; b: number }[] = [];
+let osadaNakladki: Prostokat[] = [];
 let osadaNakladkiAt = -1e9;
 const NAKLADKI_ID = ['top', 'goals', 'card', 'hint', 'arrive', 'minimapa', 'buildPanel', 'pracaPanel', 'placeBar'];
 
@@ -2621,8 +2630,7 @@ function placeOsadaMark(now: number): void {
     return;
   }
   const [ax, ay] = screenOf(sied.etykieta.x, sied.etykieta.y);
-  const margines = 4;
-  if (ax < margines || ax > view.width - margines || ay < 0 || ay > view.height) {
+  if (ax < MARGINES_ETYKIETY || ax > view.width - MARGINES_ETYKIETY || ay < 0 || ay > view.height) {
     if (!el.hidden) el.hidden = true;
     return;
   }
@@ -2636,15 +2644,10 @@ function placeOsadaMark(now: number): void {
     osadaMarkW = label.offsetWidth || osadaMarkW;
     osadaMarkH = label.offsetHeight || osadaMarkH;
   }
-  // napis wystający za ekran przesuwa się płynnie do środka (ogonek zostaje przy kotwicy)
-  const x0 = ax - osadaMarkW / 2;
-  const przesuniecie = Math.max(margines - x0, Math.min(0, view.width - margines - (x0 + osadaMarkW)));
-  // prostokąt napisu: nad kotwicą (10 px od niej, ogonek w tym odstępie) i szerokość napisu
-  const l = x0 + przesuniecie;
-  const t = ay - 10 - osadaMarkH;
+  // napis wystający za ekran przesuwa się płynnie do środka (ogonek zostaje przy kotwicy), a nakładki są ważniejsze od niego
+  const { przesuniecie, rect } = polozenieEtykiety(ax, ay, osadaMarkW, osadaMarkH, view.width);
   odswiezNakladki(now);
-  const zaslania = osadaNakladki.some((n) => l < n.r && l + osadaMarkW > n.l && t < n.b && ay > n.t);
-  if (zaslania) {
+  if (zaslaniaNakladki(rect, osadaNakladki)) {
     if (!el.hidden) el.hidden = true;
     return;
   }

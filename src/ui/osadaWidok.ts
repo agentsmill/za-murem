@@ -12,7 +12,11 @@
    kwadrat jest, siedziby w nim nie ma, więc nie ma etykiety i kliknięcia, a reszta działa.
 
    Etykieta stoi nad środkiem górnej krawędzi obrysu (kafelek górnego rzędu w środku tego rzędu), czyli zawsze nad samym
-   budynkiem, także wtedy, gdy jego obrys to długi ukośny schodek, którego środek ramki leży na trawie. */
+   budynkiem, także wtedy, gdy jego obrys to długi ukośny schodek, którego środek ramki leży na trawie. Jej położenie na ekranie
+   (`polozenieEtykiety`: wyśrodkowana nad kotwicą, przy brzegu ekranu przesunięta do środka) i ustępowanie nakładkom
+   (`zaslaniaNakladki`: pasek, cele, lista ludzi, karta, podpowiedź, przyciski, atrybucja; etykieta wtedy znika) to też czyste
+   funkcje, żeby dało się je sprawdzić bez przeglądarki; `placeOsadaMark` w src/main.ts tylko mierzy nakładki i ustawia element.
+   `obrysKwadratu` daje rogi kwadratu osady dla mapy miasta. */
 
 import type { Pt } from '../world/geo.ts';
 import { kluczBudynku } from '../world/klucze.ts';
@@ -139,3 +143,36 @@ export function obrysKwadratu(uklad: Pick<Uklad, 'kat' | 'bok'>, sx: number, sy:
   };
   return [rog(-0.5, -0.5), rog(0.5, -0.5), rog(0.5, 0.5), rog(-0.5, 0.5)];
 }
+
+/** prostokąt na ekranie w pikselach: lewy, górny, prawy i dolny brzeg */
+export interface Prostokat {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
+}
+
+/** odstęp dolnej krawędzi napisu etykiety od jej kotwicy w pikselach (w nim leży ogonek strzałki; jak `bottom: 10px` w `.treemark-t`) */
+export const ODSTEP_ETYKIETY = 10;
+/** najmniej tyle pikseli od brzegu ekranu zostaje napisowi etykiety */
+export const MARGINES_ETYKIETY = 4;
+
+/** Gdzie stoi napis etykiety nad kotwicą (ax, ay) na ekranie o szerokości `szerEkranu`: napis o rozmiarze `szer` × `wys` jest
+    wyśrodkowany nad kotwicą, odsunięty od niej o `ODSTEP_ETYKIETY`, a gdy wystawałby za ekran (z `MARGINES_ETYKIETY` marginesu),
+    przesuwa się płynnie do środka (`przesuniecie`, piksele; ogonek zostaje przy kotwicy). `rect` to prostokąt napisu po przesunięciu. */
+export function polozenieEtykiety(
+  ax: number,
+  ay: number,
+  szer: number,
+  wys: number,
+  szerEkranu: number,
+): { przesuniecie: number; rect: Prostokat } {
+  const x0 = ax - szer / 2;
+  const przesuniecie = Math.max(MARGINES_ETYKIETY - x0, Math.min(0, szerEkranu - MARGINES_ETYKIETY - (x0 + szer)));
+  const l = x0 + przesuniecie;
+  return { przesuniecie, rect: { l, t: ay - ODSTEP_ETYKIETY - wys, r: l + szer, b: ay } };
+}
+
+/** Czy prostokąt etykiety (od jej napisu do kotwicy) nachodzi na którąś z nakładek; prostokąty, które się tylko stykają, nie nachodzą. */
+export const zaslaniaNakladki = (etykieta: Prostokat, nakladki: readonly Prostokat[]): boolean =>
+  nakladki.some((n) => etykieta.l < n.r && etykieta.r > n.l && etykieta.t < n.b && etykieta.b > n.t);
