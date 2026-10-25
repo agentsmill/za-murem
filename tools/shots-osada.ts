@@ -506,6 +506,16 @@ async function doOdkrycia(page: Page, dotyk: boolean, wybor = 0): Promise<NonNul
   return o;
 }
 
+/** Kamera na cały zakres widoku (dom, a po odkryciu też kwadrat osady) przy najmniejszym przybliżeniu, środkiem zakresu albo w kafelku `x`
+    (kolumna, w której ma stać środek ekranu; domyślnie środek zakresu). `zm.setCam` przerywa przelot kamery, który mogło zacząć okno
+    zarządu („Pokaż”): przypisanie do `view.cam` zrobiłoby to dopiero po jego końcu, bo przelot nadpisuje kamerę do ostatniej klatki. */
+async function kameraNaCalosc(page: Page, x?: number): Promise<void> {
+  await page.evaluate((kolumna) => {
+    const v = window.zm!.view;
+    window.zm!.setCam(kolumna ?? v.srodek.x / 32, v.srodek.y / 32, v.minZoom);
+  }, x);
+}
+
 /** Kamera na siedzibę osady przy zoomie `zoom` i czekanie na dorysowanie kawałków: środek ekranu leży 8 kafelków pod środkiem górnej
     krawędzi obrysu (kotwicą etykiety), więc etykieta stoi nad środkiem ekranu, daleko od okienka celów po lewej, a dach pod nią. */
 async function naSiedzibe(page: Page, zoom: number, pod = 8): Promise<void> {
@@ -680,10 +690,7 @@ function widokOsadyShots(out: string): ShotCele[] {
         // do 7:00 drugiego dnia osada już jest, ale gracz o niej nie wie: widok ten sam, bez etykiety i karty
         await chopDryTree(page);
         await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
-        await page.evaluate(() => {
-          const v = window.zm!.view;
-          Object.assign(v.cam, { ...v.srodek, zoom: v.minZoom });
-        });
+        await kameraNaCalosc(page);
         await waitIdle(page);
         s = await stan(page);
         wymagaj(s.o?.stan === 'jest' && s.o.odkryta === false, 'osada jest i nie jest odkryta', s.o);
@@ -742,10 +749,7 @@ function widokOsadyShots(out: string): ShotCele[] {
         await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, {
           timeout: 15_000,
         });
-        await page.evaluate(() => {
-          const v = window.zm!.view;
-          Object.assign(v.cam, { x: 0, y: v.srodek.y, zoom: v.minZoom });
-        });
+        await kameraNaCalosc(page, 0);
         await waitIdle(page);
         await page.waitForTimeout(200);
         await sprawdzAtrybucje(page, 'mgła');
@@ -789,10 +793,7 @@ function widokOsadyShots(out: string): ShotCele[] {
           [sied, sx, sy],
         );
         // widok z daleka: dom i kwadrat osady razem z mgłą (zakres kamery obejmuje oba)
-        await page.evaluate(() => {
-          const v = window.zm!.view;
-          Object.assign(v.cam, { ...v.srodek, zoom: v.minZoom });
-        });
+        await kameraNaCalosc(page);
         await waitIdle(page);
         await page.waitForTimeout(150);
         const zoom = await page.evaluate(() => window.zm!.view.cam.zoom);
