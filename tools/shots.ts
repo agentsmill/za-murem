@@ -10625,10 +10625,30 @@ function druzynaShots(): Shot[] {
     żeby teksty i układ karty były te same w każdym przebiegu. Scenariusze mieszkancy-* biorą prawdziwe osoby
     z generatora na trzech demach, także na telefonie, bez tabel (404) i po wznowieniu zapisu. Kartę otwiera zawsze
     prawdziwe kliknięcie albo stuknięcie. Zrzut końcowy każdego scenariusza to karta zwinięta. */
-/** przycisk karty mieszkańca tylko do odczytu, który nie wydaje polecenia: historia, imię i (na telefonie) rozwijanie potrzeb;
-    funkcja, nie stała, bo scenariusze karty ruszają, zanim moduł dojdzie do stałych z końca pliku */
+/** Na telefonie rodzina, historia i zmiana imienia stoją za „Więcej” (domyślnie zwiniętym, src/main.ts); scenariusze karty, które je
+    sprawdzają albo klikają, rozwijają je tą funkcją (na komputerze przycisku nie ma, wtedy nic nie robi). Funkcja, nie stała, z tego
+    samego powodu co `bezRozkazu`. */
+async function rozwinWiecej(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const przycisk = document.querySelector<HTMLElement>('#card .wiecej');
+    const karta = document.getElementById('card')!;
+    if (przycisk && getComputedStyle(przycisk).display !== 'none' && karta.classList.contains('wiecej-zwiniete'))
+      przycisk.click();
+  });
+  await page.waitForFunction(() => {
+    const przycisk = document.querySelector<HTMLElement>('#card .wiecej');
+    return (
+      !przycisk ||
+      getComputedStyle(przycisk).display === 'none' ||
+      !document.getElementById('card')!.classList.contains('wiecej-zwiniete')
+    );
+  });
+}
+
+/** przycisk karty mieszkańca tylko do odczytu, który nie wydaje polecenia: historia, imię i (na telefonie) rozwijanie potrzeb i
+    „Więcej”; funkcja, nie stała, bo scenariusze karty ruszają, zanim moduł dojdzie do stałych z końca pliku */
 function bezRozkazu(przycisk: string | undefined): boolean {
-  return przycisk === 'story' || przycisk === 'imie' || przycisk === 'potrzeby';
+  return przycisk === 'story' || przycisk === 'imie' || przycisk === 'potrzeby' || przycisk === 'wiecej';
 }
 
 function kartaShots(): Shot[] {
@@ -10659,6 +10679,9 @@ function kartaShots(): Shot[] {
     await page.waitForFunction((n) => document.querySelector('#card:not([hidden]) h2')?.textContent === n, kto, {
       timeout: 5000,
     });
+    // na telefonie rodzina, historia i zmiana imienia stoją za „Więcej”, a scenariusz sprawdza kartę z całą zawartością
+    // (napis o fikcji jest na widoku także zwinięty, scenariusz telefon-karta-wiecej-* to sprawdza)
+    await rozwinWiecej(page);
     const m = await page.evaluate(() => {
       const c = document.getElementById('card')!;
       const q = (sel: string) => {
@@ -10802,8 +10825,9 @@ function kartaShots(): Shot[] {
       const b = await ekran(page, id);
       if (tap) await page.touchscreen.tap(b.x, b.y);
       else await page.mouse.click(b.x, b.y);
-      await page.waitForSelector('#card [data-card="imie"]');
+      await page.waitForSelector('#card [data-card="imie"]', { state: 'attached' });
     }
+    await rozwinWiecej(page);
     if (tap) await page.tap('#card [data-card="imie"]');
     else await page.click('#card [data-card="imie"]');
     await page.waitForSelector('#card form.imie-ed');
@@ -11494,7 +11518,8 @@ function kartaShots(): Shot[] {
         await zarzadZGeneratora(page, 0);
         const a = await rdzen(page, 0);
         await page.touchscreen.tap(a.x, a.y);
-        await page.waitForSelector('#card [data-card="imie"]');
+        await page.waitForSelector('#card [data-card="imie"]', { state: 'attached' });
+        await rozwinWiecej(page);
         await page.tap('#card [data-card="imie"]');
         await page.waitForSelector('#card form.imie-ed');
         const f = await page.evaluate(() => {
@@ -15954,7 +15979,7 @@ function pracaShots(): Shot[] {
     lang: 'pl' | 'en',
     w = 390,
     h = 844,
-    opcje: { badania?: boolean; pietra?: boolean } = {},
+    opcje: { badania?: boolean; pietra?: boolean; poziomo?: boolean } = {},
   ): Shot => ({
     name,
     query: '',
@@ -15962,7 +15987,7 @@ function pracaShots(): Shot[] {
     h,
     lang,
     run: async (page, base) => {
-      const { badania = false, pietra = false } = opcje;
+      const { badania = false, pietra = false, poziomo = false } = opcje;
       await page.goto(
         `${base}?demo=przymorze&speed=0&cam=hq,1.3${badania ? '&badania=demo' : ''}${pietra ? '&pietra=1' : ''}`,
       );
@@ -15985,7 +16010,8 @@ function pracaShots(): Shot[] {
           const b = e.getBoundingClientRect();
           return {
             nazwa: e.id || (e.textContent ?? '').trim().slice(0, 12),
-            przycisk: e.tagName === 'BUTTON',
+            // przycisk zwijania stanu (`#statsToggle`) należy do paska stanu, nie do przycisków paska, ale też nie ma nachodzić na kafelki
+            przycisk: e.tagName === 'BUTTON' && e.id !== 'statsToggle',
             l: Math.round(b.left),
             r: Math.round(b.right),
             t: Math.round(b.top),
@@ -16043,8 +16069,16 @@ function pracaShots(): Shot[] {
       if (r.pasek.b > 200) throw new Error(`pasek zajmuje ${r.pasek.b} px od góry`);
       // tempo, alarm, praca, budowa i menu mieszczą się w jednym wierszu (drugim), a „Mapa” i ikona „Badania” stoją
       // w pierwszym za zegarem; kafelek „Piętro” (tylko z flagą) wolno mu zawinąć się niżej, jak w pietra-pasek-*
-      if (!opcje.pietra && r.wiersze > 2) throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
-      if (!opcje.pietra && r.badania && r.menu && r.budowa) {
+      if (!opcje.pietra && !poziomo && r.wiersze > 2)
+        throw new Error(`przyciski w ${r.wiersze} wierszach zamiast dwóch`);
+      // telefon poziomo (niskie okno): wszystkie przyciski w jednym wierszu, a pasek z linią stanu nie wyższy niż 76 px od góry
+      if (poziomo) {
+        if (!opcje.pietra && r.wiersze !== 1)
+          throw new Error(`przyciski w ${r.wiersze} wierszach zamiast jednym (telefon poziomo)`);
+        if (!opcje.pietra && r.pasek.b > 76)
+          throw new Error(`pasek poziomo sięga ${r.pasek.b} px od góry (najwyżej 76)`);
+      }
+      if (!opcje.pietra && !poziomo && r.badania && r.menu && r.budowa) {
         if (r.badania.t >= r.budowa.t - 8)
           throw new Error('ikona „Badania” nie stoi w pierwszym wierszu, nad „Budowa”');
         if (Math.abs(r.menu.t - r.budowa.t) > 3) throw new Error('„Menu” nie stoi w jednym wierszu z „Budowa”');
@@ -16091,6 +16125,11 @@ function pracaShots(): Shot[] {
     // z flagą ?pietra=1 i pracownią naraz: wszystkie przyciski, jakie pasek może mieć
     pasek('pasek-telefon-pietra-badania', 'pl', 390, 844, { badania: true, pietra: true }),
     pasek('pasek-telefon-pietra-badania-360', 'pl', 360, 740, { badania: true, pietra: true }),
+    // telefon poziomo: jeden wiersz przycisków (też z ikoną „Badania”) i niski pasek; z flagą pięter kafelek „Piętro” może zawinąć się niżej
+    pasek('pasek-telefon-poziomo', 'pl', 844, 390, { poziomo: true }),
+    pasek('pasek-telefon-poziomo-badania-812', 'pl', 812, 375, { badania: true, poziomo: true }),
+    pasek('pasek-telefon-poziomo-badania-en', 'en', 932, 430, { badania: true, poziomo: true }),
+    pasek('pasek-telefon-poziomo-pietra-badania', 'pl', 844, 390, { badania: true, pietra: true, poziomo: true }),
   ];
 }
 

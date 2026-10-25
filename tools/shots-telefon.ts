@@ -39,6 +39,12 @@ const MIN_MAPA = 60;
 /** najwyżej tyle pikseli ma wysokość zwiniętej linii stanu */
 const MAX_LINIA = 26;
 const TRIO = ['sFood', 'sWood', 'sAnger'];
+/** podpis (`aria-label`) przycisku zwijania paska, gdy pasek jest zwinięty i rozwinięty (src/main.ts, `zastosujPasekStanu`) */
+const PODPIS_ZWINIETY = { pl: 'Pokaż cały stan osiedla', en: 'Show the whole estate status' } as const;
+const PODPIS_ROZWINIETY = {
+  pl: 'Zwiń stan osiedla do tego, co pilne',
+  en: 'Collapse the estate status to what is urgent',
+} as const;
 
 /* ---------------------------------------------------------------- pasek stanu */
 
@@ -50,9 +56,14 @@ interface KafelekStanu {
 
 interface StanPaska {
   zwiniety: boolean;
+  /** rola pojemnika stanu: brak (pasek zwija osobny przycisk `#statsToggle`, więc kafelki zostają dla czytników ekranu) */
   rola: string | null;
+  /** `aria-expanded` przycisku zwijania */
   ariaExpanded: string | null;
-  /** zawartość pseudoelementu ::after pojemnika stanu (strzałka) bez cudzysłowów, „none” gdy go nie ma */
+  /** przycisk zwijania widać (na komputerze jest schowany) i jego podpis (`aria-label`) */
+  przyciskWidac: boolean;
+  podpis: string;
+  /** strzałka na przycisku („▾” w zwiniętej linii, „▴” w rozwiniętym pasku), „none”, gdy przycisku nie widać */
   strzalka: string;
   /** wysokość pojemnika stanu i całego paska */
   statsWysokosc: number;
@@ -76,11 +87,15 @@ const stanPaska = (page: Page): Promise<StanPaska> =>
           | 'mid'
           | 'bad',
       }));
+    const przycisk = document.getElementById('statsToggle')!;
+    const widac = getComputedStyle(przycisk).display !== 'none' && przycisk.getBoundingClientRect().width > 0;
     return {
       zwiniety: stats.hasAttribute('data-zwiniete'),
       rola: stats.getAttribute('role'),
-      ariaExpanded: stats.getAttribute('aria-expanded'),
-      strzalka: getComputedStyle(stats, '::after').content.replaceAll('"', ''),
+      ariaExpanded: przycisk.getAttribute('aria-expanded'),
+      przyciskWidac: widac,
+      podpis: przycisk.getAttribute('aria-label') ?? '',
+      strzalka: widac ? (przycisk.textContent ?? '').trim() : 'none',
       statsWysokosc: stats.getBoundingClientRect().height,
       pasek: document.getElementById('top')!.getBoundingClientRect().height,
       kafelki,
@@ -156,8 +171,11 @@ const pasekZwiniety = (
     if (dom.statsWysokosc > MAX_LINIA)
       zle.push(`linia stanu ma ${Math.round(dom.statsWysokosc)} px (najwyżej ${MAX_LINIA})`);
     if (dom.strzalka !== '▾') zle.push(`strzałka „${dom.strzalka}” zamiast „▾”`);
-    if (dom.rola !== 'button' || dom.ariaExpanded !== 'false')
-      zle.push(`rola ${dom.rola}, aria-expanded ${dom.ariaExpanded}`);
+    if (!dom.przyciskWidac || dom.ariaExpanded !== 'false')
+      zle.push(`przycisk zwijania widać ${dom.przyciskWidac}, aria-expanded ${dom.ariaExpanded}`);
+    if (dom.rola !== null) zle.push(`pojemnik stanu ma rolę „${dom.rola}” (zwija go osobny przycisk)`);
+    if (dom.podpis !== PODPIS_ZWINIETY[lang])
+      zle.push(`podpis przycisku „${dom.podpis}” zamiast „${PODPIS_ZWINIETY[lang]}”`);
     console.log(
       `  ${opis}, domyślnie: widać ${widoczne.length} z ${dom.kafelki.length} (${widoczne.join(' ')}), linia ${Math.round(dom.statsWysokosc)} px, pasek ${Math.round(dom.pasek)} px${zle.length ? `, NARUSZENIA: ${zle.length}` : ''}`,
     );
@@ -178,7 +196,8 @@ const pasekZwiniety = (
       throw new Error(
         `${opis}: strefa dotyku linii: tuż nad ${strefa.nad} (ma być true), tuż pod ${strefa.pod} (true), 6 px nad ${strefa.dalekoNad} (false)`,
       );
-    // kafelki zwiniętej linii nie biorą dotyku (stuknięcie w nie rozwija pasek, a nie otwiera wiki): pod palcem jest pojemnik
+    // kafelki zwiniętej linii nie biorą dotyku (stuknięcie w nie rozwija pasek, a nie otwiera wiki): pod palcem jest pojemnik;
+    // z klawiatury kafelek zwiniętej linii pod Enterem też tylko rozwija pasek (scenariusz telefon-wiki-pasek-*)
     const zwiniety = await page.evaluate(() => {
       const st = document.getElementById('stats')!;
       const k = [...st.querySelectorAll<HTMLElement>('.stat')].find((e) => getComputedStyle(e).display !== 'none')!;
@@ -186,13 +205,10 @@ const pasekZwiniety = (
       return {
         kafelek: k.id,
         podPalcem: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === st,
-        inert: k.inert,
       };
     });
-    if (!zwiniety.podPalcem || !zwiniety.inert)
-      throw new Error(
-        `${opis}: kafelek ${zwiniety.kafelek} zwiniętej linii bierze dotyk (pod palcem pojemnik ${zwiniety.podPalcem}, inert ${zwiniety.inert})`,
-      );
+    if (!zwiniety.podPalcem)
+      throw new Error(`${opis}: kafelek ${zwiniety.kafelek} zwiniętej linii bierze dotyk (pod palcem nie pojemnik)`);
     await page.screenshot({ path: path.join(out, `${name}-zwiniety.png`) });
     // 2. stuknięcie w linię rozwija: wszystkie kafelki, odstępy etykiet jak w uklad-pasek-telefon-*, strzałka w górę
     await kliknij(page, '#stats', true);
@@ -204,6 +220,8 @@ const pasekZwiniety = (
     if (wid2 !== roz.kafelki.length) zle2.push(`widać ${wid2} z ${roz.kafelki.length} kafelków`);
     if (roz.strzalka !== '▴') zle2.push(`strzałka „${roz.strzalka}” zamiast „▴”`);
     if (roz.ariaExpanded !== 'true') zle2.push(`aria-expanded ${roz.ariaExpanded}`);
+    if (roz.podpis !== PODPIS_ROZWINIETY[lang])
+      zle2.push(`podpis przycisku „${roz.podpis}” zamiast „${PODPIS_ROZWINIETY[lang]}”`);
     if (roz.pasek < dom.pasek + 8)
       zle2.push(
         `pasek rozwinięty ${Math.round(roz.pasek)} px niewiele wyższy od zwiniętego ${Math.round(dom.pasek)} px`,
@@ -222,16 +240,16 @@ const pasekZwiniety = (
       const r = st.getBoundingClientRect();
       return {
         kafelek: document.elementFromPoint(k.left + k.width / 2, k.top + k.height / 2)?.closest('.stat')?.id ?? null,
-        pas: document.elementFromPoint(r.left + r.width / 2, r.bottom - 6) === st,
-        wysokoscPasa: parseFloat(getComputedStyle(st, '::after').height),
+        pas: document.elementFromPoint(r.left + r.width / 2, r.bottom - 6)?.closest('#statsToggle') !== null,
+        wysokoscPasa: document.getElementById('statsToggle')!.getBoundingClientRect().height,
       };
     });
     console.log(
-      `  ${opis}, rozwinięty: pod palcem w kafelku ${rozwiniety.kafelek}, w pasie ▴ ${rozwiniety.pas ? 'pasek' : 'coś innego'}, pas ${rozwiniety.wysokoscPasa} px`,
+      `  ${opis}, rozwinięty: pod palcem w kafelku ${rozwiniety.kafelek}, w pasie ▴ ${rozwiniety.pas ? 'przycisk zwijania' : 'coś innego'}, pas ${rozwiniety.wysokoscPasa} px`,
     );
     if (rozwiniety.kafelek !== 'sWood' || !rozwiniety.pas)
       throw new Error(
-        `${opis}: rozwinięty pasek: w kafelku trafia ${rozwiniety.kafelek} (ma być sWood), pas ▴ należy do paska ${rozwiniety.pas}`,
+        `${opis}: rozwinięty pasek: w kafelku trafia ${rozwiniety.kafelek} (ma być sWood), pas ▴ należy do przycisku zwijania ${rozwiniety.pas}`,
       );
     await page.screenshot({ path: path.join(out, `${name}-rozwiniety.png`) });
     // po stuknięciu fokus nie zostaje na pasku (tak jak na przyciskach paska, src/ui/fokus.ts): spacja zatrzymuje albo rusza grę,
@@ -244,7 +262,7 @@ const pasekZwiniety = (
     console.log(
       `  ${opis}, po stuknięciu: fokus na ${fokus}, tempo ${tempo0} → ${tempo1} po spacji, pasek zwinięty ${spacja.zwiniety}`,
     );
-    if (fokus === 'stats') throw new Error(`${opis}: po stuknięciu fokus został na pasku stanu`);
+    if (fokus.startsWith('stats')) throw new Error(`${opis}: po stuknięciu fokus został na pasku stanu (${fokus})`);
     if (spacja.zwiniety || tempo1 === tempo0)
       throw new Error(
         `${opis}: spacja po stuknięciu w pasek: zwinięty ${spacja.zwiniety}, tempo ${tempo0} → ${tempo1} (gra ma ruszyć, pasek zostać)`,
@@ -259,20 +277,23 @@ const pasekZwiniety = (
     await wPunkt(page, true, await pasStrzalki(page));
     await poHudzie(page);
     if (await oknoOtwarte(page)) throw new Error(`${opis}: stuknięcie w pas ▴ otworzyło okno`);
+    // przycisk zwijania oddaje fokus po stuknięciu jak reszta przycisków paska (src/ui/fokus.ts): spacja dalej steruje grą
+    const fokusPrzycisku = await page.evaluate(() => document.activeElement?.id ?? '');
+    if (fokusPrzycisku === 'statsToggle') throw new Error(`${opis}: po stuknięciu fokus został na przycisku zwijania`);
     const zw = await stanPaska(page);
     if (!zw.zwiniety || (await klucz(page, KLUCZ_PASEK)) !== 'zwiniete')
       throw new Error(`${opis}: po zwinięciu zwinięty ${zw.zwiniety}, pamięć „${await klucz(page, KLUCZ_PASEK)}”`);
     await przeladuj(page, q, base);
     const po2 = await stanPaska(page);
     if (!po2.zwiniety) throw new Error(`${opis}: po przeładowaniu zwinięty pasek wrócił do rozwiniętego`);
-    // 4. klawiatura: Enter rozwija, Spacja zwija (fokus na pojemniku stanu)
-    await page.focus('#stats');
+    // 4. klawiatura: przycisk zwijania dostaje fokus z Tab, Enter rozwija, Spacja zwija (a nie pauzuje gry)
+    await page.focus('#statsToggle');
     await page.keyboard.press('Enter');
     await poHudzie(page);
-    if ((await stanPaska(page)).zwiniety) throw new Error(`${opis}: Enter nie rozwinął paska`);
+    if ((await stanPaska(page)).zwiniety) throw new Error(`${opis}: Enter na przycisku nie rozwinął paska`);
     await page.keyboard.press('Space');
     await poHudzie(page);
-    if (!(await stanPaska(page)).zwiniety) throw new Error(`${opis}: Spacja nie zwinęła paska`);
+    if (!(await stanPaska(page)).zwiniety) throw new Error(`${opis}: Spacja na przycisku nie zwinęła paska`);
   },
 });
 
@@ -296,8 +317,9 @@ const pasekKomputerBezZmian = (name: string, w: number, h: number): ShotTelefon 
           .map((k) => k.id)
           .join(', ')}`,
       );
-    if (p.strzalka !== 'none' && p.strzalka !== 'normal') zle.push(`strzałka „${p.strzalka}” na szerokim ekranie`);
-    if (p.rola !== null || p.ariaExpanded !== null) zle.push(`rola ${p.rola}, aria-expanded ${p.ariaExpanded}`);
+    if (p.przyciskWidac || p.strzalka !== 'none')
+      zle.push(`przycisk zwijania widać na szerokim ekranie („${p.strzalka}”)`);
+    if (p.rola !== null) zle.push(`rola ${p.rola}`);
     // kafelek otwiera swój artykuł w wiki (src/ui/wiki-okno.ts), ale pasek zostaje cały i nic się nie zapisuje
     await page.click('#stats .stat:visible >> nth=0');
     await poHudzie(page);
@@ -315,7 +337,8 @@ const pasekKomputerBezZmian = (name: string, w: number, h: number): ShotTelefon 
   },
 });
 
-/** Granica 768 px: przy 767 pasek zwija się do linii, przy 768 jest cały jak na komputerze (zmiana szerokości okna w locie). */
+/** Granice telefonu: okno węższe niż 768 px albo niższe niż 501 px zwija pasek do linii (767 i 500 tak, 768 i 501 nie), reszta jest
+    cała jak na komputerze; zmiana wymiarów okna w locie (obrót telefonu: 390×844 i 844×390). */
 const granica768 = (name: string): ShotTelefon => ({
   name,
   query: '',
@@ -325,22 +348,30 @@ const granica768 = (name: string): ShotTelefon => ({
   run: async (page, base) => {
     await start(page, base, `demo=przymorze&${GRA}`);
     await poHudzie(page, 3);
-    for (const [szer, zwiniety] of [
-      [767, true],
-      [768, false],
-      [700, true],
-      [1024, false],
+    for (const [szer, wys, zwiniety] of [
+      [767, 844, true],
+      [768, 844, false],
+      [700, 844, true],
+      [1024, 844, false],
+      [1024, 500, true],
+      [1024, 501, false],
+      [844, 390, true],
+      [932, 430, true],
+      [1440, 900, false],
+      [390, 844, true],
     ] as const) {
-      await rozmiar(page, szer, 844);
+      await rozmiar(page, szer, wys);
       const p = await stanPaska(page);
       const wid = p.kafelki.filter((k) => k.widac).length;
       console.log(
-        `  ${szer} px: zwinięty ${p.zwiniety}, widać ${wid} z ${p.kafelki.length}, pasek ${Math.round(p.pasek)} px`,
+        `  ${szer}×${wys}: zwinięty ${p.zwiniety}, widać ${wid} z ${p.kafelki.length}, pasek ${Math.round(p.pasek)} px, przycisk zwijania ${p.przyciskWidac ? p.strzalka : 'schowany'}`,
       );
       if (p.zwiniety !== zwiniety || (zwiniety ? wid >= p.kafelki.length : wid !== p.kafelki.length))
         throw new Error(
-          `${name}: przy ${szer} px zwinięty ${p.zwiniety} (ma być ${zwiniety}), widać ${wid} z ${p.kafelki.length}`,
+          `${name}: przy ${szer}×${wys} zwinięty ${p.zwiniety} (ma być ${zwiniety}), widać ${wid} z ${p.kafelki.length}`,
         );
+      if (p.przyciskWidac !== zwiniety)
+        throw new Error(`${name}: przy ${szer}×${wys} przycisk zwijania widać ${p.przyciskWidac} (ma być ${zwiniety})`);
     }
   },
 });
@@ -473,6 +504,137 @@ const kartaPotrzeby = (name: string, w: number, h: number, lang: 'pl' | 'en', ou
   },
 });
 
+interface StanWiecej {
+  /** przycisk „Więcej” w rogu karty: null, gdy karta go nie ma */
+  przycisk: { widac: boolean; aria: string | null; tekst: string } | null;
+  nazwa: boolean;
+  /** bieżące zajęcie osoby („Stoi i czeka na polecenie.”) */
+  doing: boolean;
+  liniaPotrzeb: boolean;
+  rodzina: boolean;
+  historia: boolean;
+  imie: boolean;
+  /** napis, że mieszkańcy są wymyśleni (spec mieszkańców z adresu, §10: ma być widać na zrzucie) */
+  fikcja: boolean;
+  wysokosc: number;
+  zwinieta: boolean;
+}
+
+const stanWiecej = (page: Page): Promise<StanWiecej> =>
+  page.evaluate(() => {
+    const karta = document.getElementById('card')!;
+    const widac = (e: Element | null): boolean => {
+      if (!(e instanceof HTMLElement)) return false;
+      const r = e.getBoundingClientRect();
+      return getComputedStyle(e).display !== 'none' && r.width > 0 && r.height > 0;
+    };
+    const przycisk = karta.querySelector<HTMLElement>('.wiecej');
+    return {
+      przycisk: przycisk
+        ? {
+            widac: widac(przycisk),
+            aria: przycisk.getAttribute('aria-expanded'),
+            tekst: (przycisk.textContent ?? '').trim(),
+          }
+        : null,
+      nazwa: widac(karta.querySelector('h2')),
+      doing: widac(karta.querySelector('.doing')),
+      liniaPotrzeb: widac(karta.querySelector('.potrzeby-linia')),
+      rodzina: widac(karta.querySelector('.rodzina')),
+      historia: widac(karta.querySelector('.story')),
+      imie: widac(karta.querySelector('[data-card="imie"]')),
+      fikcja: widac(karta.querySelector('.fikcja')),
+      wysokosc: karta.getBoundingClientRect().height,
+      zwinieta: karta.classList.contains('wiecej-zwiniete'),
+    };
+  });
+
+const KLUCZ_WIECEJ = 'za-murem-0.4-wiecej';
+/** o tyle (w procentach wysokości ekranu) karta osoby w stanie domyślnym na telefonie pionowo może być wyższa od ćwiartki */
+const KARTA_PROC_POLSKI_390 = 25;
+
+/** Karta osoby na telefonie: rodzina, historia i przycisk zmiany imienia za „Więcej” (domyślnie zwiniętym), na widoku imię, linia
+    potrzeb, bieżące zajęcie i napis o wymyślonych mieszkańcach; stuknięcie w „Więcej” pokazuje resztę, wybór pamięta przeglądarka. */
+const kartaWiecej = (
+  name: string,
+  w: number,
+  h: number,
+  lang: 'pl' | 'en',
+  zombie: boolean,
+  maxProc: number,
+  out: string,
+): ShotTelefon => ({
+  name,
+  query: '',
+  w,
+  h,
+  touch: true,
+  lang,
+  run: async (page, base) => {
+    const opis = `${name} ${w}×${h}`;
+    const q = `demo=przymorze${zombie ? '&tryb=zombie' : ''}&${GRA}`;
+    const tekst = lang === 'pl' ? 'Więcej' : 'More';
+    await start(page, base, q);
+    await osobaZPotrzebami(page, true);
+    // 1. domyślnie: przycisk jest, rodzina, historia i zmiana imienia schowane, reszta na widoku, karta niska
+    const dom = await stanWiecej(page);
+    const zle: string[] = [];
+    if (!dom.przycisk?.widac || dom.przycisk.aria !== 'false' || dom.przycisk.tekst !== tekst)
+      zle.push(`przycisk „Więcej”: ${JSON.stringify(dom.przycisk)}`);
+    if (!dom.zwinieta) zle.push('karta nie jest domyślnie ze zwiniętym „Więcej”');
+    if (dom.rodzina || dom.historia || dom.imie)
+      zle.push(`widać rodzinę (${dom.rodzina}), historię (${dom.historia}) albo zmianę imienia (${dom.imie})`);
+    if (!dom.nazwa || !dom.liniaPotrzeb || !dom.doing)
+      zle.push(
+        `brak imienia (${dom.nazwa}), linii potrzeb (${dom.liniaPotrzeb}) albo bieżącego zajęcia (${dom.doing})`,
+      );
+    if (!dom.fikcja) zle.push('napis o wymyślonych mieszkańcach nie jest widać (spec §10: ma być na zrzucie)');
+    const proc = Math.round((dom.wysokosc / h) * 1000) / 10;
+    if (proc > maxProc)
+      zle.push(`karta ${Math.round(dom.wysokosc)} px to ${proc}% wysokości ekranu (najwyżej ${maxProc}%)`);
+    console.log(
+      `  ${opis}, domyślnie: karta ${Math.round(dom.wysokosc)} px (${proc}% ekranu), „Więcej” ${dom.przycisk?.aria}, rodzina ${dom.rodzina}, historia ${dom.historia}, imię ${dom.imie}, napis ${dom.fikcja}${zle.length ? `, NARUSZENIA: ${zle.length}` : ''}`,
+    );
+    if (zle.length) throw new Error(`${opis}, domyślnie: ${zle.join('; ')}`);
+    await page.screenshot({ path: path.join(out, `${name}-zwinieta.png`) });
+    // 2. stuknięcie rozwija: rodzina, historia i zmiana imienia na widoku, karta wyższa, wybór w pamięci
+    await kliknij(page, '#card .wiecej', true);
+    await poHudzie(page);
+    const roz = await stanWiecej(page);
+    const zle2: string[] = [];
+    if (roz.zwinieta || roz.przycisk?.aria !== 'true') zle2.push(`karta dalej zwinięta (aria ${roz.przycisk?.aria})`);
+    if (!roz.rodzina || !roz.historia || !roz.imie || !roz.fikcja)
+      zle2.push(
+        `brak rodziny (${roz.rodzina}), historii (${roz.historia}), zmiany imienia (${roz.imie}) albo napisu (${roz.fikcja})`,
+      );
+    if (roz.wysokosc < dom.wysokosc + 40)
+      zle2.push(
+        `karta rozwinięta ${Math.round(roz.wysokosc)} px niewiele wyższa od zwiniętej ${Math.round(dom.wysokosc)} px`,
+      );
+    if ((await klucz(page, KLUCZ_WIECEJ)) !== 'rozwiniete')
+      zle2.push(`pamięć „${await klucz(page, KLUCZ_WIECEJ)}” zamiast „rozwiniete”`);
+    console.log(
+      `  ${opis}, rozwinięte: karta ${Math.round(roz.wysokosc)} px${zle2.length ? `, NARUSZENIA: ${zle2.length}` : ''}`,
+    );
+    if (zle2.length) throw new Error(`${opis}, rozwinięte: ${zle2.join('; ')}`);
+    await page.screenshot({ path: path.join(out, `${name}-wiecej.png`) });
+    // 3. pamięć: po przeładowaniu zostaje rozwinięte, po zwinięciu i przeładowaniu zwinięte
+    await przeladuj(page, q, base);
+    await osobaZPotrzebami(page, true);
+    const po1 = await stanWiecej(page);
+    if (po1.zwinieta || !po1.rodzina)
+      throw new Error(`${opis}: po przeładowaniu rozwinięte „Więcej” wróciło do zwiniętego`);
+    await kliknij(page, '#card .wiecej', true);
+    await poHudzie(page);
+    if (!(await stanWiecej(page)).zwinieta || (await klucz(page, KLUCZ_WIECEJ)) !== 'zwiniete')
+      throw new Error(`${opis}: stuknięcie nie zwinęło „Więcej” (pamięć „${await klucz(page, KLUCZ_WIECEJ)}”)`);
+    await przeladuj(page, q, base);
+    await osobaZPotrzebami(page, true);
+    if (!(await stanWiecej(page)).zwinieta)
+      throw new Error(`${opis}: po przeładowaniu zwinięte „Więcej” wróciło do rozwiniętego`);
+  },
+});
+
 /** Karta osoby na komputerze zostaje jak była: paski potrzeb widać, linii zwijania nie ma. */
 const kartaKomputerBezZmian = (name: string, w: number, h: number): ShotTelefon => ({
   name,
@@ -486,6 +648,12 @@ const kartaKomputerBezZmian = (name: string, w: number, h: number): ShotTelefon 
     const zle: string[] = [];
     if (!k.paskiWidac || k.paski !== 6) zle.push(`paski widać ${k.paskiWidac}, jest ${k.paski}`);
     if (k.linia?.widac) zle.push('linia zwijania potrzeb widoczna na szerokim ekranie');
+    const wiecej = await stanWiecej(page);
+    if (wiecej.przycisk?.widac) zle.push('przycisk „Więcej” widoczny na szerokim ekranie');
+    if (!wiecej.rodzina || !wiecej.historia || !wiecej.fikcja || !wiecej.imie)
+      zle.push(
+        `na szerokim ekranie brak rodziny (${wiecej.rodzina}), historii (${wiecej.historia}), napisu (${wiecej.fikcja}) albo zmiany imienia (${wiecej.imie})`,
+      );
     console.log(
       `  ${name} ${w}×${h}: paski ${k.paski}, karta ${Math.round(k.wysokosc)} px${zle.length ? `, NARUSZENIA: ${zle.length}` : ''}`,
     );
@@ -635,7 +803,23 @@ const mapaTelefon = (
     ];
     await page.screenshot({ path: path.join(out, `${name}-dzien1.png`) });
     await doDrugiegoDnia(page);
-    pomiary.push({ dzien: 2, u: await udzialMapy(page) });
+    // ostrzeżenie o zgasłej kozie wisi na telefonie chwilę (9 s od początku problemu), nie stale: zostaje po nim czerwona linia stanu
+    const dzien2 = await udzialMapy(page);
+    await page.screenshot({ path: path.join(out, `${name}-dzien2-z-ostrzezeniem.png`) });
+    await page
+      .waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 })
+      .catch(() => {
+        throw new Error(`${opis}: ostrzeżenie o zgasłej kozie wisi dłużej niż 15 s („${dzien2.podpowiedz}”)`);
+      });
+    await poHudzie(page, 3);
+    const pilne = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('#stats .stat.pilne')]
+        .filter((e) => getComputedStyle(e).display !== 'none')
+        .map((e) => e.id),
+    );
+    pomiary.push({ dzien: 2, u: await udzialMapy(page), z1: dzien2.mapaZPodpowiedzia });
+    if (!pilne.includes('sFire') && !pilne.includes('sWood'))
+      throw new Error(`${opis}: po ostrzeżeniu czerwona linia stanu nie niesie kozy ani drewna (${pilne.join(', ')})`);
     await page.screenshot({ path: path.join(out, `${name}-dzien2.png`) });
     const zle: string[] = [];
     for (const p of pomiary) {
@@ -644,11 +828,82 @@ const mapaTelefon = (
         .map(([k, v]) => `${k} ${v}`)
         .join(', ');
       console.log(
-        `  ${opis}, dzień ${p.dzien}: mapa ${p.u.mapa}% (z podpowiedzią u dołu ${p.u.mapaZPodpowiedzia}%${p.z1 !== undefined ? `, z podpowiedzią startową ${p.z1}%` : ''}) [${udz}]`,
+        `  ${opis}, dzień ${p.dzien}: mapa ${p.u.mapa}% (z podpowiedzią u dołu ${p.u.mapaZPodpowiedzia}%${p.z1 !== undefined ? `, ${p.dzien === 1 ? 'z podpowiedzią startową' : 'z ostrzeżeniem o kozie na początku dnia'} ${p.z1}%` : ''}) [${udz}]`,
       );
       if (p.u.mapa < MIN_MAPA) zle.push(`dzień ${p.dzien}: mapa ${p.u.mapa}% (najmniej ${MIN_MAPA}%)`);
+      // po zniknięciu ostrzeżenia nic nie wisi u dołu, więc z podpowiedzią też co najmniej tyle
+      if (p.u.mapaZPodpowiedzia < MIN_MAPA)
+        zle.push(`dzień ${p.dzien}: mapa z podpowiedzią ${p.u.mapaZPodpowiedzia}% (najmniej ${MIN_MAPA}%)`);
     }
     if (zle.length) throw new Error(`${opis}: ${zle.join('; ')}`);
+  },
+});
+
+/* ---------------------------------------------------------------- telefon poziomo */
+
+/** najwyżej tyle pikseli ma pasek poziomo (dwa wiersze: przyciski i zwinięta linia stanu; pionowo 105) */
+const MAX_PASEK_POZIOMO = 70;
+
+/** Telefon poziomo (niskie okno: 844×390, 932×430): pasek zwinięty do linii jak pionowo, cele zwinięte, mapa co najmniej 60% ekranu
+    w dniu 1 i 2; karta osoby w lewym dolnym rogu nie wchodzi pod pasek ani na cele, listę ludzi, przyciski przybliżenia
+    i podpowiedź, także z rozwiniętymi potrzebami i „Więcej”. */
+const pozioma = (name: string, w: number, h: number, lang: 'pl' | 'en', zombie: boolean, out: string): ShotTelefon => ({
+  name,
+  query: '',
+  w,
+  h,
+  touch: true,
+  lang,
+  run: async (page, base) => {
+    const opis = `${name} ${w}×${h}`;
+    await start(page, base, `demo=przymorze${zombie ? '&tryb=zombie' : ''}&${GRA}`);
+    await page.waitForFunction(() => document.getElementById('hint')!.textContent === '', null, { timeout: 15_000 });
+    await poHudzie(page, 2);
+    // 1. pasek zwinięty do jednej linii ze strzałką, niski; cele zwinięte
+    const p = await stanPaska(page);
+    const cele = await page.$eval('#goals .goals-head', (e) => e.getAttribute('aria-expanded'));
+    const zle: string[] = [];
+    if (!p.zwiniety) zle.push('pasek stanu nie jest zwinięty domyślnie');
+    if (!p.przyciskWidac || p.strzalka !== '▾' || p.ariaExpanded !== 'false')
+      zle.push(`przycisk zwijania: widać ${p.przyciskWidac}, „${p.strzalka}”, aria-expanded ${p.ariaExpanded}`);
+    if (p.statsWysokosc > MAX_LINIA)
+      zle.push(`linia stanu ma ${Math.round(p.statsWysokosc)} px (najwyżej ${MAX_LINIA})`);
+    if (p.pasek > MAX_PASEK_POZIOMO) zle.push(`pasek ma ${Math.round(p.pasek)} px (najwyżej ${MAX_PASEK_POZIOMO})`);
+    if (cele !== 'false') zle.push(`cele rozwinięte domyślnie (aria-expanded ${cele})`);
+    const u1 = await udzialMapy(page);
+    console.log(
+      `  ${opis}, dzień 1: pasek ${Math.round(p.pasek)} px, linia ${Math.round(p.statsWysokosc)} px, mapa ${u1.mapa}%${zle.length ? `, NARUSZENIA: ${zle.length}` : ''}`,
+    );
+    if (u1.mapa < MIN_MAPA) zle.push(`dzień 1: mapa ${u1.mapa}% (najmniej ${MIN_MAPA}%)`);
+    if (zle.length) throw new Error(`${opis}: ${zle.join('; ')}`);
+    await page.screenshot({ path: path.join(out, `${name}-domyslny.png`) });
+    // 2. karta osoby: w oknie, pod paskiem, na niczym
+    await osobaZPotrzebami(page, true);
+    const sprawdz = async (stan: string): Promise<void> => {
+      await poHudzie(page, 2);
+      const s = await stos(page);
+      const nach = nachodzenia(s, { szufladaNaCelach: true });
+      const pasek = await page.evaluate(() => document.getElementById('top')!.getBoundingClientRect().bottom);
+      if (s.karta && (s.karta.t < pasek - 0.5 || s.karta.b > h + 0.5 || s.karta.r > w + 0.5))
+        nach.push(
+          `karta osoby poza oknem albo pod paskiem (${Math.round(s.karta.t)}–${Math.round(s.karta.b)} px, pasek do ${Math.round(pasek)})`,
+        );
+      if (s.nazwaKarty === false) nach.push('imię na karcie osoby jest przykryte');
+      const k = s.karta ? `${Math.round(s.karta.t)}–${Math.round(s.karta.b)}` : '-';
+      console.log(
+        `  ${opis}, ${stan}: pasek do ${Math.round(pasek)}, karta ${k}${nach.length ? `, NARUSZENIA: ${nach.length}` : ''}`,
+      );
+      if (nach.length) throw new Error(`${opis}, ${stan}: ${nach.join('; ')}`);
+    };
+    await sprawdz('karta osoby');
+    await page.screenshot({ path: path.join(out, `${name}-karta.png`) });
+    // 3. potrzeby i „Więcej” rozwinięte, pasek stanu też: wyższa karta przewija się w środku, nic na nic nie nachodzi
+    await liniaPotrzeb(page, opis);
+    await kliknij(page, '#card .potrzeby-linia', true);
+    await kliknij(page, '#card .wiecej', true);
+    await kliknij(page, '#statsToggle', true);
+    await sprawdz('wszystko rozwinięte');
+    await page.screenshot({ path: path.join(out, `${name}-rozwiniete.png`) });
   },
 });
 
@@ -769,18 +1024,14 @@ const wikiPasek = (
     console.log(`  ${opis}: stuknięcie w pas ▴: zwinięty ${po3.zwiniety}, okno ${await oknoOtwarte(page)}`);
     if (!po3.zwiniety) throw new Error(`${opis}: pas ▴ nie zwinął paska`);
     if (await oknoOtwarte(page)) throw new Error(`${opis}: pas ▴ otworzył okno (wiki)`);
-    // 4. z klawiatury: kafelki zwiniętej linii nie biorą fokusu (Tab idzie do pojemnika), Enter na pojemniku rozwija, a Enter na
-    // kafelku rozwiniętego paska otwiera artykuł
-    await page.focus('#stats');
-    await page.keyboard.press('Tab');
-    const fokus = await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName || '');
-    if (fokus.startsWith('s') && fokus !== 'stats' && /^s[A-Z]/.test(fokus))
-      throw new Error(`${opis}: Tab wszedł w kafelek ${fokus} zwiniętej linii`);
-    await page.focus('#stats');
+    // 4. z klawiatury: Enter na kafelku zwiniętej linii rozwija pasek i nie otwiera wiki (kafelek ma fokus, bo czytnik ekranu i Tab
+    // go widzą), Enter na kafelku rozwiniętego paska otwiera artykuł
+    const kafelekLinii = (await stanPaska(page)).kafelki.find((k) => k.widac)!.id;
+    await page.focus(`#${kafelekLinii}`);
     await page.keyboard.press('Enter');
     await poHudzie(page);
     if ((await stanPaska(page)).zwiniety || (await oknoOtwarte(page)))
-      throw new Error(`${opis}: Enter na pojemniku zwiniętej linii: pasek zwinięty albo otwarte okno`);
+      throw new Error(`${opis}: Enter na kafelku „${kafelekLinii}” zwiniętej linii: pasek zwinięty albo otwarte okno`);
     await page.focus('#sWood');
     await page.keyboard.press('Enter');
     await page.waitForSelector('#sheet.wiki .wiki-art[data-art="zasob:drewno"]', { timeout: 5000 }).catch(() => {
@@ -865,6 +1116,14 @@ export function telefonShots(out: string): ShotTelefon[] {
     mapaTelefon('telefon-mapa-en-zombie', 390, 844, 'en', true, out),
     mapaTelefon('telefon-mapa-pl-zwykly-360', 360, 740, 'pl', false, out),
     mapaTelefon('telefon-mapa-en-zombie-360', 360, 740, 'en', true, out),
+    kartaWiecej('telefon-karta-wiecej-pl', 390, 844, 'pl', false, KARTA_PROC_POLSKI_390, out),
+    kartaWiecej('telefon-karta-wiecej-en-zombie-360', 360, 740, 'en', true, 34, out),
+    mapaTelefon('telefon-mapa-pl-zwykly-375x667', 375, 667, 'pl', false, out),
+    pozioma('telefon-poziomo-pl-zwykly-844', 844, 390, 'pl', false, out),
+    pozioma('telefon-poziomo-en-zombie-932', 932, 430, 'en', true, out),
+    mapaTelefon('telefon-mapa-poziomo-pl-zwykly-844', 844, 390, 'pl', false, out),
+    mapaTelefon('telefon-mapa-poziomo-en-zombie-932', 932, 430, 'en', true, out),
+    wikiPasek('telefon-wiki-pasek-poziomo-dotyk', 844, 390, 'pl', true, out),
     rozwiniete('telefon-rozwiniete-pl', 390, 844, 'pl', false, out),
     rozwiniete('telefon-rozwiniete-en-zombie-360', 360, 740, 'en', true, out),
     wikiPasek('telefon-wiki-pasek-dotyk', 390, 844, 'pl', true, out),
