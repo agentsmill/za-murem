@@ -11,8 +11,10 @@ export default defineConfig({
     // Gra to jedna paczka: PixiJS 8, symulacja, zarząd z tekstami w obu językach, grafika zastępcza. index-*.js ma 1729,6 kB
     // (616,5 kB po gzip), pomiar z 24.10.2026. Wydzielenie dwunastu łańcuchów historii (src/gov/watki-tresc.ts, 129 kB źródła)
     // do import() zdjęłoby z niej tylko 74 kB (1655,3 kB bez nich), czyli nadal ponad dawny próg 1200 kB, więc ładowania nie
-    // dzielimy dla samego ostrzeżenia. Próg leży tuż nad pomiarem: ostrzeżenie wróci, gdy paczka urośnie o kilka procent.
-    chunkSizeWarningLimit: 1800,
+    // dzielimy dla samego ostrzeżenia. Wiki w grze (src/ui/wiki-*.ts, 25.10.2026) dołożyła 322 kB: 2052,1 kB (731,2 kB po
+    // gzip); jej treść da się kiedyś ładować przez import() przy pierwszym otwarciu (Zaparkowane w docs/POSTEP.md). Próg leży
+    // tuż nad pomiarem: ostrzeżenie wróci, gdy paczka urośnie o kilka procent.
+    chunkSizeWarningLimit: 2100,
   },
   server: { port: 5173, strictPort: true, proxy: { '/api': { target: 'http://127.0.0.1:8787', changeOrigin: false } } },
   preview: { port: 4173, strictPort: true },
