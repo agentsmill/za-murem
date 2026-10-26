@@ -26,7 +26,10 @@
    specyfikacji), więc nic z karty nie wchodzi do jej gry. Każdy wybór odsłania osadę: `GovEffects.odkryjOsade` z dniem, ludnością
    i budowlami, które poseł podał (z danych karty, nie z chwili odpowiedzi), a gospodarz woła `OsadaGry.odkryj` (src/main.ts).
    Trzy wybory mają trzy różne powody i żaden nie jest gorszy od innego na obu miarach naraz (pilnuje tego test): (+1 zaufania, 0)
-   bez ryzyka, (+2, +1 wkurzenia) więcej zaufania za cenę wkurzenia, (0, −1) ulga, gdy wkurzenie jest wysokie. */
+   bez ryzyka, (+2, +1 wkurzenia) więcej zaufania za cenę wkurzenia, (0, −1) ulga, gdy wkurzenie jest wysokie.
+
+   Moduł zostaje czysty jak reszta zarządu: nic z DOM, zegara, losowania spoza ziarna, sieci ani modułów Node, a o osadzie wie tylko
+   z pola wejścia, więc nie importuje src/sim, src/ai ani src/ui (pilnuje tego tests/unit/ai-czystosc.test.ts). */
 
 import { liczba, mnogaPl, type Tx, tx, wielka } from '../core/jezyk.ts';
 import type { Words, WordsEn } from './miejsce.ts';

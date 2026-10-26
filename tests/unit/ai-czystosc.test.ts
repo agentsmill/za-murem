@@ -1,6 +1,7 @@
 /* Czystość silnika osady AI (src/ai/*.ts), etap 2 osady AI (docs/superpowers/plans/2026-10-24-osada-ai-etap-2.md, zadanie 1,
-   uwaga I1 przeglądu końcowego etapu 1). Silnik ma chodzić tak samo w Node, w przeglądarce (druga gra w main.ts) i w testach,
-   a jego przebieg ma wynikać tylko z ziarna i stanu gry, więc żaden plik katalogu nie może:
+   uwaga I1 przeglądu końcowego etapu 1; zakres rozszerzony po przeglądzie końcowym etapu 2, M7). Silnik ma chodzić tak samo w Node,
+   w przeglądarce (druga gra w main.ts) i w testach, a jego przebieg ma wynikać tylko z ziarna i stanu gry, więc żaden plik katalogu
+   nie może:
    - importować niczego spoza src/ (ani z tests/ i tools/, ani modułów Node: `node:*`, `fs`, `path`, ani pakietów z npm),
    - używać losowania spoza ziarna (`Math.random` także jako `Math['random']`, `Math?.random` i `{ random } = Math`, oraz `crypto.`),
      zegara (`Date`, `performance.`), DOM (`window.`, `document.`), pamięci przeglądarki (`localStorage`) ani Node'owych
@@ -10,8 +11,12 @@
    jednorazowy grep przeglądu. Test czyta każdy plik jako tekst (wszystkie źródła JS i TS: `.ts`, `.mts`, `.cts`, `.js`, `.mjs`, `.cjs`,
    `.tsx`, `.jsx`; także nowe pliki katalogu i podkatalogi, bez listy w teście), usuwa komentarze
    (nagłówki modułów wymieniają tests/ i tools/ jako to, czego moduł nie importuje) i sprawdza resztę. Sam skaner ma testy na
-   sztucznych źródłach, żeby nie przechodził na pustym warunku. Test nie jest dowodem czystości przechodniej (moduły z src/sim,
-   src/gov i src/world, które silnik importuje): tę pilnują ich własne testy i determinizm (`npm run determinizm`). */
+   sztucznych źródłach, żeby nie przechodził na pustym warunku. Te same reguły skanują się też w dwóch modułach osady spoza src/ai,
+   które obiecują tę samą czystość: `src/ui/osada.ts` (druga gra w przeglądarce; sieć wchodzi tylko przez loadery z
+   src/world/load.ts, których sam plik nie woła przez `fetch(`, a loadery nie są skanowane) i `src/gov/kontakt.ts` (karta posła, która
+   poznaje osadę tylko przez `GovInput.osada`, więc nie importuje src/sim, src/ai ani src/ui). Test nie jest dowodem czystości przechodniej (moduły z src/sim,
+   src/gov, src/world, src/mieszkancy i src/core, które silnik importuje): tę pilnują ich własne testy i determinizm
+   (`npm run determinizm`). */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -170,6 +175,35 @@ describe('czystość src/ai: każdy plik jako tekst', () => {
       expect(naruszenia(plik, fs.readFileSync(plik, 'utf8'))).toEqual([]);
     },
   );
+});
+
+/** Moduły osady poza src/ai, które w nagłówkach obiecują czystość silnika (ścieżki względem src/). */
+const POZA_SILNIKIEM = ['ui/osada.ts', 'gov/kontakt.ts'] as const;
+
+describe('czystość modułów osady poza src/ai: ui/osada.ts i gov/kontakt.ts', () => {
+  it('lista wskazuje istniejące pliki i skaner widzi ich importy (test nie przechodzi na pustym warunku)', () => {
+    for (const rel of POZA_SILNIKIEM) {
+      const plik = path.join(SRC, rel);
+      expect(fs.existsSync(plik), rel).toBe(true);
+      const spec = specyfikatory(bezKomentarzy(fs.readFileSync(plik, 'utf8')));
+      expect(spec.length, rel).toBeGreaterThanOrEqual(5);
+      for (const s of spec) expect(s.startsWith('.'), `${rel}: ${s}`).toBe(true);
+    }
+    // druga gra w przeglądarce sięga po sieć tylko przez loadery z world/load.ts (źródła `daneKandydatow`)
+    const kodOsady = bezKomentarzy(fs.readFileSync(path.join(SRC, 'ui/osada.ts'), 'utf8'));
+    expect(specyfikatory(kodOsady)).toContain('../world/load.ts');
+  });
+
+  it.each(POZA_SILNIKIEM)('%s: bez importów spoza src/ i bez zakazanych słów', (rel) => {
+    const plik = path.join(SRC, rel);
+    expect(naruszenia(plik, fs.readFileSync(plik, 'utf8'))).toEqual([]);
+  });
+
+  it('gov/kontakt.ts nie importuje symulacji, silnika ani interfejsu: zarząd poznaje osadę tylko przez GovInput.osada', () => {
+    const kod = bezKomentarzy(fs.readFileSync(path.join(SRC, 'gov/kontakt.ts'), 'utf8'));
+    for (const spec of specyfikatory(kod))
+      expect(/^\.\.\/(?:sim|ai|ui|render|world)\//.test(spec), `gov/kontakt.ts importuje ${spec}`).toBe(false);
+  });
 });
 
 describe('czystość src/ai: skaner na sztucznych źródłach', () => {

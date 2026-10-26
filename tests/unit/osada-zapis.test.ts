@@ -2,15 +2,20 @@
    pole `Save.osada` jest opcjonalne (brak pola to gra bez osady, zapis bez flagi jest taki sam jak przed osadą), jego zły
    kształt odrzuca cały zapis (od stanu osady zależy przebieg gry), o fladze wczytanej gry decyduje zapis, nie adres
    (`osadaWlaczona`, jak `pietraWlaczone`), a powrót na ekran startowy zachowuje `osada=1` (`adresStartowy`). Do tego nieudany
-   zapis (brak miejsca w pamięci przeglądarki, dwie gry w jednym zapisie) nie kasuje poprzedniego. Rozmiar zapisu po 45 dniach
-   i odtworzenie gry osady z zapisu są w osada-gra.test.ts. */
+   zapis (brak miejsca w pamięci przeglądarki, dwie gry w jednym zapisie) nie kasuje poprzedniego, a osada, której zapis rzuca, idzie
+   do zapisu bez pola (`poleOsady`). Rozmiar zapisu po 30 dniach jest w osada-zapis-rozmiar.test.ts, odtworzenie gry osady z zapisu
+   w osada-gra.test.ts. */
 
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { StanOsady } from '../../src/ui/osada.ts';
 import {
   adresStartowy,
   jestStanOsady,
   osadaOdrzuconaPrzezSiec,
   osadaWlaczona,
+  poleOsady,
   readSave,
   SAVE_KEY,
   type Save,
@@ -271,5 +276,68 @@ describe('nieudany zapis nie kasuje poprzedniego (dwie gry w jednym zapisie a li
     expect(writeSave(duzy, store)).toBe(false);
     expect(store.m.get(SAVE_KEY)).toBe(przed);
     expect(readSave(store)?.osada).toEqual({ v: 1, stan: 'czeka' });
+  });
+});
+
+describe('poleOsady: osada, której zapis rzuca, nie zatrzymuje gry (save() woła się z pętli klatek)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** osada, której `zapisz()` rzuca (np. stan, którego nie da się przepisać do JSON) */
+  const rzuca = (): { zapisz(): StanOsady } => ({
+    zapisz: () => {
+      throw new Error('nie da się zapisać');
+    },
+  });
+
+  it('zapis osady, która rzuca, daje puste pole zamiast wyjątku, z jednym ostrzeżeniem w konsoli na grę', () => {
+    const ostrzezenia = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const osada = rzuca();
+    expect(() => poleOsady(osada)).not.toThrow();
+    // bez klucza `osada` (nie `osada: undefined`): zapis jest taki sam jak z gry bez flagi
+    const pole = poleOsady(osada);
+    expect(pole).toEqual({});
+    expect('osada' in pole).toBe(false);
+    // zapis idzie co godzinę gry, a ten sam błąd wraca za każdym razem: ostrzeżenie jest jedno na osadę, nie na zapis
+    expect(ostrzezenia).toHaveBeenCalledTimes(1);
+    expect(String(ostrzezenia.mock.calls[0][0])).toMatch(/Osada AI.*zapis.*bez niej/);
+    expect(ostrzezenia.mock.calls[0][1]).toBeInstanceOf(Error);
+    expect((ostrzezenia.mock.calls[0][1] as Error).message).toBe('nie da się zapisać');
+    // nowa gra to nowa osada i jej własne ostrzeżenie
+    poleOsady(rzuca());
+    expect(ostrzezenia).toHaveBeenCalledTimes(2);
+  });
+
+  it('ostrzeżenie można podstawić (gospodarz, testy): woła się z błędem raz na osadę, a dobra osada go nie woła', () => {
+    const konsola = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ostrzez = vi.fn();
+    const osada = rzuca();
+    expect(poleOsady(osada, ostrzez)).toEqual({});
+    expect(poleOsady(osada, ostrzez)).toEqual({});
+    expect(ostrzez).toHaveBeenCalledTimes(1);
+    expect((ostrzez.mock.calls[0][0] as Error).message).toBe('nie da się zapisać');
+    const dobry: StanOsady = { v: 1, stan: 'czeka' };
+    expect(poleOsady({ zapisz: () => dobry }, ostrzez)).toEqual({ osada: dobry });
+    expect(poleOsady(null, ostrzez)).toEqual({});
+    expect(ostrzez).toHaveBeenCalledTimes(1);
+    expect(konsola).not.toHaveBeenCalled();
+  });
+
+  it('zapis bez pola osada po takim błędzie zapisuje się i wczytuje jako gra bez osady, także z ?osada=1 w adresie', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = memory();
+    expect(writeSave(zapis({ ...poleOsady(rzuca()) }), store)).toBe(true);
+    const wczytany = readSave(store);
+    expect(wczytany).not.toBeNull();
+    expect(wczytany!.osada).toBeUndefined();
+    // zapis wygrywa z adresem: gra rusza bez osady i nie próbuje jej zaczynać od nowa
+    expect(osadaWlaczona(wczytany, new URLSearchParams('?osada=1'))).toBe(false);
+  });
+
+  it('src/main.ts zapisuje osadę tylko przez poleOsady: nigdzie nie woła jej zapisz() wprost', () => {
+    const zrodlo = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/main.ts'), 'utf8');
+    expect(zrodlo).not.toMatch(/\bosada\w*\??\.zapisz\s*\(/);
+    expect(zrodlo.match(/\bpoleOsady\s*\(/g)).toHaveLength(1);
   });
 });

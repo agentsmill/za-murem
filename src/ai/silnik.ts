@@ -116,7 +116,11 @@ function najblizszeDrzewo(g: GraAi, pominiete: readonly number[]): number {
   for (let k = 0; k < w.trees.length; k++) {
     const t = w.trees[k];
     if (t.kind === 2 || st.felled.includes(k) || pominiete.includes(k)) continue;
-    const d = Math.hypot(t.x - dx, t.y - dy);
+    // odległość bez Math.hypot: jego ostatni bit różni się między silnikami JS (docs/ocena/determinizm-silnikow.md), a wynik rozstrzyga,
+    // które drzewo zetnie osada, więc pierwiastek z sumy kwadratów, który IEEE liczy tak samo w każdym silniku
+    const ex = t.x - dx;
+    const ey = t.y - dy;
+    const d = Math.sqrt(ex * ex + ey * ey);
     if (d < odl) {
       odl = d;
       najlepsze = k;

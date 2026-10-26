@@ -31,6 +31,10 @@
      najwyżej jedno ostrzeżenie o osadzie, żadnego błędu; `osada-wolna-siec`: te kafelki wiszą bez końca (przerwane dopiero
      limitem pobierania, 20 s na kafelek): start gry i pętla na nie nie czekają, o 6:00 drugiego dnia `brak` z powodem `dane`;
    - `osada-zombie`: tryb zombie z flagą od razu nie ma osady (`brak`, powód `regula`), pole `osada` jest w zapisie;
+   - `osada-bez-tabel`: tabele mieszkańców niedostępne (404, gra idzie starą ścieżką): osada czeka do 6:00 drugiego dnia jak zawsze,
+     o 6:00 ma `brak` z powodem `regula` (reguła miejsca wymaga bloku z mieszkańcami z generatora), a gra nie pobiera ośmiu
+     sąsiednich kwadratów, których nikt by nie użył (żadnego żądania `demo/przymorze-kwadraty.json`; kontrola na tej samej stronie:
+     z tabelami to żądanie jest), bez ostrzeżeń o osadzie i bez mgły po starcie, a zapis pamięta `brak, regula`;
    - `osada-bez-flagi`: gra bez `?osada=1`: `zm.osada()` to null, zapis bez pola `osada`, o 6:00 drugiego dnia nic się nie dzieje.
    Pierwszy kontakt (zadanie 4, karta „Poseł z osady …”, src/gov/kontakt.ts):
    - `osada-kontakt`: demo Przymorze po polsku na komputerze, gra przewinięta do karty posła (inne karty po drodze dostają pierwszy
@@ -1799,6 +1803,60 @@ export function osadaShots(out: string): ShotCele[] {
         const ff = await page.evaluate(() => window.zm!.ff(60));
         console.log(`  po godzinie gry: okno ${ff}`);
         wymagaj((await odczyt(page)).osada?.stan === 'brak', 'osada dalej bez gry');
+      },
+    },
+    {
+      name: 'osada-bez-tabel',
+      query: '',
+      // 404 zablokowanych tabel to spodziewany błąd konsoli, ale tylko dla plików z data/mieszkancy/
+      allow: /status of 404/,
+      allowUrl: /\/data\/mieszkancy\//,
+      run: async (page, base) => {
+        const ostrzezenia = liczOstrzezenia(page);
+        // pobranie ośmiu sąsiednich kwadratów dema to jeden plik (`loadDemoKwadraty`): policzone żądania do niego
+        const sasiedzi: string[] = [];
+        page.on('request', (r) => {
+          if (/\/demo\/przymorze-kwadraty\.json/.test(r.url())) sasiedzi.push(r.url());
+        });
+        await page.route('**/data/mieszkancy/**', (r) => r.fulfill({ status: 404, body: 'brak' }));
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        const przed = await odczyt(page);
+        wymagaj(przed.osada?.stan === 'czeka', 'bez tabel osada do 6:00 drugiego dnia czeka jak zawsze', przed.osada);
+        await chopDryTree(page);
+        await przewin(page, (teraz) => teraz >= minutaGry(2, 7), { dotyk: false });
+        const po = await odczyt(page);
+        console.log(`  o 7:00 drugiego dnia: ${JSON.stringify(po.osada)}, pobrań sąsiadów: ${sasiedzi.length}`);
+        wymagaj(
+          po.osada?.stan === 'brak' && po.osada.powod === 'regula',
+          'bez tabel mieszkańców osady nie ma (brak, regula)',
+          po.osada,
+        );
+        wymagaj(sasiedzi.length === 0, 'bez tabel gra nie pobiera ośmiu sąsiadów osady', sasiedzi);
+        wymagaj(ostrzezenia.length === 0, 'bez tabel osada milczy w konsoli', ostrzezenia);
+        // osady nie ma, więc i mgły „nieodkrytego” już nie ma
+        const widok = await page.evaluate(() => ({
+          mgla: window.zm!.view.mgla.liczba,
+          maKwadraty: window.zm!.view.maKwadraty,
+          kwadrat: window.zm!.osada()?.kwadrat,
+        }));
+        wymagaj(
+          widok.mgla === 0 && !widok.maKwadraty && widok.kwadrat === -1,
+          'po starcie bez osady widok jak bez flagi',
+          widok,
+        );
+        await page.evaluate(() => window.zm!.save());
+        const zapis = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? 'null')?.osada, SAVE);
+        wymagaj(zapis?.stan === 'brak' && zapis.powod === 'regula', 'zapis pamięta „brak, regula”', zapis);
+        // kontrola, że liczenie żądań widzi pobranie: z tabelami ta sama gra pobiera sąsiadów
+        await page.unroute('**/data/mieszkancy/**');
+        sasiedzi.length = 0;
+        await page.goto(`${base}?demo=przymorze&osada=1&${GRA}`);
+        await waitIdle(page);
+        wymagaj(sasiedzi.length >= 1, 'kontrola: z tabelami gra pobiera sąsiadów osady', sasiedzi);
+        const z = await odczyt(page);
+        wymagaj(z.osada?.stan === 'czeka', 'kontrola: z tabelami osada czeka na start', z.osada);
+        console.log(`  kontrola z tabelami: pobrań sąsiadów ${sasiedzi.length}, osada ${z.osada?.stan}`);
       },
     },
     {

@@ -6,13 +6,14 @@
    z danych dema i tabel mieszkańców z public/. Sprawdzane: kiedy osada powstaje i że od tej chwili ticki są równe; że przebieg nie
    zależy od chwili, w której przyszły dane (byle przed startem), a bez danych do startu osady nie ma (`brak`, powód `dane`);
    zapis i wczytanie (przed startem, w środku gry, po odwołaniu i po upadku osady) dają ten sam przebieg obu gier co gra bez
-   przerwy; bez flagi zapis nie ma pola `osada`, a nasza gra idzie tak samo z osadą i bez niej (etap 2 nie łączy obu gier); zapis po
-   45 dniach z osadą mieści się w 4 000 000 znaków; tryb zombie nie dostaje osady; błąd wyboru kwadratu daje `brak` z powodem `blad`
+   przerwy; bez flagi zapis nie ma pola `osada`, a nasza gra idzie tak samo z osadą i bez niej (etap 2 nie łączy obu gier); tryb
+   zombie nie dostaje osady; błąd wyboru kwadratu daje `brak` z powodem `blad`
    (jedno ostrzeżenie, bez drugiej próby); odwołanie zarządu osady daje nowy zarząd (rozstrzygnięcie kontrolera 1, src/ai/odwolanie.ts),
    a pustka i exodus kończą osadę (stoi, nie rzuca); pobieranie kandydatów po kolei w kolejności z ziarna z jednym ostrzeżeniem.
-   Szczegóły zapisu (kształt pola, flaga z adresu) są w osada-zapis.test.ts, pobranie geo kwadratu z kafelków w osada-dane.test.ts,
-   przygotowanie osady na zapas przed startem (`przygotuj`, `przygotujCiezkie`, nadrabianie w kawałkach) w osada-przygotowanie.test.ts
-   (tu jest jego próba z naszą grą: skróty obu gier po 5 dobach), a zaślepka osady bez kodu w osada-brak.test.ts.
+   Szczegóły zapisu (kształt pola, flaga z adresu) są w osada-zapis.test.ts, jego rozmiar po 30 dniach w osada-zapis-rozmiar.test.ts,
+   pobranie geo kwadratu z kafelków w osada-dane.test.ts, przygotowanie osady na zapas przed startem (`przygotuj`, `przygotujCiezkie`,
+   nadrabianie w kawałkach) w osada-przygotowanie.test.ts (tu jest jego próba z naszą grą: skróty obu gier po 5 dobach), a zaślepka
+   osady bez kodu w osada-brak.test.ts.
 
    Skrót bota `npm run bot` po 3 dobach (701b05aa) wychodzi z jego scenariusza „pierwsze trzy minuty”, który gra na świecie
    zmienionym wcześniejszą, 45-dniową grą tego samego bota (gra zmienia siatkę swojego świata w miejscu), więc w teście nie da się go
@@ -36,7 +37,6 @@ import { START_WKURZENIA, START_ZAUFANIA } from '../../src/ai/odwolanie.ts';
 import { silnik, silnikPodstawowy } from '../../src/ai/silnik.ts';
 import { ustawJezyk } from '../../src/core/jezyk.ts';
 import { hashString } from '../../src/core/rng.ts';
-import { newGov } from '../../src/gov/zarzad.ts';
 import { dayOf, TICKS_PER_DAY, TICKS_PER_HOUR, TICKS_PER_SECOND } from '../../src/sim/clock.ts';
 import { tickAt } from '../../src/sim/handlarz.ts';
 import {
@@ -46,7 +46,6 @@ import {
   mieszkancyZapisu,
   opcjaMieszkancow,
 } from '../../src/sim/osiedle.ts';
-import { createSim, Sim } from '../../src/sim/sim.ts';
 import { daneKartyOsady, kartaOsadyHtml } from '../../src/ui/kartaOsady.ts';
 import {
   nowaOsadaGry,
@@ -56,7 +55,7 @@ import {
   type StanOsady,
   TICK_STARTU_OSADY,
 } from '../../src/ui/osada.ts';
-import { poleOsady, readSave, SAVE_KEY, type Save, worldKey, writeSave } from '../../src/ui/zapis.ts';
+import { poleOsady, worldKey } from '../../src/ui/zapis.ts';
 import type { Geo } from '../../src/world/geo.ts';
 import { kluczKwadratu, type Uklad, ukladZGeo } from '../../src/world/kwadraty.ts';
 import { buildWorld, type World } from '../../src/world/world.ts';
@@ -417,6 +416,30 @@ describe('dane kandydatów', () => {
     osada.dane(demo.kwadraty);
     osada.krok(TICK_STARTU_OSADY);
     expect(osada.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'regula' });
+  });
+
+  it('bez tabel mieszkańców osada ma regula także bez żadnych danych kandydatów: gospodarz ośmiu sąsiadów wtedy nie pobiera', () => {
+    // src/main.ts pomija pobranie sąsiadów, gdy tabel nie ma (wybór kwadratu i tak zwróciłby null od razu), więc `dane()` nie przychodzi
+    const osada = nowaOsadaGry(SEED, null, uklad);
+    osada.przygotuj();
+    osada.przygotujCiezkie();
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'czeka' });
+    osada.krok(TICK_STARTU_OSADY - 1);
+    expect(osada.stan).toBe('czeka');
+    osada.krok(TICK_STARTU_OSADY);
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'regula' });
+    expect(osada.gra).toBeNull();
+    // wczytany zapis „czeka” bez tabel: to samo, a pusty rekord danych niczego nie zmienia (brak danych to nie powód osady)
+    const zZapisu = osadaZZapisu({ v: 1, stan: 'czeka' }, SEED, null, uklad);
+    zZapisu.dane({});
+    zZapisu.krok(TICK_STARTU_OSADY);
+    expect(zZapisu.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'regula' });
+  });
+
+  it('z tabelami, ale bez danych kandydatów, osada dalej ma dane (to inny powód niż brak tabel)', () => {
+    const osada = nowaOsadaGry(SEED, dane, uklad);
+    osada.krok(TICK_STARTU_OSADY);
+    expect(osada.zapisz()).toEqual({ v: 1, stan: 'brak', powod: 'dane' });
   });
 
   it('błąd wyboru kwadratu (uszkodzone geo): brak z powodem blad, jedno ostrzeżenie w konsoli i żadnej drugiej próby', () => {
@@ -896,72 +919,5 @@ describe('pobierzKandydatow', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/Osada/);
     expect(String(warn.mock.calls[0][0])).toMatch(/8/);
-  });
-});
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Rozmiar zapisu po 45 dniach
-// ---------------------------------------------------------------------------------------------------------------------
-
-describe('rozmiar zapisu', () => {
-  it('zapis po 45 dniach z osadą: JSON.stringify(save).length najwyżej 4 000 000 znaków, a sama osada najwyżej 600 000 (zmierzono 580 169 razem: 226 383 bez osady i 353 786 osady, z dwoma odwołaniami jej zarządu)', {
-    timeout: 900_000,
-  }, () => {
-    // nasza gra to goła symulacja z zarządem tylko w zapisie (jak osada: sim + zarząd): rozmiar zapisu zależy od osady,
-    // a przebieg naszej gry z zarządem kosztowałby tu minutę więcej bez wpływu na wynik
-    const { world, l } = swiatNaszej();
-    const sim = new Sim(
-      world,
-      createSim(world, SEED, { core: 4, obcy: true, ...(l ? { mieszkancy: opcjaMieszkancow(l) } : {}) }),
-    );
-    const gov = newGov(SEED, 'zwykly', true);
-    const osada = nowaOsadaGry(SEED, dane, uklad);
-    osada.dane(demo.kwadraty);
-    const koniec = 45 * TICKS_PER_DAY;
-    while (sim.st.tick < koniec) {
-      sim.step();
-      osada.krok(sim.st.tick);
-    }
-    expect(osada.stan).toBe('jest');
-    // ticki obu gier są równe do końca, chyba że osada upadła (wtedy stoi)
-    if (!osada.upadla) expect(osada.gra!.sim.st.tick).toBe(sim.st.tick);
-    expect(osada.gra!.bledy).toEqual([]);
-    expect(osada.gra!.zawieszone).toEqual([]);
-
-    const save: Save = {
-      v: 1,
-      at: 1,
-      data: { geo: demo.geo, name: 'Przymorze', addr: demo.addr, street: demo.street, src: 'demo', key: 'przymorze' },
-      seed: SEED,
-      sim: sim.st,
-      gov,
-      screen: 0,
-      world: worldKey(sim.w),
-      ...poleOsady(osada),
-    };
-    const tekst = JSON.stringify(save);
-    const osadaTekst = JSON.stringify(save.osada);
-    console.log(
-      `zapis po 45 dniach: ${tekst.length} znaków (bez osady ${tekst.length - osadaTekst.length}, osada ${osadaTekst.length}); osada: odwołań ${osada.odwolania}, upadła ${osada.upadla ? `w dniu ${osada.upadla.dzien}` : 'nie'}`,
-    );
-    expect(tekst.length).toBeLessThanOrEqual(4_000_000);
-    // sama osada (zmierzono 353 786): dwukrotny wzrost jej stanu przeszedłby przez luźny limit całego zapisu niezauważony
-    expect(osadaTekst.length).toBeLessThanOrEqual(600_000);
-
-    // przez pamięć przeglądarki tam i z powrotem: ten sam zapis, osada wczytuje się z niego i ma ten sam skrót
-    const m = new Map<string, string>();
-    const store = {
-      getItem: (k: string) => m.get(k) ?? null,
-      setItem: (k: string, v: string) => void m.set(k, v),
-      removeItem: (k: string) => void m.delete(k),
-    };
-    expect(writeSave(save, store)).toBe(true);
-    expect(m.get(SAVE_KEY)).toBe(tekst);
-    const wczytany = readSave(store);
-    expect(wczytany?.osada).toBeDefined();
-    const wczytana = osadaZZapisu(wczytany!.osada!, SEED, dane, uklad);
-    expect(wczytana.stan).toBe('jest');
-    expect(wczytana.odwolania).toBe(osada.odwolania);
-    expect(skrotGry(wczytana.gra!)).toBe(skrotGry(osada.gra!));
   });
 });

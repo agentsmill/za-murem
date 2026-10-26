@@ -7,7 +7,8 @@
    Pole `osada` (stan drugiej gry na sąsiednim kwadracie, `?osada=1`, src/ui/osada.ts) jest opcjonalne i jest tylko w grze
    zaczętej z flagą: zapis bez flagi jest bajt w bajt taki jak przed osadą. Kształt stanu osady sprawdza tu `jestStanOsady`,
    strukturalnie, bez importu kodu osady (tylko typ): silnik AI nie wchodzi do gry bez flagi, a moduł osady importuje stąd
-   `worldKey`. */
+   `worldKey`. Zapis osady składa `poleOsady` i osłania jej wyjątek (zapis idzie wtedy bez osady, z jednym ostrzeżeniem), bo
+   `save()` woła się z pętli klatek, a wyjątek w niej zatrzymałby grę. */
 
 import { L } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
@@ -68,9 +69,34 @@ export const osadaWlaczona = (saved: Pick<Save, 'osada'> | null, params: URLSear
 export const osadaOdrzuconaPrzezSiec = (saved: Pick<Save, 'osada'> | null, params: URLSearchParams): boolean =>
   !saved && params.get('osada') === '1' && params.get('siec') === '1';
 
+/** osady, o których `poleOsady` już ostrzegło: ostrzeżenie jest jedno na grę, bo zapis idzie co godzinę gry, a ten sam błąd wraca z
+    każdym */
+const ostrzezoneOsady = new WeakSet<object>();
+
 /** Pole `osada` do zapisu gry (`Save`): `{ osada }` ze stanem drugiej gry, a bez niej (gra bez flagi) puste, więc zapis bez flagi
-    jest bajt w bajt taki jak przed osadą. */
-export const poleOsady = (o: { zapisz(): StanOsady } | null): { osada?: StanOsady } => (o ? { osada: o.zapisz() } : {});
+    jest bajt w bajt taki jak przed osadą. `save()` w src/main.ts woła się z pętli klatek (raz na godzinę gry), a wyjątek w niej
+    zatrzymuje ticker PixiJS i grę do przeładowania, więc osada, której `zapisz()` rzuci, nie przewraca zapisu: pole jest wtedy
+    puste (zapis idzie bez osady, a wczytana gra rusza bez niej, bo o osadzie decyduje zapis, nie adres), a `ostrzez` dostaje błąd
+    najwyżej raz na osadę (domyślnie jedno ostrzeżenie w konsoli). Reszta zapisu, czyli nasza gra, nie traci przez to postępu. */
+export function poleOsady(
+  o: { zapisz(): StanOsady } | null,
+  ostrzez: (blad: unknown) => void = (blad) =>
+    console.warn(
+      'Osada AI: nie udało się zapisać osady, zapis idzie bez niej (po wczytaniu gra będzie bez osady)',
+      blad,
+    ),
+): { osada?: StanOsady } {
+  if (!o) return {};
+  try {
+    return { osada: o.zapisz() };
+  } catch (e) {
+    if (!ostrzezoneOsady.has(o)) {
+      ostrzezoneOsady.add(o);
+      ostrzez(e);
+    }
+    return {};
+  }
+}
 
 /** adres ekranu startowego po „od nowa”: ta sama strona, a z adresu przechodzą tylko parametry, które zmieniają samą grę albo
     jej język, dopóki są w adresie: `siec=1`, `pietra=1`, `osada=1`, `lancuchy=0` (łańcuchy są domyślnie włączone, więc przenosi się tylko
