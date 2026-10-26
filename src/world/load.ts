@@ -1,11 +1,16 @@
 /* Wczytanie osiedla: demo offline z public/demo albo adres (Nominatim → kafelki OpenFreeMap,
    a gdy nie odpowiadają, Overpass). Komunikaty dla gracza (status i błędy) są w bieżącym języku; dane osiedla nie
    zależą od języka (Nominatim zawsze po polsku, bo z adresu liczy się ziarno i klucz imion). Dema mają też
-   sąsiednie kwadraty miasta (loadDemoKwadraty, tylko przy ?kwadraty=). */
+   sąsiednie kwadraty miasta (loadDemoKwadraty, przy ?kwadraty= i przy ?osada=1).
+   Sąsiedni kwadrat prawdziwego adresu (`geoKwadratu`, osada AI, ?osada=1) pobiera się tymi samymi kafelkami z=14 co dom
+   (`kafelkiKwadratu`), ale dopiero po starcie gry, w tle i po jednym kwadracie: kafelki wspólne dla kilku kandydatów pobierają się
+   i dekodują raz (pamięć jednego ładowania, `PamiecKafelkow`), a błąd pobrania kafelka odrzuca kwadrat i nie jest ponawiany. */
 
 import { L } from '../core/jezyk.ts';
 import type { Geo } from './geo.ts';
-import { load as loadTiles } from './mvt.ts';
+import { geoKwadratu as geoKwadratuZKafelkow } from './geoKwadratu.ts';
+import { kafelkiKwadratu, type Uklad } from './kwadraty.ts';
+import { type DecodedTile, decode, load as loadTiles, pobierzKafelek, WANT, Z } from './mvt.ts';
 import { geocode, overpass, toGeo } from './osm.ts';
 import { LOAD_RADIUS } from './world.ts';
 
@@ -41,6 +46,44 @@ export async function loadDemoKwadraty(key: string): Promise<Record<string, Geo>
   if (!r.ok)
     throw new Error(L(`Nie ma sąsiednich kwadratów przykładu: ${key}`, `No neighbouring squares for example: ${key}.`));
   return r.json();
+}
+
+/** Pamięć jednego ładowania kandydatów osady: kafelek z=14 po kluczu „x,y” → zdekodowany kafelek (obietnica; nieudane pobranie
+    zostaje w niej jako odrzucona, więc następny kwadrat z tym kafelkiem nie próbuje drugi raz). Wołający trzyma ją tylko przez
+    jedno ładowanie ośmiu kandydatów: zdekodowany kafelek waży kilka MB. */
+export type PamiecKafelkow = Map<string, Promise<DecodedTile>>;
+
+/** pobranie surowego kafelka (z, x, y): bajty, pusta tablica dla kafelka bez danych (204, 404) albo null przy błędzie */
+export type PobierzKafelek = (z: number, x: number, y: number) => Promise<Uint8Array | null>;
+
+/** Geo sąsiedniego kwadratu (sx, sy) w układzie domu `uklad` z kafelków OpenFreeMap: te same kafelki z=14, które pokrywają jego
+    promień 720 m (`kafelkiKwadratu`), pobrane naraz, zdekodowane (`decode` z `WANT`) i zamienione w geo tak samo jak w demach
+    (`geoKwadratu` z geoKwadratu.ts). Kafelki z `pamiec` nie pobierają się drugi raz. Kafelek bez danych jest zwykłym kafelkiem bez
+    warstw; błąd pobrania (null albo wyjątek z `pobierz`) odrzuca kwadrat i zostaje w pamięci. `pobierz` jest wstrzykiwane (testy w
+    Node); domyślnie `pobierzKafelek` z mvt.ts. */
+export async function geoKwadratu(
+  uklad: Uklad,
+  sx: number,
+  sy: number,
+  pamiec: PamiecKafelkow = new Map(),
+  pobierz: PobierzKafelek = pobierzKafelek,
+): Promise<Geo> {
+  const kafelki = await Promise.all(
+    kafelkiKwadratu(uklad, sx, sy).map(([x, y]) => {
+      const klucz = `${x},${y}`;
+      let p = pamiec.get(klucz);
+      if (!p) {
+        p = (async (): Promise<DecodedTile> => {
+          const bajty = await pobierz(Z, x, y);
+          if (!bajty) throw new Error(`Nie udało się pobrać kafelka mapy ${Z}/${x}/${y}`);
+          return { x, y, L: bajty.length ? decode(bajty, WANT) : {} };
+        })();
+        pamiec.set(klucz, p);
+      }
+      return p;
+    }),
+  );
+  return geoKwadratuZKafelkow(kafelki, uklad, sx, sy);
 }
 
 export async function demoList(): Promise<DemoInfo[]> {

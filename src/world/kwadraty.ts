@@ -40,8 +40,8 @@ export interface Uklad {
   bok: number;
 }
 
-/** bez minus zera: wyniki trafiają do porównań i kluczy */
-const nz = (v: number) => (v === 0 ? 0 : v);
+/** bez minus zera: wyniki trafiają do porównań i kluczy (używa go też src/ai/kwadrat.ts) */
+export const nz = (v: number): number => (v === 0 ? 0 : v);
 
 /** Układ domu z gotowego świata: środek z geo, kąt i bok ze świata. */
 export function ukladDomu(geo: Pick<Geo, 'c'>, w: Pick<World, 'angle' | 'size'>): Uklad {

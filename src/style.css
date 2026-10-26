@@ -1057,6 +1057,55 @@ a.btn {
   border-top-color: transparent;
   border-bottom-color: var(--lamp);
 }
+/* etykieta z nazwą osady AI nad jej siedzibą (po odkryciu, src/main.ts `placeOsadaMark`): ten sam napis co „Suche drzewo”, a klik w
+   niego otwiera kartę osady. Wskaźnik przechodzi przez napis do mapy (kółko, przeciąganie i szczypanie działają nad nim jak obok), a
+   klik rozstrzyga mapa po prostokącie napisu (`kliknijOsade`); z klawiatury to zwykły przycisk (Tab, Enter) */
+.treemark.osada-mark .treemark-t {
+  border: 0;
+  pointer-events: none;
+}
+/* ogonek zostaje przy kotwicy (nad siedzibą), gdy napis jedzie do środka ekranu przy brzegu: środek napisu minus przesunięcie
+   (--shift z main.ts), a gdyby kotwica wypadła poza napis, przy najbliższym miejscu 12 px od jego krawędzi */
+.treemark.osada-mark .treemark-t::after {
+  left: clamp(12px, calc(50% - var(--shift, 0px)), calc(100% - 12px));
+}
+/* karta osady (src/ui/kartaOsady.ts): nagłówek z nazwą i przyciskiem zamknięcia, zdanie o kierunku nad liczbami z kontaktu */
+.osada-glowa {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.osada-glowa h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.card-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font: 700 22px / 1 var(--f-sign);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-x:hover {
+  color: var(--ink);
+}
+@media (pointer: coarse) {
+  .card-x {
+    width: 40px;
+    height: 40px;
+    margin: -8px -10px 0 0;
+  }
+}
+.osada-kierunek {
+  margin: 2px 0 8px;
+  color: var(--ink-dim);
+}
 
 .needs {
   display: grid;
@@ -1758,13 +1807,21 @@ a.btn {
      u dołu i karty osoby (`--zapas-dol` mierzy main.ts, a wyższa treść przewija się w środku): lista ludzi stoi tuż pod okienkiem,
      więc bez tego zachodziła na kartę i przykrywała imię zaznaczonej osoby. */
   .goals {
-    --goals-pt: 4px;
-    --goals-px: 8px;
     top: calc(var(--top-h, 96px) + 14px);
     width: calc(100% - 66px);
-    padding-bottom: 6px;
     max-height: calc(100% - var(--top-h, 96px) - 14px - var(--zapas-dol, 0px));
     min-height: 56px;
+  }
+}
+
+/* Zwarte okienko celów, karta osoby i okna na telefonie pionowo (do 640 px) i w niskim oknie (do 500 px wysokości, czyli telefon
+   poziomo): rozmiary i odstępy; układ stosu nakładek pionowo (cele pod paskiem na całą szerokość, lista ludzi pod nimi) zostaje
+   w zapytaniu do 640 px wyżej, a poziomo ułożenie jest niżej (`telefon poziomo`). */
+@media (max-width: 640px), (max-height: 500px) {
+  .goals {
+    --goals-pt: 4px;
+    --goals-px: 8px;
+    padding-bottom: 6px;
   }
   .goal {
     font-size: 13px;
@@ -1900,58 +1957,65 @@ a.btn {
   }
 }
 
-/* ---------- telefon (okno węższe niż 768 px): zwijane bloki stanu, src/ui/telefon.ts ---------- */
-/* Linia potrzeb na karcie osoby jest tylko na telefonie (main.ts: `data-card="potrzeby"`, klasa `potrzeby-zwiniete` na karcie). */
-.potrzeby-linia {
+/* ---------- telefon (okno węższe niż 768 px albo niższe niż 501 px): zwijane bloki stanu, src/ui/telefon.ts ---------- */
+/* Przycisk zwijania paska stanu, linia potrzeb i przycisk „Więcej” na karcie osoby są tylko na telefonie (main.ts: `#statsToggle`,
+   `data-card="potrzeby"` i `data-card="wiecej"`, klasy `potrzeby-zwiniete` i `wiecej-zwiniete` na karcie). */
+.stats-toggle,
+.potrzeby-linia,
+.card .wiecej {
   display: none;
 }
-@media (max-width: 767px) {
-  /* Pasek stanu: pojemnik jest przyciskiem (role, tabindex i aria-expanded ustawia main.ts). Zwinięty (`data-zwiniete`) zostawia
-     jedną niską linię z kafelkami pilnymi (klasa `pilne` z `oznaczPilne`: w stanie „uwaga” i „źle”, a gdy nic takiego nie ma,
-     jedzenie, drewno i wkurzenie), każdy w jednym wierszu (etykieta obok wartości), ze strzałką ▾ na końcu; rozwinięty pokazuje
-     wszystkie kafelki, a pod nimi pasek ze strzałką ▴. Kafelki, których jest za dużo na jedną linię, zawijają się, a nie giną.
-     Kafelki otwierają artykuły wiki (src/ui/wiki-okno.ts), ale tylko w rozwiniętym pasku: w zwiniętym nie biorą dotyku ani myszy
-     (stuknięcie w linię trafia w pojemnik i go rozwija), a rozwinięty pasek zwija strzałka ▴ i przerwy między kafelkami. */
-  .stats[role="button"] {
+@media (max-width: 767px), (max-height: 500px) {
+  /* Pasek stanu zwija osobny przycisk `#statsToggle` (aria-expanded i podpis ustawia main.ts), więc kafelki zostają zwykłymi
+     elementami dla czytników ekranu. Zwinięty (`data-zwiniete`) zostawia jedną niską linię z kafelkami pilnymi (klasa `pilne`
+     z `oznaczPilne`: w stanie „uwaga” i „źle”, a gdy nic takiego nie ma, jedzenie, drewno i wkurzenie), każdy w jednym wierszu
+     (etykieta obok wartości), ze strzałką ▾ na końcu; rozwinięty pokazuje wszystkie kafelki, a pod nimi pas ze strzałką ▴.
+     Kafelki, których jest za dużo na jedną linię, zawijają się, a nie giną. Kafelki otwierają artykuły wiki
+     (src/ui/wiki-okno.ts), ale tylko w rozwiniętym pasku: w zwiniętym nie biorą dotyku ani myszy, stuknięcie w linię trafia
+     w pasek i go rozwija (main.ts przechwytuje też kliknięcie i Enter, które trafiłyby w kafelek). */
+  .stats-toggle {
     position: relative;
+    display: block;
+    flex: 0 0 100%;
+    height: 16px;
+    margin: -1px 0 0;
+    padding: 0;
+    color: var(--ink-dim);
+    background: none;
+    border: 0;
+    font: 700 10px / 16px var(--f-sign);
+    text-align: center;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Strefa dotyku wyższa od tego, co widać. Zwinięta linia: o 4 px z góry (przerwa między wierszami paska) i z dołu (jego
-     dopełnienie), po bokach o 6 px (dopełnienie paska): linia ma 19 px, a palec potrzebuje około 27. Rozwinięty pasek: tylko pas
-     ▴ i dopełnienie pod nim (20 px od dołu), żeby nie przykryć kafelków, które mają własny dotyk (wiki). Nie sięga dalej, więc nie
-     zabiera dotyku przyciskom z wiersza wyżej. */
-  .stats[role="button"]::before {
+  /* strefa dotyku pasa ▴ sięga 4 px pod niego (dopełnienie paska): 20 px, kafelki nad nim zostają dla wiki */
+  .stats-toggle::before {
     content: "";
     position: absolute;
+    inset: 0 0 -4px;
   }
-  .stats[data-zwiniete]::before {
-    inset: -4px -6px;
-  }
-  .stats[role="button"]:not([data-zwiniete])::before {
-    inset: auto -6px -4px;
-    height: 20px;
-  }
-  .stats[role="button"]:focus-visible {
+  .stats-toggle:focus-visible {
     outline: 2px solid var(--lamp);
-    outline-offset: 2px;
+    outline-offset: -2px;
     border-radius: 4px;
   }
-  .stats[role="button"]::after {
-    content: "▴";
-    flex: 0 0 100%;
-    height: 16px;
-    margin-top: -1px;
-    color: var(--ink-dim);
-    font: 700 10px / 16px var(--f-sign);
-    text-align: center;
-  }
   .stats[data-zwiniete] {
+    position: relative;
     order: 5;
     flex: 1 1 100%;
     align-items: center;
     justify-content: flex-start;
     gap: 3px 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Strefa dotyku zwiniętej linii wyższa od tego, co widać: o 4 px z góry (przerwa między wierszami paska) i z dołu (jego
+     dopełnienie), po bokach o 6 px (dopełnienie paska): linia ma 19 px, a palec potrzebuje około 27. Nie sięga dalej, więc nie
+     zabiera dotyku przyciskom z wiersza wyżej. */
+  .stats[data-zwiniete]::before {
+    content: "";
+    position: absolute;
+    inset: -4px -6px;
   }
   /* z `#stats`, bo `#sMats { display: flex }` (jedno pole materiałów na telefonie) ma wyższą swoistość niż same klasy */
   #stats[data-zwiniete] .stat:not(.pilne) {
@@ -1972,8 +2036,7 @@ a.btn {
   .stats[data-zwiniete] .stat-v {
     font-size: 13px;
   }
-  .stats[data-zwiniete]::after {
-    content: "▾";
+  .stats[data-zwiniete] .stats-toggle {
     flex: 0 0 auto;
     height: auto;
     margin: 0 0 0 auto;
@@ -1991,8 +2054,8 @@ a.btn {
     align-items: center;
     gap: 6px;
     width: 100%;
-    margin: 6px 0 2px;
-    padding: 4px 8px;
+    margin: 4px 0 0;
+    padding: 3px 8px;
     font: 600 13px / 1.2 var(--f-sign);
     letter-spacing: 0.02em;
     text-align: left;
@@ -2022,6 +2085,148 @@ a.btn {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Karta osoby: „Więcej” w prawym górnym rogu, obok imienia (bez własnego wiersza), chowa rodzinę, historię i przycisk zmiany
+     imienia; napis o wymyślonych mieszkańcach zostaje na widoku (spec mieszkańców z adresu, §10: ma być na zrzucie), tylko
+     drobniej i bez przycisku obok. Imię ma miejsce na przycisk (`:has`). */
+  .card .wiecej {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font: 600 12px / 1.2 var(--f-sign);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    background: var(--slab-deep);
+    border: 1px solid var(--seam);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .card .wiecej::after {
+    content: "▴";
+  }
+  #card.wiecej-zwiniete .wiecej::after {
+    content: "▾";
+  }
+  .card:has(.wiecej) h2 {
+    padding-right: 86px;
+  }
+  #card.wiecej-zwiniete .rodzina,
+  #card.wiecej-zwiniete .story,
+  #card.wiecej-zwiniete .osoba-fikcja .btn {
+    display: none;
+  }
+  #card.wiecej-zwiniete .osoba-fikcja {
+    margin-top: 3px;
+    padding-top: 3px;
+  }
+  /* sam napis, bez przycisku obok, o pół piksela drobniej: po polsku mieści się w jednym wierszu karty (308 px) */
+  #card.wiecej-zwiniete .fikcja {
+    font-size: 11.5px;
+    line-height: 1.25;
+  }
+  .card .arm,
+  .card .bite {
+    margin-top: 3px;
+  }
+}
+
+/* ---------- niski telefon (pionowo do 700 px wysokości, np. 375×667, i poziomo w niskim oknie do 500 px) ---------- */
+/* Na ekranie 667 px dzień 2 miał mapę na 58,4%, a poziomo na 812×375 też poniżej 60%, więc przy tej wysokości szyld nie ma
+   podpisu „Za Murem” (zostaje sama nazwa osiedla: pierwszy wiersz paska niższy o 13 px), a atrybucja map ma czcionkę o piksel
+   mniejszą. Wyższe telefony pionowo (360×740, 390×844) bez zmian. */
+@media (max-width: 640px) and (max-height: 700px), (min-width: 641px) and (max-height: 500px) {
+  .top .sign small {
+    display: none;
+  }
+  .top .sign {
+    padding-block: 5px;
+  }
+  .attrib {
+    font-size: 11px;
+  }
+}
+
+/* ---------- telefon poziomo (niskie okno: do 500 px wysokości, od 641 px szerokości) ---------- */
+/* Układ komputerowy w oknie 390 px wysokości zostawiał mapie połowę ekranu (pasek miał 127 px w trzech wierszach, karta osoby
+   sięgała pod pasek), więc niskie okno dostaje zwarty pasek jak telefon pionowo, ale w jednym wierszu przycisków (jest miejsce na
+   szerokość): szyld, zegar, tempo, alarm i przyciski w pierwszym wierszu, zwinięta linia stanu w drugim. Do 640 px szerokości
+   (telefon pionowo i mały telefon poziomo) zostaje układ telefonu pionowo. */
+@media (min-width: 641px) and (max-height: 500px) {
+  .top {
+    padding: 4px 6px;
+    gap: 5px 6px;
+  }
+  .top .btn {
+    padding: 6px 5px;
+    font-size: 13px;
+  }
+  .speed {
+    gap: 2px;
+  }
+  .top .sign {
+    max-width: 170px;
+    padding-inline: 16px;
+  }
+  .sign b {
+    font-size: 17px;
+  }
+  .clock {
+    font-size: 16px;
+  }
+  .fps,
+  .top .season,
+  .spacer {
+    display: none;
+  }
+  /* „Badania” to sama ikona kolby, „Mapa miasta” krótkie „Mapa”: jak na telefonie pionowo, żeby przyciski zmieściły się w wierszu */
+  #btnResearch {
+    padding-inline: 8px;
+    font-size: 0;
+  }
+  #btnResearch::before {
+    content: "";
+    display: block;
+    width: 13px;
+    height: 13px;
+    background: currentcolor;
+    mask:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5.5 1h5v1.4H9.6v3.6l4.3 7.2c.6 1-.1 2.3-1.3 2.3H3.4c-1.2 0-1.9-1.3-1.3-2.3L6.4 6V2.4H5.5z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+  .mm-dlugi {
+    display: none;
+  }
+  .mm-krotki {
+    display: inline;
+  }
+  /* Cele dnia (300 px), lista ludzi na ich prawo i karta osoby w lewym dolnym rogu zostają jak na komputerze; karta nie sięga
+     pod pasek (wyższa przewija się w środku), a podpowiedź u dołu leży na prawo od niej, nie na niej. */
+  /* Karta nie sięga pod pasek nawet rozwinięty (8 + 97 px) i nad atrybucję (40 px od dołu); wyższa przewija się w środku. Stała, nie
+     `--top-h`: wysokość karty obserwuje ResizeObserver (main.ts), a zmienna, którą ten sam obserwator zapisuje, zmieniałaby ją
+     w wywołaniu obserwatora („loop completed with undelivered notifications”). */
+  .card {
+    max-height: calc(100% - 153px);
+    overflow-y: auto;
+  }
+  /* karta osoby zostawia cele dnia nad sobą za mało miejsca (main.ts: `zmierzNakladki`): chowają się, dopóki karta stoi */
+  .goals[data-za-malo] {
+    display: none;
+  }
+  .hint {
+    left: 346px;
+    right: 62px;
+    width: fit-content;
+    max-width: none;
+    margin-inline: auto;
+    transform: none;
+    padding: 3px 8px;
+    font-size: 12px;
+    line-height: 1.25;
   }
 }
 

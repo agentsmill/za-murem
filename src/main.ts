@@ -23,13 +23,40 @@
    ?lancuchy=0 wyłącza w nowej grze łańcuchy kart i wątki sezonu (src/gov/watki.ts): bez parametru nowa gra ma je włączone
    (`newGov(…, true)`, pole `GovState.lancuchy`). Zapis trzyma to, z czym grę zaczęto (zapis sprzed łańcuchów, bez pola, gra
    dalej bez nich), a parametr nie zmienia wczytanej gry.
-   Na telefonie (okno węższe niż 768 px) pasek stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, wybór
-   w pamięci przeglądarki: src/ui/telefon.ts), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`,
-   `--zapas-dol`).
-   Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami (`przelaczPotrzeby`). Artykuły wiki z kafelków paska
-   i z pasków potrzeb otwierają się tylko z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok
-   i nie otwiera wiki (kafelki zwiniętego paska są `inert`), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera artykuł
-   i niczego nie zwija. */
+   Na telefonie (okno węższe niż 768 px albo niższe niż 501 px, czyli też telefon poziomo; `TELEFON_MQ` w src/ui/telefon.ts) pasek
+   stanu zwija się do jednej linii z tym, co pilne (`zastosujPasekStanu`, osobny przycisk `#statsToggle`, wybór w pamięci
+   przeglądarki), a okienko celów kurczy się nad listą ludzi, kartą i podpowiedzią (`zmierzNakladki`, `--zapas-dol`; poziomo chowa
+   się, gdy karta zostawia mu mniej niż nagłówek). Potrzeby na karcie osoby zwijają się tak samo do linii z ostrzeżeniami
+   (`przelaczPotrzeby`), a „Więcej” chowa rodzinę, historię i zmianę imienia (`przelaczWiecej`). Ostrzeżenie o zgasłej kozie wisi
+   na telefonie 9 s, potem zostaje czerwona linia stanu. Artykuły wiki z kafelków paska i z pasków potrzeb otwierają się tylko
+   z rozwiniętego bloku: stuknięcie w zwiniętą linię albo w linię potrzeb rozwija blok i nie otwiera wiki (main.ts przechwytuje
+   kliknięcie i Enter w zwiniętym pasku, kafelki nie biorą dotyku), a stuknięcie w kafelek albo pasek rozwiniętego bloku otwiera
+   artykuł i niczego nie zwija (pasek zwija przycisk).
+   ?osada=1 (osada AI, etap 2, src/ui/osada.ts) dokłada drugą, pełną grę na sąsiednim kwadracie miasta, prowadzoną przez silnik
+   decyzji (src/ai): powstaje o 6:00 drugiego dnia (`TICK_STARTU_OSADY`), nadrabia swój czas od ticku 0 i potem idzie krok w krok
+   z naszą (`krokSymulacji`: krok naszej symulacji i zaraz po nim `osada.krok`, w pętli klatek i w `zm.ff`), trafia do zapisu
+   (`Save.osada`; zapis wygrywa z adresem jak `pietra`) i poza kartą posła niczego w naszej grze nie zmienia: w dniu 4, 5 albo 6
+   (z ziarna osady) od 9:00 zarząd dostaje kartę „Poseł z osady …” (src/gov/kontakt.ts; `input()` dokłada `GovInput.osada` z
+   `osada.dlaZarzadu()`), a skutek jej wyboru, `odkryjOsade`, odsłania osadę (`applyFx` woła `osada.odkryj`). Nadrabianie nie wchodzi w klatkę
+   startu: najcięższe kroki (wybór kwadratu, budowa gry, rozgrzewka) demo robi pod ekranem ładowania (`osada.przygotujCiezkie()`),
+   a gra osady nadrabia swój czas po kawałku na klatkę przez cały pierwszy dzień (`osada.przygotuj()` w `frame`), poza zapisem
+   (zapis w jej trakcie to `czeka`). Dane ośmiu kandydatów: dema z public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry,
+   prawdziwy adres w tle po starcie, po jednym kwadracie, bez czekania (jego ciężkie kroki idą wtedy w grze, po jednym na klatkę);
+   bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero przy fladze), a
+   zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z `?siec=1` (jedno ostrzeżenie w konsoli); gdy kod osady się
+   nie załaduje, nowa gra rusza bez niej (`osadaBezKodu`), a gra z zapisu z osadą kończy się błędem wczytania.
+   `window.zm.osada()` pokazuje stan osady (null bez flagi) i `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem).
+   Widok ich kwadratu (zadanie 5 etapu 2): przed odkryciem ośmiu sąsiadów domu leży pod mgłą „?” (`view.ustawMgleDomu`, osada czeka albo
+   jest; nie zdradza, który kryje osadę); po odkryciu (karta posła, `applyFx`) ich kwadrat staje w widoku jak kwadrat z `?kwadraty=`
+   (`pokazOsade`: `OsadaGry.kwadrat()`, `swiatKwadratu`, `scenaKwadratu`, `view.dodajKwadrat`, kawałki rysują workery), a budowa
+   zaczyna się już przy otwarciu karty posła (`budujKwadratOsady` w `showPrompt`), więc odpowiedź niesie tylko dołożenie do widoku;
+   odkryta osada z zapisu staje w widoku pod ekranem ładowania. Nad ich siedzibą stoi etykieta z nazwą w stylu „Suche drzewo”
+   (`placeOsadaMark`: znika, gdy zasłaniałaby pasek, cele, listę ludzi, kartę, podpowiedź albo przyciski; przepuszcza wskaźnik do mapy,
+   więc kółko, przeciąganie i szczypanie zaczęte na napisie działają jak obok), kliknięcie w siedzibę albo w napis etykiety (jej
+   prostokąt rozstrzyga mapa) otwiera kartę osady w miejscu karty osoby (`kliknijOsade`, src/ui/kartaOsady.ts: tylko to, co z
+   kontaktu, nigdy z gry osady; zamyka ją „×”, Esc, zaznaczenie kogoś i klik w dom), a mapa miasta ma znacznik z jej nazwą i obrysem kwadratu
+   (`znacznikiMapy`). Reszta ich kwadratu jest tylko do oglądania, jak kwadraty z `?kwadraty=`. `window.zm.odkryjOsade()` odsłania osadę
+   bez karty (tylko do zrzutów i pomiarów). */
 
 import './style.css';
 import { LORE_EN, LORE_ZOMBIE_EN } from './content/data.en.ts';
@@ -154,9 +181,10 @@ import {
 } from './ui/imiona.ts';
 import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
+import { daneKartyOsady, kartaOsadyHtml } from './ui/kartaOsady.ts';
 import { ListaLudzi } from './ui/lista.ts';
 import { ContextMenu } from './ui/menu.ts';
-import { MapaMiasta, mapaMiastaSheet } from './ui/miasto.ts';
+import { MapaMiasta, mapaMiastaSheet, type ZnacznikMapy } from './ui/miasto.ts';
 import { aptAt, aptCard, aptState, aptView } from './ui/mieszkania.ts';
 import { clearThumbs, thumbUrl } from './ui/miniatura.ts';
 import { Minimapa } from './ui/minimapa.ts';
@@ -179,6 +207,18 @@ import {
   siecSheet,
 } from './ui/okna.ts';
 import { Modal } from './ui/okno.ts';
+import type { KwadratOsady, OsadaGry, PodgladOsady } from './ui/osada.ts';
+import { osadaBezKodu } from './ui/osada-brak.ts';
+import {
+  MARGINES_ETYKIETY,
+  naSiedzibie,
+  obrysKwadratu,
+  polozenieEtykiety,
+  type SiedzibaWidoku,
+  siedzibaWKwadracie,
+  wProstokacie,
+  zaslaniaNakladki,
+} from './ui/osadaWidok.ts';
 import { BuildPanel } from './ui/panelbudowy.ts';
 import { PracaPanel } from './ui/panelpracy.ts';
 import { oznaczPilne, renderStats, sezonPodpis, statsOf } from './ui/pasek.ts';
@@ -186,6 +226,7 @@ import {
   blokujKlik,
   nastepnePietro,
   PODPOWIEDZ_ZARZAD,
+  type Prostokat,
   podpowiedz as podpowiedzPietra,
   przyjmijPietro,
   SelektorPieter,
@@ -214,14 +255,25 @@ import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
-import { PASEK_KEY, POTRZEBY_KEY, TELEFON_MQ, wczytajWybor, zapiszWybor } from './ui/telefon.ts';
+import {
+  PASEK_KEY,
+  POTRZEBY_KEY,
+  TELEFON_MQ,
+  UKLAD_TELEFONU_MQ,
+  WIECEJ_KEY,
+  wczytajWybor,
+  zapiszWybor,
+} from './ui/telefon.ts';
 import { utworzWiki } from './ui/wiki-okno.ts';
 import { wikiCtx } from './ui/wiki-typy.ts';
 import { domyslniWybrani, kogoWyslac, odswiezPlan, planWyprawySheet } from './ui/wyprawa.ts';
 import {
   adresStartowy,
   clearSave,
+  osadaOdrzuconaPrzezSiec,
+  osadaWlaczona,
   pietraWlaczone,
+  poleOsady,
   readSave,
   type Save,
   saveLabel,
@@ -231,7 +283,7 @@ import {
 import { crownOf, type MarkSpot, markSpot } from './ui/znacznik.ts';
 import { drogiSheet, epilogSheet, statyEpilogu } from './ui/zwyciestwo.ts';
 import type { Geo } from './world/geo.ts';
-import { czytajKwadraty, kluczKwadratu, ukladDomu } from './world/kwadraty.ts';
+import { czytajKwadraty, kluczKwadratu, type Uklad, ukladDomu } from './world/kwadraty.ts';
 import { demoList, type Loaded, loadAddress, loadDemo, loadDemoKwadraty } from './world/load.ts';
 import { type Miejsce, miejscaZPoi, uzupelnijKlucze } from './world/miasto.ts';
 import { KafelkiMiasta } from './world/miastoKafelki.ts';
@@ -334,6 +386,15 @@ declare global {
       /** kwadraty miasta obok domu z ?kwadraty= (do zrzutów i pomiarów): klucz „sx,sy”, numer w widoku, czas budowy świata
           i sceny w ms; q −1 i brakDanych dla kwadratu bez danych (prawdziwy adres, brzeg danych dema) */
       kwadraty: readonly KwadratGry[];
+      /** osada AI (?osada=1, src/ui/osada.ts): stan drugiej gry, jej klucz kwadratu, skrót, tick (równy naszemu), licznik odwołań i
+          błędów oraz `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem, w grze bez jej kwadratu i gdy się nie zbudował), i
+          `siedziba`, jej siedziba w tym kwadracie (kotwica etykiety w kafelkach układu miasta; null, gdy się nie znalazła) oraz
+          `budowa`, czy gra trzyma jeszcze budowę ich kwadratu (od otwarcia karty posła do dołożenia kwadratu do widoku; potem
+          nie, bo trzymałaby kopię geo kwadratu do końca sesji); null w grze bez flagi */
+      osada: () => (PodgladOsady & { kwadrat: number; siedziba: SiedzibaWidoku | null; budowa: boolean }) | null;
+      /** tylko do zrzutów i pomiarów: odsłania osadę teraz, jakby poseł podał jej liczby w tej chwili (bez karty), i czeka, aż jej
+          kwadrat stanie w widoku; false, gdy osady nie ma, jeszcze nie powstała albo jest już odkryta */
+      odkryjOsade: () => Promise<boolean>;
     };
   }
 }
@@ -351,6 +412,47 @@ const view = new GameView();
 /** kwadraty obok domu tej gry (window.zm.kwadraty); pusta lista bez ?kwadraty= */
 let kwadratyGry: KwadratGry[] = [];
 let sim: Sim | null = null;
+/** druga gra na sąsiednim kwadracie (?osada=1; null w grze bez flagi): `krokSymulacji` prowadzi ją krok w krok z `sim`, `save` ją zapisuje */
+let osada: OsadaGry | null = null;
+/** Ich kwadrat w widoku (?osada=1, po odkryciu; src/ui/osadaWidok.ts): numer w widoku, położenie, świat kwadratu (nie gry osady),
+    siedziba w nim (null, gdy się nie znalazła: kwadrat jest, a etykiety i kliknięcia w niego nie ma) i punkt siedziby w metrach od
+    adresu (jej miejsce na mapie miasta). Poza stanem gry i zapisem: po wczytaniu gra buduje go od nowa z geo osady. */
+interface OsadaWWidoku {
+  q: number;
+  sx: number;
+  sy: number;
+  swiat: World;
+  siedziba: SiedzibaWidoku | null;
+  punkt: [number, number];
+}
+let osadaWidok: OsadaWWidoku | null = null;
+/** karta osady otwarta (klik w jej siedzibę albo w etykietę nad nią; zamyka ją „×”, Esc, zaznaczenie kogoś i klik gdzie indziej) */
+let osadaFocus = false;
+/** Ich kwadrat zbudowany, ale jeszcze nie w widoku: dane osady, świat kwadratu i jego scena. */
+interface ZbudowanyKwadrat {
+  kw: KwadratOsady;
+  swiat: World;
+  scena: Scene;
+}
+/** Budowa ich kwadratu (jedna na grę, obietnica trzymana, żeby budowę zacząć przed odkryciem i dokończyć po nim; niepowodzenie to
+    `null`, nie jest ponawiane i daje jedno ostrzeżenie w konsoli). Po dołożeniu kwadratu do widoku (albo po porażce) `pokazOsade`
+    ją zwalnia: trzymałaby kopię geo kwadratu do końca sesji, a dalej wystarcza `osadaPokazana`. */
+let osadaBudowa: Promise<ZbudowanyKwadrat | null> | null = null;
+/** czy kwadrat osady już poszedł do widoku (albo próba się nie udała): `pokazOsade` działa raz na grę */
+let osadaPokazana = false;
+/** Co trzeba mieć, żeby zbudować kwadrat obok domu (kwadraty z ?kwadraty= i kwadrat osady): geo domu z tagami (surowe geo
+    domu prostuje budynki przy szwie), jego świat i scena (styl na szwie, piętra), grafika i układ domu. Ustawia `enter`. */
+interface KontekstKwadratow {
+  geo: Geo;
+  world: World;
+  scene: Scene;
+  art: Awaited<typeof grafika>;
+  uklad: Uklad;
+  pietra: boolean;
+}
+let kontekstKwadratow: KontekstKwadratow | null = null;
+/** światy kwadratów obok domu z ?kwadraty= po kluczu „sx,sy”: kwadrat osady, który już tam stoi, nie dokłada się drugi raz */
+const swiatyObok = new Map<string, World>();
 let gov: GovState | null = null;
 /** stan ścieżki celów (src/ui/sciezka.ts): otwarty rozdział, cele zaliczone i przepadłe, także te, których nie widać
     już w stanie gry (drewno, które koza zje); liczy go `renderGoals` co odświeżenie okienka. Nowy przy nowej grze,
@@ -714,11 +816,24 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   mieszkancy = null;
   imieEdit = null;
   imionaGen.clear();
+  // ich kwadrat w widoku, jego karta i budowa należą do jednej gry (osada AI, ?osada=1)
+  osadaWidok = null;
+  osadaFocus = false;
+  osadaBudowa = null;
+  osadaPokazana = false;
+  kontekstKwadratow = null;
+  swiatyObok.clear();
+  $('osadaMark').hidden = true;
   // ziarno z adresu: to samo osiedle zawsze ma tych samych ludzi, inne osiedle innych
   seed = saved?.seed ?? (Number(params.get('seed')) || Number.parseInt(hashString(data.addr), 16) || 2051);
   // widok pięter: wczytany zapis zachowuje to, z czym go zaczęto (nie czyta adresu), nowa gra czyta ?pietra=1
   const pietra = pietraWlaczone(saved ?? null, params);
   pietraGry = pietra;
+  // osada AI (?osada=1): tak samo zapis wygrywa z adresem; przestarzały zapis (niżej) zachowuje flagę, ale zaczyna osadę od nowa.
+  // Nowa gra z ?siec=1 (gra z sąsiadami) osady nie dostaje: w tym etapie nie łączymy obu rzeczy, jedno ostrzeżenie w konsoli
+  const osadaWlaczonaGra = osadaWlaczona(saved ?? null, params);
+  if (osadaOdrzuconaPrzezSiec(saved ?? null, params))
+    console.warn('Osada AI: ?osada=1 nie działa razem z ?siec=1 (gra z sąsiadami), gra idzie dalej bez osady');
   const t0 = performance.now();
   // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
   // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
@@ -753,7 +868,13 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // mapa miasta: ten sam filtr nazw dla miejsc z doczytanych kafelków (RODO); bez położenia (proc) nie ma miasta
   mapaMiasta =
     opcjaMiasto && !data.geo.proc
-      ? new MapaMiasta({ c: data.geo.c, okolica, kafelki: kafelkiMiasta, nazwa: nazwaOkolicy })
+      ? new MapaMiasta({
+          c: data.geo.c,
+          okolica,
+          kafelki: kafelkiMiasta,
+          nazwa: nazwaOkolicy,
+          znaczniki: znacznikiMapy,
+        })
       : null;
   $('btnMiasto').hidden = !mapaMiasta;
   minimapa.ustaw(mapaMiasta ? { okolica, st: () => gov } : null);
@@ -827,7 +948,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   $('floorSel').hidden = !pietra;
   selektorPieter.odswiez(pietraLista, 0, null);
   // ?kwadraty=: kwadraty miasta obok domu do oglądania (zrzuty i pomiary); symulacja ich nie zna
-  kwadratyGry = await dodajKwadraty(data, geo, world, scene, art, pietra);
+  kontekstKwadratow = { geo, world, scene, art, uklad: ukladDomu(geo, world), pietra };
+  kwadratyGry = await dodajKwadraty(data, kontekstKwadratow);
   if (window.zm) window.zm.kwadraty = kwadratyGry;
   // ?godzina=22 (albo ?hour=22, także z ułamkiem: 18.5 to 18:30): pora dnia na start
   const hour = params.get('godzina') ?? params.get('hour');
@@ -835,7 +957,42 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
     st.tick = Math.round(
       (((((Number(hour) * 60 - START_MINUTES) / 60) * TICKS_PER_HOUR) % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY,
     );
+  // ?osada=1: druga gra na sąsiednim kwadracie. Kod osady (silnik AI) ładuje się dopiero tu, więc gra bez flagi go nie niesie.
+  // Dane kandydatów dema przychodzą przed pierwszym krokiem gry (to jeden plik z public/demo, `sim` jest jeszcze pusty, więc pętla
+  // klatek czeka), prawdziwego adresu pobierają się w tle po starcie, po jednym kwadracie. Osada startuje w 6:00 drugiego dnia, ale
+  // jej najcięższą pracę (wybór kwadratu, budowa gry, rozgrzewka) demo robi tu, pod ekranem ładowania, a nadrabianie jej gry idzie
+  // po kawałku na klatkę (`osada.przygotuj()` w `frame`); adres robi wszystko to w grze, po jednym kroku na klatkę, gdy przyjdą dane.
+  // Nie załadował się kod osady: nowa gra rusza bez niej (`osadaBezKodu`: brak, powód blad, jedno ostrzeżenie), a gra z zapisu,
+  // w którym osada jest, kończy się dotychczasowym błędem wczytania, bo bez kodu nie da się jej odtworzyć
+  let osadaGry: OsadaGry | null = null;
+  if (osadaWlaczonaGra) {
+    let modul: typeof import('./ui/osada.ts') | null = null;
+    try {
+      modul = await import('./ui/osada.ts');
+    } catch (e) {
+      if (saved?.osada) throw e;
+      osadaGry = osadaBezKodu(e);
+    }
+    if (modul) {
+      const uklad = ukladDomu(geo, world);
+      const jej = saved?.osada
+        ? modul.osadaZZapisu(saved.osada, seed, dane, uklad)
+        : modul.nowaOsadaGry(seed, dane, uklad, modeOf(st));
+      osadaGry = jej;
+      if (jej.stan === 'czeka') {
+        const kandydaci = modul.daneKandydatow(data, uklad, seed);
+        if (data.src === 'demo') {
+          jej.dane(await kandydaci);
+          jej.przygotujCiezkie();
+        } else void kandydaci.then((k) => jej.dane(k));
+      }
+    }
+  }
+  // odkryta osada z zapisu: jej kwadrat staje w widoku jeszcze pod ekranem ładowania (przed `sim`, żeby pętla klatek nie ruszyła
+  // z niedokończoną grą)
+  if (osadaGry?.odkryta) await pokazOsade(osadaGry);
   sim = new Sim(world, st);
+  osada = osadaGry;
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
   // karta „Odkrycie”, podpowiedź o książce i znaczek NOWE: stare odkrycia i książki się nie powtarzają, widziane budowle
@@ -985,20 +1142,36 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
 }
 
 /**
+ * Świat kwadratu (sx, sy) obok domu z jego geo: `buildKwadrat` z surowym geo domu (budynki przy szwie prostują się jak w domu) i,
+ * z widokiem pięter, z domem do poziomów pięter. Wspólne dla kwadratów z ?kwadraty= i kwadratu osady.
+ */
+function swiatKwadratu(k: KontekstKwadratow, g: Geo, sx: number, sy: number): World {
+  return buildKwadrat(g, {
+    seed,
+    uklad: k.uklad,
+    sx,
+    sy,
+    geoDomu: k.geo,
+    ...(k.pietra ? { pietra: true, dom: k.world } : {}),
+  });
+}
+
+/**
+ * Scena kwadratu obok domu: ziarno stylu z klucza budynku i styl domu na szwie (budynek, który ma kawałek w domu, wygląda tak jak
+ * w domu; inne dostają ziarno z klucza). Bez dokładania do widoku.
+ */
+function scenaKwadratu(k: KontekstKwadratow, w: World, sx: number, sy: number): Scene {
+  return buildScene(w, k.art, opcjeSceny({ swiat: w, dom: k.world, sceneDomu: k.scene, sx, sy, seed }));
+}
+
+/**
  * Kwadraty miasta obok domu z parametru ?kwadraty= (czytajKwadraty): dla dema ich dane z public/demo/<klucz>-kwadraty.json
  * (loadDemoKwadraty), dla prawdziwego adresu niczego nie pobieramy, więc stoi tam mgła z napisem „brak danych”. Każdy
  * kwadrat to świat z buildKwadrat (z surowym geo domu, żeby budynki przy szwie prostowały się jak w domu, i z domem do
  * poziomów pięter), scena z ziarnem stylu z klucza budynku i stylem domu na szwie, i dodajKwadrat w widoku. Symulacja
  * dostaje tylko dom. Zwraca czasy budowy do window.zm.kwadraty.
  */
-async function dodajKwadraty(
-  data: Loaded,
-  geo: Geo,
-  world: World,
-  scene: Scene,
-  art: Awaited<typeof grafika>,
-  pietra: boolean,
-): Promise<KwadratGry[]> {
+async function dodajKwadraty(data: Loaded, k: KontekstKwadratow): Promise<KwadratGry[]> {
   const lista = czytajKwadraty(params.get('kwadraty'));
   const out: KwadratGry[] = [];
   if (!lista.length) return out;
@@ -1010,7 +1183,6 @@ async function dodajKwadraty(
       console.warn('Kwadraty obok domu: brak danych dema', err);
     }
   }
-  const uklad = ukladDomu(geo, world);
   for (const [sx, sy] of lista) {
     const klucz = kluczKwadratu(sx, sy);
     const g = dane[klucz];
@@ -1021,12 +1193,10 @@ async function dodajKwadraty(
     }
     try {
       const t0 = performance.now();
-      const w = buildKwadrat(g, { seed, uklad, sx, sy, geoDomu: geo, ...(pietra ? { pietra: true, dom: world } : {}) });
+      const w = swiatKwadratu(k, g, sx, sy);
       const t1 = performance.now();
-      // budynek, który ma kawałek w domu, wygląda tak jak w domu (dom wygrywa na szwie); inne dostają ziarno z klucza
-      const opcje = opcjeSceny({ swiat: w, dom: world, sceneDomu: scene, sx, sy, seed });
-      const sc = buildScene(w, art, opcje);
-      const q = view.dodajKwadrat(sx, sy, sc);
+      const q = view.dodajKwadrat(sx, sy, scenaKwadratu(k, w, sx, sy));
+      swiatyObok.set(klucz, w);
       out.push({ klucz, q, msSwiat: t1 - t0, msScena: performance.now() - t1, brakDanych: false });
     } catch (err) {
       console.warn(`Kwadrat ${klucz}: nie udało się zbudować`, err);
@@ -1037,6 +1207,70 @@ async function dodajKwadraty(
     await new Promise((r) => setTimeout(r, 0));
   }
   return out;
+}
+
+/**
+ * Buduje ich kwadrat (świat i scenę z geo kwadratu sprzed przesunięcia do siedziby, `OsadaGry.kwadrat`), jeszcze bez dokładania go do
+ * widoku: trzy kroki z oddechem dla przeglądarki między nimi (dane, świat, scena), żeby żadna klatka nie niosła całej budowy (na
+ * telefonie z procesorem 4× wolniejszym to i tak ok. 70 ms na krok). Jedna budowa na grę: kolejne wołania dostają tę samą obietnicę,
+ * więc `showPrompt` może zacząć ją, gdy otwiera się karta posła (gracz czyta ją sekundy, a gra za oknem stoi), i odpowiedź na kartę
+ * dokłada już gotowy kwadrat jednym `dodajKwadrat`. Nie rzuca: błąd to jedno ostrzeżenie w konsoli i `null`.
+ */
+function budujKwadratOsady(o: OsadaGry): Promise<ZbudowanyKwadrat | null> {
+  const k = kontekstKwadratow;
+  if (!k) return Promise.resolve(null);
+  osadaBudowa ??= (async () => {
+    const oddech = () => new Promise<void>((r) => setTimeout(r, 0));
+    try {
+      const kw = o.kwadrat();
+      if (!kw) return null;
+      await oddech();
+      if (kontekstKwadratow !== k) return null;
+      const swiat = swiatKwadratu(k, kw.geo, kw.sx, kw.sy);
+      await oddech();
+      if (kontekstKwadratow !== k) return null;
+      return { kw, swiat, scena: scenaKwadratu(k, swiat, kw.sx, kw.sy) };
+    } catch (e) {
+      console.warn('Osada AI: nie udało się zbudować jej kwadratu, gra idzie dalej bez niego', e);
+      return null;
+    }
+  })();
+  return osadaBudowa;
+}
+
+/**
+ * Ich kwadrat w widoku po odkryciu osady (src/ui/osadaWidok.ts, zadanie 5 etapu 2 osady AI): zbudowany jak kwadrat z ?kwadraty=
+ * (`budujKwadratOsady`: `swiatKwadratu` i `scenaKwadratu`, kawałki rysują workery), dołożony do widoku i z siedzibą znalezioną w jego
+ * świecie. Wołają to odpowiedź na kartę posła (`applyFx`), `enter` dla odkrytej osady z zapisu (pod ekranem ładowania) i
+ * `zm.odkryjOsade`. Jedna próba na grę: gdy się nie uda, osada żyje dalej (karta posła i zarząd o niej wiedzą), a widoku jej kwadratu
+ * nie ma. Nie rzuca. Ich ludzi na żywo w widoku nie ma (etap 3: tylko gdy są tam nasi ludzie).
+ */
+async function pokazOsade(o: OsadaGry): Promise<void> {
+  const k = kontekstKwadratow;
+  if (!k || !o.odkryta || osadaWidok || osadaPokazana) return;
+  osadaPokazana = true;
+  try {
+    const budowa = budujKwadratOsady(o);
+    const b = await budowa;
+    // obietnica z geo kwadratu nie jest już potrzebna (nowa gra mogła w tym czasie zacząć własną: jej nie ruszamy)
+    if (osadaBudowa === budowa) osadaBudowa = null;
+    if (!b || kontekstKwadratow !== k) return;
+    const { kw, swiat, scena } = b;
+    const klucz = kluczKwadratu(kw.sx, kw.sy);
+    // kwadrat z ?kwadraty= (obie flagi naraz, tylko do oglądania) już stoi w widoku: nie dokłada się drugi raz
+    const stoi = view.kwadratyObok().find((q) => q.sx === kw.sx && q.sy === kw.sy);
+    const q = stoi?.q ?? view.dodajKwadrat(kw.sx, kw.sy, scena);
+    // świat, z którego rysuje się ten kwadrat w widoku: z ?kwadraty=, gdy kwadrat już tam stał, inaczej świeżo zbudowany
+    const swiatWidoku = stoi ? (swiatyObok.get(klucz) ?? swiat) : swiat;
+    const siedziba = siedzibaWKwadracie(
+      swiatWidoku,
+      { klucz: kw.kluczSiedziby, sx: kw.sx, sy: kw.sy, punkt: kw.punkt },
+      k.uklad.kat,
+    );
+    osadaWidok = { q, sx: kw.sx, sy: kw.sy, swiat: swiatWidoku, siedziba, punkt: [kw.punkt[0], kw.punkt[1]] };
+  } catch (e) {
+    console.warn('Osada AI: nie udało się pokazać jej kwadratu, gra idzie dalej bez niego', e);
+  }
 }
 
 /**
@@ -1115,6 +1349,10 @@ function input(): GovInput {
   if (opcjaMiasto) i.okolica = okolica;
   // ludność kwadratu domu z 2021 roku do celu drogi ludnościowej; bez tabel pole zostaje puste
   if (ludnosc2021 !== undefined) i.ludnosc2021 = ludnosc2021;
+  // osada AI (?osada=1): co zarząd o niej wie, gdy już powstała (karta posła, src/gov/kontakt.ts); bez flagi, przed 6:00 drugiego
+  // dnia, w trybie zombie i gdy osady zabrakło pola nie ma, a zarząd gra jak dotąd
+  const jej = osada?.dlaZarzadu();
+  if (jej) i.osada = jej;
   // warta i dyżur przy kozie, które stoją (także z menu), zarząd bierze z posterunków osób (people[].post)
   return i;
 }
@@ -1123,6 +1361,12 @@ function input(): GovInput {
 function applyFx(fx: ReturnType<typeof govUpdate>, hint = true): string {
   if (!sim) return '';
   applyGov(sim.st, sim.w, fx);
+  // pierwszy kontakt (karta posła): osada odsłonięta z tym, co poseł powiedział; nic z tego nie wchodzi do naszej symulacji ani do
+  // gry osady, a jej kwadrat staje w widoku (kilka kroków z oddechem, bez czekania)
+  if (fx.odkryjOsade && osada) {
+    osada.odkryj(fx.odkryjOsade);
+    void pokazOsade(osada);
+  }
   const last = tr(fx.log[fx.log.length - 1]);
   if (last && hint) say(last, 7000);
   return last;
@@ -1208,7 +1452,9 @@ function showPrompt(p: Prompt) {
     });
   else if (p.k === 'karta') showNight(p);
   else if (p.k === 'zwyciestwo') showEpilog(p.droga);
-  else
+  else {
+    // karta posła z osady: ich kwadrat buduje się, póki gracz ją czyta (gra za oknem stoi), żeby odpowiedź nie niosła kosztu budowy
+    if (p.id === 'posel' && osada && !osada.odkryta) void budujKwadratOsady(osada);
     modal.show(eventSheet(p, words, wordsE), (act, arg) => {
       // „Pokaż”: kamera jedzie na miejsce z karty, okno zostaje otwarte (jak przy „Pokaż” przy przybyszach)
       if (act === 'event-show' && p.gdzie) {
@@ -1219,6 +1465,7 @@ function showPrompt(p: Prompt) {
       applyFx(chooseEvent(g, input(), Number(arg)));
       decided();
     });
+  }
 }
 
 function showNight(p: Extract<Prompt, { k: 'karta' }>) {
@@ -1357,6 +1604,7 @@ function save(): boolean {
     world: worldKey(sim.w),
     ...(siec.stan ? { siec: siec.stan } : {}),
     ...(pietraGry ? { pietra: true } : {}),
+    ...poleOsady(osada),
     cele: sciezka,
   };
   const ok = writeSave(s);
@@ -1839,8 +2087,23 @@ let fps = 0;
 let hudT = 0;
 const keys = new Set<string>();
 
+/** Jeden krok czasu gry: krok naszej symulacji, a zaraz po nim krok drugiej gry (osada AI, `?osada=1`) z naszym tickiem po kroku.
+    Tędy płynie czas w grze (pętla klatek i `zm.ff`), więc obie gry mają zawsze tyle samo kroków: także przy tempie 8× (pętla ścina
+    `dt` do 100 ms, więc klatka ma najwyżej kilkanaście kroków) i przy przewijaniu. Jedyny inny `step()` to `badaniaDemo`
+    (`?badania=demo`, do 2000 kroków przed pierwszą klatką, czyli przed 6:00 drugiego dnia): osada o nich nie wie i dogania je przy
+    następnym `krok`, bo gra osady idzie „do ticku”. Bez osady (`osada === null`) to dawny krok. */
+function krokSymulacji(s: Sim): void {
+  view.beforeStep(s.st);
+  s.step();
+  osada?.krok(s.st.tick);
+}
+
 function frame(now: number, dtMs: number) {
   if (!sim) return;
+  // gra z osadą (?osada=1, osada czeka albo jest): ośmiu sąsiadów domu pod mgłą, dopóki jej kwadrat nie zostanie odkryty (nie zdradza,
+  // który to); osada, której nie będzie (`brak`: tryb zombie, brak danych, błąd), mgły nie ma. Wołane co klatkę, ale zmienia widok
+  // tylko przy zmianie stanu.
+  view.ustawMgleDomu(osada !== null && osada.stan !== 'brak');
   stepFly(now);
   // klawiatura: przesuwanie mapy
   const pan = (900 * dtMs) / 1000 / view.cam.zoom;
@@ -1856,12 +2119,14 @@ function frame(now: number, dtMs: number) {
   acc += dt * TICKS_PER_SECOND * mult;
   let n = 0;
   while (acc >= 1 && n < 40) {
-    view.beforeStep(sim.st);
-    sim.step();
+    krokSymulacji(sim);
     acc -= 1;
     n++;
   }
   if (n === 40) acc = 0;
+  // osada AI (?osada=1): jeden niewielki kawałek pracy na zapas przed jej startem w 6:00 drugiego dnia (niezależnie od kroków czasu,
+  // więc także przy pauzie); po starcie i bez osady nic
+  osada?.przygotuj();
   // czas przy ekranie płynie tylko w grze bez pauzy, niezależnie od tempa
   if (mult && !modal.open) screen += dt;
   if (screen - govAt >= 1) {
@@ -1877,6 +2142,7 @@ function frame(now: number, dtMs: number) {
   drawState();
   view.render(sim.st, mult ? acc : 1, selected);
   placeMarker();
+  placeOsadaMark(now);
   siec.klatka(sim, now, modal.open);
   placeGhost();
   // zapis co godzinę gry
@@ -1922,14 +2188,14 @@ function setCard(html: string, key = '') {
       pkNowy.remove();
       card.append(...nowa.content.childNodes);
       cardHtml = html;
-      ariaPotrzeb();
+      ariaKarty();
       return;
     }
   }
   card.innerHTML = html;
   cardHtml = html;
   cardKey = key;
-  ariaPotrzeb();
+  ariaKarty();
 }
 // lista stałego zajęcia straciła fokus: blok `.pk` mógł zostać w tyle, więc następna klatka przerysowuje całą kartę
 $('card').addEventListener('focusout', (e) => {
@@ -1974,6 +2240,10 @@ function tonight(p: SimPerson): string | undefined {
   return undefined;
 }
 
+/** Ile ms na telefonie wisi ostrzeżenie o zgasłej kozie (jednorazowo na epizod; potem sama linia stanu). */
+const ZIMNO_NA_TELEFONIE_MS = 9000;
+let zimnoPokazane = false;
+let zimnoDo = 0;
 function hud(now: number) {
   if (!sim) return;
   const st = sim.st;
@@ -2000,9 +2270,19 @@ function hud(now: number) {
         `${dying.name} is dying of fever and will get back up after death. Have someone armed standing by to finish the job.`,
       )
     : '';
+  // Na telefonie ostrzeżenie o zgasłej kozie wisi 9 s od chwili, gdy problem się zaczyna, a potem zostaje czerwona linia stanu
+  // (kafelki „koza” i „drewno” zwiniętego paska, src/ui/telefon.ts): stałe dwa wiersze nad atrybucją zjadały cztery do pięciu
+  // punktów procentowych mapy, a samo jedno zdanie ucięte do jednego wiersza gubiłoby polecenie (co zrobić). Na komputerze wisi,
+  // dopóki problem trwa.
+  if (!cold) zimnoPokazane = false;
+  else if (!zimnoPokazane && telefonMq.matches) {
+    zimnoPokazane = true;
+    zimnoDo = now + ZIMNO_NA_TELEFONIE_MS;
+  }
+  const zimnoWidac = cold && (!telefonMq.matches || now < zimnoDo);
   const warn = fever
     ? fever
-    : cold
+    : zimnoWidac
       ? touchUI
         ? L(
             'Koza wygasła, a drewna nie ma. Zetnijcie drzewo albo spalcie mebel (przytrzymajcie na nim palec).',
@@ -2062,9 +2342,13 @@ function hud(now: number) {
     // karta mieszkania po kliknięciu w mieszkanie siedziby, karta budynku po kliknięciu w sąsiedni budynek
     const apt = aptFocus >= 0 ? aptView(st, sim.w, aptFocus, snap.apts) : null;
     const bud = !apt && budFocus >= 0 ? sim.budynekDoKarty(budFocus) : null;
-    card.hidden = !apt && !bud;
+    // karta osady po kliknięciu w jej siedzibę: tylko to, co gracz wie z kontaktu, nic z jej gry (src/ui/kartaOsady.ts)
+    const dane = !apt && !bud && osadaFocus && osada ? daneKartyOsady(osada) : null;
+    if (osadaFocus && !dane && !apt && !bud) osadaFocus = false;
+    card.hidden = !apt && !bud && !dane;
     if (apt) setCard(aptCard(apt, touchUI, words, wordsE));
     else if (bud) setCard(kartaBudynku(widokBudynku(sim.w, bud.b, bud.wGrze, sim.st.plot, pietraGry), touchUI));
+    else if (dane) setCard(kartaOsadyHtml(dane));
     return;
   }
   card.hidden = false;
@@ -2141,9 +2425,9 @@ function zCelem(s: Sheet, okno: OknoCelu): Sheet {
   return cel ? { ...s, cel } : s;
 }
 /** Czy okienko celów jest rozwinięte. Wybór gracza (klik w nagłówek) wygrywa; bez niego okienko jest rozwinięte na
-    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px, jak w CSS). */
+    komputerze, a zwinięte do bieżącego celu na telefonie (szerokość do 640 px albo niskie okno, `UKLAD_TELEFONU_MQ`). */
 let celeOtwarte: boolean | null = null;
-const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia('(max-width: 640px)').matches;
+const celeRozwiniete = (): boolean => celeOtwarte ?? !matchMedia(UKLAD_TELEFONU_MQ).matches;
 /** Okienko celów ze ścieżki: widok z `widokCelow` (otwarty rozdział, a nad nim okazja) albo cele „Bez domu” gry z sąsiadami,
     narysowane przez `celeHtml`; po ostatnim rozdziale bez dróg do zwycięstwa okienko się chowa. */
 function renderGoals(snap: SimSnapshot) {
@@ -2316,6 +2600,81 @@ function placeMarker() {
 }
 const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 
+/** napis etykiety osady i jego rozmiar w pikselach (mierzone po zmianie tekstu, nie co klatkę) */
+let osadaMarkTekst = '';
+let osadaMarkW = 150;
+let osadaMarkH = 24;
+/** prostokąt napisu etykiety osady na ekranie (od napisu do kotwicy), gdy etykieta jest widoczna; inaczej null. Etykieta przepuszcza
+    wskaźnik do mapy (`pointer-events: none`), więc klik w jej napis rozstrzyga mapa po tym prostokącie (`kliknijOsade`). */
+let osadaMarkRect: Prostokat | null = null;
+/** nakładki, z których etykieta osady ustępuje (prostokąty ekranu): liczone najwyżej co 150 ms, nie co klatkę */
+let osadaNakladki: Prostokat[] = [];
+let osadaNakladkiAt = -1e9;
+const NAKLADKI_ID = ['top', 'goals', 'card', 'hint', 'arrive', 'minimapa', 'buildPanel', 'pracaPanel', 'placeBar'];
+
+/** prostokąty nakładek nad mapą: pasek, cele, karta, podpowiedź, komunikat o przybyszach, minimapa, panele, pasek stawiania, przyciski
+    przybliżenia, atrybucja i chipy listy ludzi */
+function odswiezNakladki(now: number): void {
+  if (now - osadaNakladkiAt < 150) return;
+  osadaNakladkiAt = now;
+  const elementy: HTMLElement[] = [];
+  for (const id of NAKLADKI_ID) elementy.push($(id));
+  elementy.push(...document.querySelectorAll<HTMLElement>('.mapctl, .attrib, #lista .lp'));
+  osadaNakladki = elementy
+    .filter((e) => naEkranie(e))
+    .map((e) => e.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0);
+}
+
+/** Etykieta z nazwą osady nad jej siedzibą (po odkryciu): ten sam napis co „Suche drzewo” (klasa `treemark`), jedzie z mapą i otwiera
+    kartę osady po kliknięciu, ale nie pochłania wskaźnika: przepuszcza go do mapy, więc kółko, przeciąganie i szczypanie zaczęte na
+    napisie działają jak obok, a klik w napis rozstrzyga mapa (`kliknijOsade`, po `osadaMarkRect`); z klawiatury etykieta jest
+    zwykłym przyciskiem (Tab, Enter). Widać ją tylko wtedy, gdy kotwica jest na ekranie i napis niczego nie zasłania (pasek, cele,
+    lista ludzi, karta, podpowiedź, przyciski, atrybucja): nakładki są ważniejsze, więc etykieta wtedy znika, a nie przesuwa się. */
+function placeOsadaMark(now: number): void {
+  const el = $('osadaMark');
+  const ukryj = () => {
+    if (!el.hidden) el.hidden = true;
+    osadaMarkRect = null;
+  };
+  const sied = osadaWidok?.siedziba;
+  const swiat = osada?.swiat;
+  if (!sied || !swiat || !osada?.odkryta || modal.open || badaniaOtwarta()) {
+    ukryj();
+    return;
+  }
+  const [ax, ay] = screenOf(sied.etykieta.x, sied.etykieta.y);
+  if (ax < MARGINES_ETYKIETY || ax > view.width - MARGINES_ETYKIETY || ay < 0 || ay > view.height) {
+    ukryj();
+    return;
+  }
+  const label = el.firstElementChild as HTMLElement;
+  const nazwa = tr(swiat.nazwa);
+  if (nazwa !== osadaMarkTekst || label.textContent !== nazwa) {
+    osadaMarkTekst = nazwa;
+    label.textContent = nazwa;
+    // ukryty element nie ma wymiarów: pomiar po pokazaniu
+    el.hidden = false;
+    osadaMarkW = label.offsetWidth || osadaMarkW;
+    osadaMarkH = label.offsetHeight || osadaMarkH;
+  }
+  // napis wystający za ekran przesuwa się płynnie do środka (ogonek zostaje przy kotwicy), a nakładki są ważniejsze od niego
+  const { przesuniecie, rect } = polozenieEtykiety(ax, ay, osadaMarkW, osadaMarkH, view.width);
+  odswiezNakladki(now);
+  if (zaslaniaNakladki(rect, osadaNakladki)) {
+    ukryj();
+    return;
+  }
+  el.hidden = false;
+  osadaMarkRect = rect;
+  el.style.setProperty('--shift', `${Math.round(przesuniecie)}px`);
+  el.style.transform = `translate(${Math.round(ax)}px, ${Math.round(ay)}px)`;
+}
+// z klawiatury (Tab, Enter na etykiecie): kliknięcie myszą i stuknięcie nie trafiają w przycisk, tylko w mapę (`kliknijOsade`)
+$('osadaMark').addEventListener('click', () => {
+  otworzKarteOsady();
+});
+
 function say(t: string, ms = 4000) {
   hint = t;
   hintUntil = performance.now() + ms;
@@ -2401,8 +2760,8 @@ const wiki = utworzWiki({
     sheetAgain = f;
   },
 });
-// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu (na telefonie tylko z rozwiniętego paska: kafelki zwiniętego są
-// `inert`, patrz `zastosujPasekStanu`)
+// czipy paska otwierają swoje artykuły; gra staje, jak przy Menu (na telefonie tylko z rozwiniętego paska: w zwiniętym main.ts
+// przechwytuje kliknięcie i Enter, patrz „telefon: zwijane bloki stanu”)
 wiki.czipy(() => {
   if (!sim || modal.open || badaniaOtwarta()) return false;
   pauseGame();
@@ -2465,8 +2824,15 @@ function alarmButton(st: SimState) {
 const ARM_ORDER: readonly WeaponId[] = ['dzida', 'rewolwer', 'strzelba', 'kusza', 'siekiera', 'lom', 'kij', 'noz'];
 $('card').addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-card]');
-  // linia potrzeb na telefonie rozwija i zwija paski i nastroje; to wybór interfejsu, nie polecenie dla symulacji
+  // linia potrzeb i przycisk „Więcej” na telefonie rozwijają i zwijają blok karty; to wybór interfejsu, nie polecenie dla symulacji
   if (b?.dataset.card === 'potrzeby') return przelaczPotrzeby();
+  if (b?.dataset.card === 'wiecej') return przelaczWiecej();
+  // karta osady: jedyny przycisk to zamknięcie (reszta karty to sam tekst)
+  if (b?.dataset.card === 'osada-zamknij') {
+    osadaFocus = false;
+    hud(performance.now());
+    return;
+  }
   if (!b || !sim) return;
   const st = sim.st;
   // edytor imienia: Zapisz to wysłanie formularza (niżej), Anuluj i Przywróć tutaj
@@ -3046,6 +3412,7 @@ function selectedChanged() {
   aptFocus = -1;
   budFocus = -1;
   residentFocus = -1;
+  osadaFocus = false;
   if (sim?.st.tut.step !== 0 || !selected.size) return;
   sim.push({ t: 'select', ids: [...selected] });
 }
@@ -3068,11 +3435,56 @@ let aptFocus = -1;
 /** cudzy budynek na karcie budynku (M2 fala 2: klik w sąsiedni budynek, gdy nikt nie jest zaznaczony) albo −1 */
 let budFocus = -1;
 
+/** Karta osady w miejscu karty osoby (klik w jej siedzibę albo w etykietę nad nią): zaznaczenie i inne karty ustępują. Bez odkrycia
+    i kontaktu nie ma czego pokazać, więc nic. */
+function otworzKarteOsady(): boolean {
+  if (!osada || !daneKartyOsady(osada)) return false;
+  selected.clear();
+  aptFocus = -1;
+  budFocus = -1;
+  residentFocus = -1;
+  osadaFocus = true;
+  ctx.close();
+  hud(performance.now());
+  return true;
+}
+
+/** Klik w punkt ekranu: czy to siedziba osady w jej kwadracie (obrys budynku w świecie kwadratu, `naSiedzibie`) albo napis jej
+    etykiety (`osadaMarkRect`, etykieta przepuszcza wskaźnik do mapy); jeśli tak, otwiera jej kartę. Reszta jej kwadratu, jej pionków
+    i mgły nie reaguje (kwadraty obok domu są tylko do oglądania). */
+function kliknijOsade(px: number, py: number): boolean {
+  const ow = osadaWidok;
+  const sied = ow?.siedziba;
+  if (!ow || !sied) return false;
+  const [wx, wy] = view.toWorld(px, py);
+  const trafiona =
+    naSiedzibie(ow.swiat, ow.sx, ow.sy, sied.bid, wx / TILE, wy / TILE) || wProstokacie(osadaMarkRect, px, py);
+  return trafiona && otworzKarteOsady();
+}
+
+/** Znaczniki na mapie miasta: osada AI po odkryciu (jej kwadrat i nazwa przy siedzibie); bez osady, przed odkryciem i bez widoku jej
+    kwadratu pusta lista. Obrys kwadratu to jego rogi w układzie mapy (`obrysKwadratu`). */
+function znacznikiMapy(): ZnacznikMapy[] {
+  const ow = osadaWidok;
+  const jej = osada?.swiat;
+  const k = kontekstKwadratow;
+  if (!ow || !jej || !k || !osada?.odkryta) return [];
+  return [
+    {
+      x: ow.punkt[0],
+      y: ow.punkt[1],
+      napis: tr(jej.nazwa),
+      obrys: obrysKwadratu(k.uklad, ow.sx, ow.sy),
+    },
+  ];
+}
+
 /** karta pod kliknięciem bez zaznaczenia: mieszkanie siedziby albo sąsiedni budynek */
 function focusTile(sx: number, sy: number) {
   if (!sim || zablokowanyKlik(sx, sy)) return;
   const tile = view.tileAt(sx, sy);
   if (tile < 0) return;
+  osadaFocus = false;
   aptFocus = aptAt(sim.w, tile);
   const bid = tile >= 0 ? sim.w.bid[tile] : -1;
   budFocus = aptFocus < 0 && bid >= 0 && bid !== sim.w.hq ? bid : -1;
@@ -3577,6 +3989,8 @@ const endPointer = (e: PointerEvent) => {
     }
     return;
   }
+  // klik w siedzibę osady (jej kwadrat jest tylko do oglądania): karta osady zamiast polecenia, także z zaznaczonymi ludźmi
+  if (!placing && d.button === 0 && kliknijOsade(e.offsetX, e.offsetY)) return;
   // klik poza domem, gdy obok są kwadraty tylko do oglądania: gra go ignoruje (nic nie zaznacza, nie rozkazuje, nie stawia)
   if (view.maKwadraty && view.tileAt(e.offsetX, e.offsetY) < 0) return;
   const hit = view.pick(sim.st, e.offsetX, e.offsetY);
@@ -3613,6 +4027,7 @@ const endPointer = (e: PointerEvent) => {
       residentFocus = lok.id;
       aptFocus = -1;
       budFocus = -1;
+      osadaFocus = false;
       zdarzenie('mieszkaniec');
     } else focusTile(e.offsetX, e.offsetY);
     return;
@@ -3621,6 +4036,7 @@ const endPointer = (e: PointerEvent) => {
     residentFocus = lok.id;
     aptFocus = -1;
     budFocus = -1;
+    osadaFocus = false;
     zdarzenie('mieszkaniec');
     return;
   }
@@ -3752,6 +4168,7 @@ window.addEventListener('keydown', (e) => {
       aptFocus = -1;
       budFocus = -1;
       residentFocus = -1;
+      osadaFocus = false;
     }
   }
   if (e.code === 'Equal' || e.code === 'NumpadAdd') view.zoomAt(view.width / 2, view.height / 2, 1.25);
@@ -3761,6 +4178,10 @@ window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 // wysokość górnego paska, listy celów, karty i atrybucji dla przycisków mapy i podpowiedzi (zawijają się na telefonie)
 const attrib = document.querySelector<HTMLElement>('#app .attrib');
+/** niskie okno od 641 px szerokości (telefon poziomo; reguły `telefon poziomo` w src/style.css) i najmniej tyle pikseli, które okienko
+    celów musi mieć nad kartą osoby, żeby w ogóle się pokazało (nagłówek i trochę treści) */
+const NISKIE_OKNO_MQ = '(min-width: 641px) and (max-height: 500px)';
+const CELE_MIN_PX = 40;
 /** Co `zmierzNakladki` wpisało ostatnio do zmiennych CSS: zmienna dostaje wartość tylko wtedy, gdy się zmieniła, żeby nie
     przeliczać stylów bez potrzeby. */
 const zmienneNakladek = new Map<string, string>();
@@ -3802,6 +4223,19 @@ $('goals').addEventListener('scroll', () => znacznikPrzewijania($('goals')), { p
     celów po zmianie treści (`renderGoals`) i wczytanie czcionek. */
 function zmierzNakladki() {
   ustawZmienna('--card-h', `${$('card').hidden ? 0 : Math.round($('card').getBoundingClientRect().height)}px`);
+  // telefon poziomo: cele dnia stoją nad kartą osoby w lewej kolumnie, a karta (rozwinięta wyższa niż miejsce) zostawia im mniej niż
+  // nagłówek; wtedy chowają się, dopóki karta stoi (inaczej nachodziłyby na nią paskiem wysokości kilku pikseli)
+  const celeZaMalo =
+    matchMedia(NISKIE_OKNO_MQ).matches &&
+    !$('card').hidden &&
+    window.innerHeight -
+      $('top').getBoundingClientRect().bottom -
+      8 -
+      16 -
+      $('card').getBoundingClientRect().height -
+      48 <
+      CELE_MIN_PX;
+  $('goals').toggleAttribute('data-za-malo', celeZaMalo);
   // atrybucja map i danych mieszkańców na dole: na telefonie dwa wiersze, a karta i podpowiedź stoją nad nią
   if (attrib) ustawZmienna('--attrib-h', `${Math.round(attrib.getBoundingClientRect().height)}px`);
   // pasek trybu stawiania: na telefonie podpowiedź (np. czemu tu nie wolno) idzie nad niego, a nie pod spód
@@ -3853,33 +4287,27 @@ window.addEventListener('resize', () => {
 });
 document.fonts?.addEventListener('loadingdone', dopasujNazwe);
 
-/* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px, src/ui/telefon.ts) ---------- */
+/* ---------- telefon: zwijane bloki stanu (okno węższe niż 768 px albo niższe niż 501 px, src/ui/telefon.ts) ---------- */
 const telefonMq = matchMedia(TELEFON_MQ);
 let statyRozwiniete = wczytajWybor(PASEK_KEY) === 'rozwiniete';
 let potrzebyRozwiniete = wczytajWybor(POTRZEBY_KEY) === 'rozwiniete';
+let wiecejRozwiniete = wczytajWybor(WIECEJ_KEY) === 'rozwiniete';
+const przyciskPaska = $('statsToggle');
 /** Pasek stanu na telefonie: zwinięty (atrybut `data-zwiniete` na `#stats`; src/style.css zostawia w nim tylko kafelki z klasą
-    `pilne`) albo rozwinięty; cały pojemnik jest przyciskiem (role, aria-expanded, Enter i Spacja), na komputerze zwykłym pasem. */
+    `pilne`) albo rozwinięty. Zwija i rozwija go osobny przycisk (`#statsToggle`: `aria-expanded`, podpis w obu językach), więc
+    kafelki zostają dla czytników ekranu zwykłymi elementami; na komputerze pasek jest zwykłym pasem, a przycisk schowany. */
 function zastosujPasekStanu() {
-  const el = $('stats');
-  const telefon = telefonMq.matches;
-  const zwiniety = telefon && !statyRozwiniete;
-  el.toggleAttribute('data-zwiniete', zwiniety);
-  // kafelki zwiniętego paska nie biorą klawiatury ani dotyku: Enter i stuknięcie w linię rozwijają pasek, a artykuł wiki
-  // (src/ui/wiki-okno.ts wiąże z nim kafelek po identyfikatorze) otwiera dopiero kafelek rozwiniętego paska
-  for (const k of el.querySelectorAll<HTMLElement>('.stat')) k.inert = zwiniety;
-  if (!telefon) {
-    for (const a of ['role', 'tabindex', 'aria-expanded', 'aria-label']) el.removeAttribute(a);
-    return;
-  }
-  el.setAttribute('role', 'button');
-  el.tabIndex = 0;
-  el.setAttribute('aria-expanded', String(statyRozwiniete));
-  el.setAttribute(
+  const zwiniety = telefonMq.matches && !statyRozwiniete;
+  $('stats').toggleAttribute('data-zwiniete', zwiniety);
+  przyciskPaska.setAttribute('aria-expanded', String(!zwiniety));
+  przyciskPaska.setAttribute(
     'aria-label',
-    statyRozwiniete
-      ? L('Stan osiedla: stuknij, żeby zwinąć do tego, co pilne', 'Estate status: tap to collapse to what is urgent')
-      : L('Stan osiedla: stuknij, żeby pokazać wszystko', 'Estate status: tap to show everything'),
+    zwiniety
+      ? L('Pokaż cały stan osiedla', 'Show the whole estate status')
+      : L('Zwiń stan osiedla do tego, co pilne', 'Collapse the estate status to what is urgent'),
   );
+  const glif = przyciskPaska.firstElementChild;
+  if (glif) glif.textContent = zwiniety ? '▾' : '▴';
 }
 function przelaczPasekStanu() {
   if (!telefonMq.matches) return;
@@ -3887,40 +4315,59 @@ function przelaczPasekStanu() {
   zapiszWybor(PASEK_KEY, statyRozwiniete ? 'rozwiniete' : 'zwiniete');
   zastosujPasekStanu();
 }
-$('stats').addEventListener('click', (e) => {
-  // stuknięcie w kafelek rozwiniętego paska otwiera jego artykuł w wiki, więc go nie zwija (zwija strzałka ▴ i przerwy między
-  // kafelkami); w zwiniętym kafelki nie biorą dotyku (CSS i `inert`), więc cel kliknięcia jest zawsze pojemnikiem
-  if (e.target !== e.currentTarget) return;
-  przelaczPasekStanu();
-  // dotyk i mysz nie zostawiają fokusu na pasku, tak jak na przyciskach paska (src/ui/fokus.ts): spacja ma dalej zatrzymywać grę,
-  // a nie zwijać pasek; z klawiatury (Tab, potem Enter albo Spacja) fokus zostaje
-  if (e.detail > 0) $('stats').blur();
-});
-$('stats').addEventListener('keydown', (e) => {
-  if (e.target !== e.currentTarget || (e.code !== 'Enter' && e.code !== 'Space')) return;
-  e.preventDefault();
-  e.stopPropagation();
-  przelaczPasekStanu();
-});
+// przycisk: zwykłe kliknięcie (mysz, dotyk, Enter, Spacja); po kliknięciu myszą albo stuknięciu oddaje fokus jak reszta przycisków
+// paska (src/ui/fokus.ts), więc spacja dalej zatrzymuje grę
+przyciskPaska.addEventListener('click', przelaczPasekStanu);
+// Zwinięta linia stanu: stuknięcie albo klik w kafelek czy w sam pasek (także kliknięcie wywołane przez czytnik ekranu) rozwija
+// pasek i nie dociera do wiki, która wiąże kafelek z artykułem; Enter i Spacja na kafelku tak samo. W rozwiniętym pasku kafelek
+// otwiera swój artykuł i niczego nie zwija, a pasek zwija przycisk. Faza przechwytywania, żeby być przed obsługą wiki na dokumencie.
+$('stats').addEventListener(
+  'click',
+  (e) => {
+    if (!telefonMq.matches || statyRozwiniete) return;
+    if (e.target instanceof Element && e.target.closest('#statsToggle')) return;
+    e.stopPropagation();
+    przelaczPasekStanu();
+  },
+  true,
+);
+$('stats').addEventListener(
+  'keydown',
+  (e) => {
+    if (!telefonMq.matches || statyRozwiniete || (e.code !== 'Enter' && e.code !== 'Space')) return;
+    if (e.target instanceof Element && e.target.closest('#statsToggle')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    przelaczPasekStanu();
+  },
+  true,
+);
 telefonMq.addEventListener('change', zastosujPasekStanu);
 poZmianieJezyka(zastosujPasekStanu);
 zastosujPasekStanu();
 /** Karta osoby na telefonie: potrzeby zwinięte (klasa `potrzeby-zwiniete` na `#card`) do linii z ostrzeżeniami albo rozwinięte do
-    pasków i nastrojów; klasa żyje na pojemniku, więc przeżywa przepisywanie karty co 200 ms. */
-function ariaPotrzeb() {
-  const linia = $('card').querySelector('.potrzeby-linia');
-  if (linia) linia.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+    pasków i nastrojów, a „Więcej” (klasa `wiecej-zwiniete`) chowa rodzinę, historię i przycisk zmiany imienia; klasy żyją na
+    pojemniku, więc przeżywają przepisywanie karty co 200 ms. */
+function ariaKarty() {
+  $('card').querySelector('.potrzeby-linia')?.setAttribute('aria-expanded', String(potrzebyRozwiniete));
+  $('card').querySelector('.wiecej')?.setAttribute('aria-expanded', String(wiecejRozwiniete));
 }
-function zastosujPotrzeby() {
+function zastosujKarte() {
   $('card').classList.toggle('potrzeby-zwiniete', !potrzebyRozwiniete);
-  ariaPotrzeb();
+  $('card').classList.toggle('wiecej-zwiniete', !wiecejRozwiniete);
+  ariaKarty();
 }
 function przelaczPotrzeby() {
   potrzebyRozwiniete = !potrzebyRozwiniete;
   zapiszWybor(POTRZEBY_KEY, potrzebyRozwiniete ? 'rozwiniete' : 'zwiniete');
-  zastosujPotrzeby();
+  zastosujKarte();
 }
-zastosujPotrzeby();
+function przelaczWiecej() {
+  wiecejRozwiniete = !wiecejRozwiniete;
+  zapiszWybor(WIECEJ_KEY, wiecejRozwiniete ? 'rozwiniete' : 'zwiniete');
+  zastosujKarte();
+}
+zastosujKarte();
 
 /* ---------- start ---------- */
 (async () => {
@@ -3947,8 +4394,7 @@ zastosujPotrzeby();
       const perSecond = Math.max(1, Math.round(TICKS_PER_SECOND * mult));
       let p: Prompt | null = null;
       for (let k = 1; k <= ticks && !p && !gov.over; k++) {
-        view.beforeStep(sim.st);
-        sim.step();
+        krokSymulacji(sim);
         if (k % perSecond === 0) {
           screen += 1;
           govAt = screen;
@@ -4033,6 +4479,19 @@ zastosujPotrzeby();
     pietro: wybierzPietro,
     pietra: () => ({ wlaczone: pietraGry, pietro: view.pietro, lista: [...pietraLista] }),
     kwadraty: [],
+    osada: () => {
+      const p = osada?.podglad();
+      return p
+        ? { ...p, kwadrat: osadaWidok?.q ?? -1, siedziba: osadaWidok?.siedziba ?? null, budowa: osadaBudowa !== null }
+        : null;
+    },
+    odkryjOsade: async () => {
+      const w = osada?.dlaZarzadu();
+      if (!sim || !osada || !w || osada.odkryta) return false;
+      osada.odkryj({ dzien: dayOf(sim.st.tick), ludnosc: w.ludnosc, budowle: w.budowle });
+      await pokazOsade(osada);
+      return osadaWidok !== null;
+    },
   };
   // ?worker=0: kawałki mapy rysuje główny wątek (zapas dla przeglądarek bez OffscreenCanvas w workerze)
   await view.init($('stage'), { workers: params.get('worker') !== '0' });
