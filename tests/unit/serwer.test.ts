@@ -182,15 +182,16 @@ describe('serwer gry: konta i sesje', () => {
     const s = await start();
     const p = await druzyna(s, 'Sesyjny');
     s.czekaj(10 * DOBA);
+    // pierwsza wizyta konta tej doby: sesja przedłuża się do pełnych 30 dni (konto z nickiem nie dostaje dłuższej)
     let r = await p.zadanie('GET', '/api/konto');
-    expect(r.status).toBe(200);
-    expect(r.headers.getSetCookie()).toEqual([]);
-    s.czekaj(6 * DOBA);
-    // zostało mniej niż pół ważności: sesja przedłuża się o pełne 30 dni
-    r = await p.zadanie('GET', '/api/konto');
     expect(r.status).toBe(200);
     expect(r.headers.getSetCookie()[0]).toContain(`Max-Age=${30 * 24 * 3600}`);
     expect(Number(wiersze(s, 'SELECT wygasa FROM sesje')[0].wygasa)).toBe(s.teraz() + 30 * DOBA);
+    // druga wizyta tej samej doby niczego nie przedłuża
+    s.czekaj(60 * 60 * 1000);
+    r = await p.zadanie('GET', '/api/konto');
+    expect(r.status).toBe(200);
+    expect(r.headers.getSetCookie()).toEqual([]);
     s.czekaj(31 * DOBA);
     expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
     expect(wiersze(s, 'SELECT * FROM sesje')).toHaveLength(0);

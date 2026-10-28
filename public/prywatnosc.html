@@ -62,7 +62,7 @@
     <h2>Co trzyma serwer gry</h2>
     <ul>
       <li><b>numer drużyny</b>, na przykład #12. Drużyna powstaje sama przy pierwszej grze na prawdziwym adresie, bez nicku, hasła i e-maila.</li>
-      <li><b>ciasteczko sesji</b> <code>zm_sesja</code>: losowy znak, po którym serwer poznaje twoją przeglądarkę. W bazie leży tylko jego skrót. Jest ważne 30 dni od ostatniego użycia, skrypty strony go nie widzą (HttpOnly) i przeglądarka wysyła je tylko pod adres <code>/api</code>.</li>
+      <li><b>ciasteczko sesji</b> <code>zm_sesja</code>: losowy znak, po którym serwer poznaje twoją przeglądarkę. W bazie leży tylko jego skrót. Jest ważne 30 dni od ostatniego użycia (w drużynie bez nicku i hasła 180 dni, patrz „Jak długo trzymamy dane”), skrypty strony go nie widzą (HttpOnly) i przeglądarka wysyła je tylko pod adres <code>/api</code>.</li>
       <li><b>skrót kodu powrotu</b>. Kod, który wpisujesz, żeby wrócić do drużyny z innej przeglądarki, widzisz raz, w grze. Serwer trzyma tylko jego skrót (SHA-256), więc nie umie pokazać kodu drugi raz.</li>
       <li><b>nick i skrót hasła</b>, tylko jeśli konto założono dawną drogą, z nickiem i hasłem. Nowa drużyna ich nie ma.</li>
       <li><b>położenie zajętych klatek</b>: klucz i współrzędne geograficzne każdej klatki schodowej, którą zajęła drużyna (z nich da się odczytać budynek, więc i adres). Inni gracze w okolicy widzą tylko, że klatka jest zajęta, a nie czyja.</li>
@@ -105,7 +105,7 @@
       <li><b>klatki</b>: wracają do wolnych po 14 dniach bez gry. Konto, zapis i kod powrotu zostają.</li>
       <li><b>konto</b>: znika po 180 dniach bez gry razem z sesjami, klatkami i zapisem.</li>
       <li><b>kopie zapasowe bazy</b>: robimy codziennie i trzymamy 7 dni, o ile kopie powstają. Starą kopię kasujemy dopiero po udanej nowej, więc gdyby kopie przestały powstawać (na przykład przez pełny dysk), ostatnie dobre zostają dłużej niż 7 dni. Usunięte konto może zostać w kopii do 7 dni, a w razie takiej awarii dłużej, potem kopia znika.</li>
-      <li><b>sesja</b>: 30 dni od ostatniego użycia. Wylogowanie albo usunięcie drużyny kasuje ją od razu.</li>
+      <li><b>sesja</b>: w koncie z nickiem 30 dni od ostatniego użycia, a w drużynie bez nicku i hasła 180 dni od ostatniego użycia, czyli tyle, ile trwa konto bez gry (taka drużyna nie ma hasła, którym mogłaby zalogować się od nowa, więc po zgubieniu sesji wraca tylko kodem powrotu). Wylogowanie albo usunięcie drużyny kasuje ją od razu.</li>
       <li><b>dzienne sumy</b> z następnego bloku zostają bez ograniczenia czasu.</li>
     </ul>
     <p>Grą jest każde połączenie z ważnym ciasteczkiem sesji (także samo otwarcie karty startowej w grze z sąsiadami) albo z kodem powrotu. Dni liczymy od początku doby.</p>
@@ -162,7 +162,7 @@
     <h2>What the game server keeps</h2>
     <ul>
       <li><b>team number</b>, for example #12. A team is created on its own the first time you play a real address, with no username, password or e-mail.</li>
-      <li><b>session cookie</b> <code>zm_sesja</code>: a random token by which the server recognises your browser. Only its hash is stored in the database. It is valid for 30 days from its last use, page scripts cannot read it (HttpOnly) and the browser sends it only to <code>/api</code>.</li>
+      <li><b>session cookie</b> <code>zm_sesja</code>: a random token by which the server recognises your browser. Only its hash is stored in the database. It is valid for 30 days from its last use (180 days for a team without a nickname and password, see “How long we keep data”), page scripts cannot read it (HttpOnly) and the browser sends it only to <code>/api</code>.</li>
       <li><b>hash of the return code</b>. The code you enter to rejoin your team from another browser is shown to you once, in the game. The server keeps only its hash (SHA-256), so it cannot show you the code a second time.</li>
       <li><b>username and password hash</b>, only if the account was created the older way, with a username and password. A new team has neither.</li>
       <li><b>positions of the occupied stairwells</b>: the key and geographic coordinates of every stairwell a team has taken (the building, and so the address, can be read from them). Other players nearby only see that a stairwell is taken, not whose it is.</li>
@@ -205,7 +205,7 @@
       <li><b>stairwells</b>: they go back to free after 14 days without play. The account, its save and its return code stay.</li>
       <li><b>account</b>: it disappears after 180 days without play, together with its sessions, stairwells and save.</li>
       <li><b>database backups</b>: made daily and kept for 7 days, as long as backups are being made. An old backup is removed only after a new one succeeds, so if backups stop being made (a full disk, for example), the last good ones stay longer than 7 days. A deleted account can stay in a backup for up to 7 days, or longer in such a failure, and then the backup is removed.</li>
-      <li><b>session</b>: 30 days from its last use. Logging out or deleting the team removes it at once.</li>
+      <li><b>session</b>: for an account with a nickname 30 days from its last use, and for a team without a nickname and password 180 days from its last use, that is, as long as an account lasts without play (such a team has no password to sign in again with, so after a lost session it can come back only with the return code). Logging out or deleting the team removes it at once.</li>
       <li><b>daily totals</b> from the next block are kept without a time limit.</li>
     </ul>
     <p>Playing means any connection with a valid session cookie (including just opening the start screen when playing with the neighbours is on) or a return code. Days are counted from the start of the day.</p>

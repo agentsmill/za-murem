@@ -72,6 +72,20 @@ describe('informacja o danych osobowych: te same okresy co serwer', () => {
   });
 });
 
+describe('informacja o danych osobowych: długość sesji', () => {
+  it('sesja konta z nickiem 30 dni, drużyny anonimowej tyle co konto bez gry (KONTA_DNI), jak w serwerze', () => {
+    const p = strona('prywatnosc');
+    // serwer: anonimowa dostaje co najmniej kontaDni (domyślnie KONTA_DNI), konto z nickiem sesjaDni
+    expect(czytaj('server/app.ts')).toMatch(/konto\.anonimowe \? Math\.max\(sesjaMs, kontaMs\) : sesjaMs/);
+    const pl = tekst(sekcja(p, 'pl'));
+    const en = tekst(sekcja(p, 'en'));
+    expect(pl).toContain(`w drużynie bez nicku i hasła ${KONTA_DNI} dni od ostatniego użycia`);
+    expect(pl).toContain('w koncie z nickiem 30 dni od ostatniego użycia');
+    expect(en).toContain(`for a team without a nickname and password ${KONTA_DNI} days from its last use`);
+    expect(en).toContain('for an account with a nickname 30 days from its last use');
+  });
+});
+
 describe('dwie strony: sekcje #pl i #en, szkic, miejsca na dane firmy', () => {
   for (const nazwa of STRONY) {
     it(`${nazwa}.html: obie sekcje z językiem, przełącznik na górze, szkic w komentarzu na początku`, () => {

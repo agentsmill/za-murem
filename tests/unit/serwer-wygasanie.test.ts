@@ -239,6 +239,83 @@ describe('serwer gry: wygasanie kont (180 dni bez wizyty)', () => {
   });
 });
 
+describe('serwer gry: sesja drużyny anonimowej żyje tyle co jej konto', () => {
+  const MAX_AGE_KONTA = `Max-Age=${KONTA_DNI * 24 * 3600}`;
+  const maxAge = (dni: number) => `Max-Age=${dni * 24 * 3600}`;
+  const dzien = (n: number) => Math.round(n * DOBA);
+
+  it('drużyna użyta w dniu 14,9 działa w dniu 30,1 i w dniu 100 (nowa sesja po pierwszej wizycie doby ma pełną długość)', async () => {
+    const s = await start();
+    const a = przegladarka(s.adres);
+    const b = przegladarka(s.adres);
+    expect((await a.zadanie('POST', '/api/druzyna', {})).status).toBe(201);
+    expect((await b.zadanie('POST', '/api/druzyna', {})).status).toBe(201);
+    s.czekaj(dzien(14.9));
+    // pierwsza wizyta tej doby: sesja przedłuża się do pełnych 180 dni, choć do końca starej zostało ponad połowę
+    const wizyta = await a.zadanie('GET', '/api/konto');
+    expect(wizyta.status).toBe(200);
+    expect(wizyta.headers.getSetCookie()[0]).toContain(MAX_AGE_KONTA);
+    expect((await b.zadanie('GET', '/api/konto')).status).toBe(200);
+    expect(wiersze(s, 'SELECT wygasa FROM sesje').map((w) => Number(w.wygasa))).toEqual([
+      s.teraz() + KONTA_DNI * DOBA,
+      s.teraz() + KONTA_DNI * DOBA,
+    ]);
+    // druga wizyta tego samego dnia nic nie przedłuża
+    expect((await a.zadanie('GET', '/api/konto')).headers.getSetCookie()).toEqual([]);
+
+    s.czekaj(dzien(15.2)); // dzień 30,1: stara sesja (30 dni) już by nie żyła
+    expect((await a.zadanie('GET', '/api/konto')).status).toBe(200);
+    s.czekaj(dzien(69.9)); // dzień 100: druga drużyna nie grała od 14,9
+    expect((await b.zadanie('GET', '/api/konto')).status).toBe(200);
+  });
+
+  it('po 180 dniach bez gry konto znika jak dotąd, mimo przedłużonej sesji', async () => {
+    const s = await start();
+    const p = przegladarka(s.adres);
+    expect((await p.zadanie('POST', '/api/druzyna', {})).status).toBe(201);
+    s.czekaj(dzien(14.9));
+    expect((await p.zadanie('GET', '/api/konto')).status).toBe(200); // ostatnio = początek dnia 14
+    s.czekaj(dzien(180.3)); // dzień 195,2: granica to początek dnia 15
+    s.gra.sprzataj();
+    expect(ile(s, 'konta')).toBe(0);
+    expect(ile(s, 'sesje')).toBe(0);
+    expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
+  });
+
+  it('konto z nickiem zostaje przy 30 dniach: pierwsza wizyta doby przedłuża je do 30, nie do 180', async () => {
+    const s = await start();
+    const p = przegladarka(s.adres);
+    expect((await p.zadanie('POST', '/api/konto', { nick: 'Nickowy', haslo: 'nickowy-123' })).status).toBe(201);
+    s.czekaj(dzien(14.9));
+    const wizyta = await p.zadanie('GET', '/api/konto');
+    expect(wizyta.status).toBe(200);
+    expect(wizyta.headers.getSetCookie()[0]).toContain(maxAge(30));
+    s.czekaj(dzien(15.2)); // dzień 30,1: sesja przedłużona w dniu 14,9 żyje
+    expect((await p.zadanie('GET', '/api/konto')).status).toBe(200);
+    s.czekaj(dzien(31)); // bez użycia przez 31 dni sesja z nickiem wygasa, konto zostaje
+    expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect(ile(s, 'konta')).toBe(1);
+  });
+
+  it('druga sesja tego samego konta, trzymana poza grą, też się przedłuża (połowa ważności), gdy konto grało już tego dnia', async () => {
+    const s = await start();
+    const a = await druzynaZKlatka(s);
+    const druga = przegladarka(s.adres);
+    expect((await druga.zadanie('POST', '/api/druzyna/powrot', { kod: a.kod })).status).toBe(200);
+    // pierwsza przeglądarka gra codziennie, druga milczy prawie do końca swojej sesji
+    for (let i = 0; i < 17; i++) {
+      s.czekaj(dzien(10));
+      expect((await a.p.zadanie('GET', '/api/konto')).status).toBe(200);
+    }
+    // dzień 170: druga sesja ma za sobą 170 z 180 dni, a konto grało dziś, więc „pierwszej wizyty doby” już nie ma
+    const wejscie = await druga.zadanie('GET', '/api/konto');
+    expect(wejscie.status).toBe(200);
+    expect(wejscie.headers.getSetCookie()[0]).toContain(MAX_AGE_KONTA);
+    s.czekaj(dzien(100));
+    expect((await druga.zadanie('GET', '/api/konto')).status).toBe(200);
+  });
+});
+
 describe('serwer gry: częstość sprzątania wygasłych', () => {
   /** drużyna z kontem i klatką założona w bazie od razu z dawnym `ostatnio` (zegar testu stoi) */
   function stareKonto(s: SerwerTestowy, ostatnio: number) {

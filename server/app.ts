@@ -103,7 +103,13 @@
    `konta.ostatnio` ma dokładność doby (sesjaZ), a nowe konto zaczyna od chwili założenia, więc granica to początek
    doby sprzed N dni: drużyna zawsze ma pełne N dni od ostatniej wizyty. Wygasanie liczy się najwyżej raz na godzinę
    (zegar `teraz`), wygasłe sesje i wpisy limitów przy każdym wywołaniu; błąd wygasania idzie do dziennika i nie
-   przerywa sprzątania. Klient po powrocie sam zajmuje swoją siedzibę od nowa (src/net/gra.ts, poWczytaniu). */
+   przerywa sprzątania. Klient po powrocie sam zajmuje swoją siedzibę od nowa (src/net/gra.ts, poWczytaniu).
+
+   Długość sesji (`dlugoscSesji`): konto z nickiem 30 dni od ostatniego użycia (`sesjaDni`), drużyna anonimowa tyle co
+   konto bez gry, czyli `kontaDni` (180): nie ma hasła, więc zgubiona sesja to utrata drużyny, a gracz wracający po
+   2-4 tygodniach nie ma jej tracić także w tej samej przeglądarce. Sesja przedłuża się do pełnej długości przy
+   pierwszej wizycie konta każdej doby (`wizyta`) oraz, gdy zostało jej mniej niż połowa (druga sesja tego konta,
+   trzymana poza grą, kiedy konto grało już z innej przeglądarki). */
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -206,7 +212,9 @@ export interface OpcjeSerwera {
   limitKlatek?: number;
   /** największa odległość klatki od siedziby drużyny w metrach (domyślnie 600: przekątna mapy 384 m z zapasem) */
   promienM?: number;
-  /** ważność sesji w dniach (domyślnie 30, przedłużana, gdy zostało mniej niż połowa) */
+  /** ważność sesji konta z nickiem w dniach od ostatniego użycia (domyślnie 30); sesja drużyny anonimowej żyje
+      dłużej z dwóch: tyle albo `kontaDni`. Przedłużana przy pierwszej wizycie konta każdej doby i gdy zostało mniej
+      niż połowa. */
   sesjaDni?: number;
   /** po ilu dniach bez gry klatki drużyny wracają do wolnych (domyślnie KLATKI_DNI, czyli 14) */
   klatkiDni?: number;
@@ -387,10 +395,11 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   /** Wizyta konta: przesuwa `ostatnio` na początek doby (od tego zależy wygasanie) i, gdy to pierwsza wizyta tej
       doby, dolicza powrót do licznika „doba założenia, ile dób po założeniu”. Żądanie z sesją i logowanie idą tędy,
       więc którekolwiek pierwsze w dobie liczy, a drugie już nie; w dobie założenia `ostatnio` jest późniejsze od
-      północy, więc powrotu nie ma. Błąd licznika idzie do dziennika i nie psuje wizyty. */
-  const wizyta = (konto: Konto, ms: number) => {
+      północy, więc powrotu nie ma. Błąd licznika idzie do dziennika i nie psuje wizyty. Zwraca true, gdy to pierwsza
+     wizyta konta tej doby (od niej sesja przedłuża się do pełnej długości, patrz `sesjaZ`). */
+  const wizyta = (konto: Konto, ms: number): boolean => {
     const dzien = dzienUtc(ms);
-    if (!baza.dotknijKonta(konto.id, dzien)) return;
+    if (!baza.dotknijKonta(konto.id, dzien)) return false;
     try {
       const zalozone = dzienUtc(konto.utworzone);
       const poDniach = (dzien - zalozone) / DOBA;
@@ -398,19 +407,29 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     } catch (e) {
       dziennik(`błąd licznika powrotów: ${e instanceof Error ? e.message : String(e)}`);
     }
+    return true;
   };
+
+  /** Jak długo żyje sesja konta, liczona od ostatniego użycia. Konto z nickiem ma `sesjaDni` (30): zgubioną sesję
+      odtwarza hasłem. Drużyna anonimowa nie ma hasła, a kod powrotu leży u gracza tylko, jeśli go zapisał, więc jej
+      sesja żyje tyle co konto bez gry (`kontaDni`, 180): wracający po 2-4 tygodniach nie traci drużyny w tej samej
+      przeglądarce. */
+  const dlugoscSesji = (konto: Konto): number => (konto.anonimowe ? Math.max(sesjaMs, kontaMs) : sesjaMs);
 
   /** nowa sesja dla konta: token do ciasteczka, w bazie skrót; najwyżej 10 sesji na konto */
   const zaloguj = (k: Kontekst, konto: Konto) => {
     const token = nowyToken();
-    baza.dodajSesje(skrotTokenu(token), konto.id, k.teraz, k.teraz + sesjaMs);
+    const dlugosc = dlugoscSesji(konto);
+    baza.dodajSesje(skrotTokenu(token), konto.id, k.teraz, k.teraz + dlugosc);
     baza.przytnijSesje(konto.id, 10);
     // logowanie też jest wizytą: konto, które weszło kodem albo hasłem, nie wygaśnie przed pierwszym żądaniem z sesją
     wizyta(konto, k.teraz);
-    k.naglowki['Set-Cookie'] = ciasteczko(token, sesjaMs);
+    k.naglowki['Set-Cookie'] = ciasteczko(token, dlugosc);
   };
 
-  /** sesja z ciasteczka albo null; przedłuża ważną sesję, gdy została mniej niż połowa czasu */
+  /** sesja z ciasteczka albo null; przedłuża ważną sesję do pełnej długości przy pierwszej wizycie konta w danej
+      dobie, a poza tym, gdy została mniej niż połowa (druga sesja tego samego konta, trzymana poza grą, kiedy konto
+      grało już z innej przeglądarki) */
   const sesjaZ = (k: Kontekst): Sesja | null => {
     const token = ciasteczka(k.req).get(CIASTECZKO);
     if (!token || token.length > 100) return null;
@@ -420,12 +439,15 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       k.naglowki['Set-Cookie'] = skasujCiasteczko();
       return null;
     }
-    if (s.wygasa - k.teraz < sesjaMs / 2) {
-      baza.przedluzSesje(skrot, k.teraz + sesjaMs);
-      k.naglowki['Set-Cookie'] = ciasteczko(token, sesjaMs);
+    const dlugosc = dlugoscSesji(s.konto);
+    const pierwszaWizyta = wizyta(s.konto, k.teraz);
+    let wygasa = s.wygasa;
+    if (pierwszaWizyta || wygasa - k.teraz < dlugosc / 2) {
+      wygasa = k.teraz + dlugosc;
+      baza.przedluzSesje(skrot, wygasa);
+      k.naglowki['Set-Cookie'] = ciasteczko(token, dlugosc);
     }
-    wizyta(s.konto, k.teraz);
-    return { konto: s.konto, skrot, wygasa: s.wygasa };
+    return { konto: s.konto, skrot, wygasa };
   };
   const wymagajSesji = (k: Kontekst): Sesja => {
     const s = sesjaZ(k);
