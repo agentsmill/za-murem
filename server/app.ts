@@ -398,7 +398,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       doby, dolicza powrót do licznika „doba założenia, ile dób po założeniu”. Żądanie z sesją i logowanie idą tędy,
       więc którekolwiek pierwsze w dobie liczy, a drugie już nie; w dobie założenia `ostatnio` jest późniejsze od
       północy, więc powrotu nie ma. Błąd licznika idzie do dziennika i nie psuje wizyty. Zwraca true, gdy to pierwsza
-     wizyta konta tej doby (od niej sesja przedłuża się do pełnej długości, patrz `sesjaZ`). */
+      wizyta konta tej doby (od niej sesja przedłuża się do pełnej długości, patrz `sesjaZ`). */
   const wizyta = (konto: Konto, ms: number): boolean => {
     const dzien = dzienUtc(ms);
     if (!baza.dotknijKonta(konto.id, dzien)) return false;

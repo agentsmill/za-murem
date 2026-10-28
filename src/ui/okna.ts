@@ -512,7 +512,8 @@ export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
 /** Menu. `siec` podaje gra sieciowa (GraSieciowa.menuSieci, src/net/gra.ts): gra w sieci ma przycisk kodu powrotu
     (`menu-kod`), a drużyna anonimowa także usunięcia drużyny z serwera (`menu-usun`); do tego odnośniki do informacji
     o prywatności i regulaminu (public/prywatnosc.html, public/regulamin.html, w nowej karcie, żeby nie wyjść z gry, z
-    kotwicą języka gry #pl albo #en, bo strony mają dwie sekcje językowe). Gra bez sieci nie ma żadnego z nich. Okna kodu i usunięcia są w src/ui/siec.ts. */
+    kotwicą języka gry #pl albo #en, bo strony mają dwie sekcje językowe). Gra bez sieci nie ma żadnego z nich. Okna
+    kodu i usunięcia są w src/ui/siec.ts. */
 export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
   const sieciowe = siec
     ? btn('menu-kod', L('Nowy kod powrotu drużyny', 'New team return code')) +
