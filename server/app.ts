@@ -81,7 +81,10 @@
 
    Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); pozycja klatki musi leżeć przy budynku z jej
    klucza (kotwicaKlucza), każda klatka drużyny najwyżej `promienM` od siedziby (pierwszej klatki), najwyżej
-   `limitKlatek` na konto; zapis bez tekstu adresu. Żądania zmieniające stan muszą mieć JSON (gdy niosą dane)
+   `limitKlatek` na konto; zapis bez tekstu adresu. Zajęcie klatki sprawdza najpierw to, czy drużynie w ogóle wolno
+   (limit 403, odległość od siedziby 422, bez siedziby okno zmian okolicy 429), a dopiero potem, czy klatka jest wolna
+   (409): kto nie może zająć żadnej klatki w tamtym miejscu, nie odróżni po kodzie odpowiedzi zajętej od wolnej.
+   Żądania zmieniające stan muszą mieć JSON (gdy niosą dane)
    i nagłówek Origin z tej samej strony (albo żadnego); lista dozwolonych źródeł może mieć gwiazdkę (podglądy gałęzi
    na Vercelu, `pasujeZrodlo`). Limity prób w pamięci (limity.ts), liczone przed pierwszym await, żeby równoległe
    żądania ich nie obeszły; adresów IP nie zapisujemy, IPv6 liczymy po sieci /64. scrypt idzie przez kolejkę
@@ -726,14 +729,15 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       siedziba: false,
       zajeta: k.teraz,
     };
-    // sprawdzenie i wstawienie w jednej transakcji, bez await w środku
+    // sprawdzenie i wstawienie w jednej transakcji, bez await w środku. Kolejność ma znaczenie: najpierw wszystko, co
+    // mówi „czy to zajęcie w ogóle wolno tej drużynie” (limit, odległość od siedziby, okno zmian okolicy), dopiero
+    // potem „czy klatka jest wolna”. Inaczej drużyna, której to zajęcie i tak nie wolno (np. siedziba w innym mieście),
+    // odróżniałaby po kodzie odpowiedzi (409 albo 422/429) cudze klatki od wolnych i sondowała całą mapę.
     const wynik = baza.transakcja((): { status: number; klatka: Klatka; liczy: boolean } => {
       sesjaDalej(k, s);
       const jest = baza.klatka(nowa.klucz);
-      if (jest) {
-        if (jest.konto === s.konto.id) return { status: 200, klatka: jest, liczy: false };
-        throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
-      }
+      // własna klatka to odpowiedź o sobie samej, nic nie zdradza
+      if (jest && jest.konto === s.konto.id) return { status: 200, klatka: jest, liczy: false };
       if (baza.liczbaKlatek(s.konto.id) >= limitKlatek)
         throw new BladHttp(403, 'limit_klatek', `Drużyna może mieć najwyżej ${limitKlatek} klatek.`);
       const siedziba = baza.siedziba(s.konto.id);
@@ -748,6 +752,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
         const czekaj = zmianyStartu.zablokowany(String(s.konto.id));
         if (czekaj) throw zaDuzo(czekaj, ZA_CZESTO_OKOLICA);
       }
+      if (jest) throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
       nowa.siedziba = !siedziba;
       if (!baza.dodajKlatke(nowa)) throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
       return { status: 201, klatka: nowa, liczy };

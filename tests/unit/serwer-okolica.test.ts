@@ -391,3 +391,79 @@ describe('serwer gry: zmiany okolicy dzielą jedno okno (5 na dobę na konto)', 
     expect(await siedziba()).toEqual([K2.klucz]);
   });
 });
+
+describe('serwer gry: zajęcie klatki nie zdradza, czy cudza klatka jest zajęta', () => {
+  it('drużyna z siedzibą daleko od celu dostaje 422 za_daleko, zajętą czy wolną', async () => {
+    const s = await start();
+    const warszawa = await druzyna(s);
+    const zajeta = klatkaW(MIASTA[1].lat, MIASTA[1].lon);
+    expect((await warszawa.zadanie('POST', '/api/klatki', zajeta)).status).toBe(201);
+
+    const gdansk = await druzyna(s);
+    expect((await gdansk.zadanie('POST', '/api/klatki', klatkaW(MIASTA[0].lat, MIASTA[0].lon))).status).toBe(201);
+    const naZajeta = await gdansk.zadanie('POST', '/api/klatki', zajeta);
+    const naWolna = await gdansk.zadanie('POST', '/api/klatki', klatkaW(MIASTA[2].lat, MIASTA[2].lon));
+    expect(naZajeta.status, naZajeta.tekst).toBe(422);
+    expect(naZajeta.body.blad).toBe('za_daleko');
+    // ta sama odpowiedź dla klatki wolnej: z siedzibą w innym mieście nie da się sondować cudzych klatek
+    expect(naWolna.status).toBe(422);
+    expect(naWolna.body).toEqual(naZajeta.body);
+    // klatka Warszawy została przy Warszawie
+    expect(((await warszawa.zadanie('GET', '/api/klatki/moje')).body.klatki as unknown[]).length).toBe(1);
+  });
+
+  it('drużyna bez siedziby z wyczerpanym oknem zmian okolicy dostaje 429, zajętą czy wolną', async () => {
+    const s = await start();
+    const inna = await druzyna(s);
+    const zajeta = klatkaW(MIASTA[5].lat, MIASTA[5].lon);
+    expect((await inna.zadanie('POST', '/api/klatki', zajeta)).status).toBe(201);
+
+    const p = await druzyna(s);
+    for (let i = 0; i < 5; i++) {
+      expect((await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[i].lat, MIASTA[i].lon))).status).toBe(201);
+      expect((await p.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    }
+    const naZajeta = await p.zadanie('POST', '/api/klatki', zajeta);
+    const naWolna = await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[0].lat, MIASTA[0].lon));
+    expect(naZajeta.status, naZajeta.tekst).toBe(429);
+    expect(naZajeta.body.blad).toBe('za_duzo_prob');
+    expect(naWolna.status).toBe(429);
+    expect(naWolna.body).toEqual(naZajeta.body);
+    expect(Number(naZajeta.headers.get('Retry-After'))).toBeGreaterThan(0);
+  });
+
+  it('drużyna z pełnym limitem klatek dostaje 403 limit_klatek, zajętą czy wolną', async () => {
+    const s = await start({ limitKlatek: 1 });
+    const sasiad = await druzyna(s);
+    expect((await sasiad.zadanie('POST', '/api/klatki', K2)).status).toBe(201);
+    const p = await druzyna(s);
+    expect((await p.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+    const naZajeta = await p.zadanie('POST', '/api/klatki', K2);
+    const naWolna = await p.zadanie('POST', '/api/klatki', { ...K2, klucz: `${BUD}/3` });
+    expect(naZajeta.status, naZajeta.tekst).toBe(403);
+    expect(naZajeta.body.blad).toBe('limit_klatek');
+    expect(naWolna.status).toBe(403);
+    expect(naWolna.body).toEqual(naZajeta.body);
+  });
+
+  it('w swojej okolicy działa jak dotąd: wolna klatka 201, cudza zajęta 409, własna 200', async () => {
+    const s = await start();
+    const sasiad = await druzyna(s);
+    expect((await sasiad.zadanie('POST', '/api/klatki', K2)).status).toBe(201);
+
+    // drużyna z siedzibą w tym samym bloku: cudza klatka to 409 zajeta, wolna 201, własna ponownie 200
+    const a = await druzyna(s);
+    expect((await a.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+    const konflikt = await a.zadanie('POST', '/api/klatki', K2);
+    expect(konflikt.status).toBe(409);
+    expect(konflikt.body.blad).toBe('zajeta');
+    expect((await a.zadanie('POST', '/api/klatki', { ...K2, klucz: `${BUD}/3` })).status).toBe(201);
+    expect((await a.zadanie('POST', '/api/klatki', K1)).status).toBe(200);
+
+    // drużyna bez siedziby z punktem startu obok: zajęta to 409, bez zużycia okna zmian okolicy
+    const b = await druzyna(s);
+    expect((await ustawStart(b, PRZYMORZE)).status).toBe(204);
+    for (let i = 0; i < 6; i++) expect((await b.zadanie('POST', '/api/klatki', K2)).status, `próba ${i + 1}`).toBe(409);
+    expect((await b.zadanie('POST', '/api/klatki', { ...K2, klucz: `${BUD}/4` })).status).toBe(201);
+  });
+});

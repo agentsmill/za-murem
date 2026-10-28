@@ -47,6 +47,8 @@ Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA
 | `DELETE /api/klatki/:klucz` siedziby, gdy drużyna ma jeszcze inne klatki (siedziba przechodzi na najstarszą z nich) | 1; przy wyczerpanym oknie 429 przed zwolnieniem |
 | zwolnienie zwykłej klatki, jedynej klatki, `DELETE /api/klatki/moje` | 0 (po nich drużyna albo ma tę samą siedzibę, albo żadnej, a okolicę wyznacza punkt startu) |
 
+**Kolejność sprawdzeń przy `POST /api/klatki`.** Najpierw to, czy drużynie to zajęcie w ogóle wolno (limit klatek 403 `limit_klatek`, odległość od siedziby do `promienM` 422 `za_daleko`, a bez siedziby okno zmian okolicy 429), dopiero potem, czy klatka jest wolna (409 `zajeta`). Gdyby było odwrotnie, drużyna z siedzibą w innym mieście albo z wyczerpanym oknem odróżniałaby po kodzie odpowiedzi (409 od 422 albo 429) klatki zajęte od wolnych w dowolnym miejscu kraju i sondowała mapę, choć `GET /api/klatki` zamyka ją w okolicy. Własna klatka (200) jest odpowiedzią o sobie samej i sprawdza się przed wszystkim.
+
 Siedziba ma pierwszeństwo: drużyna, która ją ma, pyta wokół siedziby i punkt startu jest jej niepotrzebny (zmiana punktu niczego wtedy nie zmienia). Punkt startu to w praktyce adres gracza, więc leży tylko w pamięci procesu: nie ma go w bazie, w kopiach ani w dzienniku, znika razem z kontem, a po restarcie serwera (także planowym, `ZM_RESTART_H`) klient podaje go od nowa i do tego czasu dostaje 409 `brak_startu`. Wpis, z którego nikt nie korzysta przez czas życia sesji (30 dni), sprząta `sprzataj()`. Testy: `npm test -- serwer-okolica`.
 
 ## Wygasanie klatek i kont
