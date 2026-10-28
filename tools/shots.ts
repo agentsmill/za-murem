@@ -40,6 +40,34 @@ const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
 fs.mkdirSync(OUT, { recursive: true });
 
+/* stałe udawanego serwera gry (fakeApi) i karty startowej z siecią: na górze pliku, bo scenariusze startują już przy ładowaniu modułu */
+/** Kod powrotu, który udawany serwer (fakeApi) uznaje za dobry, i drużyna, do której prowadzi */
+const KOD_UDAWANY = 'ABCD-EFGH-JKLM';
+const JA_NICK = {
+  nick: 'Sasiedzi_z_Lanciego',
+  utworzone: 1,
+  klatki: 0,
+  zapis: false,
+  anonimowe: false,
+  znak: 'Sasiedzi_z_Lanciego',
+  kod: false,
+};
+const JA_DRUZYNA = { nick: null, utworzone: 1, klatki: 0, zapis: false, anonimowe: true, znak: '#7', kod: false };
+
+/** zapis w chmurze tylko do podpisu na karcie startowej („Ursynów, dzień 2”): bez świata, do wczytania się nie nadaje */
+const CHMURA_KARTY = {
+  dane: {
+    v: 1,
+    at: 1,
+    seed: 1,
+    sim: { v: 3, tick: 20000 },
+    gov: { v: 1 },
+    data: { geo: {}, name: 'Ursynów', addr: '', street: '', src: 'mvt' },
+    siec: { zajete: [], dom: true, konto: '#7' },
+  },
+  wersja: 3,
+};
+
 interface Shot {
   name: string;
   query: string;
@@ -11586,19 +11614,26 @@ function kartaShots(): Shot[] {
 }
 
 /** Udawany serwer gry pod /api (page.route): zdrowie, konto, klatki w pamięci, zapis w chmurze. zalogowani: GET
-    /api/konto daje nick; zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był
-    szybszy, start bez domu). */
+    /api/konto daje konto z nickiem; anonimowa: daje drużynę anonimową („#7”); bez obu gracz nie ma sesji, a drużynę
+    zakłada POST /api/druzyna (201, albo 503 z druzyna503), kod KOD_UDAWANY w POST /api/druzyna/powrot wraca do niej;
+    zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był szybszy, start bez domu);
+    adres: GET /api/adres odpowiada Lanciego 10G zamiast nie_ma (wtedy gra nie pyta Nominatim). */
 async function fakeApi(
   page: Page,
   o: {
     zalogowani?: boolean;
+    anonimowa?: boolean;
     zajete?: ZajetaKlatka[];
     pierwsze?: 201 | 409;
     chmura?: { dane: unknown; wersja: number };
+    adres?: boolean;
+    /** POST /api/druzyna odpowiada 503 (serwer przeciążony) */
+    druzyna503?: boolean;
   } = {},
 ) {
   const klatki = [...(o.zajete ?? [])];
   let zajec = 0;
+  let sesja: 'nick' | 'druzyna' | null = o.zalogowani ? 'nick' : o.anonimowa ? 'druzyna' : null;
   await page.route('**/api/**', async (r) => {
     const req = r.request();
     const path0 = new URL(req.url()).pathname.replace(/^.*\/api/, '');
@@ -11607,9 +11642,34 @@ async function fakeApi(
       r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (path0 === '/zdrowie') return json(200, { ok: true, gra: 'za-murem', wersja: 1 });
     if (path0 === '/konto' && m === 'GET')
-      return o.zalogowani
-        ? json(200, { nick: 'Sasiedzi_z_Lanciego', utworzone: 1, klatki: 0, zapis: false })
+      return sesja
+        ? json(200, sesja === 'nick' ? JA_NICK : JA_DRUZYNA)
         : json(401, { blad: 'brak_sesji', komunikat: 'Zalogujcie się.' });
+    if (path0 === '/druzyna' && m === 'POST') {
+      if (o.druzyna503)
+        return json(503, { blad: 'serwer_zajety', komunikat: 'Serwer jest przeciążony. Spróbujcie za chwilę.' });
+      sesja = 'druzyna';
+      return json(201, JA_DRUZYNA);
+    }
+    if (path0 === '/druzyna/powrot' && m === 'POST') {
+      const { kod } = req.postDataJSON() as { kod: string };
+      if (kod.replace(/[\s-]/g, '').toUpperCase() !== KOD_UDAWANY.replace(/-/g, ''))
+        return json(401, { blad: 'zly_kod', komunikat: 'Ten kod nie pasuje do żadnej drużyny.' });
+      sesja = 'druzyna';
+      return json(200, JA_DRUZYNA);
+    }
+    if (path0 === '/druzyna/start' && m === 'PUT') return r.fulfill({ status: 204, body: '' });
+    if (path0.startsWith('/adres') && m === 'GET' && o.adres) {
+      const a = ADDRESSES.find((x) => x.key === 'lanciego')!;
+      return json(200, {
+        lat: a.lat,
+        lon: a.lon,
+        label: 'Lanciego 10G, Ursynów Północny, Ursynów, Warszawa',
+        area: 'Ursynów Północny',
+        street: 'Lanciego',
+        city: 'Warszawa',
+      });
+    }
     if (path0 === '/zapis' && m === 'GET')
       return o.chmura
         ? json(200, { dane: o.chmura.dane, wersja: o.chmura.wersja, zmieniony: 1, rozmiar: 1 })
@@ -11627,7 +11687,11 @@ async function fakeApi(
       o.chmura = undefined;
       return r.fulfill({ status: 204, body: '' });
     }
-    if (path0 === '/klatki/moje' && m === 'DELETE') return r.fulfill({ status: 204, body: '' });
+    if (path0 === '/klatki/moje' && m === 'DELETE') {
+      // nowa gra zwalnia klatki tej drużyny (cudze zostają)
+      for (let i = klatki.length - 1; i >= 0; i--) if (klatki[i].moja) klatki.splice(i, 1);
+      return r.fulfill({ status: 204, body: '' });
+    }
     if (path0 === '/klatki' && m === 'GET') return json(200, { klatki });
     if (path0 === '/klatki' && m === 'POST') {
       const k = req.postDataJSON() as Omit<ZajetaKlatka, 'moja'>;
@@ -11684,26 +11748,80 @@ function cudzeKlatkiLanciego(): ZajetaKlatka[] {
 async function startSieci(page: Page, base: string) {
   await offlineNetwork(page);
   await page.goto(`${base}?siec=1&speed=0`);
-  await page.waitForSelector('#siec:not([hidden]) .sc-who');
+  await page.waitForSelector('#siec:not([hidden])');
   await page.fill('#addr', 'Lanciego 10G, Warszawa');
   await page.click('#startForm button[type=submit]');
   await waitIdle(page);
 }
 
-/** zakłada konto w bloku „Gra z sąsiadami” (prawdziwy serwer za proxy Vite) i czeka na zalogowanie */
+/** zakłada konto z nickiem w bloku „Gra z sąsiadami” (odnośnik „logowanie”, prawdziwy serwer za proxy Vite) i czeka na
+    zalogowanie */
 async function zalozKonto(page: Page, nick: string) {
-  await page.waitForSelector('#siec:not([hidden]) #scNick');
+  await page.waitForSelector('#siec:not([hidden]) [data-siec=logowanie]');
+  await page.click('[data-siec=logowanie]');
+  await page.waitForSelector('#scNick');
   await page.fill('#scNick', nick);
   await page.fill('#scHaslo', `${nick}-haslo-123`);
   await page.click('[data-siec=zaloz]');
   await page.waitForSelector('#siec .sc-who');
 }
 
+/** Karta startowa z blokiem drużyny bez sesji: czysta (bez pól nicku i hasła, z kodem powrotu, odnośnikiem do dawnego
+    logowania i do prywatności), „logowanie” pokazuje dawny formularz, „wróć” go chowa, zły kod daje komunikat z
+    serwera, dobry loguje do drużyny z zapisem w chmurze. Zrzuty pośrednie <nazwa>-czysta i <nazwa>-logowanie, końcowy
+    <nazwa> (po kodzie powrotu). Telefon: formularz adresu mieści się na pierwszym ekranie, nic nie przewija się w bok. */
+async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: boolean) {
+  await fakeApi(page, { chmura: CHMURA_KARTY });
+  await page.goto(`${base}?siec=1`);
+  await page.waitForSelector('#siec:not([hidden]) #scKod');
+  const tekst = () => page.$eval('#siec', (e) => e.textContent ?? '');
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(co);
+  };
+  wymagaj(!(await page.$('#scNick, #scHaslo, input[type=password]')), 'blok drużyny ma pola nicku albo hasła');
+  wymagaj(!!(await page.$('#siec a[href="prywatnosc.html"]')), 'brak odnośnika do prywatności');
+  wymagaj(!(await tekst()).match(/próba|beta/i), 'nagłówek bloku z dopiskiem „próba”');
+  if (telefon) {
+    const dol = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
+    wymagaj(dol <= 844, `formularz adresu poza pierwszym ekranem telefonu (${Math.round(dol)} px)`);
+  }
+  const bokiem = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+  wymagaj(!(await bokiem()), 'karta startowa przewija się w bok');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-czysta.png`), fullPage: true });
+  // dawne logowanie nickiem za odnośnikiem
+  await page.click('[data-siec=logowanie]');
+  await page.waitForSelector('#scNick');
+  wymagaj(!(await page.$('#scKod')), 'kod powrotu został w formularzu logowania');
+  wymagaj(!(await bokiem()), 'formularz logowania przewija kartę w bok');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-logowanie.png`), fullPage: true });
+  await page.click('[data-siec=wroc]');
+  await page.waitForSelector('#scKod');
+  wymagaj(!(await page.$('#scNick')), 'formularz logowania po „wróć”');
+  // zły kod: komunikat, kod zostaje w polu
+  await page.fill('#scKod', 'ZZZZ-ZZZZ-ZZZZ');
+  await page.click('[data-siec=powrot]');
+  await page.waitForSelector('#siec .sc-msg');
+  wymagaj((await page.inputValue('#scKod')) === 'ZZZZ-ZZZZ-ZZZZ', 'zły kod zniknął z pola');
+  // dobry kod: drużyna i zapis z chmury
+  await page.fill('#scKod', KOD_UDAWANY.toLowerCase());
+  await page.click('[data-siec=powrot]');
+  await page.waitForSelector('#siec .sc-who');
+  const po = await tekst();
+  console.log(`  po kodzie: ${po.replace(/\s+/g, ' ').slice(0, 200)}`);
+  wymagaj(po.includes('#7'), 'blok po kodzie nie pokazuje drużyny');
+  wymagaj(!!(await page.$('[data-siec=chmura]')), 'brak przycisku „Kontynuuj z chmury”');
+  wymagaj(!!(await page.$('#scKod')), 'brak pola kodu po powrocie');
+  wymagaj(!(await page.$('[data-siec=wyloguj]')), 'wylogowanie przy drużynie anonimowej');
+  wymagaj(!(await bokiem()), 'karta po powrocie do drużyny przewija się w bok');
+}
+
 function siecShots(): Shot[] {
   return [
     {
-      // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza zajmuje
-      // klatkę pod adresem, druga z tym samym adresem zaczyna bez domu, a w bazie są obie drużyny bez adresu
+      // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza (konto
+      // z nickiem, dawną drogą przez odnośnik „logowanie”) zajmuje klatkę pod adresem, druga (drużyna anonimowa założona
+      // przy pierwszej grze, w przeglądarce bez ciasteczka, bez żadnego formularza) z tym samym adresem zaczyna bez domu,
+      // a w bazie są obie bez adresu
       name: 'siec-dwie-druzyny',
       query: '',
       run: async (page, base) => {
@@ -11728,11 +11846,11 @@ function siecShots(): Shot[] {
           const a = await page.evaluate(() => window.zm!.siec());
           console.log(`  pierwsza drużyna: ${JSON.stringify(a.stan)}`);
           if (!a.stan?.dom) throw new Error('pierwsza drużyna nie dostała klatki pod adresem');
-          // druga drużyna w tej samej przeglądarce: wylogowanie, nowe konto, ten sam adres
+          // druga drużyna: inna przeglądarka (bez ciasteczka sesji), zwykła karta startowa bez pól nicku i hasła, ten sam adres
+          await page.context().clearCookies();
           await page.goto(`${base}?siec=1&speed=0`);
-          await page.waitForSelector('#siec:not([hidden]) .sc-who');
-          await page.click('[data-siec=wyloguj]');
-          await zalozKonto(page, 'Drudzy');
+          await page.waitForSelector('#siec:not([hidden]) #scKod');
+          if (await page.$('#scNick, #scHaslo')) throw new Error('karta startowa ma pola nicku albo hasła');
           await page.fill('#addr', 'Lanciego 10G, Warszawa');
           await page.click('#startForm button[type=submit]');
           await waitIdle(page);
@@ -11740,11 +11858,14 @@ function siecShots(): Shot[] {
           console.log(`  druga drużyna: ${JSON.stringify(b.stan)}, znaczniki ${b.znaczniki.join(' ')}`);
           if (b.stan?.dom !== false || !b.znaczniki.includes('obca') || !b.znaczniki.includes('cel'))
             throw new Error('druga drużyna nie zaczęła bez domu przy zajętej klatce');
+          if (!/^#\d+$/.test(b.stan?.konto ?? '')) throw new Error(`druga drużyna bez znaku „#<id>”: ${b.stan?.konto}`);
           const wiersze = gra.baza.db.prepare('SELECT konto, siedziba FROM klatki').all();
           const konta = gra.baza.db.prepare('SELECT * FROM konta').all() as Record<string, unknown>[];
           console.log(
-            `  w bazie: ${konta.length} konta, ${wiersze.length} klatka; kolumny konta: ${Object.keys(konta[0]).join(', ')}`,
+            `  w bazie: ${konta.length} konta (anonimowe: ${konta.filter((k) => k.anonimowe === 1).length}), ${wiersze.length} klatka; kolumny konta: ${Object.keys(konta[0]).join(', ')}`,
           );
+          if (konta.length !== 2 || konta.filter((k) => k.anonimowe === 1).length !== 1)
+            throw new Error('w bazie powinno być konto z nickiem i jedna drużyna anonimowa');
           if (wiersze.length !== 1) throw new Error('w bazie powinna być jedna zajęta klatka');
           await page.evaluate(() => {
             const zm = window.zm!;
@@ -11765,7 +11886,8 @@ function siecShots(): Shot[] {
       },
     },
     {
-      // blok „Gra z sąsiadami” tylko z ?siec=1 i przy działającym serwerze; niezalogowani widzą formularz i notkę
+      // blok „Gra z sąsiadami” tylko przy włączonej sieci i działającym serwerze; bez sesji widać blok drużyny (kod powrotu,
+      // notka o koncie bez e-maila i hasła), bez pól nicku i hasła
       name: 'siec-start',
       query: '',
       run: async (page, base) => {
@@ -11775,9 +11897,10 @@ function siecShots(): Shot[] {
         await page.waitForSelector('#demos button');
         if (!(await page.$eval('#siec', (e) => (e as HTMLElement).hidden))) throw new Error('blok sieci bez ?siec=1');
         await page.goto(`${base}?siec=1`);
-        await page.waitForSelector('#siec:not([hidden]) #scNick');
+        await page.waitForSelector('#siec:not([hidden]) #scKod');
         const note = await page.$eval('#siec', (e) => e.textContent ?? '');
-        if (!note.includes('bez e-maila')) throw new Error('brak notki o koncie bez e-maila');
+        if (!note.includes('nie ma e-maila ani hasła')) throw new Error('brak notki o koncie bez e-maila i hasła');
+        if (await page.$('#scNick, #scHaslo')) throw new Error('blok drużyny ma pola nicku albo hasła');
         // blok sieci spycha atrybucję mapy i link do danych mieszkańców niżej, ale oba zostają na karcie
         await atrybucjaStartu(page);
       },
@@ -11794,6 +11917,89 @@ function siecShots(): Shot[] {
         const bottom = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
         console.log(`  formularz kończy się na ${Math.round(bottom)} px z 844`);
         if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+      },
+    },
+    // karta startowa z blokiem drużyny, cztery razy: komputer i telefon, po polsku i po angielsku (zrzuty
+    // <nazwa>-czysta, <nazwa>-logowanie i <nazwa> z drużyną po kodzie powrotu)
+    {
+      name: 'siec-druzyna',
+      query: '',
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna', false),
+    },
+    {
+      name: 'siec-druzyna-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon', true),
+    },
+    {
+      name: 'siec-druzyna-en',
+      query: '',
+      lang: 'en',
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-en', false),
+    },
+    {
+      name: 'siec-druzyna-telefon-en',
+      query: '',
+      lang: 'en',
+      w: 390,
+      h: 844,
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon-en', true),
+    },
+    {
+      // nowa gra bez sesji: drużyna powstaje raz, przy pierwszej grze, adres idzie przez serwer gry (nie do Nominatim),
+      // start w sieci z punktem startu; druga gra w tej samej przeglądarce nie zakłada drugiej drużyny
+      name: 'siec-druzyna-start',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { adres: true });
+        const zapytania: string[] = [];
+        page.on('request', (q) => {
+          const u = new URL(q.url());
+          if (u.hostname === 'nominatim.openstreetmap.org') zapytania.push(`${q.method()} nominatim${u.pathname}`);
+          else if (/\/api\/(druzyna|adres)/.test(u.pathname)) zapytania.push(`${q.method()} ${u.pathname}`);
+        });
+        await startSieci(page, base);
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  stan ${JSON.stringify(s.stan)}, zapytania ${zapytania.join(', ')}`);
+        if (s.stan?.konto !== '#7' || !s.stan.dom) throw new Error('nowa gra bez sesji nie dostała drużyny i klatki');
+        if (zapytania.filter((z) => z === 'POST /api/druzyna').length !== 1) throw new Error('drużyna nie raz');
+        if (!zapytania.some((z) => z.startsWith('GET') && z.includes('/adres')))
+          throw new Error('adres nie przez serwer');
+        if (zapytania.some((z) => z.includes('nominatim'))) throw new Error('adres poszedł do Nominatim mimo serwera');
+        // druga gra: karta pokazuje drużynę z sesji, a start nie zakłada nowej
+        await page.goto(`${base}?siec=1&speed=0`);
+        await page.waitForSelector('#siec:not([hidden]) .sc-who');
+        const kto = await page.$eval('#siec .sc-who', (e) => e.textContent ?? '');
+        if (!kto.includes('drużyna #7')) throw new Error(`blok nie pokazuje drużyny: ${kto}`);
+        await page.fill('#addr', 'Lanciego 10G, Warszawa');
+        await page.click('#startForm button[type=submit]');
+        await waitIdle(page);
+        if (zapytania.filter((z) => z === 'POST /api/druzyna').length !== 1)
+          throw new Error('druga gra założyła drugą drużynę');
+      },
+    },
+    {
+      // serwer odpowiada na zakładanie drużyny 503: gra bez sieci z jednym komunikatem i jednym zapytaniem
+      name: 'siec-druzyna-503',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { adres: true, druzyna503: true });
+        const posty: string[] = [];
+        page.on('request', (q) => {
+          if (q.method() === 'POST' && q.url().endsWith('/api/druzyna')) posty.push(q.url());
+        });
+        await startSieci(page, base);
+        const s = await page.evaluate(() => window.zm!.siec());
+        if (s.stan !== null || s.zalogowani) throw new Error('gra ruszyła w sieci mimo 503');
+        await page.waitForFunction(() => /Gramy bez sieci/.test(document.getElementById('hint')?.textContent ?? ''));
+        const kom = await page.$eval('#hint', (e) => e.textContent ?? '');
+        console.log(`  komunikat: ${kom}; zapytań o drużynę: ${posty.length}`);
+        if (posty.length !== 1) throw new Error('drużyna zakładana więcej niż raz');
+        const bledy = await page.$$eval('#startStatus', (l) => l.map((e) => e.textContent ?? ''));
+        if (bledy.some((t) => /Coś poszło nie tak|Something went wrong/.test(t)))
+          throw new Error('błąd na ekranie startu');
       },
     },
     {

@@ -18,16 +18,40 @@
   text-transform: uppercase;
   color: var(--ink-dim);
 }
-.sc-title small {
-  margin-left: 6px;
-  letter-spacing: 0.1em;
-  color: var(--lamp);
-}
 .sc-form,
-.sc-row {
+.sc-row,
+.sc-kod {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.sc-kod {
+  align-items: center;
+}
+.sc-lab {
+  flex: 1 0 100%;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+.sc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin: 0;
+  font-size: 14px;
+}
+.sc-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font: inherit;
+  color: var(--ink-dim);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.sc-link:hover {
+  color: var(--ink);
 }
 .start .siec input {
   flex: 1 1 140px;

@@ -2,7 +2,9 @@
    po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
    wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
-   z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
+   przy włączonej sieci (src/net/flaga.ts: ?siec=1 albo VITE_SIEC=1 z budowy; src/net/gra.ts: drużyna anonimowa zakładana
+   przy pierwszej grze na prawdziwym adresie, kod powrotu na karcie startowej, adres przez serwer gry tylko przy
+   odpowiadającym serwerze; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału i okazji co odświeżenie
    okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, a okienko wyższe od ekranu
@@ -43,7 +45,7 @@
    (zapis w jej trakcie to `czeka`). Dane ośmiu kandydatów: dema z public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry,
    prawdziwy adres w tle po starcie, po jednym kwadracie, bez czekania (jego ciężkie kroki idą wtedy w grze, po jednym na klatkę);
    bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero przy fladze), a
-   zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z `?siec=1` (jedno ostrzeżenie w konsoli); gdy kod osady się
+   zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z włączoną siecią (jedno ostrzeżenie w konsoli); gdy kod osady się
    nie załaduje, nowa gra rusza bez niej (`osadaBezKodu`), a gra z zapisu z osadą kończy się błędem wczytania.
    `window.zm.osada()` pokazuje stan osady (null bez flagi) i `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem).
    Widok ich kwadratu (zadanie 5 etapu 2): przed odkryciem ośmiu sąsiadów domu leży pod mgłą „?” (`view.ustawMgleDomu`, osada czeka albo
@@ -102,6 +104,7 @@ import type { Odmiana } from './mieszkancy/historie.ts';
 import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
+import { siecWlaczona } from './net/flaga.ts';
 import { GraSieciowa } from './net/gra.ts';
 import { opcjeSceny } from './render/art/kwadratyScena.ts';
 import { buildScene, type Scene, TILE } from './render/art/scene.ts';
@@ -651,12 +654,12 @@ const druzyna = druzynaEl ? new Druzyna(druzynaEl) : null;
 const status = (t: string) => {
   $('startStatus').textContent = t;
 };
-/* gra z sąsiadami (src/net/gra.ts): blok #siec, start przez serwer, znaczniki klatek, zapis w chmurze; tylko z ?siec=1
-   i przy działającym serwerze, inaczej wszystko jak bez sieci */
+/* gra z sąsiadami (src/net/gra.ts): blok #siec, drużyna przy pierwszej grze, start przez serwer, znaczniki klatek, zapis
+   w chmurze; tylko przy włączonej sieci (siecWlaczona) i działającym serwerze, inaczej wszystko jak bez sieci */
 const siec = new GraSieciowa({
   el: document.getElementById('siec'),
   warstwa: document.getElementById('klatki'),
-  wlaczona: params.get('siec') === '1',
+  wlaczona: siecWlaczona(params),
   touch: touchUI,
   say: (t, ms) => say(t, ms),
   screenOf: (x, y) => screenOf(x, y),
@@ -665,7 +668,7 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
+/** ekran startowy od nowa (z ?siec=, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
 const startUrl = () => adresStartowy(location.pathname, location.search);
 /** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
 const DEMO_LABEL_EN: Record<string, string> = {
@@ -696,7 +699,9 @@ demoList().then((list) => {
 $('startForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const q = $<HTMLInputElement>('addr').value.trim();
-  if (q) start(() => loadAddress(q, status));
+  // adres przez serwer gry tylko przy włączonej sieci i odpowiadającym serwerze (apiAdresu); inaczej wprost do Nominatim.
+  // Funkcja jest wołana w start() po odpowiedzi serwera (siecGotowa), więc apiAdresu() już wie, czy serwer działa
+  if (q) start(() => loadAddress(q, status, siec.apiAdresu()));
 });
 const resume = readSave();
 // usunięcie zapisu w dwóch krokach, bez natywnego confirm: drugi klik w ciągu ARM_MS usuwa
@@ -777,7 +782,7 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
   if (busy) return;
   busy = true;
   try {
-    // gra z sąsiadami: start zależy od zalogowania, więc najpierw odpowiedź serwera (bez ?siec=1 od razu)
+    // gra z sąsiadami: start zależy od sesji i od tego, czy serwer w ogóle jest, więc najpierw jego odpowiedź (przy wyłączonej sieci od razu)
     await siecGotowa;
     const data = await get();
     // tabele mieszkańców dla punktu osiedla (pliki gry z public/data/mieszkancy/, bez wysyłania adresu); bez nich
@@ -830,10 +835,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   const pietra = pietraWlaczone(saved ?? null, params);
   pietraGry = pietra;
   // osada AI (?osada=1): tak samo zapis wygrywa z adresem; przestarzały zapis (niżej) zachowuje flagę, ale zaczyna osadę od nowa.
-  // Nowa gra z ?siec=1 (gra z sąsiadami) osady nie dostaje: w tym etapie nie łączymy obu rzeczy, jedno ostrzeżenie w konsoli
+  // Nowa gra z włączoną siecią (gra z sąsiadami) osady nie dostaje: w tym etapie nie łączymy obu rzeczy, jedno ostrzeżenie w konsoli
   const osadaWlaczonaGra = osadaWlaczona(saved ?? null, params);
   if (osadaOdrzuconaPrzezSiec(saved ?? null, params))
-    console.warn('Osada AI: ?osada=1 nie działa razem z ?siec=1 (gra z sąsiadami), gra idzie dalej bez osady');
+    console.warn(
+      'Osada AI: ?osada=1 nie działa razem z siecią (?siec=1 albo VITE_SIEC=1, gra z sąsiadami), gra idzie dalej bez osady',
+    );
   const t0 = performance.now();
   // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
   // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
