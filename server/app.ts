@@ -46,7 +46,15 @@
    sekretowi (porównanie w stałym czasie), adres bierzemy z nagłówka `proxyNaglowekIp` (domyślnie x-real-ip);
    sekretu nikt poza naszym projektem na Vercelu nie zna, więc nagłówka z adresem nie da się podrobić z zewnątrz,
    a bez sekretu nagłówek się nie liczy; (2) `zaufaneProxy`: ostatni wpis X-Forwarded-For (własny Caddy);
-   (3) adres połączenia. GET /api/zdrowie mówi, który z trzech zadziałał (`ip`: proxy, xff, polaczenie), bez adresu. */
+   (3) adres połączenia. GET /api/zdrowie mówi, który z trzech zadziałał (`ip`: proxy, xff, polaczenie), bez adresu.
+
+   Wygasanie (sprzataj, co minutę z main.ts): klatki drużyny, która nie grała `klatkiDni` dni (14, KLATKI_DNI), wracają
+   do wolnych, a konto, sesje, zapis i kod powrotu zostają; konto bez wizyty przez `kontaDni` dni (180, KONTA_DNI)
+   znika razem z sesjami, klatkami i zapisem (kaskada w bazie). Wizytą jest każde żądanie z ważną sesją i każde logowanie (hasłem, kodem, nowa drużyna), ale
+   `konta.ostatnio` ma dokładność doby (sesjaZ), a nowe konto zaczyna od chwili założenia, więc granica to początek
+   doby sprzed N dni: drużyna zawsze ma pełne N dni od ostatniej wizyty. Wygasanie liczy się najwyżej raz na godzinę
+   (zegar `teraz`), wygasłe sesje i wpisy limitów przy każdym wywołaniu; błąd wygasania idzie do dziennika i nie
+   przerywa sprzątania. Klient po powrocie sam zajmuje swoją siedzibę od nowa (src/net/gra.ts, poWczytaniu). */
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -57,9 +65,11 @@ import {
   type DaneLogowania,
   HASLO_MAX,
   type Ja,
+  KLATKI_DNI,
   KLATKI_W_ODPOWIEDZI_MAX,
   KLUCZ_KLATKI_WZOR,
   KLUCZ_MAX,
+  KONTA_DNI,
   type KodPowrotu,
   kotwicaKlucza,
   maAdres,
@@ -141,6 +151,10 @@ export interface OpcjeSerwera {
   promienM?: number;
   /** ważność sesji w dniach (domyślnie 30, przedłużana, gdy zostało mniej niż połowa) */
   sesjaDni?: number;
+  /** po ilu dniach bez gry klatki drużyny wracają do wolnych (domyślnie KLATKI_DNI, czyli 14) */
+  klatkiDni?: number;
+  /** po ilu dniach bez gry konto znika z sesjami, klatkami i zapisem (domyślnie KONTA_DNI, czyli 180) */
+  kontaDni?: number;
   /** zegar (ms od 1970) */
   teraz?: () => number;
   /** dziennik błędów serwera (domyślnie console.error) */
@@ -151,7 +165,8 @@ export interface SerwerGry {
   /** obsługa żądania dla http.createServer */
   obsluz(req: IncomingMessage, res: ServerResponse): void;
   readonly baza: Baza;
-  /** wygasłe sesje i stare wpisy limitów; main.ts woła co minutę */
+  /** wygasłe sesje i stare wpisy limitów przy każdym wywołaniu, a najwyżej raz na godzinę klatki drużyn bez gry
+      (`klatkiDni`) i konta bez wizyty (`kontaDni`); main.ts woła co minutę */
   sprzataj(): void;
   zamknij(): void;
 }
@@ -195,6 +210,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const limitKlatek = op.limitKlatek ?? 60;
   const promienM = op.promienM ?? 600;
   const sesjaMs = (op.sesjaDni ?? 30) * DOBA;
+  const klatkiMs = (op.klatkiDni ?? KLATKI_DNI) * DOBA;
+  const kontaMs = (op.kontaDni ?? KONTA_DNI) * DOBA;
   const dziennik = op.dziennik ?? ((w: string) => console.error(w));
   const zrodla = op.zrodla ?? [];
   const proxyNaglowekIp = (op.proxyNaglowekIp || 'x-real-ip').toLowerCase();
@@ -219,6 +236,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const okna = [logowania, logowaniaNicku, rejestracje, druzyny, zajeteNicki, zadania, zapisy, kody];
   /** konta, których zapis właśnie się wysyła: drugi naraz to 429 */
   const zapisyWToku = new Set<number>();
+  /** chwila ostatniego przebiegu wygasania klatek i kont (sprzataj liczy je najwyżej raz na godzinę) */
+  let wygasanieOd = Number.NEGATIVE_INFINITY;
   const scryptKolejka: Kolejka = kolejka(op.scrypt?.naraz ?? 2, op.scrypt?.czeka ?? 64);
   /** scrypt przez kolejkę; pełna kolejka to 503, żeby zalew logowań nie zajął wszystkich wątków */
   const scrypt = async <T>(zadanie: () => Promise<T>): Promise<T> => {
@@ -277,6 +296,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     const token = nowyToken();
     baza.dodajSesje(skrotTokenu(token), konto.id, k.teraz, k.teraz + sesjaMs);
     baza.przytnijSesje(konto.id, 10);
+    // logowanie też jest wizytą: konto, które weszło kodem albo hasłem, nie wygaśnie przed pierwszym żądaniem z sesją
+    baza.dotknijKonta(konto.id, Math.floor(k.teraz / DOBA) * DOBA);
     k.naglowki['Set-Cookie'] = ciasteczko(token, sesjaMs);
   };
 
@@ -750,8 +771,19 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     },
     baza,
     sprzataj() {
-      baza.usunWygasleSesje(teraz());
+      const t = teraz();
+      baza.usunWygasleSesje(t);
       for (const o of okna) o.sprzataj();
+      if (t - wygasanieOd < GODZ) return;
+      wygasanieOd = t;
+      try {
+        // granica to początek doby: `ostatnio` ma dokładność doby, więc wizyta daje drużynie pełne N dni
+        const granica = (ms: number) => Math.floor((t - ms) / DOBA) * DOBA;
+        baza.zwolnijKlatkiNieaktywnych(granica(klatkiMs));
+        baza.usunNieaktywneKonta(granica(kontaMs));
+      } catch (e) {
+        dziennik(`błąd wygasania klatek i kont: ${e instanceof Error ? e.message : String(e)}`);
+      }
     },
     zamknij() {
       baza.zamknij();

@@ -29,6 +29,12 @@ Kod powrotu pozwala wejść do tej samej drużyny z innej przeglądarki (aplikac
 
 Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA-256 (kolumna `konta.kod`, unikalna), więc wyciek bazy nie daje kodów wprost, a serwer nie umie go pokazać drugi raz. Zły kod w `powrot` liczy się do tego samego limitu co złe hasło (10 nieudanych prób na IP w 15 minut, potem 429), dobry nie. Wszystkie `POST` niosą `Content-Type: application/json`, także te bez danych (`{}`). Drużyny anonimowej nie ma w logowaniu nickiem. Schemat: migracja 2 w `server/baza.ts` (kolumny `anonimowe` i `kod`), stare konta zostają zwykłymi kontami. Testy: `npm test -- serwer-druzyna`.
 
+## Wygasanie klatek i kont
+
+Klatka nie jest na zawsze: drużyna, która nie grała 14 dni, traci wszystkie klatki (wracają do puli wolnych), ale zachowuje konto, zapis w chmurze i kod powrotu. Po powrocie gra wczytuje zapis, a klient próbuje zająć siedzibę od nowa (`poWczytaniu` w `src/net/gra.ts`): wolną zajmuje po cichu, a jeśli w międzyczasie zajęła ją inna drużyna, mówi o tym jednym komunikatem i gra toczy się dalej u siebie. Konto bez gry przez 180 dni znika razem z sesjami, klatkami, zapisem i kodem (kaskada kluczy obcych), a jego nick wraca do puli; z kopii bazy znika dopiero po `ZM_KOPIE_DNI` dniach (to też trzeba wpisać do informacji o danych osobowych). Stałe `KLATKI_DNI` i `KONTA_DNI` leżą w `src/net/protokol.ts`.
+
+Grą (wizytą) jest każde żądanie z ważną sesją drużyny i każde logowanie (hasłem, kodem powrotu, nowa drużyna). `konta.ostatnio` ma dokładność doby, a nowe konto zaczyna od chwili założenia, więc granica to początek doby sprzed N dni: drużyna zawsze dostaje pełne N dni od ostatniej wizyty (po wizycie w poniedziałek wieczorem klatki wracają do puli dopiero o północy UTC we wtorek, dwa tygodnie i dzień później). Wygasanie liczy `sprzataj()` najwyżej raz na godzinę (serwer woła je co minutę razem ze sprzątaniem sesji), więc zwolnienie może się spóźnić o godzinę. Błąd wygasania idzie do dziennika i nie przerywa sprzątania; następna próba jest za godzinę. Testy: `npm test -- serwer-wygasanie`.
+
 ## Zmienne środowiskowe
 
 | zmienna | domyślnie | co robi |
@@ -44,6 +50,8 @@ Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA
 | `ZM_LIMIT_ZAPISU` | 3145728 | największy zapis gry w bajtach JSON |
 | `ZM_LIMIT_KLATEK` | 60 | najwięcej klatek na konto |
 | `ZM_PROMIEN_M` | 600 | najdalej od siedziby drużyny w metrach |
+| `ZM_KLATKI_DNI` | 14 | po ilu dniach bez gry klatki drużyny wracają do wolnych (konto, zapis i kod powrotu zostają) |
+| `ZM_KONTA_DNI` | 180 | po ilu dniach bez gry konto znika razem z sesjami, klatkami i zapisem |
 | `ZM_RESTART_H` | brak (w compose 48) | po tylu godzinach serwer kończy się czysto, a Docker podnosi go od nowa; brak albo 0: bez restartu planowego |
 | `ZM_KOPIE` | brak (w compose `/dane/kopie`) | katalog codziennych kopii bazy; brak: bez kopii |
 | `ZM_KOPIE_DNI` | 7 | ile ostatnich dni kopii zostaje (z dzisiejszą); kopia sprzed tylu dni znika |

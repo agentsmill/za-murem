@@ -383,6 +383,62 @@ describe('gra z sąsiadami w grze (src/net/gra.ts, bez DOM)', () => {
     }
   });
 
+  it('wczytana gra po wygaśnięciu: wolna siedziba zajmuje się po cichu, zajęta daje jeden komunikat i gra idzie dalej', async () => {
+    // zapis drużyny z domem, która nie grała ponad 14 dni: serwer zwolnił jej klatki (server/baza.ts, wygasanie)
+    const zapis = {
+      v: 1,
+      at: 5,
+      seed: 1,
+      sim: { v: 3, tick: 0 },
+      gov: { v: 1 },
+      data: dane,
+      siec: { zajete: [], dom: true, konto: 'Sasiad', wersja: 4 },
+    } as unknown as Save;
+
+    // klatka siedziby wolna: zajęta od nowa bez słowa, jedno zapytanie o nią i jedno o listę zajętych
+    const wolna = udawaneApiGry();
+    const cicho: string[] = [];
+    const g1 = new GraSieciowa(opcje(wolna.api, { say: cicho }));
+    await g1.init();
+    const w1 = await g1.przygotuj(dane, zbuduj, zapis);
+    await chwila();
+    expect(worldKey(w1)).toBe(worldKey(w0));
+    expect(wolna.log).toEqual([`zajmij ${k0.klucz}`, 'zajete']);
+    expect(cicho).toEqual([]);
+    expect(g1.komunikatStartu()).toBeNull();
+    expect(g1.podglad()).toMatchObject({ bezSieci: false, stan: { dom: true } });
+    expect(g1.bezDomu()).toBe(false);
+
+    // klatkę w międzyczasie zajęła inna drużyna: jeden komunikat, dom zostaje, bez ponowień i bez zmiany trybu
+    const zajeta = udawaneApiGry({
+      zajeteNaStarcie: [obca(doZajecia(k0))],
+      zajmij: () => zle(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.'),
+    });
+    const powiedziane: string[] = [];
+    const g2 = new GraSieciowa(opcje(zajeta.api, { say: powiedziane }));
+    await g2.init();
+    const w2 = await g2.przygotuj(dane, zbuduj, zapis);
+    await chwila();
+    expect(w2.hq).toBe(w1.hq);
+    expect(zajeta.log).toEqual([`zajmij ${k0.klucz}`, 'zajete']);
+    expect(powiedziane).toHaveLength(1);
+    expect(powiedziane[0]).toMatch(/waszą klatkę zajęła inna drużyna.*dalej u was/);
+    expect(g2.podglad()).toMatchObject({ bezSieci: false, stan: { dom: true } });
+    expect(g2.bezDomu()).toBe(false);
+    // dalej w grze: klatka w trakcie rozgrywki nie ponawia zajęcia ani komunikatu, symulacja idzie
+    const sim = new Sim(w2, createSim(w2, 1));
+    for (let i = 0; i < 3; i++) {
+      g2.klatka(sim, 10_000 * (i + 1), false);
+      for (let k = 0; k < 20; k++) sim.step();
+      await chwila();
+    }
+    expect(zajeta.log.filter((x) => x.startsWith('zajmij'))).toHaveLength(1);
+    expect(powiedziane).toHaveLength(1);
+    // menu przy drzwiach tylko informuje, że klatka jest cudza; „Zajmij klatkę” zostaje dla drużyny bez domu
+    const menu = g2.menu(sim, w2.buildings[w2.hq].entrances[0].tile);
+    expect(menu.map((m) => m.label)).toEqual(['Klatka zajęta przez inną drużynę']);
+  });
+
   it('błąd zajęcia, który się nie zmieni (za daleko, limit): bez ponowień i bez ponownego startu', async () => {
     const sesja = new Map<string, string>();
     const powiedziane: string[] = [];

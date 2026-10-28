@@ -9,6 +9,8 @@
    - inni gracze widzą tylko, że klatka jest zajęta („moja: false”), nigdy czyj to nick ani numer konta,
    - klucze klatek i budynków liczy klient (src/world/klucze.ts); serwer sprawdza ich postać i to, czy pozycja
      klatki leży przy budynku z klucza (kotwicaKlucza), więc nie da się zająć klatki w innym mieście,
+   - klatki drużyny, która nie grała KLATKI_DNI dni, wracają do wolnych (konto, zapis i kod powrotu zostają); konto bez
+     wizyty przez KONTA_DNI dni znika z klatkami, sesjami i zapisem (liczy się wizyta z dokładnością do doby),
    - zapis gry w chmurze to obiekt JSON bez tekstu adresu: bez data.addr i data.street, bez tagów addr:* przy
      budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza),
    - serwer mówi po polsku (komunikat w odpowiedzi z błędem); angielska wersja gry tłumaczy go u klienta po kodzie
@@ -23,6 +25,11 @@ export const NICK_MAX = 24;
 export const NICK_WZOR = /^[\p{L}\p{N}_.-]+$/u;
 export const HASLO_MIN = 8;
 export const HASLO_MAX = 200;
+/** po ilu dniach bez gry (bez żadnego żądania z sesją drużyny) jej klatki wracają do puli; konto, zapis i kod powrotu
+    zostają. Serwer: `klatkiDni` w opcjach, ZM_KLATKI_DNI. Czyta to też informacja o danych w grze. */
+export const KLATKI_DNI = 14;
+/** po ilu dniach bez gry konto znika razem z sesjami, klatkami i zapisem (`kontaDni`, ZM_KONTA_DNI) */
+export const KONTA_DNI = 180;
 /** klucz budynku „px:X:Y:DX:DY:S” z src/world/klucze.ts: liczby całkowite bez zer na początku (jedna postać na
     budynek), S to 1, 2 albo 3 */
 const PX = 'px:(0|[1-9]\\d{0,8}):(0|[1-9]\\d{0,8}):(0|-?[1-9]\\d{0,8}):(0|[1-9]\\d{0,8}):[123]';

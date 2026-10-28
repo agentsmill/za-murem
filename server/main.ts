@@ -1,6 +1,6 @@
-/* Start serwera gry: konfiguracja ze zmiennych środowiskowych, serwer HTTP, sprzątanie co godzinę, zamknięcie
-   po SIGTERM i SIGINT. Uruchomienie: node server/main.ts (Node 24, TypeScript bez kompilacji). Opis zmiennych
-   i wdrożenia w server/README.md.
+/* Start serwera gry: konfiguracja ze zmiennych środowiskowych, serwer HTTP, sprzątanie co minutę (wygasłe sesje i
+   limity, a co godzinę klatki drużyn bez gry i konta bez wizyty), zamknięcie po SIGTERM i SIGINT. Uruchomienie:
+   node server/main.ts (Node 24, TypeScript bez kompilacji). Opis zmiennych i wdrożenia w server/README.md.
 
    PORT                 port HTTP (domyślnie 8787)
    HOST                 adres nasłuchu (domyślnie 127.0.0.1; w kontenerze 0.0.0.0)
@@ -16,6 +16,8 @@
    ZM_LIMIT_ZAPISU      największy zapis gry w bajtach (domyślnie 3 MiB)
    ZM_LIMIT_KLATEK      najwięcej klatek na konto (domyślnie 60)
    ZM_PROMIEN_M         najdalej od siedziby drużyny w metrach (domyślnie 600)
+   ZM_KLATKI_DNI        po ilu dniach bez gry klatki drużyny wracają do wolnych (domyślnie 14)
+   ZM_KONTA_DNI         po ilu dniach bez gry konto znika z sesjami, klatkami i zapisem (domyślnie 180)
    ZM_RESTART_H         po tylu godzinach serwer kończy się czysto, a Docker (restart: unless-stopped) podnosi go od
                         nowa na tej samej bazie; brak albo 0: bez restartu planowego (server/restart.ts)
    ZM_KOPIE             katalog codziennych kopii bazy (w kontenerze /dane/kopie); brak: bez kopii (server/kopie.ts)
@@ -23,6 +25,7 @@
    ZM_KOPIA_GODZINA     godzina UTC, o której robi się kopię (domyślnie 3) */
 
 import { createServer } from 'node:http';
+import { KLATKI_DNI, KONTA_DNI } from '../src/net/protokol.ts';
 import { stworzSerwer } from './app.ts';
 import { planujKopie, ustawieniaKopii } from './kopie.ts';
 import { godzinyRestartu, planujRestart, zamknijPlynnie } from './restart.ts';
@@ -37,6 +40,9 @@ const port = liczba(env.PORT, 8787);
 const host = env.HOST || '127.0.0.1';
 const sciezka = env.ZM_BAZA || './za-murem.db';
 
+const klatkiDni = liczba(env.ZM_KLATKI_DNI, KLATKI_DNI);
+const kontaDni = liczba(env.ZM_KONTA_DNI, KONTA_DNI);
+
 const gra = stworzSerwer({
   baza: sciezka,
   zrodla: (env.ZM_ZRODLA ?? '')
@@ -50,6 +56,8 @@ const gra = stworzSerwer({
   limitZapisu: liczba(env.ZM_LIMIT_ZAPISU, 3 * 1024 * 1024),
   limitKlatek: liczba(env.ZM_LIMIT_KLATEK, 60),
   promienM: liczba(env.ZM_PROMIEN_M, 600),
+  klatkiDni,
+  kontaDni,
 });
 
 // keepAliveTimeout dłuższy niż 2 minuty, przez które Caddy trzyma bezczynne połączenie do serwera: inaczej Node
@@ -60,9 +68,11 @@ const serwer = createServer(
 );
 serwer.listen(port, host, () => {
   console.log(`Za Murem: serwer gry na http://${host}:${port}/api (baza: ${sciezka})`);
+  console.log(`Za Murem: wygasanie bez wizyty (dni): klatki ${klatkiDni}, konta ${kontaDni}`);
 });
 
-// wygasłe sesje i wpisy limitów (okno żądań na IP trwa minutę)
+// wygasłe sesje i wpisy limitów (okno żądań na IP trwa minutę); klatki i konta bez wizyty liczy sprzataj() najwyżej
+// raz na godzinę
 const sprzatanie = setInterval(() => gra.sprzataj(), 60 * 1000);
 sprzatanie.unref();
 

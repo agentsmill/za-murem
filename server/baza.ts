@@ -12,6 +12,9 @@
      konto, czy to siedziba drużyny, chwila zajęcia,
    - zapisy: jeden zapis gry na konto (JSON skompresowany gzipem, bez tekstu adresu), wersja i chwila zmiany;
      usunięty zapis zostaje jako pusty wiersz z wyższą wersją, żeby stary telefon nie nadpisał nowej gry.
+   Wygasanie (server/app.ts, sprzataj): klatki kont z `ostatnio` przed granicą wracają do wolnych, a konta z `ostatnio`
+   przed dalszą granicą są usuwane. `ostatnio` to dzień ostatniej wizyty (dotknijKonta, dokładność doby); nowe konto
+   ma w nim chwilę założenia co do milisekundy.
    Usunięcie konta kasuje kaskadą jego sesje, klatki i zapis (klucze obce z ON DELETE CASCADE), a numery kont nie
    wracają (AUTOINCREMENT), więc spóźnione żądanie usuniętego konta nie trafi do nowego. secure_delete zamazuje
    usunięte dane w pliku bazy.
@@ -126,6 +129,10 @@ export interface Baza {
   /** zwalnia klatkę konta; siedziba przechodzi na najstarszą z pozostałych; false, gdy to nie jego klatka */
   zwolnijKlatke(konto: number, klucz: string): boolean;
   zwolnijKlatkiKonta(konto: number): number;
+  /** zwalnia wszystkie klatki kont z `ostatnio` < granica (konta, sesje i zapisy zostają); zwraca liczbę klatek */
+  zwolnijKlatkiNieaktywnych(granica: number): number;
+  /** usuwa konta z `ostatnio` < granica razem z sesjami, klatkami i zapisem (kaskada); zwraca liczbę kont */
+  usunNieaktywneKonta(granica: number): number;
 
   /** zapis albo null, gdy go nie ma (także usunięty) */
   zapis(konto: number): Zapis | null;
@@ -220,6 +227,8 @@ export function otworzBaze(sciezka: string): Baza {
     najstarsza: db.prepare('SELECT klucz FROM klatki WHERE konto = ? ORDER BY zajeta, klucz LIMIT 1'),
     ustawSiedzibe: db.prepare('UPDATE klatki SET siedziba = 1 WHERE klucz = ?'),
     usunKlatkiKonta: db.prepare('DELETE FROM klatki WHERE konto = ?'),
+    zwolnijNieaktywnych: db.prepare('DELETE FROM klatki WHERE konto IN (SELECT id FROM konta WHERE ostatnio < ?)'),
+    usunNieaktywne: db.prepare('DELETE FROM konta WHERE ostatnio < ?'),
     zapis: db.prepare('SELECT dane, rozmiar, wersja, zmieniony FROM zapisy WHERE konto = ? AND dane IS NOT NULL'),
     wersjaZapisu: db.prepare('SELECT wersja FROM zapisy WHERE konto = ?'),
     maZapis: db.prepare('SELECT 1 AS jest FROM zapisy WHERE konto = ? AND dane IS NOT NULL'),
@@ -358,6 +367,12 @@ export function otworzBaze(sciezka: string): Baza {
     },
     zwolnijKlatkiKonta(konto) {
       return num(q.usunKlatkiKonta.run(konto).changes);
+    },
+    zwolnijKlatkiNieaktywnych(granica) {
+      return num(q.zwolnijNieaktywnych.run(granica).changes);
+    },
+    usunNieaktywneKonta(granica) {
+      return num(q.usunNieaktywne.run(granica).changes);
     },
     zapis(konto) {
       const r = q.zapis.get(konto) as Wiersz | undefined;

@@ -69,6 +69,18 @@ describe('server/main.ts jako proces', () => {
     expect(s.stdout()).toContain('SIGTERM, zamykam serwer');
   }, 30_000);
 
+  it('ZM_KLATKI_DNI i ZM_KONTA_DNI dochodzą do serwera, a bez nich albo ze złą wartością obowiązuje 14 i 180', async () => {
+    const domyslne = await uruchom({});
+    expect(domyslne.stdout()).toContain('wygasanie bez wizyty (dni): klatki 14, konta 180');
+    domyslne.dziecko.kill('SIGTERM');
+    expect(await domyslne.wyszedl).toBe(0);
+
+    const s = await uruchom({ ZM_KLATKI_DNI: '3', ZM_KONTA_DNI: 'abc' });
+    expect(s.stdout()).toContain('wygasanie bez wizyty (dni): klatki 3, konta 180');
+    s.dziecko.kill('SIGTERM');
+    expect(await s.wyszedl).toBe(0);
+  }, 30_000);
+
   it('ZM_RESTART_H i ZM_KOPIE: pierwsza kopia przy starcie (plik 0600 w katalogu 0700, spójna baza), potem restart planowy kodem 0', async () => {
     const kopie = path.join(katalog, 'kopie');
     // godzina 0: kopia "dzisiejsza" jest już po terminie, więc powstaje od razu przy starcie, niezależnie od pory dnia
