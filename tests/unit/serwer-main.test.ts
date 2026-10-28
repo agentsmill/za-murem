@@ -61,6 +61,11 @@ describe('server/main.ts jako proces', () => {
   it('bez nowych zmiennych działa jak dotąd: odpowiada, nie planuje restartu ani kopii, SIGTERM kończy kodem 0', async () => {
     const s = await uruchom({});
     expect((await fetch(`http://127.0.0.1:${s.port}/api/zdrowie`)).status).toBe(200);
+    // bez ZM_LICZNIKI_TOKEN trasy odczytu liczników nie ma, nawet z nagłówkiem
+    const bezTokenu = await fetch(`http://127.0.0.1:${s.port}/api/liczniki`, {
+      headers: { Authorization: 'Bearer x' },
+    });
+    expect(bezTokenu.status).toBe(404);
     expect(s.stdout()).not.toContain('restart planowy');
     expect(s.stdout()).not.toContain('kopie bazy');
     expect(s.stderr()).not.toContain('ZM_');
@@ -99,6 +104,27 @@ describe('server/main.ts jako proces', () => {
     // 0,0005 h to 1,8 s: proces kończy się sam, czysto
     expect(await s.wyszedl).toBe(0);
     expect(s.stdout()).toContain('restart planowy po 0.0005 h, zamykam serwer');
+  }, 30_000);
+
+  it('ZM_LICZNIKI_TOKEN dochodzi do serwera: odczyt liczników tylko z tokenem, a token nie ląduje w dzienniku', async () => {
+    const token = 'token-z-testu-main-0123456789abcdef';
+    const s = await uruchom({ ZM_LICZNIKI_TOKEN: token });
+    const adres = `http://127.0.0.1:${s.port}/api`;
+    expect((await fetch(`${adres}/liczniki`)).status).toBe(401);
+    const post = await fetch(`${adres}/zdarzenie`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ z: 'dzien:2' }),
+    });
+    expect(post.status).toBe(204);
+    const odczyt = await fetch(`${adres}/liczniki`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(odczyt.status).toBe(200);
+    expect(((await odczyt.json()) as { liczniki: { zdarzenie: string; n: number }[] }).liczniki).toMatchObject([
+      { zdarzenie: 'dzien:2', n: 1 },
+    ]);
+    s.dziecko.kill('SIGTERM');
+    expect(await s.wyszedl).toBe(0);
+    expect(s.stdout() + s.stderr()).not.toContain(token);
   }, 30_000);
 
   it('złe wartości zmiennych dają ostrzeżenie w dzienniku, a serwer startuje z domyślnymi', async () => {

@@ -1,6 +1,6 @@
 # Serwer gry Za Murem
 
-Małe API pod `/api` dla gry sieciowej: konta (nick i hasło), drużyny anonimowe z kodem powrotu, sesje, zajęte klatki i zapis gry w chmurze. Gra dalej liczy się w przeglądarce, serwer pilnuje tylko, kto ma którą klatkę. Projekt: `docs/superpowers/specs/2026-10-18-multiplayer-design.md`. Lista adresów API jest w nagłówku `server/app.ts`, typy i kody błędów w `src/net/protokol.ts`.
+Małe API pod `/api` dla gry sieciowej: konta (nick i hasło), drużyny anonimowe z kodem powrotu, sesje, zajęte klatki, zapis gry w chmurze i anonimowe liczniki zdarzeń. Gra dalej liczy się w przeglądarce, serwer pilnuje tylko, kto ma którą klatkę. Projekt: `docs/superpowers/specs/2026-10-18-multiplayer-design.md`. Lista adresów API jest w nagłówku `server/app.ts`, typy i kody błędów w `src/net/protokol.ts`.
 
 Node 24 (działa od 22.18) bez zależności z npm: TypeScript uruchamiany wprost, `node:http`, `node:sqlite`, `node:crypto`, `node:zlib`. Gra na GitHub Pages i dema offline działają bez serwera.
 
@@ -55,6 +55,27 @@ Klatka nie jest na zawsze: drużyna, która nie grała 14 dni, traci wszystkie k
 
 Grą (wizytą) jest każde żądanie z ważną sesją drużyny i każde logowanie (hasłem, kodem powrotu, nowa drużyna). `konta.ostatnio` ma dokładność doby, a nowe konto zaczyna od chwili założenia, więc granica to początek doby sprzed N dni: drużyna zawsze dostaje pełne N dni od ostatniej wizyty (po wizycie w poniedziałek wieczorem klatki wracają do puli dopiero o północy UTC we wtorek, dwa tygodnie i dzień później). Wygasanie liczy `sprzataj()` najwyżej raz na godzinę (serwer woła je co minutę razem ze sprzątaniem sesji), więc zwolnienie może się spóźnić o godzinę. Błąd wygasania idzie do dziennika i nie przerywa sprzątania; następna próba jest za godzinę. Testy: `npm test -- serwer-wygasanie`.
 
+## Liczniki i powroty
+
+Serwer liczy, ilu ludzi gra, bez wiedzy, kto to jest: dzienne sumy zdarzeń i powroty kont, bez ciasteczek śledzących, identyfikatora gracza i adresu IP. Wszystko leży w dwóch tabelach (migracja 3 w `server/baza.ts`): `liczniki (dzien, zdarzenie, n)` i `powroty (zalozone, po_dniach, n)`; `dzien` i `zalozone` to początki dób UTC w milisekundach. Żadna z nich nie wskazuje konta, więc po usunięciu konta zostaje tylko suma.
+
+| wywołanie | co robi |
+|---|---|
+| `POST /api/zdarzenie` `{ "z": "…" }` | dolicza jedynkę do pary (dzisiejsza doba UTC, zdarzenie); 204. Bez sesji: endpoint nie czyta ciasteczka i niczego nie zapisuje poza zdarzeniem. Zdarzenie musi pasować do `ZDARZENIE_WZOR` z `src/net/protokol.ts`, inaczej 400 `zle_dane`. |
+| `GET /api/liczniki?od=<ms>` z `Authorization: Bearer <token>` | `{ "liczniki": [{ "dzien", "zdarzenie", "n" }], "powroty": [{ "zalozone", "poDniach", "n" }] }`; `od` (domyślnie 0) odcina doby liczników i kohorty powrotów założone przed tą chwilą. |
+
+Zdarzenia to `start:<zwykly|zombie>:<pl|en>:<tel|komp>` (start gry: tryb, język, telefon albo komputer), `cel:<klucz celu>` (krok ścieżki celów, np. `cel:R0.zaznacz`) i `dzien:2`, `dzien:3`, `dzien:7`. Więcej niż 120 przyjętych zdarzeń z jednego adresu w godzinę to 429 (odrzucone nie zużywają limitu; okno żyje w pamięci procesu, tak jak inne limity, i nie zapisuje adresu na dysk). Różnych `cel:` na dobę baza przyjmie 300 (`ROZNYCH_CELOW_NA_DZIEN`): endpoint jest otwarty, więc to bezpiecznik przed zaśmieceniem tabeli, a nie ograniczenie dla gry (ścieżka ma kilkadziesiąt celów). Nowy cel ponad limit dostaje 204 i jest pomijany; starty i dni mają wzór z garstką wartości, więc ich limit nie dotyczy. Liczniki mogą nadal zawyżać albo zaniżać sumy (każdy może wysłać znane zdarzenie, a limit 120 na godzinę za jednym adresem sieci komórkowej może ściąć kilku graczy naraz): to zgrubna miara, nie rozliczenie.
+
+Powrót to pierwsza wizyta konta w danej dobie po dobie założenia. Serwer dolicza go w tym samym miejscu, w którym przesuwa `konta.ostatnio` na początek doby (`wizyta` w `server/app.ts`): żądanie z ważną sesją albo logowanie (hasłem, kodem powrotu), które pierwsze w dobie zmieni `ostatnio`, dopisuje jedynkę do `powroty` pod `(doba założenia, ile dób po założeniu)`. Drugie żądanie tej samej doby niczego nie zmienia, więc powrót liczy się raz na konto na dobę bez względu na to, którą drogą wszedł gracz, a doby założenia nie liczy się nigdy (nowe konto ma `ostatnio` równe chwili założenia, czyli już po północy). Doba to doba UTC, a nie 24 godziny: konto założone o 23:59 wraca „po 1 dniu” już po północy. Z tabeli wychodzą powroty po 1, 3 i 7 dniach: `n` dla `po_dniach = 1` (3, 7) podzielone przez liczbę kont założonych w tej dobie, czyli przez `SELECT COUNT(*) FROM konta WHERE utworzone >= <zalozone> AND utworzone < <zalozone> + 86400000` (konta usunięte albo wygasłe znikają z tej liczby, a ich powroty zostają w `powroty`).
+
+Odczyt jest tylko z tokenem z `ZM_LICZNIKI_TOKEN`, porównywanym w stałym czasie (skróty SHA-256, jak sekret proxy). Bez tej zmiennej trasa `GET /api/liczniki` odpowiada 404, jakby jej nie było; zły albo brakujący token to 401, a po 10 złych próbach z jednego adresu w kwadrans 429. Token wymyślamy długi i losowy (`openssl rand -hex 32`), trzymamy go tylko w `.env` na serwerze i u siebie, nigdy w repo ani w logach; podaje się go w nagłówku, nie w adresie (adresy lądują w logach proxy). Odczyt z konsoli:
+
+```bash
+curl -s -H "Authorization: Bearer $ZM_LICZNIKI_TOKEN" "https://<adres api>/api/liczniki?od=$(($(date +%s) * 1000 - 7 * 86400000))"
+```
+
+Testy: `npm test -- serwer-liczniki`.
+
 ## Zmienne środowiskowe
 
 | zmienna | domyślnie | co robi |
@@ -66,6 +87,7 @@ Grą (wizytą) jest każde żądanie z ważną sesją drużyny i każde logowani
 | `ZM_ZAUFANE_PROXY` | 0 (w kontenerze 1) | 1: adres klienta z ostatniego wpisu X-Forwarded-For; tylko za własnym proxy |
 | `ZM_PROXY_SEKRET` | brak | sekret, który Vercel wysyła w nagłówku `x-zm-proxy`; żądanie z dobrym sekretem ma adres klienta z nagłówka `ZM_PROXY_IP`, bez sekretu albo ze złym ten nagłówek się nie liczy; wartość tylko w `.env` na serwerze i w zmiennych Vercela, nigdy w repo ani w logach |
 | `ZM_PROXY_IP` | `x-real-ip` | nagłówek z adresem klienta, któremu serwer ufa przy dobrym `ZM_PROXY_SEKRET` |
+| `ZM_LICZNIKI_TOKEN` | brak | token odczytu `GET /api/liczniki` (nagłówek `Authorization: Bearer`); bez niego trasa odpowiada 404; wartość tylko w `.env` na serwerze, nigdy w repo ani w logach |
 | `ZM_CIASTECZKO_SECURE` | 1 | 0: ciasteczko sesji bez Secure (lokalnie po http) |
 | `ZM_LIMIT_ZAPISU` | 3145728 | największy zapis gry w bajtach JSON |
 | `ZM_LIMIT_KLATEK` | 60 | najwięcej klatek na konto |

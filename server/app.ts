@@ -26,6 +26,9 @@
      GET    /api/zapis              zapis w chmurze                          → {dane, wersja, zmieniony, rozmiar}
      PUT    /api/zapis              zapisz {dane, wersja?}                   → {wersja, zmieniony, rozmiar}, 409
      DELETE /api/zapis              usuń zapis                               → 204
+     POST   /api/zdarzenie          dolicz zdarzenie do sum dziennych {z}    → 204, bez sesji; 400 nieznane, 429
+     GET    /api/liczniki?od=<ms>   sumy zdarzeń i powroty kont              → {liczniki, powroty}; tylko z nagłówkiem
+                                    Authorization: Bearer <token>, bez tokenu w opcjach 404, zły token 401
 
    Drużyna anonimowa (POST /api/druzyna) to konto bez nicku i hasła, z numerem jako znakiem (`#12`), zakładane przy
    pierwszym wejściu bez formularza; najwyżej 30 nowych na IP na godzinę (żądanie z ważną sesją się nie liczy).
@@ -36,6 +39,16 @@
    się do tego samego limitu nieudanych prób z IP co złe hasło (10 na 15 minut), dobry nie. Drużyna anonimowa usuwa się
    bez hasła (nie ma go), konto z nickiem dalej z hasłem; w logowaniu nickiem drużyny anonimowej nie ma. Wszystkie POST
    niosą Content-Type: application/json, także puste (`{}`).
+
+   Liczniki bez śladu gracza: POST /api/zdarzenie {z} dolicza jedynkę do pary (doba UTC, zdarzenie) ze wzoru
+   ZDARZENIE_WZOR (start gry, krok ścieżki celów, dzień 2, 3 i 7). Nie czyta sesji ani ciasteczka i nie zapisuje niczego
+   z żądania poza samym zdarzeniem (ani adresu IP, ani konta); najwyżej 120 przyjętych na IP na godzinę (okno w pamięci,
+   odrzucone nie zużywają limitu), a różnych `cel:` na dobę baza przyjmie ROZNYCH_CELOW_NA_DZIEN, resztę pomija po
+   cichu. Powroty liczy `wizyta`: pierwsza w dobie zmiana `konta.ostatnio` (żądanie z sesją albo logowanie, obojętnie
+   które pierwsze) dolicza jedynkę do „doba założenia, ile dób po założeniu”, a doby założenia nie liczy nigdy. Odczyt
+   GET /api/liczniki działa tylko z `tokenLicznikow` w opcjach (ZM_LICZNIKI_TOKEN, porównanie skrótów w stałym czasie,
+   jak sekret proxy); bez niego trasa daje 404, a po 10 złych próbach z IP w kwadrans 429. `od` odcina doby liczników
+   i kohorty powrotów założone przed tą chwilą.
 
    Zajęte klatki widać tylko w swojej okolicy: każdy z czterech rogów prostokąta GET /api/klatki musi leżeć najwyżej
    `ZASIEG_ZAPYTAN_M` (1500 m) od siedziby drużyny, a drużyna bez siedziby (jeszcze nie zajęła klatki albo ją zwolniła)
@@ -93,6 +106,7 @@ import {
   KONTA_DNI,
   type KodPowrotu,
   kotwicaKlucza,
+  type Liczniki,
   maAdres,
   nickKlucz,
   normalizujKod,
@@ -103,6 +117,7 @@ import {
   ZASIEG_ZAPYTAN_M,
   type ZajetaKlatka,
   type ZapisanoOdpowiedz,
+  ZDARZENIE_WZOR,
   type Zdrowie,
   zleHaslo,
   zlyNick,
@@ -162,6 +177,8 @@ export interface OpcjeSerwera {
   proxySekret?: string;
   /** nagłówek z adresem klienta, któremu ufamy przy dobrym sekrecie (domyślnie x-real-ip) */
   proxyNaglowekIp?: string;
+  /** token odczytu GET /api/liczniki (nagłówek Authorization: Bearer); brak albo pusty: trasa nie istnieje (404) */
+  tokenLicznikow?: string;
   /** dozwolone nagłówki Origin, wzór może mieć gwiazdkę (kawałek nazwy hosta, `pasujeZrodlo`); puste: ta sama strona
       co nagłówek Host (http albo https) */
   zrodla?: string[];
@@ -220,6 +237,13 @@ interface Kontekst {
 type Obsluga = (k: Kontekst) => Promise<void>;
 
 const do5 = (v: number) => Math.round(v * 1e5) / 1e5;
+/** początek doby UTC, w której leży chwila (ms od 1970) */
+const dzienUtc = (ms: number) => Math.floor(ms / DOBA) * DOBA;
+/** skrót SHA-256 napisu: porównanie skrótów w stałym czasie nie zdradza ani długości, ani początku sekretu */
+const skrotSha = (tekst: string) => createHash('sha256').update(tekst).digest();
+/** czy podany napis ma skrót równy wzorcowi (null: sekretu nie ustawiono, nic nie pasuje) */
+const zgodnySkrot = (wzor: Buffer | null, podany: unknown): boolean =>
+  wzor !== null && typeof podany === 'string' && timingSafeEqual(skrotSha(podany), wzor);
 /** komunikat 429, gdy okno zmian okolicy (siedziba albo punkt startu) jest wyczerpane */
 const ZA_CZESTO_OKOLICA = 'Za często zmieniacie okolicę drużyny (siedzibę albo punkt startu). Spróbujcie później.';
 const zaDuzo = (sekundy: number, komunikat: string) =>
@@ -239,16 +263,14 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const dziennik = op.dziennik ?? ((w: string) => console.error(w));
   const zrodla = op.zrodla ?? [];
   const proxyNaglowekIp = (op.proxyNaglowekIp || 'x-real-ip').toLowerCase();
-  // skrót sekretu liczymy raz; porównanie skrótów w stałym czasie nie zdradza długości ani początku sekretu
-  const sekretSkrot = op.proxySekret ? createHash('sha256').update(op.proxySekret).digest() : null;
-  const dobrySekret = (req: IncomingMessage): boolean => {
-    const podany = req.headers[NAGLOWEK_PROXY];
-    if (!sekretSkrot || typeof podany !== 'string') return false;
-    return timingSafeEqual(createHash('sha256').update(podany).digest(), sekretSkrot);
-  };
+  // skróty sekretu proxy i tokenu liczników liczymy raz
+  const sekretSkrot = op.proxySekret ? skrotSha(op.proxySekret) : null;
+  const tokenSkrot = op.tokenLicznikow ? skrotSha(op.tokenLicznikow) : null;
+  const dobrySekret = (req: IncomingMessage): boolean => zgodnySkrot(sekretSkrot, req.headers[NAGLOWEK_PROXY]);
 
   // limity w pamięci: nieudane logowania (i powroty z kodem) na IP i na nick, nowe konta, nowe drużyny anonimowe
-  // i zajęte nicki na IP, wszystkie żądania na IP, zapisy i nowe kody powrotu na konto
+  // i zajęte nicki na IP, wszystkie żądania na IP, przyjęte zdarzenia liczników i złe tokeny liczników na IP,
+  // zapisy i nowe kody powrotu na konto
   const logowania: Okno = okno(10, 15 * MIN, teraz);
   const logowaniaNicku: Okno = okno(20, 15 * MIN, teraz);
   const rejestracje: Okno = okno(5, GODZ, teraz);
@@ -257,10 +279,24 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const zadania: Okno = okno(300, MIN, teraz);
   const zapisy: Okno = okno(60, GODZ, teraz);
   const kody: Okno = okno(10, GODZ, teraz);
+  const zdarzenia: Okno = okno(120, GODZ, teraz);
+  const zleTokeny: Okno = okno(10, 15 * MIN, teraz);
   /** zmiany okolicy na konto: punkt startu, nowa siedziba daleko od punktu startu i przeniesienie siedziby przy
       zwolnieniu (najwyżej 5 na dobę) */
   const zmianyStartu: Okno = okno(5, DOBA, teraz);
-  const okna = [logowania, logowaniaNicku, rejestracje, druzyny, zajeteNicki, zadania, zapisy, kody, zmianyStartu];
+  const okna = [
+    logowania,
+    logowaniaNicku,
+    rejestracje,
+    druzyny,
+    zajeteNicki,
+    zadania,
+    zapisy,
+    kody,
+    zdarzenia,
+    zleTokeny,
+    zmianyStartu,
+  ];
   /** punkty startu drużyn (PUT /api/druzyna/start), tylko w pamięci procesu: to w praktyce adres gracza, a siedziba
       drużyny i tak leży w `klatki`. `uzyty` to chwila ostatniej zmiany albo zapytania, z której korzysta sprzataj. */
   const punktyStartu = new Map<number, { lat: number; lon: number; uzyty: number }>();
@@ -321,13 +357,29 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     return out;
   };
 
+  /** Wizyta konta: przesuwa `ostatnio` na początek doby (od tego zależy wygasanie) i, gdy to pierwsza wizyta tej
+      doby, dolicza powrót do licznika „doba założenia, ile dób po założeniu”. Żądanie z sesją i logowanie idą tędy,
+      więc którekolwiek pierwsze w dobie liczy, a drugie już nie; w dobie założenia `ostatnio` jest późniejsze od
+      północy, więc powrotu nie ma. Błąd licznika idzie do dziennika i nie psuje wizyty. */
+  const wizyta = (konto: Konto, ms: number) => {
+    const dzien = dzienUtc(ms);
+    if (!baza.dotknijKonta(konto.id, dzien)) return;
+    try {
+      const zalozone = dzienUtc(konto.utworzone);
+      const poDniach = (dzien - zalozone) / DOBA;
+      if (poDniach >= 1) baza.doliczPowrot(zalozone, poDniach);
+    } catch (e) {
+      dziennik(`błąd licznika powrotów: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   /** nowa sesja dla konta: token do ciasteczka, w bazie skrót; najwyżej 10 sesji na konto */
   const zaloguj = (k: Kontekst, konto: Konto) => {
     const token = nowyToken();
     baza.dodajSesje(skrotTokenu(token), konto.id, k.teraz, k.teraz + sesjaMs);
     baza.przytnijSesje(konto.id, 10);
     // logowanie też jest wizytą: konto, które weszło kodem albo hasłem, nie wygaśnie przed pierwszym żądaniem z sesją
-    baza.dotknijKonta(konto.id, Math.floor(k.teraz / DOBA) * DOBA);
+    wizyta(konto, k.teraz);
     k.naglowki['Set-Cookie'] = ciasteczko(token, sesjaMs);
   };
 
@@ -345,7 +397,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       baza.przedluzSesje(skrot, k.teraz + sesjaMs);
       k.naglowki['Set-Cookie'] = ciasteczko(token, sesjaMs);
     }
-    baza.dotknijKonta(s.konto.id, Math.floor(k.teraz / DOBA) * DOBA);
+    wizyta(s.konto, k.teraz);
     return { konto: s.konto, skrot, wygasa: s.wygasa };
   };
   const wymagajSesji = (k: Kontekst): Sesja => {
@@ -776,6 +828,40 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     wyslij(k.res, 204, undefined, k.naglowki);
   };
 
+  const zdarzenie: Obsluga = async (k) => {
+    const czekaj = zdarzenia.zablokowany(k.ip);
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo zdarzeń z tego miejsca. Spróbujcie później.');
+    // próba liczy się od razu (przed await), a odlicza, jeśli zdarzenie nie zostało przyjęte; bez sesji i bez ciasteczka
+    zdarzenia.dolicz(k.ip);
+    let przyjete = false;
+    try {
+      const { z } = await czytajJson(k.req, MALE_CIALO);
+      if (typeof z !== 'string' || !ZDARZENIE_WZOR.test(z)) throw new BladHttp(400, 'zle_dane', 'Nieznane zdarzenie.');
+      baza.dolicz(dzienUtc(k.teraz), z);
+      przyjete = true;
+      wyslij(k.res, 204, undefined, k.naglowki);
+    } finally {
+      if (!przyjete) zdarzenia.odlicz(k.ip);
+    }
+  };
+
+  /** trasa istnieje tylko z tokenem w opcjach (TRASY), więc `zgodnySkrot` nigdy nie dostaje tu null */
+  const odczytajLiczniki: Obsluga = async (k) => {
+    const czekaj = zleTokeny.zablokowany(k.ip);
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo nieudanych prób. Spróbujcie za kilka minut.');
+    const podany = /^Bearer\s+(.+)$/i.exec(k.req.headers.authorization ?? '')?.[1];
+    if (!zgodnySkrot(tokenSkrot, podany)) {
+      zleTokeny.dolicz(k.ip);
+      throw new BladHttp(401, 'brak_sesji', 'Zły albo brakujący token.', { 'WWW-Authenticate': 'Bearer' });
+    }
+    const surowe = k.url.searchParams.get('od');
+    const od = surowe === null ? 0 : liczba(surowe);
+    if (!Number.isFinite(od) || od < 0)
+      throw new BladHttp(400, 'zle_dane', 'Parametr od to chwila w ms od 1970, liczba nieujemna.');
+    const out: Liczniki = { liczniki: baza.liczniki(od), powroty: baza.powroty(od) };
+    wyslij(k.res, 200, out, k.naglowki);
+  };
+
   const TRASY: Record<string, Record<string, Obsluga>> = {
     '/api/zdrowie': { GET: zdrowie },
     '/api/konto': { POST: zalozKonto, GET: kimJestem, DELETE: usunKonto },
@@ -787,6 +873,9 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     '/api/klatki': { GET: klatkiWProstokacie, POST: zajmijKlatke },
     '/api/klatki/moje': { GET: mojeKlatki, DELETE: zwolnijMoje },
     '/api/zapis': { GET: pobierzZapis, PUT: wyslijZapis, DELETE: usunZapis },
+    '/api/zdarzenie': { POST: zdarzenie },
+    // bez tokenu w opcjach tej trasy nie ma w ogóle (404 dla każdej metody), więc nic nie zdradza, że istnieje
+    ...(tokenSkrot ? { '/api/liczniki': { GET: odczytajLiczniki } } : {}),
   };
   const PREFIKS_KLATKI = '/api/klatki/';
 
@@ -884,7 +973,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       for (const [id, p] of punktyStartu) if (t - p.uzyty > sesjaMs) punktyStartu.delete(id);
       try {
         // granica to początek doby: `ostatnio` ma dokładność doby, więc wizyta daje drużynie pełne N dni
-        const granica = (ms: number) => Math.floor((t - ms) / DOBA) * DOBA;
+        const granica = (ms: number) => dzienUtc(t - ms);
         baza.zwolnijKlatkiNieaktywnych(granica(klatkiMs));
         baza.usunNieaktywneKonta(granica(kontaMs));
       } catch (e) {

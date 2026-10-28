@@ -11,6 +11,8 @@
      klatki leży przy budynku z klucza (kotwicaKlucza), więc nie da się zająć klatki w innym mieście,
    - klatki drużyny, która nie grała KLATKI_DNI dni, wracają do wolnych (konto, zapis i kod powrotu zostają); konto bez
      wizyty przez KONTA_DNI dni znika z klatkami, sesjami i zapisem (liczy się wizyta z dokładnością do doby),
+   - liczniki: POST /api/zdarzenie dolicza zdarzenie ze wzoru ZDARZENIE_WZOR do sumy na dobę (bez sesji, bez śladu
+     gracza), powroty kont liczy sam serwer, a odczyt (Liczniki) jest tylko z tokenem właściciela,
    - zapis gry w chmurze to obiekt JSON bez tekstu adresu: bez data.addr i data.street, bez tagów addr:* przy
      budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza),
    - serwer mówi po polsku (komunikat w odpowiedzi z błędem); angielska wersja gry tłumaczy go u klienta po kodzie
@@ -303,6 +305,18 @@ export interface ZapisanoOdpowiedz {
 /** GET /api/zapis */
 export interface ZapisChmura extends ZapisanoOdpowiedz {
   dane: Record<string, unknown>;
+}
+
+/** Zdarzenie do liczników (POST /api/zdarzenie { z }): start gry (tryb, język, telefon albo komputer), krok ścieżki
+    celów (klucz celu z src/ui/sciezka.ts, np. `R0.zaznacz`) i dzień 2, 3 albo 7. Serwer liczy sumy na dobę, bez
+    sesji i bez śladu gracza; wzór pilnuje, że do bazy nie wejdzie nic poza tym (żadnego tekstu od gracza). */
+export const ZDARZENIE_WZOR = /^(start:(zwykly|zombie):(pl|en):(tel|komp)|cel:[A-Za-z0-9_.:-]{1,40}|dzien:(2|3|7))$/;
+
+/** GET /api/liczniki (nagłówek Authorization: Bearer <token>, ?od=<ms>): sumy zdarzeń na dobę (`dzien` to początek
+    doby UTC w ms) i powroty kont (`zalozone` to początek doby założenia, `poDniach` ile dób później konto wróciło) */
+export interface Liczniki {
+  liczniki: { dzien: number; zdarzenie: string; n: number }[];
+  powroty: { zalozone: number; poDniach: number; n: number }[];
 }
 
 type Obiekt = Record<string, unknown>;

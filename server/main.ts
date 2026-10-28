@@ -12,6 +12,8 @@
    ZM_PROXY_SEKRET      sekret, który Vercel wysyła w nagłówku x-zm-proxy; żądanie z dobrym sekretem ma adres
                         klienta z nagłówka ZM_PROXY_IP; brak: bez tej ścieżki (tylko w .env na serwerze)
    ZM_PROXY_IP          nagłówek z adresem klienta przy dobrym sekrecie (domyślnie x-real-ip)
+   ZM_LICZNIKI_TOKEN    token odczytu GET /api/liczniki (Authorization: Bearer); brak: trasy nie ma (404); tylko w .env
+                        na serwerze, nigdy w repo ani w logach
    ZM_CIASTECZKO_SECURE 0: ciasteczko bez Secure (lokalnie po http); domyślnie 1
    ZM_LIMIT_ZAPISU      największy zapis gry w bajtach (domyślnie 3 MiB)
    ZM_LIMIT_KLATEK      najwięcej klatek na konto (domyślnie 60)
@@ -52,6 +54,7 @@ const gra = stworzSerwer({
   zaufaneProxy: env.ZM_ZAUFANE_PROXY === '1',
   proxySekret: env.ZM_PROXY_SEKRET || undefined,
   proxyNaglowekIp: env.ZM_PROXY_IP || 'x-real-ip',
+  tokenLicznikow: env.ZM_LICZNIKI_TOKEN || undefined,
   bezpieczneCiasteczko: env.ZM_CIASTECZKO_SECURE !== '0',
   limitZapisu: liczba(env.ZM_LIMIT_ZAPISU, 3 * 1024 * 1024),
   limitKlatek: liczba(env.ZM_LIMIT_KLATEK, 60),

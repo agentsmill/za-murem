@@ -11,10 +11,15 @@
    - klatki: klucz klatki i budynku (src/world/klucze.ts), środek klatki (stopnie zaokrąglone do 1e-5, około 1 m),
      konto, czy to siedziba drużyny, chwila zajęcia,
    - zapisy: jeden zapis gry na konto (JSON skompresowany gzipem, bez tekstu adresu), wersja i chwila zmiany;
-     usunięty zapis zostaje jako pusty wiersz z wyższą wersją, żeby stary telefon nie nadpisał nowej gry.
+     usunięty zapis zostaje jako pusty wiersz z wyższą wersją, żeby stary telefon nie nadpisał nowej gry,
+   - liczniki: dzienne sumy zdarzeń (start gry, krok ścieżki celów, dzień 2, 3 i 7), samo „dzień, zdarzenie, ile razy”,
+   - powroty: ile kont założonych w danej dobie wróciło po tylu dniach, samo „doba założenia, po ilu dniach, ile kont”.
+     Liczniki i powroty nie wskazują ani konta, ani gracza, ani adresu, więc zostają po usunięciu konta.
    Wygasanie (server/app.ts, sprzataj): klatki kont z `ostatnio` przed granicą wracają do wolnych, a konta z `ostatnio`
    przed dalszą granicą są usuwane. `ostatnio` to dzień ostatniej wizyty (dotknijKonta, dokładność doby); nowe konto
-   ma w nim chwilę założenia co do milisekundy.
+   ma w nim chwilę założenia co do milisekundy. Ta sama zmiana `ostatnio` jest powrotem: dotknijKonta mówi, czy ją
+   zrobiło, a serwer dolicza wtedy jedynkę do powrotów (dzień założenia nigdy, bo `ostatnio` jest w nim już późniejsze
+   od północy).
    Usunięcie konta kasuje kaskadą jego sesje, klatki i zapis (klucze obce z ON DELETE CASCADE), a numery kont nie
    wracają (AUTOINCREMENT), więc spóźnione żądanie usuniętego konta nie trafi do nowego. secure_delete zamazuje
    usunięte dane w pliku bazy.
@@ -62,7 +67,25 @@ export const MIGRACJE: readonly string[] = [
   `ALTER TABLE konta ADD COLUMN anonimowe INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE konta ADD COLUMN kod TEXT;
    CREATE UNIQUE INDEX konta_kod ON konta(kod) WHERE kod IS NOT NULL;`,
+  // liczniki zdarzeń i powroty: same sumy, bez identyfikatora gracza (dzień i zalozone to początki dób UTC w ms)
+  `CREATE TABLE liczniki (
+     dzien INTEGER NOT NULL,
+     zdarzenie TEXT NOT NULL,
+     n INTEGER NOT NULL,
+     PRIMARY KEY (dzien, zdarzenie)
+   ) STRICT;
+   CREATE TABLE powroty (
+     zalozone INTEGER NOT NULL,
+     po_dniach INTEGER NOT NULL,
+     n INTEGER NOT NULL,
+     PRIMARY KEY (zalozone, po_dniach)
+   ) STRICT;`,
 ];
+
+/** Ile różnych zdarzeń `cel:…` baza przyjmie na dobę. Ścieżka celów ma ich kilkadziesiąt, a endpoint nie wymaga sesji,
+    więc bez tego limitu ktoś mógłby wypełnić tabelę własnymi nazwami. Nowy cel ponad limit jest po prostu
+    pomijany; starty i dni mają wzór z garstką wartości, więc ich limit nie dotyczy. */
+export const ROZNYCH_CELOW_NA_DZIEN = 300;
 
 export interface Konto {
   id: number;
@@ -106,8 +129,9 @@ export interface Baza {
   kontoPoKodzie(skrot: string): Konto | null;
   kontoPoNicku(nickKlucz: string): Konto | null;
   konto(id: number): Konto | null;
-  /** dzień ostatniej wizyty (ms od 1970, z dokładnością do doby) */
-  dotknijKonta(id: number, dzien: number): void;
+  /** dzień ostatniej wizyty (ms od 1970, z dokładnością do doby); true, gdy to pierwsza wizyta tej doby, czyli gdy
+      `ostatnio` się zmieniło (doba założenia konta i kolejne wizyty tej samej doby dają false) */
+  dotknijKonta(id: number, dzien: number): boolean;
   usunKonto(id: number): void;
 
   dodajSesje(skrot: string, konto: number, teraz: number, wygasa: number): void;
@@ -143,6 +167,16 @@ export interface Baza {
   /** wersja zapisu (0: nigdy nie było), rośnie też przy usunięciu */
   wersjaZapisu(konto: number): number;
   maZapis(konto: number): boolean;
+
+  /** dolicza jedynkę do zdarzenia w dobie `dzien` (początek doby UTC w ms); false, gdy to nowy `cel:` ponad
+      ROZNYCH_CELOW_NA_DZIEN i nic nie zapisano */
+  dolicz(dzien: number, zdarzenie: string): boolean;
+  /** dolicza jedynkę do powrotów kont założonych w dobie `zalozone` po `poDniach` dniach od założenia */
+  doliczPowrot(zalozone: number, poDniach: number): void;
+  /** liczniki z dób od `od` (ms od 1970) wzwyż, po dobie i nazwie */
+  liczniki(od: number): { dzien: number; zdarzenie: string; n: number }[];
+  /** powroty kohort założonych od `od` (ms od 1970) wzwyż, po dobie założenia i liczbie dni */
+  powroty(od: number): { zalozone: number; poDniach: number; n: number }[];
 
   /** wykonuje fn w jednej transakcji (BEGIN IMMEDIATE … COMMIT, przy błędzie ROLLBACK) */
   transakcja<T>(fn: () => T): T;
@@ -240,6 +274,16 @@ export function otworzBaze(sciezka: string): Baza {
     usunZapis: db.prepare(
       'UPDATE zapisy SET dane = NULL, rozmiar = 0, wersja = wersja + 1, zmieniony = ? WHERE konto = ? AND dane IS NOT NULL',
     ),
+    doliczZdarzenie: db.prepare(
+      'INSERT INTO liczniki (dzien, zdarzenie, n) VALUES (?, ?, 1) ON CONFLICT(dzien, zdarzenie) DO UPDATE SET n = n + 1',
+    ),
+    jestZdarzenie: db.prepare('SELECT 1 AS jest FROM liczniki WHERE dzien = ? AND zdarzenie = ?'),
+    celeDnia: db.prepare("SELECT COUNT(*) AS n FROM liczniki WHERE dzien = ? AND substr(zdarzenie, 1, 4) = 'cel:'"),
+    doliczPowrot: db.prepare(
+      'INSERT INTO powroty (zalozone, po_dniach, n) VALUES (?, ?, 1) ON CONFLICT(zalozone, po_dniach) DO UPDATE SET n = n + 1',
+    ),
+    liczniki: db.prepare('SELECT dzien, zdarzenie, n FROM liczniki WHERE dzien >= ? ORDER BY dzien, zdarzenie'),
+    powroty: db.prepare('SELECT zalozone, po_dniach, n FROM powroty WHERE zalozone >= ? ORDER BY zalozone, po_dniach'),
   };
 
   let otwarta = true;
@@ -303,7 +347,7 @@ export function otworzBaze(sciezka: string): Baza {
       return r ? kontoZ(r) : null;
     },
     dotknijKonta(id, dzien) {
-      q.dotknij.run(dzien, id, dzien);
+      return num(q.dotknij.run(dzien, id, dzien).changes) > 0;
     },
     usunKonto(id) {
       q.usunKonto.run(id);
@@ -398,6 +442,34 @@ export function otworzBaze(sciezka: string): Baza {
     wersjaZapisu,
     maZapis(konto) {
       return q.maZapis.get(konto) !== undefined;
+    },
+    dolicz(dzien, zdarzenie) {
+      // bez await między sprawdzeniem a wstawieniem, więc równoległe żądania nie przekroczą limitu celów
+      if (
+        zdarzenie.startsWith('cel:') &&
+        !q.jestZdarzenie.get(dzien, zdarzenie) &&
+        num((q.celeDnia.get(dzien) as Wiersz).n) >= ROZNYCH_CELOW_NA_DZIEN
+      )
+        return false;
+      q.doliczZdarzenie.run(dzien, zdarzenie);
+      return true;
+    },
+    doliczPowrot(zalozone, poDniach) {
+      q.doliczPowrot.run(zalozone, poDniach);
+    },
+    liczniki(od) {
+      return (q.liczniki.all(od) as Wiersz[]).map((r) => ({
+        dzien: num(r.dzien),
+        zdarzenie: str(r.zdarzenie),
+        n: num(r.n),
+      }));
+    },
+    powroty(od) {
+      return (q.powroty.all(od) as Wiersz[]).map((r) => ({
+        zalozone: num(r.zalozone),
+        poDniach: num(r.po_dniach),
+        n: num(r.n),
+      }));
     },
     transakcja,
     zamknij() {
