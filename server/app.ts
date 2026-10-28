@@ -73,11 +73,14 @@
    `sprzataj`.
 
    Okolicę można zmienić najwyżej 5 razy na dobę na konto (jedno okno `zmianyStartu`, potem 429 za_duzo_prob), żeby
-   przeczesanie miasta wymagało zakładania kont. Liczą się tylko przyjęte zmiany, a zmianą jest: (1) PUT start;
-   (2) zajęcie klatki przez drużynę bez siedziby (nowa siedziba, np. po DELETE /api/klatki/moje), chyba że leży
-   w zasięgu `ZASIEG_ZAPYTAN_M` od jej punktu startu (nowa gra: PUT start i zajęcie przy tym samym adresie kosztuje
-   jedną zmianę); (3) zwolnienie siedziby, gdy zostają inne klatki drużyny: siedziba przechodzi na najstarszą z nich
-   i okolica z nią. Przy wyczerpanym oknie zajęcie z (2) i zwolnienie z (3) dają 429 przed jakąkolwiek zmianą.
+   przeczesanie miasta wymagało zakładania kont. Liczą się tylko przyjęte zmiany i zajęcia z (2), a zmianą jest:
+   (1) PUT start; (2) zajęcie klatki przez drużynę bez siedziby (nowa siedziba, np. po DELETE /api/klatki/moje), chyba
+   że leży w zasięgu `ZASIEG_ZAPYTAN_M` od jej punktu startu (nowa gra: PUT start i zajęcie przy tym samym adresie
+   kosztuje jedną zmianę); (3) zwolnienie siedziby, gdy zostają inne klatki drużyny: siedziba przechodzi na najstarszą
+   z nich i okolica z nią. Przy wyczerpanym oknie zajęcie z (2) i zwolnienie z (3) dają 429 przed jakąkolwiek zmianą,
+   a zajęcie z (2) przed sprawdzeniem, czy klatka jest wolna. Zajęcie z (2) liczy się, zanim serwer sprawdzi
+   zajętość, i nie jest zwracane, gdy klatka okaże się zajęta (409): zajęte klatki daleko od okolicy nie są darmowym
+   sondowaniem, a zajęcie w zasięgu punktu startu zostawia okno nietknięte, cokolwiek odpowie.
    Zwolnienie zwykłej klatki, jedynej klatki i DELETE /api/klatki/moje okolicy nie przesuwają (po nich drużyna nie
    ma siedziby i okolicę wyznacza punkt startu), więc są bez limitu.
 
@@ -776,7 +779,13 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
         const czekaj = zmianyStartu.zablokowany(String(s.konto.id));
         if (czekaj) throw zaDuzo(czekaj, ZA_CZESTO_OKOLICA);
       }
-      if (jest) throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
+      if (jest) {
+        // Zajęta klatka tam, gdzie zajęcie kosztowałoby zmianę okolicy, kosztuje ją tak samo (bez zwrotu): inaczej
+        // „zajęta” byłaby darmową odpowiedzią i drużyna bez siedziby sondowałaby zajęte klatki w całym mieście, płacąc
+        // tylko za wolne. Przy zajęciu w zasięgu punktu startu (`liczy` fałsz) okno zostaje nietknięte.
+        if (liczy) zmianyStartu.dolicz(String(s.konto.id));
+        throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
+      }
       nowa.siedziba = !siedziba;
       if (!baza.dodajKlatke(nowa)) throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
       return { status: 201, klatka: nowa, liczy };

@@ -466,4 +466,59 @@ describe('serwer gry: zajęcie klatki nie zdradza, czy cudza klatka jest zajęta
     for (let i = 0; i < 6; i++) expect((await b.zadanie('POST', '/api/klatki', K2)).status, `próba ${i + 1}`).toBe(409);
     expect((await b.zadanie('POST', '/api/klatki', { ...K2, klucz: `${BUD}/4` })).status).toBe(201);
   });
+
+  it('zajęta klatka blisko punktu startu nie zużywa okna zmian okolicy, choćby próbować wiele razy', async () => {
+    const s = await start();
+    const sasiad = await druzyna(s);
+    expect((await sasiad.zadanie('POST', '/api/klatki', K2)).status).toBe(201);
+    const b = await druzyna(s);
+    expect((await ustawStart(b, PRZYMORZE)).status).toBe(204); // 1 z 5
+    for (let i = 0; i < 8; i++) expect((await b.zadanie('POST', '/api/klatki', K2)).status, `próba ${i + 1}`).toBe(409);
+    // okno nietknięte: zostały cztery zmiany, piąta jest 429
+    for (let i = 0; i < 4; i++) expect((await ustawStart(b, PRZYMORZE)).status, `PUT ${i + 2}`).toBe(204);
+    expect((await ustawStart(b, PRZYMORZE)).status).toBe(429);
+  });
+
+  it('sondowanie zajętych klatek daleko od okolicy kosztuje: bez siedziby i bez punktu startu sześć zajętych to 409 pięć razy, potem 429', async () => {
+    const s = await start();
+    // sześć klatek w sześciu miastach zajętych przez sześć drużyn
+    for (const m of MIASTA) {
+      const druzyna1 = await druzyna(s);
+      expect((await druzyna1.zadanie('POST', '/api/klatki', klatkaW(m.lat, m.lon))).status).toBe(201);
+    }
+    const p = await druzyna(s);
+    for (let i = 0; i < 5; i++) {
+      const r = await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[i].lat, MIASTA[i].lon));
+      expect(r.status, `próba ${i + 1}: ${r.tekst}`).toBe(409);
+      expect(r.body.blad).toBe('zajeta');
+    }
+    // szósta zajęta i każda wolna dostają to samo: okno wyczerpane, nie ma darmowego sondowania
+    const szosta = await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[5].lat, MIASTA[5].lon));
+    expect(szosta.status, szosta.tekst).toBe(429);
+    expect(szosta.body.blad).toBe('za_duzo_prob');
+    expect(Number(szosta.headers.get('Retry-After'))).toBeGreaterThan(0);
+    const wolna = await p.zadanie('POST', '/api/klatki', klatkaW(naPolnoc(MIASTA[0], 5000).lat, MIASTA[0].lon));
+    expect(wolna.status).toBe(429);
+    expect(wolna.body).toEqual(szosta.body);
+    // odmowa niczego nie zajmuje, a okno dzieli PUT start
+    expect((await p.zadanie('GET', '/api/klatki/moje')).body.klatki).toEqual([]);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(429);
+    // po dobie okno wraca
+    s.czekaj(DOBA + 1000);
+    expect((await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[5].lat, MIASTA[5].lon))).status).toBe(409);
+  });
+
+  it('z punktem startu daleko od celu zajęta klatka też kosztuje (okno liczy się od zasięgu punktu startu), a wolna w jego zasięgu nie', async () => {
+    const s = await start();
+    const inna = await druzyna(s);
+    const daleka = klatkaW(MIASTA[1].lat, MIASTA[1].lon);
+    expect((await inna.zadanie('POST', '/api/klatki', daleka)).status).toBe(201);
+    const p = await druzyna(s);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204); // 1 z 5
+    for (let i = 0; i < 4; i++)
+      expect((await p.zadanie('POST', '/api/klatki', daleka)).status, `próba ${i + 1}`).toBe(409);
+    // okno wyczerpane (PUT + cztery próby): daleka zajęta to 429, a klatka przy punkcie startu dalej wolna do zajęcia
+    expect((await p.zadanie('POST', '/api/klatki', daleka)).status).toBe(429);
+    expect((await p.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+  });
 });

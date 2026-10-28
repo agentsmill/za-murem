@@ -401,6 +401,25 @@ describe('deploy/hetzner/README.md i nagłówek wdroz.sh: krok 0, kolejność wd
     expect(poZatwierdzeniu).toContain('miejsca');
   });
 
+  it('projekt na Vercelu ma od początku Production z ZM_API i ZM_PROXY_SEKRET, ale bez VITE_SIEC (produkcyjna gra nie woła /api)', () => {
+    const p4 = punkt(4);
+    expect(p4).toContain('Production');
+    expect(p4).toContain('`ZM_API`');
+    expect(p4).toContain('`ZM_PROXY_SEKRET`');
+    expect(p4).toMatch(/nie ma `VITE_SIEC`, więc produkcyjna gra nie woła `\/api`/);
+    // zmienne Production nie czekają już na koniec kolejności
+    expect(punkt(5)).not.toMatch(/Na końcu zmienne Production/);
+    expect(punkt(1)).not.toMatch(/ani zmiennych Production/);
+    // sekcja o projekcie mówi to samo jednym zdaniem i ma zmienne Production w tabeli
+    const od = README.indexOf('### Projekt na Vercelu');
+    const sekcja = README.slice(od, README.indexOf('\n### ', od + 1));
+    expect(sekcja).toMatch(
+      /Zmienne Production ustawiamy od razu przy zakładaniu projektu, także `ZM_API` i `ZM_PROXY_SEKRET`/,
+    );
+    expect(sekcja).toMatch(/ale bez `VITE_SIEC`, więc produkcyjna gra nie woła `\/api`/);
+    expect(sekcja).toMatch(/\| `ZM_API` \| `https:\/\/za-murem-api\.5-75-147-27\.sslip\.io`/);
+  });
+
   it('sprawdzenie podglądu ma cztery dodatkowe sprawdzenia: X-Real-IP 301 razy, zapis 2–3 MB, /api/adres z parametrem, docker ps po zwykłym wdrożeniu', () => {
     const od = README.indexOf('### Sprawdzenie podglądu');
     expect(od).toBeGreaterThan(-1);
