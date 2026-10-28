@@ -88,7 +88,8 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
   it('z prawdziwym serwerem: konto, klatka siedziby z kluczy świata, konflikt drugiej drużyny, zapis bez adresu', async () => {
     const s = await start();
     const a = gracz(s);
-    const b = gracz(s);
+    const przegladarkaB = przegladarka(s.adres);
+    const b = utworzApi({ fetch: przegladarkaB.fetch });
     expect(await a.serwerDostepny()).toBe(true);
     expect((await a.zaloz('Przymorzanie', 'falowiec-1971')).ok).toBe(true);
     expect((await b.zaloz('Sasiedzi', 'falowiec-1972')).ok).toBe(true);
@@ -107,7 +108,9 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
     // druga drużyna z tym samym adresem: klatka zajęta, drużyna zaczyna bez domu
     const konflikt = await b.zajmij({ klucz: klatka.klucz, budynek: klatka.budynek, lat: klatka.lat, lon: klatka.lon });
     expect(konflikt).toMatchObject({ ok: false, status: 409, blad: 'zajeta' });
-    // druga drużyna widzi zajętą klatkę na swojej mapie i wolną obok w tym samym bloku
+    // druga drużyna widzi zajętą klatkę na swojej mapie i wolną obok w tym samym bloku; bez siedziby pyta wokół
+    // swojego punktu startu (klient API dostanie na to metodę w zadaniu 7, tu idzie wprost przez fetch przeglądarki)
+    expect((await przegladarkaB.zadanie('PUT', '/api/druzyna/start', { lat: adr.lat, lon: adr.lon })).status).toBe(204);
     const widok = await b.zajete(prostokatMapy(w, geo.c));
     expect(widok.ok && widok.dane.klatki.map((k) => [k.klucz, k.moja])).toEqual([[klatka.klucz, false]]);
     const wolna = klatkiBudynku(w.buildings[w.hq]).find((k) => k.klucz !== klatka.klucz);

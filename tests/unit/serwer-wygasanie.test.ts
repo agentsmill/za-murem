@@ -23,6 +23,9 @@ const K1 = { klucz: `${BUD}/1`, budynek: BUD, lat: 54.40939 - 10 / 110574, lon: 
 const K2 = { klucz: `${BUD}/2`, budynek: BUD, lat: 54.40939 - 10 / 110574, lon: 18.59923 - 17 / 65000 };
 const K3 = { klucz: `${BUD}/3`, budynek: BUD, lat: 54.40939 - 10 / 110574, lon: 18.59923 - 7 / 65000 };
 const MAPA = '/api/klatki?s=54.40&w=18.59&n=54.42&e=18.61';
+/** punkt startu przy bloku: drużyna bez siedziby pyta o klatki tylko wokół niego (PUT /api/druzyna/start) */
+const STARTOWY = { lat: 54.40939, lon: 18.59923 };
+const ustawStart = (p: ReturnType<typeof przegladarka>) => p.zadanie('PUT', '/api/druzyna/start', STARTOWY);
 
 let serwery: SerwerTestowy[] = [];
 async function start(opcje: Parameters<typeof serwerTestowy>[0] = {}) {
@@ -67,6 +70,7 @@ describe('serwer gry: wygasanie klatek (14 dni bez gry)', () => {
     const a = await druzynaZKlatka(s);
     const b = przegladarka(s.adres);
     await b.zadanie('POST', '/api/druzyna', {});
+    expect((await ustawStart(b)).status).toBe(204);
     expect(await naMapie(b)).toEqual([K1.klucz]);
     expect((await b.zadanie('POST', '/api/klatki', K1)).status).toBe(409);
 
@@ -103,6 +107,7 @@ describe('serwer gry: wygasanie klatek (14 dni bez gry)', () => {
     const a = await druzynaZKlatka(s);
     const b = przegladarka(s.adres);
     await b.zadanie('POST', '/api/druzyna', {});
+    expect((await ustawStart(b)).status).toBe(204);
 
     s.czekaj(13 * DOBA);
     expect((await a.p.zadanie('GET', '/api/konto')).status).toBe(200); // wizyta dnia 13

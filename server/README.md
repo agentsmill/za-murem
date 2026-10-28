@@ -29,6 +29,17 @@ Kod powrotu pozwala wejść do tej samej drużyny z innej przeglądarki (aplikac
 
 Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA-256 (kolumna `konta.kod`, unikalna), więc wyciek bazy nie daje kodów wprost, a serwer nie umie go pokazać drugi raz. Zły kod w `powrot` liczy się do tego samego limitu co złe hasło (10 nieudanych prób na IP w 15 minut, potem 429), dobry nie. Wszystkie `POST` niosą `Content-Type: application/json`, także te bez danych (`{}`). Drużyny anonimowej nie ma w logowaniu nickiem. Schemat: migracja 2 w `server/baza.ts` (kolumny `anonimowe` i `kod`), stare konta zostają zwykłymi kontami. Testy: `npm test -- serwer-druzyna`.
 
+## Zajęte klatki tylko w swojej okolicy
+
+`GET /api/klatki?s=&w=&n=&e=` oddaje pozycje zajętych klatek, więc nie może służyć do przeczesywania całego kraju. Każdy z czterech rogów prostokąta musi leżeć najwyżej 1500 m (`ZASIEG_ZAPYTAN_M` w `src/net/protokol.ts`) od siedziby drużyny, a drużyna bez siedziby (jeszcze nie zajęła klatki albo ją zwolniła) pyta wokół swojego punktu startu. Prostokąt mapy gry (384 m plus 150 m zapasu wokół adresu) ma rogi najwyżej około 700 m od środka, więc zwykłe zapytanie z gry mieści się z zapasem.
+
+| wywołanie | co robi |
+|---|---|
+| `PUT /api/druzyna/start` `{ "lat": …, "lon": … }` (sesja) | zapamiętuje punkt startu drużyny w stopniach (204); złe współrzędne to 400 `zle_dane`; najwyżej 5 zmian na dobę na konto, potem 429 `za_duzo_prob` z `Retry-After` (liczą się tylko przyjęte zmiany). |
+| `GET /api/klatki?s=&w=&n=&e=` (sesja) | 403 `poza_okolica`, gdy któryś róg leży dalej niż 1500 m od siedziby drużyny, a bez siedziby od punktu startu; 409 `brak_startu`, gdy drużyna nie ma ani siedziby, ani punktu startu. Zły kształt prostokąta to dalej 400, sprawdzany wcześniej. |
+
+Siedziba ma pierwszeństwo: drużyna, która ją ma, pyta wokół siedziby i punkt startu jest jej niepotrzebny (zmiana punktu niczego wtedy nie zmienia). Punkt startu to w praktyce adres gracza, więc leży tylko w pamięci procesu: nie ma go w bazie, w kopiach ani w dzienniku, znika razem z kontem, a po restarcie serwera (także planowym, `ZM_RESTART_H`) klient podaje go od nowa i do tego czasu dostaje 409 `brak_startu`. Wpis, z którego nikt nie korzysta przez czas życia sesji (30 dni), sprząta `sprzataj()`. Testy: `npm test -- serwer-okolica`.
+
 ## Wygasanie klatek i kont
 
 Klatka nie jest na zawsze: drużyna, która nie grała 14 dni, traci wszystkie klatki (wracają do puli wolnych), ale zachowuje konto, zapis w chmurze i kod powrotu. Po powrocie gra wczytuje zapis, a klient próbuje zająć siedzibę od nowa (`poWczytaniu` w `src/net/gra.ts`): wolną zajmuje po cichu, a jeśli w międzyczasie zajęła ją inna drużyna, mówi o tym jednym komunikatem i gra toczy się dalej u siebie. Konto bez gry przez 180 dni znika razem z sesjami, klatkami, zapisem i kodem (kaskada kluczy obcych), a jego nick wraca do puli; z kopii bazy znika dopiero po `ZM_KOPIE_DNI` dniach (to też trzeba wpisać do informacji o danych osobowych). Stałe `KLATKI_DNI` i `KONTA_DNI` leżą w `src/net/protokol.ts`.

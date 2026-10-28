@@ -240,6 +240,8 @@ describe('serwer gry: zajęte klatki', () => {
     expect(konflikt.body.blad).toBe('zajeta');
     expect(konflikt.tekst).not.toContain('Pierwsi');
     const q = '/api/klatki?s=54.40&w=18.59&n=54.42&e=18.61';
+    // druga drużyna nie ma siedziby, więc najpierw podaje punkt startu (okolica zapytań, serwer-okolica.test.ts)
+    expect((await b.zadanie('PUT', '/api/druzyna/start', { lat: K1.lat, lon: K1.lon })).status).toBe(204);
     const widokB = await b.zadanie('GET', q);
     expect(widokB.body).toEqual({ klatki: [{ ...K1, lat: do5(K1.lat), lon: do5(K1.lon), moja: false }] });
     expect(widokB.tekst).not.toMatch(/Pierwsi|konto|siedziba|zajeta"/);
@@ -265,7 +267,10 @@ describe('serwer gry: zajęte klatki', () => {
     const lista = async (u: string) => (await a.zadanie('GET', u)).body.klatki.map((k: { klucz: string }) => k.klucz);
     expect(await lista(w(54.409, 18.598, 54.4095, 18.599))).toEqual([K1.klucz]);
     expect(await lista(w(54.4095, 18.599, 54.41, 18.6))).toEqual([daleko.klucz]);
-    expect(await lista(w(54.0, 18.0, 54.01, 18.01))).toEqual([]);
+    // daleko od siedziby drużyny (tu ponad 40 km) pytać nie wolno, nawet o pusty kawałek mapy
+    const poza = await a.zadanie('GET', w(54.0, 18.0, 54.01, 18.01));
+    expect(poza.status).toBe(403);
+    expect(poza.body.blad).toBe('poza_okolica');
     for (const zly of [
       w(54.42, 18.59, 54.4, 18.61),
       w(54.3, 18.5, 54.4, 18.6),

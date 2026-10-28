@@ -1,0 +1,250 @@
+/* Zapytania o zajęte klatki tylko w swojej okolicy (server/app.ts klatkiWProstokacie i PUT /api/druzyna/start,
+   ZASIEG_ZAPYTAN_M w src/net/protokol.ts): prostokąt, którego któryś róg leży dalej niż 1500 m od siedziby drużyny
+   (a bez siedziby od jej punktu startu), to 403 poza_okolica, a drużyna bez siedziby i bez punktu startu dostaje 409
+   brak_startu. Punkt startu żyje tylko w pamięci procesu serwera (to w praktyce adres gracza): zmienia się najwyżej
+   5 razy na dobę na konto i po restarcie trzeba go podać jeszcze raz.
+   Serwer w procesie testu jak w serwer.test.ts (tests/unit/serwer-pomoc.ts), zegar przesuwa `czekaj`; test restartu
+   używa pliku bazy w katalogu tymczasowym, bo baza ':memory:' znika razem z serwerem. */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { ZASIEG_ZAPYTAN_M } from '../../src/net/protokol.ts';
+import { pikselZ } from '../../src/world/klucze.ts';
+import { przegladarka, type SerwerTestowy, serwerTestowy } from './serwer-pomoc.ts';
+
+const DOBA = 24 * 60 * 60 * 1000;
+const M_NA_STOPIEN_LAT = 110574;
+
+/** blok na Przymorzu i jego klatka (jak w serwer-wygasanie.test.ts: pozycja przy najwyższym wierzchołku budynku) */
+const PRZYMORZE = { lat: 54.40939, lon: 18.59923 };
+const [bx, by] = pikselZ(PRZYMORZE.lat, PRZYMORZE.lon).map(Math.round);
+const BUD = `px:${bx}:${by}:-100:60:3`;
+const K1 = {
+  klucz: `${BUD}/1`,
+  budynek: BUD,
+  lat: PRZYMORZE.lat - 10 / M_NA_STOPIEN_LAT,
+  lon: PRZYMORZE.lon - 27 / 65000,
+};
+
+interface Punkt {
+  lat: number;
+  lon: number;
+}
+
+/** punkt przesunięty o metry na północ */
+const naPolnoc = (p: Punkt, m: number): Punkt => ({ lat: p.lat + m / M_NA_STOPIEN_LAT, lon: p.lon });
+
+/** Zapytanie o prostokąt dookoła punktu: południe, północ, zachód i wschód w metrach od punktu (jak prostokatMapy
+    z src/world/klucze.ts, tylko podane wprost). */
+function prostokat(p: Punkt, poludnie: number, polnoc: number, zachod: number, wschod: number): string {
+  const mLon = 111320 * Math.cos((p.lat * Math.PI) / 180);
+  const s = p.lat - poludnie / M_NA_STOPIEN_LAT;
+  const n = p.lat + polnoc / M_NA_STOPIEN_LAT;
+  const w = p.lon - zachod / mLon;
+  const e = p.lon + wschod / mLon;
+  return `/api/klatki?s=${s}&w=${w}&n=${n}&e=${e}`;
+}
+/** prostokąt mapy gry: około 420 m od punktu w każdą stronę (384 m mapy z obrotem plus zapas) */
+const mapaWokol = (p: Punkt) => prostokat(p, 420, 420, 420, 420);
+
+let serwery: SerwerTestowy[] = [];
+let katalogi: string[] = [];
+async function start(opcje: Parameters<typeof serwerTestowy>[0] = {}) {
+  const s = await serwerTestowy(opcje);
+  serwery.push(s);
+  return s;
+}
+afterEach(async () => {
+  await Promise.all(serwery.map((s) => s.zamknij()));
+  serwery = [];
+  for (const k of katalogi) fs.rmSync(k, { recursive: true, force: true });
+  katalogi = [];
+});
+
+/** nowa drużyna anonimowa */
+async function druzyna(s: SerwerTestowy) {
+  const p = przegladarka(s.adres);
+  const r = await p.zadanie('POST', '/api/druzyna', {});
+  expect(r.status, r.tekst).toBe(201);
+  return p;
+}
+const ustawStart = (p: ReturnType<typeof przegladarka>, punkt: Punkt) =>
+  p.zadanie('PUT', '/api/druzyna/start', { lat: punkt.lat, lon: punkt.lon });
+const klucze = (r: { body: { klatki: { klucz: string }[] } }) => r.body.klatki.map((k) => k.klucz);
+
+describe('serwer gry: zapytania o klatki tylko w okolicy', () => {
+  it('stała ze specu: 1500 m', () => {
+    expect(ZASIEG_ZAPYTAN_M).toBe(1500);
+  });
+
+  it('drużyna bez siedziby widzi klatki tylko wokół swojego punktu startu', async () => {
+    const s = await start();
+    const sasiad = await druzyna(s);
+    expect((await sasiad.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+
+    const nowa = await druzyna(s);
+    // bez punktu startu nie wiadomo, gdzie wolno patrzeć
+    const brak = await nowa.zadanie('GET', mapaWokol(PRZYMORZE));
+    expect(brak.status).toBe(409);
+    expect(brak.body.blad).toBe('brak_startu');
+    // punkt startu innej drużyny nic jej nie daje
+    expect((await ustawStart(sasiad, PRZYMORZE)).status).toBe(204);
+    expect((await nowa.zadanie('GET', mapaWokol(PRZYMORZE))).body.blad).toBe('brak_startu');
+
+    expect((await ustawStart(nowa, PRZYMORZE)).status).toBe(204);
+    const wokol = await nowa.zadanie('GET', mapaWokol(PRZYMORZE));
+    expect(wokol.status, wokol.tekst).toBe(200);
+    expect(klucze(wokol)).toEqual([K1.klucz]);
+    // cudza klatka dalej tylko jako „zajęta”
+    expect(wokol.body.klatki[0].moja).toBe(false);
+
+    // prostokąt 3 km dalej: odmowa, nic z mapy nie wycieka
+    const daleko = await nowa.zadanie('GET', mapaWokol(naPolnoc(PRZYMORZE, 3000)));
+    expect(daleko.status).toBe(403);
+    expect(daleko.body.blad).toBe('poza_okolica');
+    expect(daleko.body.klatki).toBeUndefined();
+  });
+
+  it('o okolicy decydują wszystkie cztery rogi: 1000 m od punktu we wszystkie strony przechodzi, 1100 m już nie', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204);
+    // róg na przekątnej około 1414 m
+    expect((await p.zadanie('GET', prostokat(PRZYMORZE, 1000, 1000, 1000, 1000))).status).toBe(200);
+    // róg na przekątnej około 1556 m
+    const za = await p.zadanie('GET', prostokat(PRZYMORZE, 1100, 1100, 1100, 1100));
+    expect(za.status).toBe(403);
+    expect(za.body.blad).toBe('poza_okolica');
+    // jeden daleki bok wystarczy, choć trzy rogi leżą blisko
+    for (const [poludnie, polnoc, zachod, wschod] of [
+      [200, 2000, 200, 200],
+      [2000, 200, 200, 200],
+      [200, 200, 2000, 200],
+      [200, 200, 200, 2000],
+    ]) {
+      const r = await p.zadanie('GET', prostokat(PRZYMORZE, poludnie, polnoc, zachod, wschod));
+      expect(r.status, `${poludnie} ${polnoc} ${zachod} ${wschod}`).toBe(403);
+      expect(r.body.blad).toBe('poza_okolica');
+    }
+  });
+
+  it('zły prostokąt to 400 także bez punktu startu (kształt sprawdzamy przed okolicą)', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    for (const zly of ['/api/klatki?s=54.42&w=18.59&n=54.4&e=18.61', '/api/klatki?s=a&w=b&n=c&e=d'])
+      expect((await p.zadanie('GET', zly)).status, zly).toBe(400);
+  });
+
+  it('drużyna z siedzibą pyta wokół siedziby, punkt startu nie jest potrzebny', async () => {
+    const s = await start();
+    const a = await druzyna(s);
+    expect((await a.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+    const siedziba = { lat: K1.lat, lon: K1.lon };
+
+    // bez żadnego PUT start
+    const wokol = await a.zadanie('GET', mapaWokol(siedziba));
+    expect(wokol.status, wokol.tekst).toBe(200);
+    expect(klucze(wokol)).toEqual([K1.klucz]);
+    const daleko = await a.zadanie('GET', mapaWokol(naPolnoc(siedziba, 3000)));
+    expect(daleko.status).toBe(403);
+    expect(daleko.body.blad).toBe('poza_okolica');
+
+    // punkt startu gdzie indziej niczego nie zmienia: liczy się siedziba
+    const gdzieIndziej = naPolnoc(siedziba, 3000);
+    expect((await ustawStart(a, gdzieIndziej)).status).toBe(204);
+    expect((await a.zadanie('GET', mapaWokol(siedziba))).status).toBe(200);
+    expect((await a.zadanie('GET', mapaWokol(gdzieIndziej))).body.blad).toBe('poza_okolica');
+
+    // po zwolnieniu klatek siedziby nie ma i okolicę wyznacza punkt startu
+    expect((await a.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    expect((await a.zadanie('GET', mapaWokol(gdzieIndziej))).status).toBe(200);
+    expect((await a.zadanie('GET', mapaWokol(siedziba))).body.blad).toBe('poza_okolica');
+  });
+
+  it('PUT start: tylko z sesją, tylko poprawne współrzędne', async () => {
+    const s = await start();
+    const bez = przegladarka(s.adres);
+    expect((await ustawStart(bez, PRZYMORZE)).status).toBe(401);
+    const p = await druzyna(s);
+    for (const zle of [
+      {},
+      { lat: 54.4 },
+      { lon: 18.6 },
+      { lat: '54.4', lon: 18.6 },
+      { lat: 54.4, lon: null },
+      { lat: 91, lon: 18.6 },
+      { lat: 54.4, lon: 181 },
+      { lat: -86, lon: 0 },
+    ]) {
+      const r = await p.zadanie('PUT', '/api/druzyna/start', zle);
+      expect(r.status, JSON.stringify(zle)).toBe(400);
+      expect(r.body.blad).toBe('zle_dane');
+    }
+    // złe dane nie zużywają limitu zmian: pięć poprawnych dalej przechodzi
+    for (let i = 0; i < 5; i++) expect((await ustawStart(p, PRZYMORZE)).status, `próba ${i + 1}`).toBe(204);
+  });
+
+  it('punkt startu zmienia się najwyżej 5 razy na dobę', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    for (let i = 0; i < 5; i++)
+      expect((await ustawStart(p, naPolnoc(PRZYMORZE, i))).status, `zmiana ${i + 1}`).toBe(204);
+    const szosta = await ustawStart(p, PRZYMORZE);
+    expect(szosta.status).toBe(429);
+    expect(szosta.body.blad).toBe('za_duzo_prob');
+    expect(Number(szosta.headers.get('Retry-After'))).toBeGreaterThan(0);
+    // odmowa nie podmienia punktu: ostatni przyjęty jest 4 m na północ od Przymorza
+    expect((await p.zadanie('GET', prostokat(naPolnoc(PRZYMORZE, 4), 50, 50, 50, 50))).status).toBe(200);
+    expect((await p.zadanie('GET', mapaWokol(naPolnoc(PRZYMORZE, 3000)))).body.blad).toBe('poza_okolica');
+
+    // inne konto ma własny limit
+    const inna = await druzyna(s);
+    expect((await ustawStart(inna, PRZYMORZE)).status).toBe(204);
+
+    // po dobie znów można
+    s.czekaj(DOBA + 1000);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204);
+  });
+
+  it('punkt startu jest tylko w pamięci serwera: po nowym stworzSerwer na tej samej bazie trzeba go podać jeszcze raz', async () => {
+    const katalog = fs.mkdtempSync(path.join(os.tmpdir(), 'zm-okolica-'));
+    katalogi.push(katalog);
+    const plik = path.join(katalog, 'gra.db');
+
+    const s1 = await start({ baza: plik });
+    const p1 = await druzyna(s1);
+    expect((await ustawStart(p1, PRZYMORZE)).status).toBe(204);
+    expect((await p1.zadanie('GET', mapaWokol(PRZYMORZE))).status).toBe(200);
+    const ciasteczko = p1.ciasteczko;
+    await s1.zamknij();
+    serwery = serwery.filter((x) => x !== s1);
+
+    // ta sama baza, ta sama sesja, ale nowy proces: punktu startu nie ma
+    const s2 = await start({ baza: plik });
+    const p2 = przegladarka(s2.adres);
+    p2.ciasteczko = ciasteczko;
+    expect((await p2.zadanie('GET', '/api/konto')).status).toBe(200);
+    const brak = await p2.zadanie('GET', mapaWokol(PRZYMORZE));
+    expect(brak.status).toBe(409);
+    expect(brak.body.blad).toBe('brak_startu');
+    // limit zmian też zaczyna od zera (leży w pamięci), a po podaniu punktu wszystko działa jak przedtem
+    expect((await ustawStart(p2, PRZYMORZE)).status).toBe(204);
+    expect((await p2.zadanie('GET', mapaWokol(PRZYMORZE))).status).toBe(200);
+
+    // w bazie nie ma po nim śladu
+    const tekst = JSON.stringify(s2.gra.baza.db.prepare('SELECT * FROM konta').all());
+    expect(tekst).not.toContain(String(PRZYMORZE.lat));
+  });
+
+  it('usunięcie konta kasuje też punkt startu z pamięci', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204);
+    expect((await p.zadanie('DELETE', '/api/konto')).status).toBe(204);
+    // nowa drużyna dostaje nowy numer, nie dziedziczy niczego po usuniętej
+    const nowa = await druzyna(s);
+    expect((await nowa.zadanie('GET', mapaWokol(PRZYMORZE))).body.blad).toBe('brak_startu');
+  });
+});

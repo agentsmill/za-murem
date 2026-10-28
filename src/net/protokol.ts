@@ -145,6 +145,8 @@ export type KodBledu =
   | 'limit_klatek'
   | 'za_daleko'
   | 'zla_pozycja'
+  | 'poza_okolica'
+  | 'brak_startu'
   | 'serwer_zajety'
   | 'konflikt_wersji'
   | 'za_duze'
@@ -242,6 +244,16 @@ export interface Prostokat {
 export const PROSTOKAT_MAX_SZER = 0.05;
 export const PROSTOKAT_MAX_DLUG = 0.08;
 export const KLATKI_W_ODPOWIEDZI_MAX = 2000;
+/** Zasięg zapytań o zajęte klatki w metrach: każdy róg prostokąta GET /api/klatki musi leżeć najwyżej tyle od siedziby
+    drużyny, a bez siedziby od jej punktu startu (PUT /api/druzyna/start); dalej to 403 poza_okolica. Prostokąt
+    mapy gry (384 m plus 150 m zapasu wokół adresu, prostokatMapy) ma rogi najwyżej około 700 m od środka. */
+export const ZASIEG_ZAPYTAN_M = 1500;
+
+/** PUT /api/druzyna/start: punkt startu drużyny w stopniach (okolica zapytań, gdy drużyna nie ma jeszcze siedziby) */
+export interface PunktStartu {
+  lat: number;
+  lon: number;
+}
 
 /** POST /api/klatki: klatka do zajęcia; pozycja to środek klatki z klatkiBudynku (src/world/klucze.ts) */
 export interface ZajmijKlatke {

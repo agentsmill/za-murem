@@ -14,7 +14,9 @@
                                     200 Ja tej sesji, bez nowego konta)
      POST   /api/druzyna/kod        nowy kod powrotu {} (stary wygasa)       → {kod}, 401 bez sesji
      POST   /api/druzyna/powrot     wróć do drużyny {kod}                    → 200 Ja + ciasteczko, 401 zly_kod
-     GET    /api/klatki?s=&w=&n=&e= zajęte klatki w prostokącie (stopnie)    → {klatki}
+     PUT    /api/druzyna/start      punkt startu {lat, lon} (stopnie)        → 204, 429 po 5 zmianach na dobę
+     GET    /api/klatki?s=&w=&n=&e= zajęte klatki w prostokącie (stopnie)    → {klatki}, 403 poza_okolica,
+                                    409 brak_startu
      POST   /api/klatki             zajmij {klucz, budynek, lat, lon}        → 201 {klatka}, 409 zajęta
      GET    /api/klatki/moje        moje klatki                              → {klatki}
      DELETE /api/klatki/moje        zwolnij wszystkie moje                   → 204
@@ -32,6 +34,14 @@
    się do tego samego limitu nieudanych prób z IP co złe hasło (10 na 15 minut), dobry nie. Drużyna anonimowa usuwa się
    bez hasła (nie ma go), konto z nickiem dalej z hasłem; w logowaniu nickiem drużyny anonimowej nie ma. Wszystkie POST
    niosą Content-Type: application/json, także puste (`{}`).
+
+   Zajęte klatki widać tylko w swojej okolicy: każdy z czterech rogów prostokąta GET /api/klatki musi leżeć najwyżej
+   `ZASIEG_ZAPYTAN_M` (1500 m) od siedziby drużyny, a drużyna bez siedziby (jeszcze nie zajęła klatki albo ją zwolniła)
+   od swojego punktu startu z PUT /api/druzyna/start. Dalej to 403 poza_okolica, a bez siedziby i bez punktu startu
+   409 brak_startu; kształt prostokąta (400) sprawdzamy wcześniej. Punkt startu to w praktyce adres gracza, więc leży
+   tylko w pamięci procesu (nie w bazie, nie w dzienniku), jest osobny dla konta, znika z kontem, a po restarcie
+   serwera klient podaje go od nowa. Zmienia się najwyżej 5 razy na dobę na konto (429), liczą się tylko przyjęte
+   zmiany; wpis, z którego nikt nie korzysta przez czas życia sesji (`sesjaDni`), sprząta `sprzataj`.
 
    Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); pozycja klatki musi leżeć przy budynku z jej
    klucza (kotwicaKlucza), każda klatka drużyny najwyżej `promienM` od siedziby (pierwszej klatki), najwyżej
@@ -79,6 +89,7 @@ import {
   PROSTOKAT_MAX_DLUG,
   PROSTOKAT_MAX_SZER,
   ZAPAS_KLATKI_M,
+  ZASIEG_ZAPYTAN_M,
   type ZajetaKlatka,
   type ZapisanoOdpowiedz,
   type Zdrowie,
@@ -233,7 +244,11 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const zadania: Okno = okno(300, MIN, teraz);
   const zapisy: Okno = okno(60, GODZ, teraz);
   const kody: Okno = okno(10, GODZ, teraz);
-  const okna = [logowania, logowaniaNicku, rejestracje, druzyny, zajeteNicki, zadania, zapisy, kody];
+  const zmianyStartu: Okno = okno(5, DOBA, teraz);
+  const okna = [logowania, logowaniaNicku, rejestracje, druzyny, zajeteNicki, zadania, zapisy, kody, zmianyStartu];
+  /** punkty startu drużyn (PUT /api/druzyna/start), tylko w pamięci procesu: to w praktyce adres gracza, a siedziba
+      drużyny i tak leży w `klatki`. `uzyty` to chwila ostatniej zmiany albo zapytania, z której korzysta sprzataj. */
+  const punktyStartu = new Map<number, { lat: number; lon: number; uzyty: number }>();
   /** konta, których zapis właśnie się wysyła: drugi naraz to 429 */
   const zapisyWToku = new Set<number>();
   /** chwila ostatniego przebiegu wygasania klatek i kont (sprzataj liczy je najwyżej raz na godzinę) */
@@ -483,6 +498,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     if (s.konto.anonimowe) {
       // drużyna anonimowa nie ma hasła, a sesja (albo kod powrotu) to jedyne, czym się wykazuje; bez await w środku
       baza.usunKonto(s.konto.id);
+      punktyStartu.delete(s.konto.id);
       wyslij(k.res, 204, undefined, { ...k.naglowki, 'Set-Cookie': skasujCiasteczko() });
       return;
     }
@@ -499,9 +515,39 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       }
       // kaskada w bazie: sesje, klatki i zapis znikają razem z kontem
       baza.usunKonto(s.konto.id);
+      punktyStartu.delete(s.konto.id);
       wyslij(k.res, 204, undefined, { ...k.naglowki, 'Set-Cookie': skasujCiasteczko() });
     } finally {
       if (!zle) logowania.odlicz(k.ip);
+    }
+  };
+
+  const ustawStart: Obsluga = async (k) => {
+    const s = wymagajSesji(k);
+    const id = String(s.konto.id);
+    const czekaj = zmianyStartu.zablokowany(id);
+    if (czekaj) throw zaDuzo(czekaj, 'Za często zmieniacie punkt startu. Spróbujcie później.');
+    // próba liczy się od razu (przed await); odlicza, jeśli nie została przyjęta (zły JSON, złe współrzędne)
+    zmianyStartu.dolicz(id);
+    let przyjety = false;
+    try {
+      const { lat, lon } = await czytajJson(k.req, MALE_CIALO);
+      if (
+        typeof lat !== 'number' ||
+        typeof lon !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lon) ||
+        Math.abs(lat) > 85 ||
+        Math.abs(lon) > 180
+      )
+        throw new BladHttp(400, 'zle_dane', 'Podajcie punkt startu: lat i lon w stopniach.');
+      // od tego miejsca bez await: sesja sprawdzona jeszcze raz (konto mogło zniknąć w trakcie) i zapis w pamięci
+      sesjaDalej(k, s);
+      punktyStartu.set(s.konto.id, { lat, lon, uzyty: k.teraz });
+      przyjety = true;
+      wyslij(k.res, 204, undefined, k.naglowki);
+    } finally {
+      if (!przyjety) zmianyStartu.odlicz(id);
     }
   };
 
@@ -527,6 +573,25 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
         'zle_dane',
         `Prostokąt s<n, w<e, najwyżej ${PROSTOKAT_MAX_SZER}° na ${PROSTOKAT_MAX_DLUG}° (parametry s, w, n, e).`,
       );
+    // okolica: siedziba drużyny, a bez niej punkt startu; wszystkie cztery rogi w zasięgu
+    const siedziba = baza.siedziba(s.konto.id);
+    const punkt = punktyStartu.get(s.konto.id);
+    const srodek = siedziba ?? punkt;
+    if (!srodek)
+      throw new BladHttp(
+        409,
+        'brak_startu',
+        'Serwer nie zna jeszcze punktu startu waszej drużyny. Podajcie go przed pytaniem o klatki.',
+      );
+    for (const [lat, lon] of [
+      [ps, pw],
+      [ps, pe],
+      [pn, pw],
+      [pn, pe],
+    ])
+      if (odlegloscM(srodek.lat, srodek.lon, lat, lon) > ZASIEG_ZAPYTAN_M)
+        throw new BladHttp(403, 'poza_okolica', 'Ten obszar leży za daleko od waszej okolicy.');
+    if (!siedziba && punkt) punkt.uzyty = k.teraz;
     const lista = baza.klatkiWProstokacie(ps, pw, pn, pe, KLATKI_W_ODPOWIEDZI_MAX);
     wyslij(k.res, 200, { klatki: lista.map((x) => jakoOdpowiedz(x, s.konto.id)) }, k.naglowki);
   };
@@ -680,6 +745,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     '/api/druzyna': { POST: zalozDruzyne },
     '/api/druzyna/kod': { POST: wymienKod },
     '/api/druzyna/powrot': { POST: powrotDoDruzyny },
+    '/api/druzyna/start': { PUT: ustawStart },
     '/api/klatki': { GET: klatkiWProstokacie, POST: zajmijKlatke },
     '/api/klatki/moje': { GET: mojeKlatki, DELETE: zwolnijMoje },
     '/api/zapis': { GET: pobierzZapis, PUT: wyslijZapis, DELETE: usunZapis },
@@ -776,6 +842,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       for (const o of okna) o.sprzataj();
       if (t - wygasanieOd < GODZ) return;
       wygasanieOd = t;
+      // punkt startu, z którego nikt nie korzysta tak długo jak żyje sesja, nie jest już potrzebny (nie rośnie bez końca)
+      for (const [id, p] of punktyStartu) if (t - p.uzyty > sesjaMs) punktyStartu.delete(id);
       try {
         // granica to początek doby: `ostatnio` ma dokładność doby, więc wizyta daje drużynie pełne N dni
         const granica = (ms: number) => Math.floor((t - ms) / DOBA) * DOBA;
