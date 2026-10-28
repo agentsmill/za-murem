@@ -1,0 +1,252 @@
+<!doctype html>
+<!-- SZKIC informacji o danych osobowych: do sprawdzenia i zatwierdzenia przez administratora (Mateusza) przed publikacją, wypełnić miejsca w [nawiasach kwadratowych]. -->
+<!-- Do potwierdzenia przed publikacją:
+     1. Podstawy prawne celów przetwarzania: celowo bez numerów artykułów, wpisać po decyzji ([PODSTAWA PRAWNA — do potwierdzenia]).
+     2. Brak baneru zgody na ciasteczka: jedyne ciasteczko to techniczne ciasteczko sesji gry sieciowej (zm_sesja, HttpOnly, Path=/api), do potwierdzenia.
+     3. Kraj serwera u Hetznera ([KRAJ SERWERA]) nie jest sprawdzony. Linku do polityki Hetznera nie dodano.
+     4. "Serwer nie zapisuje adresów IP": Caddy na serwerze gry ma wyłączone logi dostępu (deploy/hetzner/conf/Caddyfile); sprawdzić na wdrożonej wersji,
+        a ustawienia logów Vercela (adresy IP, adresy żądań z wpisanym adresem) są poza naszą kontrolą, więc strona odsyła do jego polityki.
+     5. Pamięć wyników adresów trzyma w pamięci procesu etykietę znalezionego miejsca (np. ulica i numer z OpenStreetMap) pod kluczem-skrótem zapytania; strona tak to opisuje.
+     6. Odbiorcy, do których łączy się przeglądarka gracza: Google Fonts (czcionki karty startowej i tych stron) oraz zapasowe serwery Overpass
+        (overpass-api.de, overpass.private.coffee, maps.mail.ru). Rozważyć własne czcionki i wycofanie zapasowego serwera spoza UE.
+     7. Okresy (14, 180, 7 i 30 dni) pilnuje test tests/unit/prywatnosc.test.ts względem serwera: zmiana na serwerze wymaga zmiany tutaj i w regulaminie.
+     8. <meta name="robots" content="noindex"> chroni szkic przed wyszukiwarkami, bo plik z public/ trafia do każdego wdrożenia: usunąć po zatwierdzeniu. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prywatność | Privacy | Za Murem</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457a8'/%3E%3Crect x='3' y='5' width='10' height='9' fill='%23f4f3ee'/%3E%3Crect x='5' y='7' width='2' height='2' fill='%232457a8'/%3E%3Crect x='9' y='7' width='2' height='2' fill='%232457a8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="prawo.css">
+<script>
+/* Jedna sekcja językowa naraz: z adresu (#pl, #en), potem język zapisany w grze, potem język przeglądarki. Bez skryptu widać obie. */
+(function () {
+  var d = document.documentElement;
+  function ok(x) { return x === 'pl' || x === 'en'; }
+  function wybierz() {
+    var h = (location.hash || '').slice(1);
+    if (ok(h)) return h;
+    var z = null;
+    try { z = localStorage.getItem('za-murem-0.4-jezyk'); } catch (e) { z = null; }
+    if (ok(z)) return z;
+    return /^pl\b/i.test(navigator.language || '') ? 'pl' : 'en';
+  }
+  function ustaw() { d.setAttribute('data-j', wybierz()); }
+  ustaw();
+  addEventListener('hashchange', ustaw);
+})();
+</script>
+</head>
+<body>
+<div class="strona">
+<div class="karta">
+<a class="sign" href="./"><b>Za Murem</b></a>
+
+<section id="pl" lang="pl">
+  <p class="jezyk"><a href="#en" hreflang="en">English</a></p>
+  <h1>Informacja o danych osobowych</h1>
+  <p class="wstep">Ta strona mówi, jakie dane zbiera gra Za Murem, kto je dostaje i jak długo je trzymamy. Dotyczy gry z sąsiadami, czyli gry z naszym serwerem. Gra bez serwera (na przykład przykładowe osiedla) nic do niego nie wysyła, a jej zapis zostaje w pamięci twojej przeglądarki.</p>
+
+  <div class="blok">
+    <h2>Kto odpowiada za dane</h2>
+    <p>Administratorem danych jest <mark>[NAZWA FIRMY]</mark>, <mark>[ADRES]</mark>, NIP <mark>[NIP]</mark>. W sprawach danych pisz na <mark>[E-MAIL DO SPRAW DANYCH]</mark>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Co trzyma serwer gry</h2>
+    <ul>
+      <li><b>numer drużyny</b>, na przykład #12. Drużyna powstaje sama przy pierwszej grze na prawdziwym adresie, bez nicku, hasła i e-maila.</li>
+      <li><b>ciasteczko sesji</b> <code>zm_sesja</code>: losowy znak, po którym serwer poznaje twoją przeglądarkę. W bazie leży tylko jego skrót. Jest ważne 30 dni od ostatniego użycia, skrypty strony go nie widzą (HttpOnly) i przeglądarka wysyła je tylko pod adres <code>/api</code>.</li>
+      <li><b>skrót kodu powrotu</b>. Kod, który wpisujesz, żeby wrócić do drużyny z innej przeglądarki, widzisz raz, w grze. Serwer trzyma tylko jego skrót (SHA-256), więc nie umie pokazać kodu drugi raz.</li>
+      <li><b>nick i skrót hasła</b>, tylko jeśli konto założono dawną drogą, z nickiem i hasłem. Nowa drużyna ich nie ma.</li>
+      <li><b>położenie zajętych klatek</b>: klucz i współrzędne geograficzne każdej klatki schodowej, którą zajęła drużyna. Inni gracze w okolicy widzą tylko, że klatka jest zajęta, a nie czyja.</li>
+      <li><b>zapis gry w chmurze</b>: stan gry (wymyśleni mieszkańcy, budynki, ustawienia) ze współrzędnymi okolicy i obrysami budynków z OpenStreetMap, ale bez tekstu wpisanego adresu. Współrzędne wskazują, gdzie leży osiedle, więc traktujemy zapis jak dane o miejscu.</li>
+      <li><b>daty</b>: kiedy drużynę założono i w którym dniu grała ostatnio.</li>
+      <li><b>punkt startu</b>: współrzędne okolicy, w której zaczynasz grę, czyli w praktyce okolicy twojego adresu. Leży tylko w pamięci serwera, nie w bazie i nie w kopiach. Znika po 30 dniach bez użycia i przy każdym restarcie serwera, a gra podaje go wtedy od nowa.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Czego nie zapisujemy</h2>
+    <p>Nasz serwer gry nie zapisuje adresów IP, ani w bazie, ani w dzienniku błędów. Nie mamy też e-maili ani tekstu wpisanego adresu. Adres IP trafia do pamięci serwera tylko na czas liczenia limitów (na przykład ile drużyn może powstać z jednego łącza w ciągu godziny), znika razem z oknem limitu i nie trafia na dysk.</p>
+    <p>Adres IP widzą za to serwery po drodze: hosting i usługi opisane niżej.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Wyszukiwanie adresu</h2>
+    <p>Gdy gra z sąsiadami jest włączona i nasz serwer odpowiada, wpisany adres idzie do naszego serwera, w adresie żądania (przechodzi więc także przez hosting, patrz niżej). Serwer pyta o niego wyszukiwarkę OpenStreetMap Nominatim, a gdy ta nie odpowie, usługę Photon (komoot). Nominatim i Photon dostają tekst adresu, ale nie dostają twojego adresu IP: widzą adres IP naszego serwera.</p>
+    <p>Serwer pamięta wyniki, żeby nie pytać drugi raz o to samo miejsce. Pamięć jest tylko w pamięci procesu serwera i znika przy restarcie. Kluczem jest skrót zapytania, nie jego tekst, a zapamiętany wynik to miejsce z OpenStreetMap, bez wiadomości, kto o nie pytał.</p>
+    <p>Gdy gry z sąsiadami nie ma albo nasz serwer nie odpowie, przeglądarka pyta Nominatim sama. Wtedy Nominatim widzi twój adres IP i wpisany adres. Zasady Nominatim opisuje <a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener">polityka prywatności OpenStreetMap Foundation</a>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Mapy, czcionki i inne usługi, do których łączy się przeglądarka</h2>
+    <ul>
+      <li><b>OpenFreeMap</b>: kafelki map pobiera wprost twoja przeglądarka. Usługa widzi adres IP i numery kafelków, czyli w przybliżeniu miejsce, które cię interesuje.</li>
+      <li><b>serwery Overpass</b> (overpass-api.de, overpass.private.coffee, maps.mail.ru): gdy kafelki nie odpowiadają, przeglądarka pyta o budynki okolicy któryś z nich i wysyła współrzędne okolicy. Widzą adres IP.</li>
+      <li><b>Google Fonts</b>: karta startowa i te strony ładują czcionki z fonts.googleapis.com i fonts.gstatic.com. Google widzi adres IP.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Hosting</h2>
+    <p>Pliki gry i pośrednik <code>/api</code> działają na Vercelu. Vercel przetwarza dane połączenia, w tym adres IP, na własnych zasadach: <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">polityka prywatności Vercela</a>. Serwer gry z bazą działa na serwerze Hetzner w kraju <mark>[KRAJ SERWERA]</mark>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Jak długo trzymamy dane</h2>
+    <ul>
+      <li><b>klatki</b>: wracają do wolnych po 14 dniach bez gry. Konto, zapis i kod powrotu zostają.</li>
+      <li><b>konto</b>: znika po 180 dniach bez gry razem z sesjami, klatkami i zapisem.</li>
+      <li><b>kopie zapasowe bazy</b>: robimy codziennie i trzymamy 7 dni. Usunięte konto może zostać w kopii do 7 dni, potem kopia znika.</li>
+      <li><b>sesja</b>: 30 dni od ostatniego użycia. Wylogowanie albo usunięcie drużyny kasuje ją od razu.</li>
+      <li><b>dzienne sumy</b> z następnego bloku zostają bez ograniczenia czasu.</li>
+    </ul>
+    <p>Grą jest każde połączenie z ważnym ciasteczkiem sesji albo z kodem powrotu. Dni liczymy od początku doby.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Liczniki</h2>
+    <p>Żeby wiedzieć, ilu osobom gra się podoba, serwer liczy dzienne sumy: ile razy danego dnia ktoś zaczął grę (osobno tryb zwykły i zombie, polski i angielski, telefon i komputer), ile razy zaliczono dany krok ścieżki celów, ile razy gra doszła do drugiego, trzeciego i siódmego dnia oraz ile drużyn założonych danego dnia wróciło po kolejnych dniach.</p>
+    <p>Sumy nie mają numeru drużyny, adresu IP ani innego identyfikatora gracza, a przy zliczaniu zdarzenia serwer nie czyta ciasteczka sesji. Nie twierdzimy jednak, że nie da się ich z nikim powiązać: w dniu, w którym założono tylko jedną drużynę, suma powrotów z tego dnia dotyczy właśnie jej, więc my, jako właściciel danych, moglibyśmy je połączyć. Sumy zostają po usunięciu drużyny.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Ciasteczka i pamięć przeglądarki</h2>
+    <p>Jedyne ciasteczko to ciasteczko sesji <code>zm_sesja</code>, opisane wyżej. Jest potrzebne do działania gry z sąsiadami, nie służy do reklamy ani śledzenia, więc nie pytamy o zgodę na ciasteczka.</p>
+    <p>Poza tym gra zapisuje w pamięci przeglądarki (localStorage i sessionStorage) zapis gry, wybrany język i podobne ustawienia. Zostają one w przeglądarce. Na serwer idzie tylko zapis w chmurze, opisany wyżej.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Po co i na jakiej podstawie</h2>
+    <ul>
+      <li>prowadzenie gry z sąsiadami (drużyny, klatki, zapis, kod powrotu): <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+      <li>ochrona serwera przed nadużyciami (limity w pamięci serwera): <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+      <li>wyszukiwanie adresu: <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+      <li>dzienne sumy (sprawdzamy, czy gra działa i dokąd ludzie z niej odchodzą): <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Twoje prawa</h2>
+    <p>Masz prawo do dostępu do swoich danych, do ich usunięcia i do sprzeciwu wobec przetwarzania. Najprościej usunąć dane samemu: w grze otwórz Menu i wybierz „Usuń drużynę z serwera”. Z serwera znikną klatki drużyny, jej zapis w chmurze i kod powrotu.</p>
+    <p>Nie znamy twojego imienia ani e-maila. Przy prośbie o dostęp podaj więc numer drużyny i napisz, jak możemy sprawdzić, że jest twoja. Ustalimy to w odpowiedzi.</p>
+    <p>Możesz też złożyć skargę do organu nadzorczego, którym jest Prezes Urzędu Ochrony Danych Osobowych (PUODO, <a href="https://uodo.gov.pl" target="_blank" rel="noopener">uodo.gov.pl</a>).</p>
+  </div>
+
+  <div class="blok">
+    <h2>Kontakt</h2>
+    <p><mark>[E-MAIL DO SPRAW DANYCH]</mark></p>
+  </div>
+
+  <p class="inne"><a href="regulamin.html#pl">Regulamin</a><a href="./">Wróć do gry</a></p>
+</section>
+
+<section id="en" lang="en">
+  <p class="jezyk"><a href="#pl" hreflang="pl">Polski</a></p>
+  <h1>Personal data notice</h1>
+  <p class="wstep">This page explains what data the game Za Murem collects, who receives it and how long we keep it. It covers playing with the neighbours, that is, playing with our server. The game without the server (the example estates, for instance) sends nothing to it, and its save stays in your browser’s storage.</p>
+
+  <div class="blok">
+    <h2>Who is responsible for the data</h2>
+    <p>The data controller is <mark>[NAZWA FIRMY]</mark>, <mark>[ADRES]</mark>, tax ID (NIP) <mark>[NIP]</mark>. For anything about your data write to <mark>[E-MAIL DO SPRAW DANYCH]</mark>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>What the game server keeps</h2>
+    <ul>
+      <li><b>team number</b>, for example #12. A team is created on its own the first time you play a real address, with no username, password or e-mail.</li>
+      <li><b>session cookie</b> <code>zm_sesja</code>: a random token by which the server recognises your browser. Only its hash is stored in the database. It is valid for 30 days from its last use, page scripts cannot read it (HttpOnly) and the browser sends it only to <code>/api</code>.</li>
+      <li><b>hash of the return code</b>. The code you enter to rejoin your team from another browser is shown to you once, in the game. The server keeps only its hash (SHA-256), so it cannot show you the code a second time.</li>
+      <li><b>username and password hash</b>, only if the account was created the older way, with a username and password. A new team has neither.</li>
+      <li><b>positions of the occupied stairwells</b>: the key and geographic coordinates of every stairwell a team has taken. Other players nearby only see that a stairwell is taken, not whose it is.</li>
+      <li><b>cloud save</b>: the game state (made-up residents, buildings, settings) with the coordinates of the area and building outlines from OpenStreetMap, but without the text of the address you typed. The coordinates show where the estate is, so we treat the save as location data.</li>
+      <li><b>dates</b>: when the team was created and on which day it last played.</li>
+      <li><b>start point</b>: the coordinates of the area where you start playing, which in practice is the area of your address. It lives only in the server’s memory, not in the database or in backups. It is dropped after 30 days without use and at every server restart, and the game then supplies it again.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>What we do not store</h2>
+    <p>Our game server does not store IP addresses, neither in the database nor in the error log. It has no e-mail addresses and no text of the typed address. An IP address sits in the server’s memory only while request limits are counted (for example how many teams can be created from one connection in an hour), disappears with the limit window and never reaches the disk.</p>
+    <p>The servers on the way do see the IP address: the hosting and the services described below.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Address search</h2>
+    <p>When playing with the neighbours is on and our server answers, the address you type goes to our server, inside the request URL (so it also passes through the hosting, see below). The server asks the OpenStreetMap search Nominatim about it and, if that does not answer, the Photon service (komoot). Nominatim and Photon receive the text of the address, but not your IP address: they see the IP address of our server.</p>
+    <p>The server remembers results so that it does not ask twice about the same place. The memory is held only in the server process and disappears on restart. Its key is a hash of the query, not the query text, and the remembered result is a place from OpenStreetMap, with no record of who asked.</p>
+    <p>When playing with the neighbours is off, or our server does not answer, your browser asks Nominatim itself. Then Nominatim sees your IP address and the address you typed. Nominatim’s rules are described in the <a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener">OpenStreetMap Foundation privacy policy</a>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Maps, fonts and other services your browser connects to</h2>
+    <ul>
+      <li><b>OpenFreeMap</b>: your browser downloads the map tiles directly. The service sees your IP address and the tile numbers, which means roughly the place you are interested in.</li>
+      <li><b>Overpass servers</b> (overpass-api.de, overpass.private.coffee, maps.mail.ru): when the tiles do not answer, the browser asks one of them for the buildings of the area and sends the coordinates of the area. They see your IP address.</li>
+      <li><b>Google Fonts</b>: the start screen and these pages load fonts from fonts.googleapis.com and fonts.gstatic.com. Google sees your IP address.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Hosting</h2>
+    <p>The game files and the <code>/api</code> proxy run on Vercel. Vercel processes connection data, including IP addresses, under its own terms: <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">Vercel privacy policy</a>. The game server with the database runs on a Hetzner server in <mark>[KRAJ SERWERA]</mark>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>How long we keep data</h2>
+    <ul>
+      <li><b>stairwells</b>: they go back to free after 14 days without play. The account, its save and its return code stay.</li>
+      <li><b>account</b>: it disappears after 180 days without play, together with its sessions, stairwells and save.</li>
+      <li><b>database backups</b>: made daily and kept for 7 days. A deleted account can stay in a backup for up to 7 days, then the backup is removed.</li>
+      <li><b>session</b>: 30 days from its last use. Logging out or deleting the team removes it at once.</li>
+      <li><b>daily totals</b> from the next block are kept without a time limit.</li>
+    </ul>
+    <p>Playing means any connection with a valid session cookie or a return code. Days are counted from the start of the day.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Counters</h2>
+    <p>To know how many people enjoy the game, the server keeps daily totals: how many times on a given day someone started a game (modes normal and zombie, Polish and English, phone and computer counted separately), how many times a given step of the goals path was completed, how many times a game reached day two, three and seven, and how many teams created on a given day came back after a given number of days.</p>
+    <p>The totals carry no team number, no IP address and no other player identifier, and when the server counts such an event it does not read the session cookie. We do not claim, however, that they can never be linked to anyone: on a day when only one team was created, the return total for that day is about exactly that team, so we, as the owner of the data, could link them. The totals stay after the team is deleted.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Cookies and browser storage</h2>
+    <p>The only cookie is the session cookie <code>zm_sesja</code>, described above. It is needed for playing with the neighbours and is not used for advertising or tracking, so we do not ask for cookie consent.</p>
+    <p>Besides that, the game keeps in the browser’s storage (localStorage and sessionStorage) your save, the chosen language and similar settings. They stay in the browser. Only the cloud save, described above, goes to the server.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Why and on what legal basis</h2>
+    <ul>
+      <li>running play with the neighbours (teams, stairwells, save, return code): <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+      <li>protecting the server against abuse (limits held in the server’s memory): <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+      <li>address search: <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+      <li>daily totals (we check that the game works and where people drop out): <mark>[PODSTAWA PRAWNA — do potwierdzenia]</mark></li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Your rights</h2>
+    <p>You have the right to access your data, to have it deleted and to object to its processing. The simplest way to delete it is to do it yourself: open the Menu in the game and choose “Delete the team from the server”. The team’s stairwells, its cloud save and its return code disappear from the server.</p>
+    <p>We do not know your name or e-mail. When you ask for access, please give the team number and tell us how we can check that it is yours. We will agree on that in our reply.</p>
+    <p>You can also lodge a complaint with the supervisory authority, which in Poland is the Prezes Urzędu Ochrony Danych Osobowych (PUODO, the President of the Personal Data Protection Office, <a href="https://uodo.gov.pl" target="_blank" rel="noopener">uodo.gov.pl</a>).</p>
+  </div>
+
+  <div class="blok">
+    <h2>Contact</h2>
+    <p><mark>[E-MAIL DO SPRAW DANYCH]</mark></p>
+  </div>
+
+  <p class="inne"><a href="regulamin.html#en">Terms</a><a href="./">Back to the game</a></p>
+</section>
+
+</div>
+</div>
+</body>
+</html>

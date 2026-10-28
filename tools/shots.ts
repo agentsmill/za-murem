@@ -11788,6 +11788,102 @@ async function zalozKonto(page: Page, nick: string) {
   await page.waitForSelector('#siec .sc-who');
 }
 
+/** Strona prawna (public/prywatnosc.html albo regulamin.html) w języku z pamięci przeglądarki (jak wybór gracza w grze):
+    widać jedną sekcję językową, nic nie przewija się w bok, miejsca na dane firmy są wyróżnione, przełącznik języka u góry
+    zamienia sekcje w obie strony, a odnośniki do gry i do drugiej strony prowadzą we właściwe miejsce. Zrzut całej strony
+    <nazwa>-pelna (komputer albo telefon); zrzut końcowy scenariusza to pierwszy ekran. */
+async function stronaPrawna(
+  page: Page,
+  base: string,
+  strona: 'prywatnosc' | 'regulamin',
+  j: 'pl' | 'en',
+  telefon: boolean,
+): Promise<void> {
+  const nazwa = `${strona}${telefon ? '-telefon' : ''}-${j}`;
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  const drugi = j === 'pl' ? 'en' : 'pl';
+  await page.goto(`${base}${strona}.html`);
+  await page.waitForSelector(`#${j} h1`, { state: 'visible' });
+  await page.evaluate(() => document.fonts.ready);
+  const widoczna = (id: string) =>
+    page.evaluate((x) => getComputedStyle(document.getElementById(x)!).display !== 'none', id);
+  wymagaj((await widoczna(j)) && !(await widoczna(drugi)), 'widać więcej niż jedną sekcję językową');
+  const bokiem = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+  wymagaj(!(await bokiem()), 'strona przewija się w bok');
+  const luki = await page.$$eval(`#${j} mark`, (e) => e.map((m) => m.textContent ?? ''));
+  for (const m of ['[NAZWA FIRMY]', '[ADRES]', '[NIP]', '[E-MAIL DO SPRAW DANYCH]'])
+    wymagaj(luki.includes(m), `brak wyróżnionego miejsca ${m}`);
+  const wysokosc = await page.evaluate(() => document.documentElement.scrollHeight);
+  console.log(`  ${nazwa}: ${luki.length} miejsc do uzupełnienia, strona ${wysokosc} px wysokości`);
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-pelna.png`), fullPage: true });
+  // przełącznik języka u góry sekcji: druga sekcja i z powrotem
+  await page.click(`#${j} .jezyk a`);
+  await page.waitForSelector(`#${drugi} h1`, { state: 'visible' });
+  wymagaj(!(await widoczna(j)) && (await widoczna(drugi)), 'przełącznik nie zamienił sekcji');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-drugi-jezyk.png`) });
+  await page.click(`#${drugi} .jezyk a`);
+  await page.waitForSelector(`#${j} h1`, { state: 'visible' });
+  wymagaj((await widoczna(j)) && !(await widoczna(drugi)), 'przełącznik nie wrócił');
+  // odnośnik do drugiej strony prawnej w tym samym języku i do gry
+  const inna = strona === 'prywatnosc' ? 'regulamin' : 'prywatnosc';
+  wymagaj(!!(await page.$(`#${j} a[href="${inna}.html#${j}"]`)), `brak odnośnika do ${inna}.html#${j}`);
+  wymagaj(!!(await page.$(`#${j} a[href="./"]`)), 'brak odnośnika do gry');
+}
+
+/** Stopka karty startowej mówi, dokąd idzie adres: z siecią i odpowiadającym serwerem (udawane API) przez serwer gry do
+    Nominatim i Photona, z odnośnikiem do prywatności; bez sieci i z siecią, ale bez odpowiedzi serwera, wprost do Nominatim.
+    Atrybucja map zostaje w obu wersjach, a przełączenie języka nie cofa wersji z serwerem. Zrzut karty <nazwa>. */
+async function stopkaKarty(
+  page: Page,
+  base: string,
+  tryb: 'siec' | 'bez-sieci' | 'brak-serwera',
+  j: 'pl' | 'en',
+  nazwa: string,
+): Promise<void> {
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  if (tryb === 'siec') await fakeApi(page, {});
+  if (tryb === 'brak-serwera') await page.route('**/api/**', (r) => r.abort());
+  await page.goto(tryb === 'bez-sieci' ? base : `${base}?siec=1`);
+  const stopka = () => page.$eval('.start-card > p.fine', (e) => e.textContent ?? '');
+  const przezSerwer = { pl: /Adres trafia do serwera gry/, en: /Your address goes to the game server/ };
+  const wprost = {
+    pl: /Adres trafia do wyszukiwarki OpenStreetMap \(Nominatim\), mapę/,
+    en: /search \(Nominatim\), and the map/,
+  };
+  if (tryb === 'siec') {
+    await page.waitForSelector('#siec:not([hidden])');
+    await page.waitForFunction(
+      (re) => new RegExp(re).test(document.querySelector('.start-card > p.fine')?.textContent ?? ''),
+      przezSerwer[j].source,
+    );
+    wymagaj(/Photon/.test(await stopka()), 'stopka z serwerem bez Photona');
+    wymagaj(
+      !!(await page.$('.start-card > p.fine a[href="prywatnosc.html"]')),
+      'stopka z serwerem bez odnośnika do prywatności',
+    );
+    // zmiana języka zostawia wersję z serwerem
+    const drugi = j === 'pl' ? 'en' : 'pl';
+    await page.click(`#langStart [data-lang="${drugi}"]`);
+    wymagaj(przezSerwer[drugi].test(await stopka()), 'po zmianie języka stopka wróciła do wersji bez serwera');
+    await page.click(`#langStart [data-lang="${j}"]`);
+    wymagaj(przezSerwer[j].test(await stopka()), 'po powrocie języka stopka bez serwera');
+  } else {
+    await page.waitForTimeout(1000);
+    wymagaj(wprost[j].test(await stopka()), `stopka nie mówi o wprost do Nominatim: ${await stopka()}`);
+    wymagaj(!/Photon/.test(await stopka()), 'stopka bez serwera wspomina Photona');
+    wymagaj((await page.$('#siec:not([hidden])')) === null, 'blok sieci widać bez serwera');
+  }
+  const t = await page.$eval('.start-card > p.fine', (e) => e.innerHTML);
+  for (const a of ['openstreetmap.org/copyright', 'openfreemap.org', 'openmaptiles.org', 'LICENCJE.md'])
+    wymagaj(t.includes(a), `stopka bez atrybucji ${a}`);
+  console.log(`  ${nazwa}: ${await stopka()}`);
+  await page.locator('.start-card').screenshot({ path: path.join(OUT, `${nazwa}-karta.png`) });
+}
+
 /** Karta startowa z blokiem drużyny bez sesji: czysta (bez pól nicku i hasła, z kodem powrotu, odnośnikiem do dawnego
     logowania i do prywatności), „logowanie” pokazuje dawny formularz, „wróć” go chowa, zły kod daje komunikat z
     serwera, dobry loguje do drużyny z zapisem w chmurze. Zrzuty pośrednie <nazwa>-czysta i <nazwa>-logowanie, końcowy
@@ -11887,6 +11983,11 @@ async function kodWMenu(page: Page, base: string, nazwa: string): Promise<void> 
   await page.click('#btnMenu');
   await page.waitForSelector('#modal:not([hidden]) [data-act="menu-kod"]');
   wymagaj(!!(await page.$('[data-act="menu-usun"]')), 'Menu drużyny anonimowej bez usunięcia');
+  wymagaj(
+    !!(await page.$('#modal a[href="prywatnosc.html"][target="_blank"]')) &&
+      !!(await page.$('#modal a[href="regulamin.html"][target="_blank"]')),
+    'Menu gry sieciowej bez odnośników do prywatności i regulaminu',
+  );
   await oknoWidoku(page, 'Menu');
   await page.screenshot({ path: path.join(OUT, `${nazwa}-menu.png`) });
   // okno z kodem: nowy kod z serwera, kopiowanie (schowek albo zaznaczenie), „Zapisane” wraca do Menu
@@ -11943,6 +12044,10 @@ async function kodWMenu(page: Page, base: string, nazwa: string): Promise<void> 
   await page.click('#btnMenu');
   await page.waitForSelector('#modal:not([hidden]) [data-act="menu-start"]');
   wymagaj(!(await page.$('[data-act="menu-kod"], [data-act="menu-usun"]')), 'Menu po usunięciu ma przyciski sieci');
+  wymagaj(
+    !(await page.$('#modal a[href="prywatnosc.html"], #modal a[href="regulamin.html"]')),
+    'Menu po usunięciu ma odnośniki sieci',
+  );
   await oknoWidoku(page, 'Menu po usunięciu');
 }
 
@@ -12161,6 +12266,37 @@ function siecShots(): Shot[] {
       h: 844,
       run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon-en', true),
     },
+    // strony prawne (zadanie 12): informacja o danych osobowych i regulamin, komputer i telefon, po polsku i po angielsku
+    ...(['prywatnosc', 'regulamin'] as const).flatMap((strona) =>
+      (['pl', 'en'] as const).flatMap((j) =>
+        [false, true].map(
+          (telefon): Shot => ({
+            name: `${strona}${telefon ? '-telefon' : ''}-${j}`,
+            query: '',
+            lang: j,
+            ...(telefon ? { w: 390, h: 844 } : {}),
+            run: (page, base) => stronaPrawna(page, base, strona, j, telefon),
+          }),
+        ),
+      ),
+    ),
+    // stopka karty startowej: adres przez serwer gry (sieć włączona, serwer odpowiada) albo wprost do Nominatim
+    ...(
+      [
+        ['siec', 'pl'],
+        ['siec', 'en'],
+        ['bez-sieci', 'pl'],
+        ['bez-sieci', 'en'],
+        ['brak-serwera', 'pl'],
+      ] as const
+    ).map(
+      ([tryb, j]): Shot => ({
+        name: `stopka-${tryb}${j === 'en' ? '-en' : ''}`,
+        query: '',
+        lang: j,
+        run: (page, base) => stopkaKarty(page, base, tryb, j, `stopka-${tryb}${j === 'en' ? '-en' : ''}`),
+      }),
+    ),
     {
       // nowa gra bez sesji: drużyna powstaje raz, przy pierwszej grze, adres idzie przez serwer gry (nie do Nominatim),
       // start w sieci z punktem startu; druga gra w tej samej przeglądarce nie zakłada drugiej drużyny

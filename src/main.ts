@@ -184,7 +184,14 @@ import {
   zmianaZPol,
   zTejOsobyGeneratora,
 } from './ui/imiona.ts';
-import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
+import {
+  alarmTytul,
+  podepnijPrzelacznik,
+  przelacznikHtml,
+  STATYCZNE,
+  startJezyka,
+  ustawAdresPrzezSerwer,
+} from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { daneKartyOsady, kartaOsadyHtml } from './ui/kartaOsady.ts';
 import { ListaLudzi } from './ui/lista.ts';
@@ -671,6 +678,8 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
+/* stopka karty startowej mówi, dokąd idzie adres: przez serwer gry (ten sam warunek, co przy wyszukiwaniu adresu w start()) albo wprost do Nominatim */
+void siecGotowa.then(() => ustawAdresPrzezSerwer(!!siec.apiAdresu()));
 /* liczniki (src/net/liczniki.ts): start gry, zaliczone cele i dni 2, 3, 7 idą do serwera bez sesji i bez śladu gracza, ogniem
    i zapomnij. Tylko przy włączonej sieci i działającym serwerze (apiLicznikow), więc GitHub Pages, dema offline i produkcja
    bez VITE_SIEC niczego nie wysyłają. Zakładane przy pierwszym zdarzeniu, bo dopiero po `siecGotowa` wiadomo, czy serwer

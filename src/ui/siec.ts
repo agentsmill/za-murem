@@ -6,7 +6,7 @@
    - druzyna: gra w sieci bez formularza. Drużyna powstaje sama przy pierwszej grze na prawdziwym adresie (bez e-maila,
      nicku i hasła), więc blok mówi tylko to i daje dwie drogi z boku: pole kodu powrotu (data-siec="powrot", #scKod) dla
      kogoś, kto wraca z innej przeglądarki, oraz odnośnik do dawnego logowania nickiem (data-siec="logowanie"); pod spodem
-     odnośnik do informacji o prywatności (prywatnosc.html). Gdy drużyna już jest, blok pokazuje jej znak („#12”) i zapis
+     odnośniki do informacji o prywatności (prywatnosc.html) i regulaminu (regulamin.html), oba z public/. Gdy drużyna już jest, blok pokazuje jej znak („#12”) i zapis
      z chmury, bez wylogowania (bez kodu powrotu drużyny nie dałoby się odzyskać),
    - zalogowani: konto z nickiem jak dotąd (nick, zapis z chmury, wylogowanie),
    - logowanie: dawny formularz z nickiem i hasłem (logowanie i zakładanie konta) z przyciskiem „Wróć” (data-siec="wroc").
@@ -79,7 +79,7 @@ export function htmlSieci(v: WidokSieci): string {
       )}</p>`;
   const wiersz = chmura ? `<div class="sc-row">${chmura}</div>` : '';
   const kod = `<div class="sc-kod"><label class="sc-lab" for="scKod">${L('Masz kod powrotu?', 'Have a return code?')}</label><input id="scKod" name="kod" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" maxlength="24"${off}><button type="button" class="btn" data-siec="powrot"${off}>${L('Wróć do drużyny', 'Rejoin your team')}</button></div>`;
-  const linki = `<p class="sc-links"><button type="button" class="sc-link" data-siec="logowanie"${off}>${L('Mam konto z nickiem i hasłem', 'I have a username and password')}</button><a href="prywatnosc.html" class="sc-link" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a></p>`;
+  const linki = `<p class="sc-links"><button type="button" class="sc-link" data-siec="logowanie"${off}>${L('Mam konto z nickiem i hasłem', 'I have a username and password')}</button><a href="prywatnosc.html" class="sc-link" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a><a href="regulamin.html" class="sc-link" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`;
   return `${head}${opis}${wiersz}${kod}${kom}${linki}`;
 }
 

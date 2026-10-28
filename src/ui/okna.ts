@@ -510,14 +510,18 @@ export const DANE_MIESZKANCOW_EN =
 export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
 
 /** Menu. `siec` podaje gra sieciowa (GraSieciowa.menuSieci, src/net/gra.ts): gra w sieci ma przycisk kodu powrotu
-    (`menu-kod`), a drużyna anonimowa także usunięcia drużyny z serwera (`menu-usun`); gra bez sieci nie ma żadnego z nich.
-    Okna kodu i usunięcia są w src/ui/siec.ts. */
+    (`menu-kod`), a drużyna anonimowa także usunięcia drużyny z serwera (`menu-usun`); do tego odnośniki do informacji
+    o prywatności i regulaminu (public/prywatnosc.html, public/regulamin.html, w nowej karcie, żeby nie wyjść z gry).
+    Gra bez sieci nie ma żadnego z nich. Okna kodu i usunięcia są w src/ui/siec.ts. */
 export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
   const sieciowe = siec
     ? btn('menu-kod', L('Nowy kod powrotu drużyny', 'New team return code')) +
       (siec.anonimowa
         ? btn('menu-usun', L('Usuń drużynę z serwera', 'Delete the team from the server'), 'btn ghost')
         : '')
+    : '';
+  const prawo = siec
+    ? `<p class="fine menu-prawo"><a href="prywatnosc.html" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a> · <a href="regulamin.html" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`
     : '';
   return {
     tone: 'menu',
@@ -529,7 +533,7 @@ export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
     )}${btn('menu-wiki', L('Wiki', 'Wiki'))}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${sieciowe}${btn(
       'menu-start',
       L('Zapisz i wróć do ekranu startowego', 'Save and go back to the start screen'),
-    )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(
+    )}</div>${prawo}<p class="fine">${esc(note)}</p><p class="fine dane">${esc(
       L(DANE_MIESZKANCOW, DANE_MIESZKANCOW_EN),
     )} <a href="${LICENCJE_MIESZKANCOW}" target="_blank" rel="noopener">${L('Źródła i licencje', 'Sources and licences')}</a></p>`,
     foot: '',

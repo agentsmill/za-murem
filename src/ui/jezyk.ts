@@ -5,7 +5,11 @@
    i po każdej zmianie. Przełącznik EN/PL (karta startowa i Menu) woła zmienJezyk(): zapis w pamięci, `<html lang>`,
    napisy statyczne i słuchacze z src/core/jezyk.ts, po których main.ts rysuje resztę od nowa. Dwa napisy z tablicy to
    tylko stan początkowy, który gra nadpisuje, gdy zna zegar i świat: podpis pory roku `#hSeason` (`sezonPodpis`
-   w src/ui/pasek.ts, przy każdym odświeżeniu paska) i podpowiedź `#btnAlarm` (`alarmTytul`: w domu „z komitetu”, nie „z zarządu”). */
+   w src/ui/pasek.ts, przy każdym odświeżeniu paska) i podpowiedź `#btnAlarm` (`alarmTytul`: w domu „z komitetu”, nie „z zarządu”).
+   Stopka karty startowej ma dwie wersje zdania o adresie: `html` (adres idzie wprost do Nominatim, jak w index.html) i
+   `htmlSerwer` (gra sieciowa z odpowiadającym serwerem: adres idzie przez serwer gry do Nominatim i Photona). Którą
+   widać, mówi `ustawAdresPrzezSerwer`, którą main.ts woła po odpowiedzi serwera (ten sam warunek co wyszukiwanie adresu,
+   GraSieciowa.apiAdresu); stan zostaje przy zmianie języka. */
 
 import { type Lang, poZmianieJezyka, type Tx, tr, tx, ustawJezyk } from '../core/jezyk.ts';
 import type { Words, WordsEn } from '../gov/miejsce.ts';
@@ -89,7 +93,12 @@ export interface Statyczny {
   aria?: Tx;
   placeholder?: Tx;
   html?: Tx;
+  /** zamiast `html`, gdy adres idzie przez serwer gry (ustawAdresPrzezSerwer); index.html ma wersję z `html` */
+  htmlSerwer?: Tx;
 }
+
+/** czy adres z karty startowej idzie przez serwer gry (sieć włączona i serwer odpowiedział), a nie wprost do Nominatim */
+let adresPrzezSerwer = false;
 
 const LICENCJE = 'data/mieszkancy/LICENCJE.md';
 const a = (href: string, text: string) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
@@ -114,6 +123,10 @@ export const STATYCZNE: readonly Statyczny[] = [
     html: tx(
       `Adres trafia do wyszukiwarki OpenStreetMap (Nominatim), mapę pobieramy z darmowych kafelków ${a('https://openfreemap.org', 'OpenFreeMap')}. Dane mapy © współtwórcy ${a('https://www.openstreetmap.org/copyright', 'OpenStreetMap')}, kafelki © ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}. Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL (${a(LICENCJE, 'źródła i licencje')}).`,
       `Your address goes to the OpenStreetMap search (Nominatim), and the map comes from free ${a('https://openfreemap.org', 'OpenFreeMap')} tiles. Map data © ${a('https://www.openstreetmap.org/copyright', 'OpenStreetMap')} contributors, tiles © ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}. The residents are made up from Polish statistics, GUS and PESEL (${a(LICENCJE, 'sources and licences')}).`,
+    ),
+    htmlSerwer: tx(
+      `Adres trafia do serwera gry, który pyta wyszukiwarki OpenStreetMap (Nominatim), a zapasowo Photona (szczegóły: ${a('prywatnosc.html', 'prywatność')}). Mapę pobieramy z darmowych kafelków ${a('https://openfreemap.org', 'OpenFreeMap')}. Dane mapy © współtwórcy ${a('https://www.openstreetmap.org/copyright', 'OpenStreetMap')}, kafelki © ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}. Mieszkańcy są wymyśleni na podstawie danych GUS i PESEL (${a(LICENCJE, 'źródła i licencje')}).`,
+      `Your address goes to the game server, which asks the OpenStreetMap search (Nominatim) and, as a fallback, Photon (details: ${a('prywatnosc.html', 'privacy')}). The map comes from free ${a('https://openfreemap.org', 'OpenFreeMap')} tiles. Map data © ${a('https://www.openstreetmap.org/copyright', 'OpenStreetMap')} contributors, tiles © ${a('https://www.openmaptiles.org/', 'OpenMapTiles')}. The residents are made up from Polish statistics, GUS and PESEL (${a(LICENCJE, 'sources and licences')}).`,
     ),
   },
   // ekran gry
@@ -205,16 +218,28 @@ export const STATYCZNE: readonly Statyczny[] = [
 export const alarmTytul = (w: Pick<Words, 'zarzad'>, e: Pick<WordsEn, 'krotko'>): Tx =>
   tx(`Wszyscy zdolni z ${w.zarzad.dk} na wartę`, `Everyone fit on ${e.krotko} goes on watch`);
 
+/** wpisuje jeden napis statyczny w element (zdanie z `htmlSerwer`, gdy adres idzie przez serwer gry) */
+function naloz(s: Statyczny, el: HTMLElement): void {
+  if (s.tekst) el.textContent = tr(s.tekst);
+  const h = adresPrzezSerwer && s.htmlSerwer ? s.htmlSerwer : s.html;
+  if (h) el.innerHTML = tr(h);
+  if (s.title) el.title = tr(s.title);
+  if (s.aria) el.setAttribute('aria-label', tr(s.aria));
+  if (s.placeholder) (el as HTMLInputElement).placeholder = tr(s.placeholder);
+}
+
 /** wpisuje napisy statyczne w bieżącym języku (brakujące elementy pomija) */
 export function nalozStatyczne(root: ParentNode = document): void {
-  for (const s of STATYCZNE)
-    for (const el of root.querySelectorAll<HTMLElement>(s.sel)) {
-      if (s.tekst) el.textContent = tr(s.tekst);
-      if (s.html) el.innerHTML = tr(s.html);
-      if (s.title) el.title = tr(s.title);
-      if (s.aria) el.setAttribute('aria-label', tr(s.aria));
-      if (s.placeholder) (el as HTMLInputElement).placeholder = tr(s.placeholder);
-    }
+  for (const s of STATYCZNE) for (const el of root.querySelectorAll<HTMLElement>(s.sel)) naloz(s, el);
+}
+
+/** Mówi, którą wersję zdania o adresie pokazuje stopka karty startowej: true, gdy adres idzie przez serwer gry (sieć
+    włączona i serwer odpowiedział), false, gdy wprost do Nominatim. Przepisuje tylko wpisy z `htmlSerwer`, więc nie rusza
+    napisów, które gra nadpisała (podpowiedź „Do broni!”, porę roku). W Node (bez dokumentu) tylko zapamiętuje stan. */
+export function ustawAdresPrzezSerwer(przezSerwer: boolean, root: ParentNode | null = dom() ? document : null): void {
+  adresPrzezSerwer = przezSerwer;
+  if (!root) return;
+  for (const s of STATYCZNE) if (s.htmlSerwer) for (const el of root.querySelectorAll<HTMLElement>(s.sel)) naloz(s, el);
 }
 
 /** przełącznik EN/PL: dwa przyciski z data-lang, wciśnięty ten w bieżącym języku */
