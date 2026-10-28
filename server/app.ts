@@ -14,13 +14,15 @@
                                     200 Ja tej sesji, bez nowego konta)
      POST   /api/druzyna/kod        nowy kod powrotu {} (stary wygasa)       → {kod}, 401 bez sesji
      POST   /api/druzyna/powrot     wróć do drużyny {kod}                    → 200 Ja + ciasteczko, 401 zly_kod
-     PUT    /api/druzyna/start      punkt startu {lat, lon} (stopnie)        → 204, 429 po 5 zmianach na dobę
+     PUT    /api/druzyna/start      punkt startu {lat, lon} (stopnie)        → 204, 429 po 5 zmianach okolicy na dobę
      GET    /api/klatki?s=&w=&n=&e= zajęte klatki w prostokącie (stopnie)    → {klatki}, 403 poza_okolica,
                                     409 brak_startu
-     POST   /api/klatki             zajmij {klucz, budynek, lat, lon}        → 201 {klatka}, 409 zajęta
+     POST   /api/klatki             zajmij {klucz, budynek, lat, lon}        → 201 {klatka}, 409 zajęta,
+                                    429 (nowa siedziba daleko od punktu startu)
      GET    /api/klatki/moje        moje klatki                              → {klatki}
      DELETE /api/klatki/moje        zwolnij wszystkie moje                   → 204
-     DELETE /api/klatki/:klucz      zwolnij jedną                            → 204, 404
+     DELETE /api/klatki/:klucz      zwolnij jedną                            → 204, 404, 429 (zwolnienie siedziby
+                                    przenosi ją na inną klatkę)
      GET    /api/zapis              zapis w chmurze                          → {dane, wersja, zmieniony, rozmiar}
      PUT    /api/zapis              zapisz {dane, wersja?}                   → {wersja, zmieniony, rozmiar}, 409
      DELETE /api/zapis              usuń zapis                               → 204
@@ -40,8 +42,17 @@
    od swojego punktu startu z PUT /api/druzyna/start. Dalej to 403 poza_okolica, a bez siedziby i bez punktu startu
    409 brak_startu; kształt prostokąta (400) sprawdzamy wcześniej. Punkt startu to w praktyce adres gracza, więc leży
    tylko w pamięci procesu (nie w bazie, nie w dzienniku), jest osobny dla konta, znika z kontem, a po restarcie
-   serwera klient podaje go od nowa. Zmienia się najwyżej 5 razy na dobę na konto (429), liczą się tylko przyjęte
-   zmiany; wpis, z którego nikt nie korzysta przez czas życia sesji (`sesjaDni`), sprząta `sprzataj`.
+   serwera klient podaje go od nowa. Wpis, z którego nikt nie korzysta przez czas życia sesji (`sesjaDni`), sprząta
+   `sprzataj`.
+
+   Okolicę można zmienić najwyżej 5 razy na dobę na konto (jedno okno `zmianyStartu`, potem 429 za_duzo_prob), żeby
+   przeczesanie miasta wymagało zakładania kont. Liczą się tylko przyjęte zmiany, a zmianą jest: (1) PUT start;
+   (2) zajęcie klatki przez drużynę bez siedziby (nowa siedziba, np. po DELETE /api/klatki/moje), chyba że leży
+   w zasięgu `ZASIEG_ZAPYTAN_M` od jej punktu startu (nowa gra: PUT start i zajęcie przy tym samym adresie kosztuje
+   jedną zmianę); (3) zwolnienie siedziby, gdy zostają inne klatki drużyny: siedziba przechodzi na najstarszą z nich
+   i okolica z nią. Przy wyczerpanym oknie zajęcie z (2) i zwolnienie z (3) dają 429 przed jakąkolwiek zmianą.
+   Zwolnienie zwykłej klatki, jedynej klatki i DELETE /api/klatki/moje okolicy nie przesuwają (po nich drużyna nie
+   ma siedziby i okolicę wyznacza punkt startu), więc są bez limitu.
 
    Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); pozycja klatki musi leżeć przy budynku z jej
    klucza (kotwicaKlucza), każda klatka drużyny najwyżej `promienM` od siedziby (pierwszej klatki), najwyżej
@@ -209,6 +220,8 @@ interface Kontekst {
 type Obsluga = (k: Kontekst) => Promise<void>;
 
 const do5 = (v: number) => Math.round(v * 1e5) / 1e5;
+/** komunikat 429, gdy okno zmian okolicy (siedziba albo punkt startu) jest wyczerpane */
+const ZA_CZESTO_OKOLICA = 'Za często zmieniacie okolicę drużyny (siedzibę albo punkt startu). Spróbujcie później.';
 const zaDuzo = (sekundy: number, komunikat: string) =>
   new BladHttp(429, 'za_duzo_prob', komunikat, { 'Retry-After': String(sekundy) });
 
@@ -244,6 +257,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const zadania: Okno = okno(300, MIN, teraz);
   const zapisy: Okno = okno(60, GODZ, teraz);
   const kody: Okno = okno(10, GODZ, teraz);
+  /** zmiany okolicy na konto: punkt startu, nowa siedziba daleko od punktu startu i przeniesienie siedziby przy
+      zwolnieniu (najwyżej 5 na dobę) */
   const zmianyStartu: Okno = okno(5, DOBA, teraz);
   const okna = [logowania, logowaniaNicku, rejestracje, druzyny, zajeteNicki, zadania, zapisy, kody, zmianyStartu];
   /** punkty startu drużyn (PUT /api/druzyna/start), tylko w pamięci procesu: to w praktyce adres gracza, a siedziba
@@ -526,8 +541,9 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     const s = wymagajSesji(k);
     const id = String(s.konto.id);
     const czekaj = zmianyStartu.zablokowany(id);
-    if (czekaj) throw zaDuzo(czekaj, 'Za często zmieniacie punkt startu. Spróbujcie później.');
-    // próba liczy się od razu (przed await); odlicza, jeśli nie została przyjęta (zły JSON, złe współrzędne)
+    if (czekaj) throw zaDuzo(czekaj, ZA_CZESTO_OKOLICA);
+    // próba liczy się od razu (przed await); odlicza, jeśli nie została przyjęta (zły JSON, złe współrzędne);
+    // to samo okno liczy zmiany siedziby (zajmijKlatke, zwolnijKlatke)
     zmianyStartu.dolicz(id);
     let przyjety = false;
     try {
@@ -635,11 +651,11 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       zajeta: k.teraz,
     };
     // sprawdzenie i wstawienie w jednej transakcji, bez await w środku
-    const wynik = baza.transakcja((): { status: number; klatka: Klatka } => {
+    const wynik = baza.transakcja((): { status: number; klatka: Klatka; liczy: boolean } => {
       sesjaDalej(k, s);
       const jest = baza.klatka(nowa.klucz);
       if (jest) {
-        if (jest.konto === s.konto.id) return { status: 200, klatka: jest };
+        if (jest.konto === s.konto.id) return { status: 200, klatka: jest, liczy: false };
         throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
       }
       if (baza.liczbaKlatek(s.konto.id) >= limitKlatek)
@@ -647,10 +663,21 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
       const siedziba = baza.siedziba(s.konto.id);
       if (siedziba && odlegloscM(siedziba.lat, siedziba.lon, nowa.lat, nowa.lon) > promienM)
         throw new BladHttp(422, 'za_daleko', `Klatka jest dalej niż ${promienM} m od waszej siedziby.`);
+      // drużyna bez siedziby zajmuje klatkę, która staje się nową siedzibą, a z nią środkiem okolicy zapytań: poza
+      // zasięgiem punktu startu to zmiana okolicy (liczy się w tym samym oknie co PUT start, bez wyjątku skok
+      // „zajmij daleko, zwolnij wszystko” przeczesywałby miasto)
+      const start = punktyStartu.get(s.konto.id);
+      const liczy = !siedziba && !(start && odlegloscM(start.lat, start.lon, nowa.lat, nowa.lon) <= ZASIEG_ZAPYTAN_M);
+      if (liczy) {
+        const czekaj = zmianyStartu.zablokowany(String(s.konto.id));
+        if (czekaj) throw zaDuzo(czekaj, ZA_CZESTO_OKOLICA);
+      }
       nowa.siedziba = !siedziba;
       if (!baza.dodajKlatke(nowa)) throw new BladHttp(409, 'zajeta', 'Ta klatka jest zajęta przez inną drużynę.');
-      return { status: 201, klatka: nowa };
+      return { status: 201, klatka: nowa, liczy };
     });
+    // transakcja jest synchroniczna, więc nic nie wejdzie między sprawdzeniem okna a doliczeniem
+    if (wynik.liczy) zmianyStartu.dolicz(String(s.konto.id));
     wyslij(k.res, wynik.status, { klatka: jakoOdpowiedz(wynik.klatka, s.konto.id) }, k.naglowki);
   };
 
@@ -670,7 +697,18 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     async (k) => {
       const s = wymagajSesji(k);
       if (!czesciKlucza(klucz)) throw new BladHttp(400, 'zle_dane', 'Zły klucz klatki.');
+      // Zwolnienie siedziby, gdy zostają inne klatki, przenosi siedzibę (i okolicę zapytań) na najstarszą z nich:
+      // liczy się w oknie zmian okolicy, a przy wyczerpanym oknie nic nie zwalniamy. Bez await między sprawdzeniem
+      // a doliczeniem, więc równoległe żądania nie obejdą limitu.
+      const id = String(s.konto.id);
+      const jest = baza.klatka(klucz);
+      const przenosi = !!jest && jest.konto === s.konto.id && jest.siedziba && baza.liczbaKlatek(s.konto.id) > 1;
+      if (przenosi) {
+        const czekaj = zmianyStartu.zablokowany(id);
+        if (czekaj) throw zaDuzo(czekaj, ZA_CZESTO_OKOLICA);
+      }
       if (!baza.zwolnijKlatke(s.konto.id, klucz)) throw new BladHttp(404, 'nie_ma', 'Nie macie takiej klatki.');
+      if (przenosi) zmianyStartu.dolicz(id);
       wyslij(k.res, 204, undefined, k.naglowki);
     };
 

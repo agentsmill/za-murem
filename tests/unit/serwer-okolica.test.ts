@@ -3,6 +3,9 @@
    (a bez siedziby od jej punktu startu), to 403 poza_okolica, a drużyna bez siedziby i bez punktu startu dostaje 409
    brak_startu. Punkt startu żyje tylko w pamięci procesu serwera (to w praktyce adres gracza): zmienia się najwyżej
    5 razy na dobę na konto i po restarcie trzeba go podać jeszcze raz.
+   Zmiany okolicy dzielą to samo okno 5 na dobę na konto: PUT start, zajęcie klatki przez drużynę bez siedziby
+   (poza zasięgiem punktu startu) i zwolnienie siedziby, które przenosi ją na inną klatkę. Bez tego jedno konto
+   przeczesałoby miasto, zajmując klatkę daleko i zwalniając wszystko albo idąc od klatki do klatki.
    Serwer w procesie testu jak w serwer.test.ts (tests/unit/serwer-pomoc.ts), zegar przesuwa `czekaj`; test restartu
    używa pliku bazy w katalogu tymczasowym, bo baza ':memory:' znika razem z serwerem. */
 
@@ -27,6 +30,30 @@ const K1 = {
   lat: PRZYMORZE.lat - 10 / M_NA_STOPIEN_LAT,
   lon: PRZYMORZE.lon - 27 / 65000,
 };
+
+/** druga klatka tego samego bloku, 10 m od K1 (siedziba i K2 leżą w jednym budynku, więc blisko siebie) */
+const K2 = { ...K1, klucz: `${BUD}/2`, lon: PRZYMORZE.lon - 17 / 65000 };
+
+/** klatka bloku z najwyższym wierzchołkiem w punkcie (lat, lon), z pozycją 5 m na wschód i południe od niego */
+function klatkaW(lat: number, lon: number) {
+  const [x, y] = pikselZ(lat, lon).map(Math.round);
+  const budynek = `px:${x}:${y}:-100:60:3`;
+  return {
+    klucz: `${budynek}/1`,
+    budynek,
+    lat: lat - 5 / M_NA_STOPIEN_LAT,
+    lon: lon + 5 / (111320 * Math.cos((lat * Math.PI) / 180)),
+  };
+}
+/** sześć miast daleko od siebie (każde wiele kilometrów od pozostałych) */
+const MIASTA: Punkt[] = [
+  { lat: 54.372, lon: 18.6383 }, // Gdańsk
+  { lat: 52.2297, lon: 21.0122 }, // Warszawa
+  { lat: 50.0647, lon: 19.945 }, // Kraków
+  { lat: 51.1079, lon: 17.0385 }, // Wrocław
+  { lat: 52.4064, lon: 16.9252 }, // Poznań
+  { lat: 51.7592, lon: 19.456 }, // Łódź
+];
 
 interface Punkt {
   lat: number;
@@ -246,5 +273,121 @@ describe('serwer gry: zapytania o klatki tylko w okolicy', () => {
     // nowa drużyna dostaje nowy numer, nie dziedziczy niczego po usuniętej
     const nowa = await druzyna(s);
     expect((await nowa.zadanie('GET', mapaWokol(PRZYMORZE))).body.blad).toBe('brak_startu');
+  });
+});
+
+describe('serwer gry: zmiany okolicy dzielą jedno okno (5 na dobę na konto)', () => {
+  it('skok: pięć razy „zajmij klatkę daleko, zwolnij wszystko” przechodzi, szóste zajęcie to 429', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    for (let i = 0; i < 5; i++) {
+      const r = await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[i].lat, MIASTA[i].lon));
+      expect(r.status, `miasto ${i + 1}: ${r.tekst}`).toBe(201);
+      expect(r.body.klatka.siedziba).toBe(true);
+      expect((await p.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    }
+    const szoste = await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[5].lat, MIASTA[5].lon));
+    expect(szoste.status).toBe(429);
+    expect(szoste.body.blad).toBe('za_duzo_prob');
+    expect(Number(szoste.headers.get('Retry-After'))).toBeGreaterThan(0);
+    // odmowa niczego nie zajmuje, a zwolnienie nadal jest bez limitu
+    expect((await p.zadanie('GET', '/api/klatki/moje')).body.klatki).toEqual([]);
+    expect((await p.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    // punkt startu dzieli to samo okno
+    expect((await ustawStart(p, MIASTA[5])).status).toBe(429);
+
+    // inne konto ma własne okno
+    const inna = await druzyna(s);
+    expect((await inna.zadanie('POST', '/api/klatki', klatkaW(MIASTA[5].lat, MIASTA[5].lon))).status).toBe(201);
+
+    // po dobie znów można
+    s.czekaj(DOBA + 1000);
+    expect((await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[0].lat, MIASTA[0].lon))).status).toBe(201);
+  });
+
+  it('nowa siedziba w zasięgu punktu startu nie zużywa okna: PUT start i zajęcie przy tym samym adresie to jedna zmiana', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204);
+    // zajmij, zwolnij, zajmij... przy punkcie startu bez końca (10 razy), także klatka 600 m dalej, wciąż w zasięgu
+    const blisko = klatkaW(naPolnoc(PRZYMORZE, 600).lat, PRZYMORZE.lon);
+    for (let i = 0; i < 10; i++) {
+      const r = await p.zadanie('POST', '/api/klatki', i % 2 ? blisko : K1);
+      expect(r.status, `zajęcie ${i + 1}: ${r.tekst}`).toBe(201);
+      expect((await p.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    }
+    // w oknie zostały cztery zmiany: tyle PUT przechodzi, piąty nie
+    for (let i = 0; i < 4; i++) expect((await ustawStart(p, PRZYMORZE)).status, `PUT ${i + 2}`).toBe(204);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(429);
+    // z wyczerpanym oknem nowa siedziba przy punkcie startu dalej przechodzi, daleko od niego już nie
+    expect((await p.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+    expect((await p.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    expect((await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[1].lat, MIASTA[1].lon))).status).toBe(429);
+  });
+
+  it('nowa siedziba poza zasięgiem punktu startu liczy się jak jego zmiana', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204); // 1
+    for (let i = 0; i < 3; i++) {
+      const r = await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[i].lat, MIASTA[i].lon)); // 2, 3, 4
+      expect(r.status, `miasto ${i + 1}: ${r.tekst}`).toBe(201);
+      expect((await p.zadanie('DELETE', '/api/klatki/moje')).status).toBe(204);
+    }
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204); // 5
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(429);
+    expect((await p.zadanie('POST', '/api/klatki', klatkaW(MIASTA[3].lat, MIASTA[3].lon))).status).toBe(429);
+  });
+
+  it('spacer: zwolnienie siedziby, na którą przechodzi inna klatka, liczy się, a przy wyczerpanym oknie nic się nie zwalnia', async () => {
+    const s = await start();
+    const p = await druzyna(s);
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(204); // 1 z 5
+    expect((await p.zadanie('POST', '/api/klatki', K1)).status).toBe(201); // w zasięgu punktu startu: bez kosztu
+    expect((await p.zadanie('POST', '/api/klatki', K2)).status).toBe(201); // zwykła klatka obok siedziby: bez kosztu
+
+    const siedziba = async () => {
+      const lista = (await p.zadanie('GET', '/api/klatki/moje')).body.klatki as { klucz: string; siedziba?: boolean }[];
+      return lista.filter((k) => k.siedziba).map((k) => k.klucz);
+    };
+    const url = (k: { klucz: string }) => `/api/klatki/${encodeURIComponent(k.klucz)}`;
+    expect(await siedziba()).toEqual([K1.klucz]);
+
+    // zwolnienie zwykłej klatki nie przenosi siedziby i nic nie kosztuje
+    expect((await p.zadanie('DELETE', url(K2))).status).toBe(204);
+    expect((await p.zadanie('POST', '/api/klatki', K2)).status).toBe(201);
+
+    // cztery przeniesienia siedziby (2, 3, 4, 5 z 5): zwolnij siedzibę, wracasz drugą klatką, dobierasz zwolnioną
+    let obecna = K1;
+    let druga = K2;
+    for (let i = 0; i < 4; i++) {
+      expect((await p.zadanie('DELETE', url(obecna))).status, `przeniesienie ${i + 1}`).toBe(204);
+      expect(await siedziba(), `po przeniesieniu ${i + 1}`).toEqual([druga.klucz]);
+      expect((await p.zadanie('POST', '/api/klatki', obecna)).status).toBe(201);
+      [obecna, druga] = [druga, obecna];
+    }
+    expect(await siedziba()).toEqual([obecna.klucz]);
+
+    // okno wyczerpane: następne przeniesienie dostaje 429 przed zwolnieniem, wszystko zostaje jak było
+    const odmowa = await p.zadanie('DELETE', url(obecna));
+    expect(odmowa.status).toBe(429);
+    expect(odmowa.body.blad).toBe('za_duzo_prob');
+    expect(Number(odmowa.headers.get('Retry-After'))).toBeGreaterThan(0);
+    expect(await siedziba()).toEqual([obecna.klucz]);
+    expect(((await p.zadanie('GET', '/api/klatki/moje')).body.klatki as unknown[]).length).toBe(2);
+    // PUT start dzieli to samo okno
+    expect((await ustawStart(p, PRZYMORZE)).status).toBe(429);
+
+    // bez przeniesienia zwolnienie dalej jest bez limitu: zwykła klatka, potem jedyna (siedziba bez następczyni)
+    expect((await p.zadanie('DELETE', url(druga))).status).toBe(204);
+    expect((await p.zadanie('DELETE', url(obecna))).status).toBe(204);
+    expect((await p.zadanie('GET', '/api/klatki/moje')).body.klatki).toEqual([]);
+
+    // po dobie przeniesienie znów działa
+    s.czekaj(DOBA + 1000);
+    expect((await p.zadanie('POST', '/api/klatki', K1)).status).toBe(201);
+    expect((await p.zadanie('POST', '/api/klatki', K2)).status).toBe(201);
+    expect((await p.zadanie('DELETE', url(K1))).status).toBe(204);
+    expect(await siedziba()).toEqual([K2.klucz]);
   });
 });

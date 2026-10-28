@@ -35,8 +35,17 @@ Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA
 
 | wywołanie | co robi |
 |---|---|
-| `PUT /api/druzyna/start` `{ "lat": …, "lon": … }` (sesja) | zapamiętuje punkt startu drużyny w stopniach (204); złe współrzędne to 400 `zle_dane`; najwyżej 5 zmian na dobę na konto, potem 429 `za_duzo_prob` z `Retry-After` (liczą się tylko przyjęte zmiany). |
+| `PUT /api/druzyna/start` `{ "lat": …, "lon": … }` (sesja) | zapamiętuje punkt startu drużyny w stopniach (204); złe współrzędne to 400 `zle_dane`; liczy się do limitu zmian okolicy (niżej), przy wyczerpanym 429 `za_duzo_prob` z `Retry-After`. |
 | `GET /api/klatki?s=&w=&n=&e=` (sesja) | 403 `poza_okolica`, gdy któryś róg leży dalej niż 1500 m od siedziby drużyny, a bez siedziby od punktu startu; 409 `brak_startu`, gdy drużyna nie ma ani siedziby, ani punktu startu. Zły kształt prostokąta to dalej 400, sprawdzany wcześniej. |
+
+**Limit zmian okolicy.** Okolica (siedziba albo punkt startu) zmienia się najwyżej 5 razy na dobę na konto, jedno okno (w pamięci procesu, więc restart je zeruje) dla wszystkich dróg, bo inaczej jedno konto przeczesałoby miasto, zajmując klatkę daleko i zwalniając wszystko albo idąc od klatki do klatki; zebranie całego miasta ma wymagać zakładania kont. Liczą się tylko przyjęte zmiany, a po wyczerpaniu okna serwer odpowiada 429 `za_duzo_prob` z `Retry-After` i niczego nie zmienia:
+
+| zmiana okolicy | koszt |
+|---|---|
+| `PUT /api/druzyna/start` | 1 |
+| `POST /api/klatki` przez drużynę bez siedziby (nowa siedziba, np. po `DELETE /api/klatki/moje`) | 1, chyba że klatka leży najwyżej 1500 m od jej punktu startu: wtedy 0, więc nowa gra (PUT start, potem zajęcie siedziby przy tym samym adresie) kosztuje jedną zmianę |
+| `DELETE /api/klatki/:klucz` siedziby, gdy drużyna ma jeszcze inne klatki (siedziba przechodzi na najstarszą z nich) | 1; przy wyczerpanym oknie 429 przed zwolnieniem |
+| zwolnienie zwykłej klatki, jedynej klatki, `DELETE /api/klatki/moje` | 0 (po nich drużyna albo ma tę samą siedzibę, albo żadnej, a okolicę wyznacza punkt startu) |
 
 Siedziba ma pierwszeństwo: drużyna, która ją ma, pyta wokół siedziby i punkt startu jest jej niepotrzebny (zmiana punktu niczego wtedy nie zmienia). Punkt startu to w praktyce adres gracza, więc leży tylko w pamięci procesu: nie ma go w bazie, w kopiach ani w dzienniku, znika razem z kontem, a po restarcie serwera (także planowym, `ZM_RESTART_H`) klient podaje go od nowa i do tego czasu dostaje 409 `brak_startu`. Wpis, z którego nikt nie korzysta przez czas życia sesji (30 dni), sprząta `sprzataj()`. Testy: `npm test -- serwer-okolica`.
 

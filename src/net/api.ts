@@ -98,7 +98,8 @@ const PROBY_EN: Readonly<Record<string, string>> = {
   'Za dużo nowych kont z tego miejsca. Spróbujcie później.': 'Too many new accounts from here.',
   'Za dużo nowych drużyn z tego miejsca. Spróbujcie później.': 'Too many new teams from here.',
   'Za często wymieniacie kod. Spróbujcie później.': 'You are changing your return code too often.',
-  'Za często zmieniacie punkt startu. Spróbujcie później.': 'You are changing your start point too often.',
+  'Za często zmieniacie okolicę drużyny (siedzibę albo punkt startu). Spróbujcie później.':
+    'You are changing your team’s HQ or start point too often.',
   'Za dużo nieudanych prób. Spróbujcie za kilka minut.': 'Too many failed attempts.',
   'Za dużo nieudanych prób na to konto. Spróbujcie za kilka minut.': 'Too many failed attempts on this account.',
   'Za często zapisujecie. Spróbujcie za chwilę.': 'You are saving too often.',
