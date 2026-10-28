@@ -86,7 +86,7 @@ describe('deploy/hetzner/compose.obok.yml', () => {
     return linie.slice(start, koniec).join('\n');
   }
 
-  it('serwer testowy `api` i produkcyjny `api-prod` stoją na tym samym obrazie, z osobnymi wolumenami i sekretami', () => {
+  it('serwer testowy `api` i produkcyjny `api-prod` mają ten sam Dockerfile, osobne wolumeny i osobne sekrety', () => {
     const test = usluga('api');
     const prod = usluga('api-prod');
     expect(test).toContain('container_name: za-murem-api\n');

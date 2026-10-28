@@ -78,12 +78,13 @@ Wdrożenie, zmiana Caddyfile cergo i założenie projektu na Vercelu wymagają w
 
 Kolejność, gdy jest OK:
 
-1. Uzupełnić `.env` na serwerze (wyżej).
+0. **Krok 0, przed wszystkim innym:** każda gałąź, z której idzie wdrożenie na serwer testowy (`pelna-gra`, `noc-integracja` i każda inna, także te wdrażane nocą), musi zawierać zmiany z gałęzi `wyjscie-na-swiat` (nowy `wdroz.sh` i `compose.obok.yml` z profilem `prod`), zanim jakikolwiek sekret trafi do `.env` albo ruszy `ZM_PROD=1`; stary `wdroz.sh` nadpisuje `.env` jednym `printf` i kasuje sekrety, a stary `compose.obok.yml` nie zna `api-prod`, więc jego `up --remove-orphans` usunąłby działający kontener `za-murem-api-prod` jako sierotę. Sprawdzenie na gałęzi: `grep -q ZM_PROD deploy/hetzner/wdroz.sh && grep -q 'profiles: \["prod"\]' deploy/hetzner/compose.obok.yml` (oba muszą się zgadzać).
+1. Uzupełnić `.env` na serwerze (wyżej), dopiero po kroku 0.
 2. Zwykłe wdrożenie jak dotąd: `ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh`. Zapisze w `.env` `SITE`, `IP` i `ZM_SIEC` (potrzebne produkcji) i podniesie grę oraz serwer testowy `api`, który dostanie nowe zmienne (`ZM_PROXY_SEKRET`, `ZM_KONTAKT`, wzór podglądów w `ZM_ZRODLA`), więc zrestartuje się na chwilę. `api-prod` nie rusza.
 3. Blok Caddy (niżej).
-4. Produkcja, z lokalnego `main` i czystego drzewa: `ZM_PROD=1 ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh`. Skrypt odmawia (komunikat i kod 1, nic nie idzie na serwer) z innej gałęzi, z brudnego drzewa albo bez `ZM_SIEC`; potem sprawdza w `.env` na serwerze same nazwy `ZM_PROXY_SEKRET_PROD`, `ZM_LICZNIKI_TOKEN`, `ZM_KONTAKT`, `SITE`, `ZM_SIEC` (odczyt, bez zmian) i dopiero wtedy kopiuje `compose.obok.yml` oraz źródła z `main` do `serwer-prod` i uruchamia na serwerze wyłącznie `docker compose --profile prod up -d --build api-prod`. Gry (`www`), serwera testowego, Caddy i `.env` nie rusza. Baza produkcji (`dane_prod`) dostaje migracje tylko z kodu `main`.
+4. Produkcja, z lokalnego `main`, czystego drzewa i dokładnie równego `origin/main`: `ZM_PROD=1 ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh`. Skrypt odmawia (komunikat i kod 1, nic nie idzie na serwer) z innej gałęzi, z brudnego drzewa, bez `ZM_SIEC` albo gdy po `git fetch origin main` lokalny `main` różni się od `origin/main`: będąc za nim, wdrożyłby stary kod (który może nie wstać na nowszym schemacie bazy, bo `server/baza.ts` odmawia nowszej wersji), a przed nim niezrecenzowane commity z migracjami, których nie da się cofnąć (po scaleniu zrób `git pull --ff-only` na `main`; commity przed `origin/main` trzeba najpierw wypchnąć i zrecenzować). Potem sprawdza w `.env` na serwerze same nazwy `ZM_PROXY_SEKRET_PROD`, `ZM_LICZNIKI_TOKEN`, `ZM_KONTAKT`, `SITE`, `ZM_SIEC` (odczyt, bez zmian) i dopiero wtedy kopiuje `compose.obok.yml` oraz źródła z `main` do `serwer-prod` i uruchamia na serwerze wyłącznie `docker compose --profile prod up -d --build api-prod`. Gry (`www`), serwera testowego, Caddy i `.env` nie rusza. Baza produkcji (`dane_prod`) dostaje migracje tylko z kodu `main`.
 
-Blok Caddy dopisujemy raz: skrypt poniżej sprawdza, czy blok już jest, robi kopię Caddyfile (plik jest montowany pojedynczo, więc przepisujemy w miejscu), a gdy sprawdzenie albo przeładowanie się nie uda, przywraca kopię, przeładowuje stary Caddyfile i kończy się błędem (kod różny od 0). Uruchomić na serwerze jako root, w bash:
+Blok Caddy dopisujemy raz: skrypt poniżej sprawdza, czy blok już jest, robi kopię Caddyfile i dopisuje blok dopiero po sprawdzeniu, że kopia jest wierna (`cmp`); jeśli kopii nie da się zrobić, Caddyfile zostaje nietknięty (cergo nie może zostać bez ważnego Caddyfile). Plik jest montowany pojedynczo, więc przepisujemy w miejscu. A gdy sprawdzenie albo przeładowanie się nie uda, przywraca kopię, przeładowuje stary Caddyfile i kończy się błędem (kod różny od 0). Uruchomić na serwerze jako root, w bash:
 
 ```bash
 CF=/opt/cergo/Caddyfile
@@ -93,8 +94,11 @@ if grep -qF "$HOST {" "$CF"; then
   echo "Blok $HOST już jest w Caddyfile, nic nie dopisano"
 else
   KOPIA="$CF.przed-za-murem-api-prod-$(date +%F-%H%M)"
-  cp "$CF" "$KOPIA"
-  cat >> "$CF" <<'EOF'
+  if ! { cp "$CF" "$KOPIA" && cmp -s "$CF" "$KOPIA"; }; then
+    echo "Nie udało się zrobić wiernej kopii $KOPIA: Caddyfile nietknięty, nic nie dopisano" >&2
+    false
+  else
+    cat >> "$CF" <<'EOF'
 
 za-murem-api.5-75-147-27.sslip.io {
 	handle /api/* {
@@ -108,9 +112,10 @@ za-murem-api.5-75-147-27.sslip.io {
 	}
 }
 EOF
-  $CADDY validate --config /etc/caddy/Caddyfile --adapter caddyfile \
-    && $CADDY reload --config /etc/caddy/Caddyfile --adapter caddyfile \
-    || { echo "Caddy odrzucił nowy blok: przywracam $KOPIA" >&2; cat "$KOPIA" > "$CF"; $CADDY reload --config /etc/caddy/Caddyfile --adapter caddyfile; false; }
+    $CADDY validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+      && $CADDY reload --config /etc/caddy/Caddyfile --adapter caddyfile \
+      || { echo "Caddy odrzucił nowy blok: przywracam $KOPIA" >&2; cat "$KOPIA" > "$CF"; $CADDY reload --config /etc/caddy/Caddyfile --adapter caddyfile; false; }
+  fi
 fi
 ```
 

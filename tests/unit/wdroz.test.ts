@@ -1,8 +1,9 @@
 /* Skrypt wdrożenia deploy/hetzner/wdroz.sh (etap 1, zadanie 13, poprawka): zwykłe wdrożenie (testowe, z dowolnej
-   gałęzi) nie dotyka serwera produkcji `api-prod`, a produkcja idzie tylko trybem ZM_PROD=1 z czystej gałęzi `main`.
+   gałęzi) nie dotyka serwera produkcji `api-prod`, a produkcja idzie tylko trybem ZM_PROD=1 z czystej gałęzi `main` równej `origin/main`.
    Skrypt chodzi na atrapach ssh, rsync, scp, docker i npm w katalogu tymczasowym (adres z zakresu dokumentacyjnego
    203.0.113.x, „serwer" to katalog na dysku, a polecenia docker tylko trafiają do dziennika), więc test niczego nie
-   wysyła i nie łączy się z siecią. Dziennik atrap mówi, które polecenia by poszły na serwer. */
+   wysyła i nie łączy się z siecią (`origin` to lokalne repozytorium bare w katalogu tymczasowym). Dziennik atrap
+   mówi, które polecenia by poszły na serwer. */
 
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -47,6 +48,10 @@ interface Srodowisko {
   repo: string;
   srv: string;
   log: string;
+  /** repozytorium bare udające origin */
+  zdalne: string;
+  /** commit na origin/main z innego klonu (jak push kolegi); lokalny main zostaje w tyle */
+  commitNaZdalnym(): void;
   uruchom(env?: Record<string, string>): { status: number | null; stdout: string; stderr: string };
   dziennik(): string;
   env(): string;
@@ -85,6 +90,10 @@ function przygotuj(envSerwera?: string): Srodowisko {
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'start');
+  const zdalne = join(katalog, 'zdalne.git');
+  git(katalog, 'init', '-q', '--bare', '-b', 'main', zdalne);
+  git(repo, 'remote', 'add', 'origin', zdalne);
+  git(repo, 'push', '-q', 'origin', 'main');
   for (const n of ['ssh', 'rsync', 'scp', 'docker', 'npm']) {
     const plik = join(bin, n);
     writeFileSync(plik, n === 'ssh' ? ATRAPA_SSH : ATRAPA_LOG);
@@ -96,6 +105,15 @@ function przygotuj(envSerwera?: string): Srodowisko {
     repo,
     srv,
     log,
+    zdalne,
+    commitNaZdalnym() {
+      const inny = join(katalog, 'inny');
+      git(katalog, 'clone', '-q', zdalne, inny);
+      writeFileSync(join(inny, 'kolega.txt'), 'x\n');
+      git(inny, 'add', '-A');
+      git(inny, 'commit', '-q', '-m', 'kolega');
+      git(inny, 'push', '-q', 'origin', 'main');
+    },
     uruchom(env = {}) {
       const srodowisko = {
         ...process.env,
@@ -103,6 +121,7 @@ function przygotuj(envSerwera?: string): Srodowisko {
         ZM_LOG: log,
         ZM_SRV: srv,
         ZM_IP: IP,
+        GIT_TERMINAL_PROMPT: '0',
         ...env,
       };
       // bezpiecznik: ssh, rsync, scp, docker i npm MUSZĄ być atrapami z katalogu tymczasowego
@@ -193,6 +212,59 @@ describe('wdroz.sh: produkcja (ZM_PROD=1)', () => {
     git(s.repo, 'commit', '-q', '-m', 'nowy');
     writeFileSync(join(s.repo, 'server/app.ts'), '# zmieniony\n');
     expect(s.uruchom(PROD).status).toBe(1);
+    expect(s.dziennik()).toBe('');
+  });
+
+  it('main przed origin/main (niewypchnięte commity) odmawia, zanim cokolwiek pójdzie na serwer', () => {
+    const s = przygotuj(WSZYSTKIE);
+    writeFileSync(join(s.repo, 'server/app.ts'), '# niezrecenzowana zmiana\n');
+    git(s.repo, 'add', '-A');
+    git(s.repo, 'commit', '-q', '-m', 'lokalnie');
+    const w = s.uruchom(PROD);
+    expect(w.status).toBe(1);
+    expect(w.stderr).toContain('Lokalny main wyprzedza origin/main (niewypchnięte commity: 1)');
+    expect(s.dziennik()).toBe('');
+  });
+
+  it('main za origin/main (stary kod) odmawia, zanim cokolwiek pójdzie na serwer', () => {
+    const s = przygotuj(WSZYSTKIE);
+    s.commitNaZdalnym();
+    // lokalny main jeszcze nie wie o nowym commicie: skrypt sam robi fetch
+    const w = s.uruchom(PROD);
+    expect(w.status).toBe(1);
+    expect(w.stderr).toContain('Lokalny main jest za origin/main (brakuje commitów: 1)');
+    expect(w.stderr).toContain('git pull --ff-only');
+    expect(s.dziennik()).toBe('');
+  });
+
+  it('main rozjechany z origin/main odmawia, zanim cokolwiek pójdzie na serwer', () => {
+    const s = przygotuj(WSZYSTKIE);
+    s.commitNaZdalnym();
+    writeFileSync(join(s.repo, 'server/app.ts'), '# lokalnie\n');
+    git(s.repo, 'add', '-A');
+    git(s.repo, 'commit', '-q', '-m', 'lokalnie');
+    const w = s.uruchom(PROD);
+    expect(w.status).toBe(1);
+    expect(w.stderr).toContain('się rozeszły (tylko lokalnie: 1, tylko na origin/main: 1)');
+    expect(s.dziennik()).toBe('');
+  });
+
+  it('main równy origin/main (po pull) przechodzi dalej', () => {
+    const s = przygotuj(WSZYSTKIE);
+    s.commitNaZdalnym();
+    expect(s.uruchom(PROD).status).toBe(1);
+    git(s.repo, 'pull', '-q', '--ff-only', 'origin', 'main');
+    const w = s.uruchom(PROD);
+    expect(w.status).toBe(0);
+    expect(s.dziennik()).toContain('docker compose --profile prod up -d --build api-prod');
+  });
+
+  it('gdy origin jest nieosiągalny (fetch nie działa), odmawia zamiast wdrażać na ślepo', () => {
+    const s = przygotuj(WSZYSTKIE);
+    git(s.repo, 'remote', 'set-url', 'origin', join(s.repo, 'nie-ma-takiego-repozytorium.git'));
+    const w = s.uruchom(PROD);
+    expect(w.status).toBe(1);
+    expect(w.stderr).toContain('Nie udało się pobrać origin/main');
     expect(s.dziennik()).toBe('');
   });
 

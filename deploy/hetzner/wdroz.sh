@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# UWAGA: gałąź bez tego wdroz.sh (i bez profilu prod w compose.obok.yml) nadpisuje .env jednym printf, kasując sekrety, a
+# jej `up --remove-orphans` usuwa działający kontener api-prod; wdrażać tak tylko po scaleniu tej zmiany (README, krok 0).
 # Build gry i wdrożenie na serwer Hetznera (Docker: gra i serwer gry sieciowej, katalog /srv/za-murem).
 # Dwa tryby, drugi tylko obok innej aplikacji (compose.obok.yml):
 #
@@ -13,8 +15,8 @@
 #    (sama nazwa zmiennej, nigdy wartość) i idzie dalej, a serwer traktuje puste wartości jak nieustawione.
 #
 # 2. Wdrożenie produkcji: ZM_PROD=1 ZM_IP=1.2.3.4 ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh
-#    Tylko z lokalnej gałęzi `main` i z czystym drzewem (inaczej komunikat i kod 1, zanim cokolwiek pójdzie na
-#    serwer). Wymaga w .env na serwerze: ZM_PROXY_SEKRET_PROD, ZM_LICZNIKI_TOKEN, ZM_KONTAKT (oraz SITE i ZM_SIEC z
+#    Tylko z lokalnej gałęzi `main`, z czystym drzewem i dokładnie równej origin/main (skrypt sam robi
+#    `git fetch origin main`; inaczej komunikat i kod 1, zanim cokolwiek pójdzie na serwer). Wymaga w .env na serwerze: ZM_PROXY_SEKRET_PROD, ZM_LICZNIKI_TOKEN, ZM_KONTAKT (oraz SITE i ZM_SIEC z
 #    wcześniejszego zwykłego wdrożenia); bez nich staje przed jakąkolwiek zmianą na serwerze (sprawdzenie .env to
 #    sam odczyt). Kopiuje compose i źródła serwera do osobnego katalogu serwer-prod (kontekst budowania api-prod,
 #    niezależny od zwykłych wdrożeń) i uruchamia tylko `docker compose --profile prod up -d --build api-prod`:
@@ -58,6 +60,22 @@ if [ "$PROD" = 1 ]; then
   GALAZ="$(git rev-parse --abbrev-ref HEAD)"
   [ "$GALAZ" = main ] || { echo "Produkcja idzie tylko z gałęzi main, a tu jest '$GALAZ'. Nic nie wysłano." >&2; exit 1; }
   [ -z "$(git status --porcelain)" ] || { echo "Drzewo robocze nie jest czyste (zmiany albo nowe pliki): produkcja idzie tylko z czystej gałęzi main. Nic nie wysłano." >&2; exit 1; }
+  # Lokalny main musi być dokładnie origin/main. Za nim wdrożylibyśmy stary kod (który może nie znać nowszego schematu
+  # bazy i nie wstać), przed nim niezrecenzowane commity i migracje, których nie da się cofnąć.
+  git fetch -q origin main || { echo "Nie udało się pobrać origin/main (git fetch origin main). Nic nie wysłano." >&2; exit 1; }
+  ZDALNY="$(git rev-parse --verify -q origin/main)" || { echo "Po pobraniu nie ma origin/main. Nic nie wysłano." >&2; exit 1; }
+  if [ "$(git rev-parse HEAD)" != "$ZDALNY" ]; then
+    PRZED="$(git rev-list --count origin/main..HEAD)"
+    ZA="$(git rev-list --count HEAD..origin/main)"
+    if [ "$ZA" = 0 ]; then
+      echo "Lokalny main wyprzedza origin/main (niewypchnięte commity: $PRZED): produkcja idzie tylko z tego, co jest na origin/main. Nic nie wysłano." >&2
+    elif [ "$PRZED" = 0 ]; then
+      echo "Lokalny main jest za origin/main (brakuje commitów: $ZA): zrób git pull --ff-only i spróbuj jeszcze raz. Nic nie wysłano." >&2
+    else
+      echo "Lokalny main i origin/main się rozeszły (tylko lokalnie: $PRZED, tylko na origin/main: $ZA): produkcja idzie tylko z origin/main. Nic nie wysłano." >&2
+    fi
+    exit 1
+  fi
   BRAK="$(brakuje_w_env ZM_PROXY_SEKRET_PROD ZM_LICZNIKI_TOKEN ZM_KONTAKT SITE ZM_SIEC)"
   if [ -n "$BRAK" ]; then
     echo "Brakuje w .env na serwerze (sprawdzone tylko nazwy): ${BRAK//$'\n'/ }. Uzupełnij je w .env (SITE i ZM_SIEC zapisuje zwykłe wdrożenie, opis: deploy/hetzner/README.md). Nic nie zmieniono." >&2
