@@ -28,6 +28,7 @@ import {
   type Blad,
   type DaneLogowania,
   type Ja,
+  KOMUNIKAT_BRAK_ADRESU,
   type KodBledu,
   type KodPowrotu,
   type ListaKlatek,
@@ -158,8 +159,7 @@ const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
     {
       'Nie macie takiej klatki.': 'You don’t have that stairwell.',
       'Nie ma takiego adresu API.': 'No such API address.',
-      'Nie znalazłem takiego adresu. Spróbujcie z miastem, np. „Wołoska 12, Warszawa”.':
-        'I couldn’t find that address. Try adding the city.',
+      [KOMUNIKAT_BRAK_ADRESU]: 'I couldn’t find that address. Try adding the city.',
     },
     'Not found.',
   ),

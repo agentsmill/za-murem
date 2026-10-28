@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { komunikatEn, utworzApi } from '../../src/net/api.ts';
-import { KOD_DLUGOSC, maAdres, normalizujKod, zapisBezAdresu } from '../../src/net/protokol.ts';
+import { KOD_DLUGOSC, KOMUNIKAT_BRAK_ADRESU, maAdres, normalizujKod, zapisBezAdresu } from '../../src/net/protokol.ts';
 import { klatkiBudynku, kluczeSwiata, prostokatMapy } from '../../src/world/klucze.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../../src/world/world.ts';
@@ -312,7 +312,16 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
       ['j', 'pl'],
     ]);
 
-    expect(await api.adres('Asdfgh 99999, Nigdzie', 'pl')).toMatchObject({ ok: false, status: 404, blad: 'nie_ma' });
+    // „adresu nie ma” rozpoznaje się po zdaniu z protokołu, bo nieznana trasa też daje 404 nie_ma (z innym zdaniem)
+    expect(await api.adres('Asdfgh 99999, Nigdzie', 'pl')).toMatchObject({
+      ok: false,
+      status: 404,
+      blad: 'nie_ma',
+      komunikat: KOMUNIKAT_BRAK_ADRESU,
+    });
+    const nieznana = await przegl.fetch('/api/nie-ma-takiej-trasy');
+    expect(nieznana.status).toBe(404);
+    expect(await nieznana.json()).toMatchObject({ blad: 'nie_ma', komunikat: 'Nie ma takiego adresu API.' });
     expect(await api.adres('   ', 'pl')).toMatchObject({ ok: false, status: 400, blad: 'zle_dane' });
   });
 

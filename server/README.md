@@ -87,7 +87,7 @@ Testy: `npm test -- serwer-liczniki`.
 | odpowiedź | kiedy |
 |---|---|
 | 200 `WynikAdresu` | adres znaleziony (z pamięci, Nominatim albo Photona) |
-| 404 `nie_ma` | Nominatim (albo Photon, gdy Nominatim nie mógł odpowiedzieć) nie zna takiego adresu |
+| 404 `nie_ma` | Nominatim (albo Photon, gdy Nominatim nie mógł odpowiedzieć) nie zna takiego adresu; komunikat to `KOMUNIKAT_BRAK_ADRESU` z `src/net/protokol.ts`, po nim klient odróżnia to od 404 `nie_ma` na nieznaną trasę („Nie ma takiego adresu API.”) |
 | 400 `zle_dane` | puste zapytanie, dłuższe niż 200 znaków (`ADRES_MAX_ZNAKOW`) albo język inny niż `pl` i `en` |
 | 429 `za_duzo_prob` | więcej niż 30 zapytań na minutę z jednego IP (liczą się też trafienia w pamięć i zapytania błędne); dwadzieścia w kwadrans z akademika przechodzi bez problemu |
 | 503 `serwer_zajety` | zawiodły i Nominatim, i Photon; klient pyta wtedy Nominatim sam |

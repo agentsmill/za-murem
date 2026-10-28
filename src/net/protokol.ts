@@ -325,6 +325,11 @@ export interface Liczniki {
 /** Najdłuższe zapytanie o adres w znakach (GET /api/adres?q=): dłuższe to 400 zle_dane. */
 export const ADRES_MAX_ZNAKOW = 200;
 
+/** Zdanie, którym serwer odpowiada 404 nie_ma, gdy GET /api/adres nie znalazł takiego adresu. Ten sam kod i status ma
+    odpowiedź na nieznaną trasę („Nie ma takiego adresu API.”), więc klient poznaje „adresu nie ma” po tym zdaniu, a
+    nie po samym kodzie: serwer bez trasy /api/adres (starszy) nie może uchodzić za wyszukiwarkę, która nic nie znalazła. */
+export const KOMUNIKAT_BRAK_ADRESU = 'Nie znalazłem takiego adresu. Spróbujcie z miastem, np. „Wołoska 12, Warszawa”.';
+
 /** GET /api/adres?q=&j=pl|en: współrzędne i opis miejsca; ten sam kształt co `GeocodeResult` w src/world/osm.ts
     (`label` to pełna etykieta, `area` osiedle albo okolica, `street` ulica, `city` miejscowość; puste, gdy nie ma) */
 export interface WynikAdresu {

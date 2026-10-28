@@ -29,8 +29,9 @@
      POST   /api/zdarzenie          dolicz zdarzenie do sum dziennych {z}    → 204, bez sesji; 400 nieznane, 429
      GET    /api/liczniki?od=<ms>   sumy zdarzeń i powroty kont              → {liczniki, powroty}; tylko z nagłówkiem
                                     Authorization: Bearer <token>, bez tokenu w opcjach 404, zły token 401
-     GET    /api/adres?q=&j=pl|en   adres → miejsce (WynikAdresu), bez sesji → 200, 404 nie_ma, 400 (puste albo
-                                    dłuższe niż 200 znaków), 503 serwer_zajety, 429 po 30 w minutę
+     GET    /api/adres?q=&j=pl|en   adres → miejsce (WynikAdresu), bez sesji → 200, 400 (puste albo dłuższe niż 200
+                                    znaków), 404 nie_ma ze zdaniem KOMUNIKAT_BRAK_ADRESU (nieznana trasa też daje
+                                    nie_ma, ale z innym zdaniem), 503 serwer_zajety, 429 po 30 w minutę
 
    Drużyna anonimowa (POST /api/druzyna) to konto bez nicku i hasła, z numerem jako znakiem (`#12`), zakładane przy
    pierwszym wejściu bez formularza; najwyżej 30 nowych na IP na godzinę (żądanie z ważną sesją się nie liczy).
@@ -115,6 +116,7 @@ import {
   KLATKI_W_ODPOWIEDZI_MAX,
   KLUCZ_KLATKI_WZOR,
   KLUCZ_MAX,
+  KOMUNIKAT_BRAK_ADRESU,
   KONTA_DNI,
   type KodPowrotu,
   kotwicaKlucza,
@@ -893,12 +895,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
         'Retry-After': '5',
       });
     }
-    if (!wynik)
-      throw new BladHttp(
-        404,
-        'nie_ma',
-        'Nie znalazłem takiego adresu. Spróbujcie z miastem, np. „Wołoska 12, Warszawa”.',
-      );
+    if (!wynik) throw new BladHttp(404, 'nie_ma', KOMUNIKAT_BRAK_ADRESU);
     wyslij(k.res, 200, wynik, k.naglowki);
   };
 

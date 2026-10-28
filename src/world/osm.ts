@@ -1,18 +1,24 @@
-/* Dane z OpenStreetMap: wyszukiwanie adresu (przez serwer gry, a bez niego wprost w Nominatim), Overpass jako zapas,
-   kategorie miejsc i osiedle zapasowe. Przeniesione z js/osm.js (0.3); rasteryzacja jest nowa (raster.ts). Komunikaty
-   dla gracza w bieżącym języku; nazwy miejsc i osiedle zapasowe zostają polskie, bo to dane świata.
+/* Dane z OpenStreetMap: wyszukiwanie adresu (Nominatim wprost, a gdy gra dostanie klienta API, najpierw przez serwer
+   gry), Overpass jako zapas, kategorie miejsc i osiedle zapasowe. Przeniesione z js/osm.js (0.3); rasteryzacja jest
+   nowa (raster.ts). Komunikaty dla gracza w bieżącym języku; nazwy miejsc i osiedle zapasowe zostają polskie, bo to
+   dane świata.
 
-   Kontrakt geocode: najpierw GET /api/adres przez klienta API (src/net/api.ts, bez sesji; serwer ma kolejkę do
-   Nominatim, pamięć wyników i zapas w Photonie). Wynik serwera albo jego `nie_ma` (adresu nie ma) kończą sprawę:
-   przy `nie_ma` gracz dostaje ten sam błąd „Nie znalazłem takiego adresu…”, a przeglądarka nie pyta już sama
-   Nominatim. Każda inna porażka (brak serwera na Pages i w demach offline, brak sieci, czas, zajęty serwer, 429)
-   idzie dotychczasową drogą wprost do Nominatim, jedno zapytanie, bez ponowień i bez błędu z serwera na ekranie.
-   Moduł wciąż działa w Node: src/net/api.ts nie dotyka okna ani DOM przy imporcie, a niczego z src/world nie importuje. */
+   Kontrakt geocode(q, api?). Bez `api` (tak woła main.ts, dopóki gra sieciowa jest wyłączona) adres z pola idzie tylko
+   do Nominatim, jedno zapytanie, jak przed serwerem gry; serwera gry nie dotykamy. Z `api` najpierw GET /api/adres
+   (src/net/api.ts, bez sesji; serwer ma kolejkę do Nominatim, pamięć wyników i zapas w Photonie), zawsze z językiem
+   `pl`: etykieta adresu (`Loaded.addr`) liczy się do ziarna świata i kluczy imion, więc nie może zależeć od języka
+   gracza. Wynik serwera kończy sprawę; odpowiedź `nie_ma` ze zdaniem KOMUNIKAT_BRAK_ADRESU (adresu nie ma) też: gracz
+   dostaje ten sam błąd „Nie znalazłem takiego adresu…”, a przeglądarka nie pyta już sama Nominatim. Inne `nie_ma`
+   (serwer bez trasy /api/adres odpowiada 404 „Nie ma takiego adresu API.”) i każda inna porażka (brak serwera na Pages
+   i w demach offline, brak sieci, czas, zajęty serwer, 429) idą dotychczasową drogą wprost do Nominatim: jedno
+   zapytanie, bez ponowień i bez błędu z serwera na ekranie.
+   Moduł działa w Node: src/net/api.ts nie dotyka okna ani DOM przy imporcie, a niczego z src/world nie importuje. */
 
 import { FOODSHOP } from '../content/data.ts';
-import { jezyk, L } from '../core/jezyk.ts';
+import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
-import { type ApiGry, utworzApi } from '../net/api.ts';
+import type { ApiGry } from '../net/api.ts';
+import { KOMUNIKAT_BRAK_ADRESU } from '../net/protokol.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
 import { pikselZ, tagiKlucza } from './klucze.ts';
 import { kluczPunktu } from './miasto.ts';
@@ -73,12 +79,15 @@ async function geocodeNominatim(q: string): Promise<GeocodeResult> {
   };
 }
 
-/** adres → miejsce: najpierw serwer gry (`api.adres`, w bieżącym języku), a gdy go nie ma albo zawiódł, wprost
-    Nominatim; adres, którego serwer nie zna (`nie_ma`), to błąd „Nie znalazłem…” bez drugiego zapytania */
-export async function geocode(q: string, api: Pick<ApiGry, 'adres'> = utworzApi()): Promise<GeocodeResult> {
-  const r = await api.adres(q, jezyk());
-  if (r.ok) return r.dane;
-  if (r.blad === 'nie_ma') throw nieMaAdresu();
+/** adres → miejsce. Bez `api` wprost Nominatim. Z `api` najpierw serwer gry (zawsze `pl`, bo z etykiety liczy się
+    ziarno świata); adres, którego serwer nie zna (`nie_ma` ze zdaniem KOMUNIKAT_BRAK_ADRESU), to błąd „Nie
+    znalazłem…” bez drugiego zapytania, a każda inna porażka idzie jednym zapytaniem wprost do Nominatim */
+export async function geocode(q: string, api?: Pick<ApiGry, 'adres'>): Promise<GeocodeResult> {
+  if (api) {
+    const r = await api.adres(q, 'pl');
+    if (r.ok) return r.dane;
+    if (r.blad === 'nie_ma' && r.komunikat === KOMUNIKAT_BRAK_ADRESU) throw nieMaAdresu();
+  }
   return geocodeNominatim(q);
 }
 
