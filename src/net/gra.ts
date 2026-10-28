@@ -31,6 +31,10 @@
    o kodzie powrotu z karty startowej, o ile serwer odpowiada (inaczej karta nie ma pola kodu, a gra bez serwera milczy
    jak dotąd).
 
+   `apiAdresu` (wyszukiwanie adresu przez serwer) i `apiLicznikow` (zdarzenia do liczników, src/net/liczniki.ts) oddają
+   klienta API tylko przy włączonej sieci i odpowiadającym serwerze (po init), inaczej undefined: gra bez sieci niczego
+   nie pyta i niczego nie wysyła.
+
    Gra sieciowa należy do konta, które ją zaczęło (StanSieci.konto = Ja.znak: nick konta z nickiem, „#<id>” drużyny
    anonimowej): wczytana na innym koncie albo bez zalogowania toczy się dalej bez sieci (bez zajmowania i bez chmury).
    Zapis w chmurze idzie od wersji, którą ta gra ostatnio wysłała (StanSieci.wersja), a zapis wczytany z chmury od
@@ -225,6 +229,12 @@ export class GraSieciowa {
   /** klient API do wyszukiwania adresu (loadAddress): tylko przy włączonej sieci i odpowiadającym serwerze (po init),
       inaczej undefined i adres szuka się w przeglądarce jak bez sieci */
   apiAdresu(): Pick<ApiGry, 'adres'> | undefined {
+    return this.dostepny ? this.api : undefined;
+  }
+
+  /** klient API do liczników (src/net/liczniki.ts, POST /api/zdarzenie bez sesji): ten sam warunek co `apiAdresu`, czyli
+      sieć włączona i odpowiadający serwer (po init), inaczej undefined i gra niczego nie wysyła */
+  apiLicznikow(): Pick<ApiGry, 'zdarzenie'> | undefined {
     return this.dostepny ? this.api : undefined;
   }
 

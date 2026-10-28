@@ -661,6 +661,22 @@ describe('gra z sąsiadami w grze (src/net/gra.ts, bez DOM)', () => {
     }
   });
 
+  it('liczniki dostają klienta API tylko przy włączonej sieci i odpowiadającym serwerze', async () => {
+    const przypadki = [
+      { nazwa: 'sieć i serwer', wlaczona: true, bezSerwera: false, serwer: true },
+      { nazwa: 'flaga wyłączona (produkcja bez VITE_SIEC)', wlaczona: false, bezSerwera: false, serwer: false },
+      { nazwa: 'serwer leży', wlaczona: true, bezSerwera: true, serwer: false },
+    ];
+    for (const p of przypadki) {
+      const { api } = udawaneApiGry({ nick: null, bezSerwera: p.bezSerwera });
+      const g = new GraSieciowa(opcje(api, { wlaczona: p.wlaczona }));
+      expect(g.apiLicznikow(), p.nazwa).toBeUndefined();
+      await g.init();
+      expect(g.apiLicznikow() === api, p.nazwa).toBe(p.serwer);
+      expect(g.apiLicznikow() === undefined, p.nazwa).toBe(!p.serwer);
+    }
+  });
+
   it('kod powrotu na karcie startowej loguje do drużyny i pokazuje „Kontynuuj z chmury”', async () => {
     const chmura = { dane: zapisGry({ zajete: [], dom: true, konto: '#7', wersja: 3 }), wersja: 3 };
     const { api, log } = udawaneApiGry({ nick: null, kody: { ABCDEFGHJKLM: '#7' }, chmura });

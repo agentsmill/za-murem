@@ -107,6 +107,7 @@ import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
 import { siecWlaczona } from './net/flaga.ts';
 import { GraSieciowa } from './net/gra.ts';
+import { type Liczniki, noweCele, progiDni, utworzLiczniki, zdarzenieStartu } from './net/liczniki.ts';
 import { opcjeSceny } from './render/art/kwadratyScena.ts';
 import { buildScene, type Scene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
@@ -670,6 +671,19 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
+/* liczniki (src/net/liczniki.ts): start gry, zaliczone cele i dni 2, 3, 7 idą do serwera bez sesji i bez śladu gracza, ogniem
+   i zapomnij. Tylko przy włączonej sieci i działającym serwerze (apiLicznikow), więc GitHub Pages, dema offline i produkcja
+   bez VITE_SIEC niczego nie wysyłają. Zakładane przy pierwszym zdarzeniu, bo dopiero po `siecGotowa` wiadomo, czy serwer
+   odpowiada (start() czeka na nią przed pierwszą grą) */
+let liczniki: Liczniki | null = null;
+function licznik(z: string): void {
+  const api = siec.apiLicznikow();
+  if (!api) return;
+  liczniki ??= utworzLiczniki(api, true);
+  liczniki.wyslij(z);
+}
+/** dzień gry z poprzedniego kroku symulacji: z niego `krokSymulacji` widzi przekroczenie progu (ustawia go `enter`) */
+let dzienGry = 1;
 /** ekran startowy od nowa (z ?siec=, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
 const startUrl = () => adresStartowy(location.pathname, location.search);
 /** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
@@ -1001,6 +1015,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // z niedokończoną grą)
   if (osadaGry?.odkryta) await pokazOsade(osadaGry);
   sim = new Sim(world, st);
+  dzienGry = dayOf(st.tick);
   osada = osadaGry;
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
@@ -1130,6 +1145,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
           ),
       9000,
     );
+  // liczniki: start tylko nowej gry (także demo i zapis z innej wersji świata, który zaczął się od nowa), nie wczytanego zapisu
+  if (!saved) licznik(zdarzenieStartu(modeOf(st), jezyk(), touchUI));
   renderSpeed();
   if (window.zm) {
     window.zm.sim = sim;
@@ -2111,6 +2128,12 @@ function krokSymulacji(s: Sim): void {
   view.beforeStep(s.st);
   s.step();
   osada?.krok(s.st.tick);
+  // liczniki: dzień 2, 3 i 7 (przewinięcie kilku dni naraz daje wszystkie progi po drodze); stan gry tylko czytany
+  const dzien = dayOf(s.st.tick);
+  if (dzien !== dzienGry) {
+    for (const z of progiDni(dzienGry, dzien)) licznik(z);
+    dzienGry = dzien;
+  }
 }
 
 function frame(now: number, dtMs: number) {
@@ -2420,7 +2443,10 @@ function odczytCelow(snap: SimSnapshot): OdczytCelow {
     zapisu, więc przeładowanie strony niczego nie cofa. Woła go okienko celów, linia celu w oknach i `window.zm.cele()`. */
 function widokCelow(snap: SimSnapshot): WidokSciezki {
   const o = odczytCelow(snap);
+  const przed = sciezka.zrobione;
   sciezka = krokSciezki(sciezka, o);
+  // liczniki: tylko cele zaliczone w tym kroku; zapis wczytany z zaliczonymi celami ich nie powtarza
+  for (const z of noweCele(przed, sciezka.zrobione)) licznik(z);
   return widokSciezki(sciezka, o);
 }
 /** Zdarzenie samego interfejsu, które nie zostawia śladu w stanie gry (lista ludzi, karta mieszkańca, karta budynku, ekran
