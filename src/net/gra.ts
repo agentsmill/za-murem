@@ -19,6 +19,15 @@
    restarcie odświeżanie klatek, które dostanie 409 brak_startu, podaje punkt startu i pyta jeszcze raz (raz); każda
    inna porażka odświeżenia (429 też) zostawia ostatnią listę, bez komunikatu.
 
+   Kod powrotu i usunięcie drużyny w grze (Menu, main.ts): `menuSieci` mówi Menu, które przyciski sieci pokazać; `kod` bierze
+   z serwera nowy kod (każdy unieważnia poprzedni, porażka daje null i powód w `blad`); `pokazacKod` i `kodPokazany` dają
+   okno z kodem raz po pierwszym porannym raporcie drużyny anonimowej (StanSieci.kodPokazany, w zapisie); `usun` kasuje
+   drużynę anonimową z serwera bez hasła i kończy sieć w tej grze (StanSieci.usunieta: bez zapisów do chmury, bez
+   odświeżania klatek, bez przycisków sieci, a zapis wczytuje się bez sieci na czyimkolwiek koncie). Zapis drużyny
+   anonimowej wczytany bez jej sesji (zgubione ciasteczko, inna przeglądarka) toczy się bez sieci i dostaje jeden komunikat
+   o kodzie powrotu z karty startowej, o ile serwer odpowiada (inaczej karta nie ma pola kodu, a gra bez serwera milczy
+   jak dotąd).
+
    Gra sieciowa należy do konta, które ją zaczęło (StanSieci.konto = Ja.znak: nick konta z nickiem, „#<id>” drużyny
    anonimowej): wczytana na innym koncie albo bez zalogowania toczy się dalej bez sieci (bez zajmowania i bez chmury).
    Zapis w chmurze idzie od wersji, którą ta gra ostatnio wysłała (StanSieci.wersja), a zapis wczytany z chmury od
@@ -142,6 +151,8 @@ export class GraSieciowa {
   private restartuje = false;
   /** komunikat startu: Tx albo napis w języku z chwili startu (z startSieci) */
   private komunikat: Tx | string | null = null;
+  /** powód ostatniej porażki kod() albo usun() */
+  private bladSerwera: Tx | null = null;
   private klatki: ZajetaKlatka[] = [];
   private cel: Klatka | null = null;
   private zn: Znacznik[] = [];
@@ -214,6 +225,70 @@ export class GraSieciowa {
   /** czy gracz gra jako drużyna anonimowa (sesja bez nicku i hasła) */
   anonimowa(): boolean {
     return this.zalogowani && this.anonimowe;
+  }
+
+  /** Co Menu ma dać z sieci (menuSheet): przycisk kodu powrotu w grze sieciowej, a drużynie anonimowej też usunięcie z
+      serwera. Undefined, gdy ta gra nie ma sieci (bez serwera, inne konto, zgubiona sesja, usunięta drużyna). */
+  menuSieci(): { anonimowa: boolean } | undefined {
+    return this.zalogowani && this.stan && !this.bezSieci ? { anonimowa: this.anonimowe } : undefined;
+  }
+
+  /** powód ostatniej porażki kod() albo usun() w bieżącym języku (Tx z komunikatu serwera); null po udanej próbie */
+  blad(): Tx | null {
+    return this.bladSerwera;
+  }
+
+  /** Nowy kod powrotu drużyny z serwera (POST /api/druzyna/kod; stary przestaje działać), do pokazania w kodSheet.
+      Null bez sieci w tej grze albo przy błędzie serwera (powód w blad()); nie ponawia sam. */
+  async kod(): Promise<string | null> {
+    this.bladSerwera = null;
+    if (!this.menuSieci()) return null;
+    const r = await this.api.nowyKod();
+    if (r.ok) return r.dane.kod;
+    this.bladSerwera = txBledu(r);
+    return null;
+  }
+
+  /** Czy po pierwszym porannym raporcie trzeba pokazać kod powrotu: gra sieciowa drużyny anonimowej, kod jeszcze nie
+      pokazany (StanSieci.kodPokazany, w zapisie, więc raz na grę także po wczytaniu). */
+  pokazacKod(): boolean {
+    return this.anonimowa() && !!this.stan && !this.bezSieci && !this.stan.kodPokazany;
+  }
+
+  /** kod pokazany (także gdy serwer go nie dał: bez ponawiania, dalej jest w Menu); trafia do następnego zapisu */
+  kodPokazany(): void {
+    if (this.stan) this.stan.kodPokazany = true;
+  }
+
+  /** Usuwa drużynę anonimową z serwera (DELETE /api/konto, bez hasła: klatki, zapis w chmurze, kod powrotu i sesja).
+      Po 204 sieć w tej grze się kończy: gra toczy się dalej bez zapisów do chmury, odświeżania klatek i przycisków sieci
+      w Menu, a stan sieci zostaje w zapisie z `usunieta` (ten sam świat, gra bez sieci także po wczytaniu). Porażka
+      (powód w blad()) niczego nie zmienia. Konto z nickiem usuwa się hasłem poza grą, więc tu daje false bez pytania. */
+  async usun(): Promise<boolean> {
+    this.bladSerwera = null;
+    if (!this.anonimowa() || !this.stan || this.bezSieci) return false;
+    const stan = this.stan;
+    const r = await this.api.usunDruzyne();
+    if (!r.ok) {
+      this.bladSerwera = txBledu(r);
+      return false;
+    }
+    // spóźnione odpowiedzi z sieci tej gry (odświeżenie klatek, zapis do chmury) nic już nie zmieniają
+    this.gen++;
+    stan.usunieta = true;
+    this.zalogowani = false;
+    this.znak = null;
+    this.anonimowe = false;
+    this.bezSieci = true;
+    this.chmura = null;
+    this.wersjaZChmury = undefined;
+    this.wersjaChmury = undefined;
+    this.klatki = [];
+    this.cel = null;
+    this.zn = [];
+    this.widok = this.widokBazowy();
+    this.rysuj();
+    return true;
   }
 
   /** sesja z odpowiedzi serwera (konto z nickiem, drużyna anonimowa, powrót kodem) */
@@ -368,12 +443,20 @@ export class GraSieciowa {
     if (saved?.siec) {
       const swiat = zbuduj(saved.siec.zajete);
       this.ustaw(data, swiat, { ...saved.siec });
-      const obce = !!saved.siec.konto && saved.siec.konto !== this.znak;
-      this.bezSieci = !this.zalogowani || obce;
+      // drużyna usunięta z serwera w Menu: ta gra jest już bez sieci na stałe, na czyimkolwiek koncie
+      const usunieta = !!saved.siec.usunieta;
+      const obce = !usunieta && !!saved.siec.konto && saved.siec.konto !== this.znak;
+      this.bezSieci = usunieta || !this.zalogowani || obce;
       if (this.zalogowani && obce)
         this.komunikat = tx(
           'Ten zapis jest z gry innego konta, więc gra toczy się bez sieci.',
           'This save is from another account’s game, so it carries on offline.',
+        );
+      else if (!usunieta && !this.zalogowani && this.dostepny && saved.siec.konto?.startsWith('#'))
+        // zgubione ciasteczko (inna przeglądarka, karta prywatna): gra nie ma po co milczeć, kod powrotu jest na karcie startowej
+        this.komunikat = tx(
+          'Nie ma tu sesji waszej drużyny, więc gra toczy się bez sieci. Kod powrotu wpisany na karcie startowej przywróci grę w sieci.',
+          'There is no session for your team in this browser, so the game carries on offline. Entering your return code on the start card brings it back online.',
         );
       // zapis z chmury albo ten sam zapis co w chmurze (ta sama chwila zapisu, np. wysłany przy zamykaniu strony, kiedy
       // odpowiedź z nową wersją już nie doszła): od wersji z serwera; inny zapis z przeglądarki: od wersji, którą ta gra
@@ -443,7 +526,7 @@ export class GraSieciowa {
     this.srodek = data.geo.c;
     this.stan = stan;
     this.dane = data;
-    this.cel = stan.dom ? null : klatkaSiedziby(swiat, data.geo.c);
+    this.cel = stan.dom || stan.usunieta ? null : klatkaSiedziby(swiat, data.geo.c);
   }
 
   /** wczytana gra sieciowa: nasza klatka jeszcze raz na serwerze (bez zmian, jeśli jest nasza) i znaczniki */

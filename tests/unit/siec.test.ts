@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiGry, Wynik } from '../../src/net/api.ts';
 import { GraSieciowa, PONOWNY_START } from '../../src/net/gra.ts';
-import {
-  type Ja,
-  type KodBledu,
-  normalizujKod,
-  type ZajetaKlatka,
-  type ZajetaOdpowiedz,
-  type ZajmijKlatke,
-} from '../../src/net/protokol.ts';
+import type { ZajetaKlatka, ZajetaOdpowiedz, ZajmijKlatke } from '../../src/net/protokol.ts';
 import {
   type ApiSieci,
   doZajecia,
@@ -28,6 +21,7 @@ import type { Loaded } from '../../src/world/load.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS, type World } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
+import { ok, udawaneApiGry, zle } from './siec-api-atrapa.ts';
 import { atrapaBloku } from './siec-blok-atrapa.ts';
 
 const adr = ADDRESSES.find((a) => a.key === 'lanciego') as (typeof ADDRESSES)[number];
@@ -36,14 +30,6 @@ const C = geo.c;
 const zbuduj = (bez: string[] | null) => buildWorld(geo, { seed: 1, ...(bez?.length ? { bezSiedziby: bez } : {}) });
 const w0 = zbuduj([]);
 const k0 = klatkaSiedziby(w0, C) as NonNullable<ReturnType<typeof klatkaSiedziby>>;
-
-const ok = <T>(dane: T, status = 200): Wynik<T> => ({ ok: true, status, dane });
-const zle = <T>(status: number, blad: KodBledu, komunikat = 'błąd'): Wynik<T> => ({
-  ok: false,
-  status,
-  blad,
-  komunikat,
-});
 
 /** udawany serwer dla przepływu startu: lista zajętych i odpowiedź na zajęcie */
 function udawane(
@@ -271,107 +257,6 @@ describe('gra z sąsiadami: siedziba i start (src/net/siec.ts)', () => {
     expect(htmlSieci({ stan: 'druzyna', znak: '<i>#1</i>', komunikat: '<u>x</u>' })).not.toContain('<i>');
   });
 });
-
-/** Ja z serwera: nick konta albo „#<id>” drużyny anonimowej */
-const jaSerwera = (znak: string): Ja => ({
-  nick: znak.startsWith('#') ? null : znak,
-  utworzone: 1,
-  klatki: 0,
-  zapis: false,
-  anonimowe: znak.startsWith('#'),
-  znak,
-  kod: false,
-});
-
-/** udawane API dla GraSieciowa: serwer działa, gracz zalogowany (nick null: bez sesji), zapis i klatki w pamięci */
-function udawaneApiGry(
-  o: {
-    /** konto z nickiem z ważną sesją (domyślnie „Sasiad”; null: bez sesji) */
-    nick?: string | null;
-    /** drużyna anonimowa z ważną sesją (jej znak, np. „#7”), zamiast konta z nickiem */
-    anonimowa?: string;
-    /** serwer gry nie odpowiada (GitHub Pages, serwer leży) */
-    bezSerwera?: boolean;
-    zajeteNaStarcie?: ZajetaKlatka[];
-    /** lista z serwera przy następnych pytaniach (odświeżanie w trakcie gry) */
-    zajetePozniej?: ZajetaKlatka[];
-    /** odpowiedź na zajęcie klatki w trakcie gry (bez niej: zajęta dla nas) */
-    zajmij?: (k: ZajmijKlatke) => Wynik<ZajetaOdpowiedz>;
-    /** zapis w chmurze */
-    chmura?: { dane: unknown; wersja: number };
-    /** odpowiedź na założenie drużyny (bez niej: nowa drużyna „#7”, od razu z sesją) */
-    druzyna?: () => Wynik<Ja>;
-    /** kody powrotu (w postaci znormalizowanej) → znak drużyny */
-    kody?: Record<string, string>;
-    /** odpowiedź na punkt startu, n-te wywołanie od 1 (bez niej: przyjęty) */
-    start?: (n: number) => Wynik<undefined>;
-    /** zajete odpowiada 409 brak_startu, dopóki punkt startu nie został podany (jak serwer po restarcie) */
-    wymagaStartu?: boolean;
-  } = {},
-) {
-  const log: string[] = [];
-  let pytan = 0;
-  let startPodany = false;
-  const nick = o.nick === undefined ? 'Sasiad' : o.nick;
-  let sesja: Ja | null = o.anonimowa ? jaSerwera(o.anonimowa) : nick ? jaSerwera(nick) : null;
-  let zawsze409 = false;
-  let startow = 0;
-  const api = {
-    serwerDostepny: async () => !o.bezSerwera,
-    ja: async () => (sesja ? ok(sesja) : zle(401, 'brak_sesji', 'Nie jesteście zalogowani.')),
-    druzyna: async () => {
-      log.push('druzyna');
-      const r = o.druzyna ? o.druzyna() : ok(jaSerwera('#7'), 201);
-      if (r.ok) sesja = r.dane;
-      return r;
-    },
-    powrot: async (kod: string) => {
-      log.push(`powrot ${kod}`);
-      const znak = o.kody?.[normalizujKod(kod) ?? ''];
-      if (!znak) return zle<Ja>(401, 'zly_kod', 'Ten kod nie pasuje do żadnej drużyny.');
-      sesja = jaSerwera(znak);
-      return ok(sesja);
-    },
-    punktStartu: async () => {
-      log.push('start');
-      const r = o.start ? o.start(++startow) : ok(undefined, 204);
-      if (r.ok) startPodany = true;
-      return r;
-    },
-    pobierzZapis: async () => (o.chmura ? ok(o.chmura) : zle(404, 'brak_zapisu')),
-    zwolnijWszystkie: async () => {
-      log.push('zwolnij');
-      return ok(undefined, 204);
-    },
-    zajete: async () => {
-      log.push('zajete');
-      if (o.wymagaStartu && (zawsze409 || !startPodany))
-        return zle(409, 'brak_startu', 'Serwer nie zna punktu startu.');
-      pytan++;
-      return ok({ klatki: (pytan > 1 ? o.zajetePozniej : undefined) ?? o.zajeteNaStarcie ?? [] });
-    },
-    zajmij: async (k: ZajmijKlatke) => {
-      log.push(`zajmij ${k.klucz}`);
-      return o.zajmij ? o.zajmij(k) : ok({ klatka: { ...k, moja: true, siedziba: false } }, 201);
-    },
-    wyslijZapis: async (_dane: unknown, wersja?: number) => {
-      log.push(`chmura ${wersja ?? '-'}`);
-      return ok({ wersja: (wersja ?? 0) + 1, zmieniony: 1, rozmiar: 1 });
-    },
-    usunZapis: async () => {
-      log.push('usun');
-      return ok(undefined, 204);
-    },
-    adres: async () => zle(404, 'nie_ma'),
-  } as unknown as ApiGry;
-  /** serwer wstał od nowa: punkty startu zniknęły z pamięci, sesje zostały w bazie; upiera: i po punkcie startu
-      zajete dalej odpowiada brak_startu */
-  const restart = (upiera = false) => {
-    startPodany = false;
-    zawsze409 = upiera;
-  };
-  return { api, log, restart };
-}
 
 const dane: Loaded = { geo, name: 'Ursynów', addr: 'Lanciego 10G, Warszawa', street: 'Lanciego', src: 'mvt' };
 const chwila = () => new Promise((r) => setTimeout(r, 0));

@@ -75,6 +75,36 @@
   color: var(--lamp);
 }
 
+/* okno z kodem powrotu drużyny (kodSheet): kod dużą czcionką, jedno kliknięcie zaznacza go całego (zaznaczenie jest też
+   rezerwą przycisku „Kopiuj”, kiedy schowek odmawia), na telefonie font skaluje się z szerokością, żeby kod z myślnikami
+   mieścił się w jednym wierszu */
+.kod-wartosc {
+  text-align: center;
+}
+.kod-kod {
+  display: inline-block;
+  max-width: 100%;
+  padding: 10px 14px;
+  background: var(--slab-deep);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--lamp);
+  border-radius: 6px;
+  font:
+    700 clamp(22px, 7.2vw, 34px) / 1.15 ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  color: var(--lamp);
+  user-select: all;
+  -webkit-user-select: all;
+  white-space: nowrap;
+}
+.kod-blad {
+  color: var(--lamp);
+}
+
 /* znaczniki klatek na mapie: cudza (zajęte), nasza, cel drużyny bez domu (wolna klatka) */
 .klatki {
   position: absolute;

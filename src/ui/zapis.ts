@@ -38,8 +38,17 @@ export interface Save {
   /** odcisk świata (worldKey): po zmianie generatora stary stan nie pasuje do nowego wnętrza */
   world?: string;
   /** gra sieciowa (src/net/siec.ts, StanSieci): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak
-      samo), czy drużyna ma już dom, konto gry i wersja zapisu w chmurze; brak: gra bez sieci */
-  siec?: { zajete: string[]; dom: boolean; utracony?: string; konto?: string; wersja?: number };
+      samo), czy drużyna ma już dom, konto gry, wersja zapisu w chmurze, czy kod powrotu już się pokazał i czy drużyna
+      została usunięta z serwera (gra bez sieci); brak: gra bez sieci */
+  siec?: {
+    zajete: string[];
+    dom: boolean;
+    utracony?: string;
+    konto?: string;
+    wersja?: number;
+    kodPokazany?: boolean;
+    usunieta?: boolean;
+  };
   /** widok pięter (?pietra=1): świat buduje się z awansowanymi domami; nieobecne przy wyłączonej fladze, więc zapis
       sprzed zmiany i zapis bez flagi są bajt w bajt takie same. O fladze wczytanej gry decyduje to pole, nie adres */
   pietra?: true;

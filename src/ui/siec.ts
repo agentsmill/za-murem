@@ -12,10 +12,22 @@
    - logowanie: dawny formularz z nickiem i hasłem (logowanie i zakładanie konta) z przyciskiem „Wróć” (data-siec="wroc").
 
    Napisy w bieżącym języku (src/core/jezyk.ts) przy rysowaniu; komunikat w widoku może być Tx, więc po zmianie języka
-   blok rysuje się od nowa w nowym języku (GraSieciowa.przerysuj). Nick i kod zostają takie, jak je wpisano. */
+   blok rysuje się od nowa w nowym języku (GraSieciowa.przerysuj). Nick i kod zostają takie, jak je wpisano.
+
+   W grze (nie na karcie startowej) ten moduł daje jeszcze dwa okna Menu i kopiowanie kodu, wszystko jako czyste
+   funkcje bez DOM, które obsługuje main.ts:
+   - kodSheet: kod powrotu drużyny dużą czcionką z przyciskiem kopiowania (`kod-kopiuj`) i zamknięciem (`kod-ok`, jedyne
+     zamknięcie okna z kodem: serwer pokazuje kod raz); bez kodu (serwer nie odpowiedział) pokazuje powód i przypomina,
+     że kod jest w Menu, a Esc też zamyka. Pokazuje się raz po pierwszym porannym raporcie drużyny anonimowej i na
+     żądanie z Menu (`menu-kod`),
+   - usunSheet (tone `usun`): pytanie o usunięcie drużyny z serwera (`usun-tak`, `usun-nie`) z powodem porażki, gdy
+     serwer odmówił,
+   - kopiujKod: kod do schowka, a gdy schowka brak albo odmawia (brak zgody, strona bez https), zaznaczenie tekstu
+     kodu bez żadnego błędu na ekranie. */
 
 import './siec.css';
 import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { btn, type Sheet } from './okna.ts';
 import { esc } from './tekst.ts';
 
 export interface WidokSieci {
@@ -77,3 +89,73 @@ export const NAPIS_ZNACZNIKA = {
   nasza: tx('wasza klatka', 'your stairwell'),
   cel: tx('wolna klatka', 'free stairwell'),
 } as const satisfies Record<string, Tx>;
+
+/** Okno z kodem powrotu drużyny (Menu i pierwszy poranek). `kod` null: serwer nie dał kodu, `blad` mówi czemu (Tx albo
+    napis), a kod wciąż można wziąć z Menu; takie okno zamyka też Esc. Ostrzeżenie o unieważnieniu jest w oknie, bo każdy
+    nowy kod wyłącza stary. */
+export function kodSheet(kod: string | null, blad?: Tx | string): Sheet {
+  const kicker = L('Gra z sąsiadami', 'Play with the neighbours');
+  const title = L('Kod powrotu drużyny', 'Team return code');
+  if (kod === null) {
+    const powod = tr(blad ?? tx('Nie udało się pobrać kodu powrotu.', 'Could not get the return code.'));
+    return {
+      tone: 'menu',
+      kicker,
+      title,
+      body: `<p class="kod-blad" role="alert">${esc(powod)}</p><p>${L(
+        'Kod powrotu możecie wziąć w każdej chwili z Menu.',
+        'You can get a return code from the Menu at any time.',
+      )}</p>`,
+      foot: btn('kod-ok', L('Zamknij', 'Close'), 'btn go'),
+      closable: true,
+    };
+  }
+  return {
+    tone: 'menu',
+    kicker,
+    title,
+    body: `<p class="kod-wartosc"><code class="kod-kod" id="kodWartosc">${esc(kod)}</code></p><p>${L(
+      'Zapiszcie go. Z tym kodem wrócicie do drużyny w innej przeglądarce. Nowy kod unieważnia poprzedni.',
+      'Write it down. This code brings you back to your team in another browser. A new code invalidates the previous one.',
+    )}</p>`,
+    foot: `${btn('kod-kopiuj', L('Kopiuj', 'Copy'), 'btn')}${btn('kod-ok', L('Zapisane', 'Saved it'), 'btn go')}`,
+    // z kodem tylko przycisk zamyka okno: serwer pokazuje kod raz, więc przypadkowy Esc albo klik obok nie może go zabrać
+    closable: false,
+  };
+}
+
+/** Pytanie o usunięcie drużyny anonimowej z serwera (z Menu). `blad`: powód, dla którego poprzednia próba się nie udała. */
+export function usunSheet(blad?: Tx | string): Sheet {
+  return {
+    tone: 'usun',
+    kicker: L('Na pewno?', 'Are you sure?'),
+    title: L('Usunąć drużynę z serwera?', 'Delete the team from the server?'),
+    body: `<p>${L(
+      'Z serwera znikną klatki drużyny, zapis w chmurze i kod powrotu. Ta gra toczy się dalej w tej przeglądarce, ale bez sieci.',
+      'The team’s stairwells, cloud save and return code disappear from the server. This game carries on in this browser, but offline.',
+    )}</p><p>${L('Tego nie da się cofnąć.', 'This cannot be undone.')}</p>${
+      blad ? `<p class="kod-blad" role="alert">${esc(tr(blad))}</p>` : ''
+    }`,
+    foot: `${btn('usun-nie', L('Nie', 'No'), 'btn ghost')}${btn('usun-tak', L('Usuń drużynę', 'Delete the team'), 'btn go')}`,
+    closable: true,
+  };
+}
+
+/** Kopiuje kod do schowka. Gdy schowka nie ma albo odmawia (brak zgody, strona bez https), woła `zaznacz` (zaznaczenie
+    tekstu kodu, żeby gracz skopiował go sam) i nie zgłasza żadnego błędu. Prawda tylko wtedy, gdy kod trafił do schowka. */
+export async function kopiujKod(
+  kod: string,
+  schowek: { writeText(tekst: string): Promise<void> } | undefined,
+  zaznacz: () => void,
+): Promise<boolean> {
+  try {
+    if (schowek) {
+      await schowek.writeText(kod);
+      return true;
+    }
+  } catch {
+    // schowek odmówił: zostaje zaznaczenie
+  }
+  zaznacz();
+  return false;
+}

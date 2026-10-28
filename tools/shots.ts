@@ -28,7 +28,13 @@ import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { kafelkiMapy, openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
-import { celeShots } from './shots-cele.ts';
+import {
+  celeShots,
+  kliknij,
+  przewin as przewinDoOkna,
+  chopDryTree as sciecieSuchegoDrzewa,
+  zamknijOkna,
+} from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
 import { osadaShots } from './shots-osada.ts';
 import { tekstyShots } from './shots-teksty.ts';
@@ -11616,6 +11622,7 @@ function kartaShots(): Shot[] {
 /** Udawany serwer gry pod /api (page.route): zdrowie, konto, klatki w pamięci, zapis w chmurze. zalogowani: GET
     /api/konto daje konto z nickiem; anonimowa: daje drużynę anonimową („#7”); bez obu gracz nie ma sesji, a drużynę
     zakłada POST /api/druzyna (201, albo 503 z druzyna503), kod KOD_UDAWANY w POST /api/druzyna/powrot wraca do niej;
+    POST /api/druzyna/kod daje KOD_UDAWANY (pierwszy raz 503 z kod503), DELETE /api/konto usuwa drużynę i sesję;
     zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był szybszy, start bez domu);
     adres: GET /api/adres odpowiada Lanciego 10G zamiast nie_ma (wtedy gra nie pyta Nominatim). */
 async function fakeApi(
@@ -11629,10 +11636,13 @@ async function fakeApi(
     adres?: boolean;
     /** POST /api/druzyna odpowiada 503 (serwer przeciążony) */
     druzyna503?: boolean;
+    /** pierwszy POST /api/druzyna/kod odpowiada 503 (kolejne dają KOD_UDAWANY) */
+    kod503?: boolean;
   } = {},
 ) {
   const klatki = [...(o.zajete ?? [])];
   let zajec = 0;
+  let kodow = 0;
   let sesja: 'nick' | 'druzyna' | null = o.zalogowani ? 'nick' : o.anonimowa ? 'druzyna' : null;
   await page.route('**/api/**', async (r) => {
     const req = r.request();
@@ -11657,6 +11667,18 @@ async function fakeApi(
         return json(401, { blad: 'zly_kod', komunikat: 'Ten kod nie pasuje do żadnej drużyny.' });
       sesja = 'druzyna';
       return json(200, JA_DRUZYNA);
+    }
+    if (path0 === '/druzyna/kod' && m === 'POST') {
+      kodow++;
+      if (o.kod503 && kodow === 1)
+        return json(503, { blad: 'serwer_zajety', komunikat: 'Serwer jest przeciążony. Spróbujcie za chwilę.' });
+      return json(200, { kod: KOD_UDAWANY });
+    }
+    if (path0 === '/konto' && m === 'DELETE') {
+      // drużyna anonimowa znika razem z klatkami; sesja kończy się jak po skasowanym ciasteczku
+      sesja = null;
+      for (let i = klatki.length - 1; i >= 0; i--) if (klatki[i].moja) klatki.splice(i, 1);
+      return r.fulfill({ status: 204, body: '' });
     }
     if (path0 === '/druzyna/start' && m === 'PUT') return r.fulfill({ status: 204, body: '' });
     if (path0.startsWith('/adres') && m === 'GET' && o.adres) {
@@ -11815,8 +11837,200 @@ async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: bo
   wymagaj(!(await bokiem()), 'karta po powrocie do drużyny przewija się w bok');
 }
 
+/** Okno nad grą mieści się w widoku (bez przewijania strony w bok), a atrybucja map jest widoczna, w widoku i poza oknem. */
+async function oknoWidoku(page: Page, opis: string): Promise<void> {
+  const g = await page.evaluate(() => {
+    const s = document.getElementById('sheet')!.getBoundingClientRect();
+    const a = document.querySelector<HTMLElement>('#app .attrib');
+    const r = a?.getBoundingClientRect();
+    return {
+      okno: [s.left, s.top, s.right, s.bottom].map(Math.round),
+      widok: [innerWidth, innerHeight],
+      atr: r ? [r.left, r.top, r.right, r.bottom].map(Math.round) : null,
+      atrTekst: a?.textContent ?? '',
+      bok: document.documentElement.scrollWidth > innerWidth + 1,
+    };
+  });
+  const bledy: string[] = [];
+  const [l, t, r, b] = g.okno;
+  if (l < 0 || t < 0 || r > g.widok[0] + 1 || b > g.widok[1] + 1) bledy.push('okno wystaje poza ekran');
+  if (g.bok) bledy.push('strona przewija się w bok');
+  if (!g.atr) bledy.push('brak atrybucji map');
+  else {
+    const [al, at, ar, ab] = g.atr;
+    if (ar <= al || ab <= at || ab > g.widok[1] + 1 || ar > g.widok[0] + 1) bledy.push('atrybucja poza widokiem');
+    if (!(ar <= l || al >= r || ab <= t || at >= b)) bledy.push('atrybucja pod oknem');
+    if (!/OpenStreetMap/.test(g.atrTekst) || !/OpenFreeMap/.test(g.atrTekst) || !/OpenMapTiles/.test(g.atrTekst))
+      bledy.push('atrybucja bez trzech źródeł');
+  }
+  console.log(
+    `  ${opis}: okno ${g.okno.join(',')} w widoku ${g.widok.join('×')}, atrybucja ${g.atr?.join(',') ?? '-'}`,
+  );
+  if (bledy.length) throw new Error(`${opis}: ${bledy.join('; ')} ${JSON.stringify(g)}`);
+}
+
+/** Menu gry sieciowej drużyny anonimowej: przyciski kodu powrotu i usunięcia, okno kodu (kopiowanie), pytanie o
+    usunięcie („Nie” wraca do Menu), usunięcie (gra toczy się dalej bez sieci, jeden komunikat, zapis nie idzie do chmury,
+    Menu bez przycisków sieci). Zrzuty pośrednie <nazwa>-menu, -kod, -usun; końcowy <nazwa> to Menu po usunięciu. */
+async function kodWMenu(page: Page, base: string, nazwa: string): Promise<void> {
+  await fakeApi(page, { adres: true });
+  const zapytania: string[] = [];
+  page.on('request', (q) => {
+    const u = new URL(q.url());
+    if (u.pathname.startsWith('/api/') && q.method() !== 'GET') zapytania.push(`${q.method()} ${u.pathname}`);
+  });
+  await startSieci(page, base);
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  const ile = (z: string) => zapytania.filter((x) => x === z).length;
+  await page.click('#btnMenu');
+  await page.waitForSelector('#modal:not([hidden]) [data-act="menu-kod"]');
+  wymagaj(!!(await page.$('[data-act="menu-usun"]')), 'Menu drużyny anonimowej bez usunięcia');
+  await oknoWidoku(page, 'Menu');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-menu.png`) });
+  // okno z kodem: nowy kod z serwera, kopiowanie (schowek albo zaznaczenie), „Zapisane” wraca do Menu
+  await page.click('[data-act="menu-kod"]');
+  await page.waitForSelector('#kodWartosc');
+  wymagaj((await page.$eval('#kodWartosc', (e) => e.textContent)) === KOD_UDAWANY, 'kod z serwera nie widać w oknie');
+  wymagaj(ile('POST /api/druzyna/kod') === 1, 'kod nie raz z serwera');
+  await oknoWidoku(page, 'Kod');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-kod.png`) });
+  await page.click('[data-act="kod-kopiuj"]');
+  await page.waitForFunction((kod) => {
+    const przycisk = document.querySelector('[data-act="kod-kopiuj"]')?.textContent ?? '';
+    return /Skopiowano|Copied/.test(przycisk) || window.getSelection()?.toString().trim() === kod;
+  }, KOD_UDAWANY);
+  const sposob = await page.$eval('[data-act="kod-kopiuj"]', (e) =>
+    /Skopiowano|Copied/.test(e.textContent ?? '') ? 'schowek' : 'zaznaczenie',
+  );
+  console.log(`  kopiowanie: ${sposob}`);
+  await page.click('[data-act="kod-ok"]');
+  await page.waitForSelector('[data-act="menu-usun"]');
+  // pytanie o usunięcie: „Nie” wraca do Menu, nic nie poszło do serwera
+  await page.click('[data-act="menu-usun"]');
+  await page.waitForSelector('[data-act="usun-tak"]');
+  await oknoWidoku(page, 'Usunięcie');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-usun.png`) });
+  await page.click('[data-act="usun-nie"]');
+  await page.waitForSelector('[data-act="menu-usun"]');
+  wymagaj(ile('DELETE /api/konto') === 0, 'drużyna usunięta mimo „Nie”');
+  await page.click('[data-act="menu-usun"]');
+  await page.click('[data-act="usun-tak"]');
+  await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+  wymagaj(ile('DELETE /api/konto') === 1, 'usunięcie nie raz');
+  const s = await page.evaluate(() => window.zm!.siec());
+  console.log(`  po usunięciu: ${JSON.stringify(s.stan)}, zalogowani ${s.zalogowani}, bez sieci ${s.bezSieci}`);
+  wymagaj(s.bezSieci && !s.zalogowani && s.stan?.usunieta === true, 'gra nie przeszła na tryb bez sieci');
+  await page.waitForFunction(() =>
+    /Drużyna usunięta z serwera|The team is deleted from the server/.test(
+      document.getElementById('hint')?.textContent ?? '',
+    ),
+  );
+  // zapis gry idzie już tylko do przeglądarki; zapytań do serwera nie przybywa
+  const przed = zapytania.length;
+  await page.evaluate(() => window.zm!.save());
+  await page.waitForTimeout(300);
+  wymagaj(zapytania.length === przed, `po usunięciu poszły zapytania: ${zapytania.slice(przed).join(', ')}`);
+  const zapis = await page.evaluate(() => {
+    const klucz = Object.keys(localStorage).find((k) => /za-murem.*(zapis|save)/i.test(k));
+    const s = klucz ? JSON.parse(localStorage.getItem(klucz) ?? 'null') : null;
+    return { klucz, siec: s?.siec ?? null };
+  });
+  console.log(`  zapis w przeglądarce (${zapis.klucz}): ${JSON.stringify(zapis.siec)}`);
+  wymagaj(zapis.siec?.usunieta === true, 'zapis w przeglądarce bez znacznika usuniętej drużyny');
+  // Menu po usunięciu: bez przycisków sieci
+  await page.click('#btnMenu');
+  await page.waitForSelector('#modal:not([hidden]) [data-act="menu-start"]');
+  wymagaj(!(await page.$('[data-act="menu-kod"], [data-act="menu-usun"]')), 'Menu po usunięciu ma przyciski sieci');
+  await oknoWidoku(page, 'Menu po usunięciu');
+}
+
+/** Pierwszy poranny raport drużyny anonimowej w sieci: po „OK” raportu okno z kodem raz (stan sieci w zapisie), po drugiej
+    nocy już nie. Z kod503 pierwszy kod nie przychodzi: okno z powodem raz, bez ponawiania, a kod bierze się z Menu. */
+async function kodPoRaporcie(page: Page, base: string, nazwa: string, kod503: boolean): Promise<void> {
+  await fakeApi(page, { adres: true, kod503 });
+  const kody: string[] = [];
+  page.on('request', (q) => {
+    if (q.method() === 'POST' && q.url().endsWith('/api/druzyna/kod')) kody.push(q.url());
+  });
+  await startSieci(page, base);
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  const raport = async (pierwszy: boolean) => {
+    if (pierwszy) await sciecieSuchegoDrzewa(page);
+    const o = await przewinDoOkna(page, () => false, { dotyk: false, stop: ['raport'] });
+    wymagaj(o === 'raport', `bez porannego raportu (${o})`);
+    await kliknij(page, '#sheet [data-act="report-ok"]', false);
+  };
+  await raport(true);
+  if (kod503) {
+    await page.waitForSelector('#sheet .kod-blad');
+    wymagaj(!(await page.$('#kodWartosc')), 'kod mimo błędu serwera');
+    wymagaj(!(await page.$('[data-act="kod-kopiuj"]')), 'kopiowanie bez kodu');
+    await oknoWidoku(page, 'Błąd kodu');
+    await page.screenshot({ path: path.join(OUT, `${nazwa}-blad.png`) });
+  } else {
+    await page.waitForSelector('#kodWartosc');
+    wymagaj((await page.$eval('#kodWartosc', (e) => e.textContent)) === KOD_UDAWANY, 'kod z serwera nie widać w oknie');
+    await oknoWidoku(page, 'Kod po raporcie');
+    await page.screenshot({ path: path.join(OUT, `${nazwa}-kod.png`) });
+  }
+  wymagaj(kody.length === 1, `kod z serwera ${kody.length} razy po raporcie`);
+  wymagaj((await page.evaluate(() => window.zm!.siec())).stan?.kodPokazany === true, 'kodPokazany nie w stanie sieci');
+  await page.click('[data-act="kod-ok"]');
+  await page.waitForFunction(() => !document.querySelector('#kodWartosc, .kod-blad'));
+  await zamknijOkna(page, false);
+  // kod w Menu: po błędzie serwera ten sam przycisk daje już kod
+  if (kod503) {
+    await page.click('#btnMenu');
+    await page.waitForSelector('[data-act="menu-kod"]');
+    await page.click('[data-act="menu-kod"]');
+    await page.waitForSelector('#kodWartosc');
+    wymagaj(kody.length === 2, `drugi kod z Menu (${kody.length})`);
+    await page.click('[data-act="kod-ok"]');
+    await page.waitForSelector('[data-act="menu-back"]');
+    await page.click('[data-act="menu-back"]');
+    await zamknijOkna(page, false);
+  }
+  // druga noc i drugi raport: okna z kodem nie ma
+  const ileKodow = kody.length;
+  await raport(false);
+  await page.waitForTimeout(600);
+  wymagaj(!(await page.$('#kodWartosc, .kod-blad')), 'kod po drugim raporcie');
+  wymagaj(kody.length === ileKodow, 'drugi poranek pytał serwer o kod');
+}
+
 function siecShots(): Shot[] {
   return [
+    ...[
+      { nazwa: 'siec-kod', lang: 'pl', telefon: false },
+      { nazwa: 'siec-kod-telefon', lang: 'pl', telefon: true },
+      { nazwa: 'siec-kod-en', lang: 'en', telefon: false },
+      { nazwa: 'siec-kod-telefon-en', lang: 'en', telefon: true },
+    ].map(
+      ({ nazwa, lang, telefon }): Shot => ({
+        // Menu gry sieciowej, okno kodu powrotu i usunięcie drużyny (komputer i telefon 390×844, po polsku i po angielsku)
+        name: nazwa,
+        query: '',
+        lang: lang as 'pl' | 'en',
+        ...(telefon ? { w: 390, h: 844 } : {}),
+        run: (page, base) => kodWMenu(page, base, nazwa),
+      }),
+    ),
+    {
+      // kod powrotu raz po pierwszym porannym raporcie; po drugiej nocy już nie
+      name: 'siec-kod-raport',
+      query: '',
+      run: (page, base) => kodPoRaporcie(page, base, 'siec-kod-raport', false),
+    },
+    {
+      // serwer nie daje kodu po raporcie: okno z powodem raz, kod dalej w Menu
+      name: 'siec-kod-raport-503',
+      query: '',
+      run: (page, base) => kodPoRaporcie(page, base, 'siec-kod-raport-503', true),
+    },
     {
       // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza (konto
       // z nickiem, dawną drogą przez odnośnik „logowanie”) zajmuje klatkę pod adresem, druga (drużyna anonimowa założona

@@ -196,7 +196,7 @@ export async function przewin(
 }
 
 /** odpowiada na okna zarządu, które już czekają (bez przewijania czasu), aż żadne nie zostanie */
-async function zamknijOkna(page: Page, dotyk: boolean): Promise<void> {
+export async function zamknijOkna(page: Page, dotyk: boolean): Promise<void> {
   for (let k = 0; k < 12; k++) {
     const w = await okno(page);
     if (!w) return;

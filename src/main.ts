@@ -3,8 +3,9 @@
    wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
    przy włączonej sieci (src/net/flaga.ts: ?siec=1 albo VITE_SIEC=1 z budowy; src/net/gra.ts: drużyna anonimowa zakładana
-   przy pierwszej grze na prawdziwym adresie, kod powrotu na karcie startowej, adres przez serwer gry tylko przy
-   odpowiadającym serwerze; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
+   przy pierwszej grze na prawdziwym adresie, kod powrotu na karcie startowej, w Menu i raz po pierwszym porannym
+   raporcie, usunięcie drużyny z serwera w Menu, adres przez serwer gry tylko przy odpowiadającym serwerze; mieszkańcy
+   z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału i okazji co odświeżenie
    okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, a okienko wyższe od ekranu
@@ -256,6 +257,7 @@ import {
 } from './ui/sciezka.ts';
 import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
+import { kodSheet, kopiujKod, usunSheet } from './ui/siec.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import {
@@ -1440,14 +1442,20 @@ function showPrompt(p: Prompt) {
   pauseGame();
   ctx.close();
   if (p.k === 'raport')
-    modal.show(reportSheet(p.report), (act) => {
+    modal.show(reportSheet(p.report), (act, _arg, el) => {
       if (act !== 'report-ok') return;
       ackReport(g, input());
       if (dayPace !== null) {
         hold = dayPace;
         dayPace = null;
       }
-      decided();
+      // pierwszy poranek drużyny anonimowej w sieci: kod powrotu raz, zanim gra pójdzie dalej (tylko jedno takie okno,
+      // także gdy serwer nie da kodu; wtedy kod zostaje w Menu)
+      if (siec.pokazacKod()) {
+        siec.kodPokazany();
+        save();
+        void pokazKod(decided, decided, el as HTMLButtonElement);
+      } else decided();
     });
   else if (p.k === 'uchwala')
     modal.show(zCelem(lawSheet(p, words, wordsE), 'uchwala'), (act, arg) => {
@@ -2710,6 +2718,89 @@ $('zHome').onclick = () => {
   flyTo(((hq.x0 + hq.x1 + 1) / 2) * TILE, ((hq.y0 + hq.y1 + 1) / 2) * TILE + 120, Math.max(1, view.cam.zoom), 700);
 };
 
+/* ---------- kod powrotu i usunięcie drużyny (gra sieciowa, src/ui/siec.ts) ---------- */
+/** Okno z nowym kodem powrotu drużyny. Kod bierze z serwera, więc krótko czeka na odpowiedź (przycisk, którym je wywołano,
+    jest wtedy wyłączony i zmienia napis, a zmiana języka nie rysuje poprzedniego okna od nowa). `ok`: dokąd po „Zapisane”;
+    `zamkniecie`: dokąd po Esc albo kliknięciu obok, które zamykają tylko okno bez kodu (z kodem zamyka je sam przycisk).
+    Gdy serwer nie da kodu, to samo okno mówi czemu, bez ponawiania; kod można wziąć z Menu jeszcze raz. Okno pokazuje się
+    zawsze, bo nowy kod unieważnił poprzedni. */
+async function pokazKod(ok: () => void, zamkniecie: () => void, przycisk: HTMLButtonElement) {
+  sheetAgain = null;
+  przycisk.disabled = true;
+  przycisk.textContent = L('Pobieram kod…', 'Fetching the code…');
+  const kod = await siec.kod();
+  const blad = siec.blad() ?? undefined;
+  const pokaz = () => {
+    sheetAgain = pokaz;
+    modal.show(
+      kodSheet(kod, blad),
+      (act, _arg, el) => {
+        if (act === 'kod-ok') ok();
+        else if (act === 'kod-kopiuj' && kod) void kopiujKodZOkna(kod, el);
+      },
+      zamkniecie,
+    );
+  };
+  pauseGame();
+  ctx.close();
+  pokaz();
+}
+
+/** „Kopiuj” w oknie kodu: do schowka, a gdy schowka brak albo odmawia, kod zostaje zaznaczony (bez błędu na ekranie) */
+async function kopiujKodZOkna(kod: string, przycisk: HTMLElement) {
+  const zaznacz = () => {
+    const pole = modal.find('#kodWartosc');
+    const zaznaczenie = window.getSelection();
+    if (!pole || !zaznaczenie) return;
+    const zakres = document.createRange();
+    zakres.selectNodeContents(pole);
+    zaznaczenie.removeAllRanges();
+    zaznaczenie.addRange(zakres);
+  };
+  const skopiowano = await kopiujKod(kod, navigator.clipboard as Clipboard | undefined, zaznacz);
+  if (!skopiowano) return;
+  przycisk.textContent = L('Skopiowano', 'Copied');
+  setTimeout(() => {
+    if (przycisk.isConnected) przycisk.textContent = L('Kopiuj', 'Copy');
+  }, 2000);
+}
+
+/** Pytanie o usunięcie drużyny anonimowej z serwera (z Menu). `blad`: czemu poprzednia próba się nie udała. „Nie” wraca
+    do Menu, zamknięcie okna do gry. Po usunięciu gra toczy się dalej bez sieci, z jednym komunikatem. */
+function askUsun(blad?: Tx) {
+  sheetAgain = () => askUsun(blad);
+  modal.show(
+    usunSheet(blad),
+    (act) => {
+      if (act === 'usun-nie') showMenu();
+      else if (act === 'usun-tak') void usunDruzyne();
+    },
+    nextPrompt,
+  );
+}
+
+async function usunDruzyne() {
+  sheetAgain = null;
+  for (const a of ['usun-tak', 'usun-nie']) {
+    const b = modal.find<HTMLButtonElement>(`[data-act="${a}"]`);
+    if (b) b.disabled = true;
+  }
+  if (!(await siec.usun())) {
+    askUsun(siec.blad() ?? tx('Nie udało się usunąć drużyny.', 'Could not delete the team.'));
+    return;
+  }
+  modal.close();
+  save();
+  nextPrompt();
+  say(
+    L(
+      'Drużyna usunięta z serwera. Gra toczy się dalej bez sieci.',
+      'The team is deleted from the server. The game carries on offline.',
+    ),
+    9000,
+  );
+}
+
 /* ---------- menu gry (zamiast natywnego confirm) ---------- */
 function showMenu() {
   sheetAgain = showMenu;
@@ -2720,17 +2811,19 @@ function showMenu() {
   const last = readSave();
   const note = last ? `${auto} ${L('Ostatni zapis', 'Last save')}: ${saveLabel(last)}.` : auto;
   // przełącznik języka nad przyciskami Menu
-  const sheet = menuSheet(note);
+  const sheet = menuSheet(note, siec.menuSieci());
   sheet.body = `<div class="menu-lang" data-lang-menu>${przelacznikHtml(jezyk())}</div>${sheet.body}`;
   modal.show(
     sheet,
-    (act) => {
+    (act, _arg, el) => {
       if (act === 'menu-back') {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
       else if (act === 'menu-wiki') wiki.otworz(null, true);
       else if (act === 'menu-zwyciestwo') showDrogi();
+      else if (act === 'menu-kod') void pokazKod(showMenu, nextPrompt, el as HTMLButtonElement);
+      else if (act === 'menu-usun') askUsun();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();

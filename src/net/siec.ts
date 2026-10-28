@@ -53,6 +53,12 @@ export interface StanSieci {
   konto?: string;
   /** wersja zapisu w chmurze, którą ta gra ostatnio wysłała (następny zapis idzie od niej) */
   wersja?: number;
+  /** okno z kodem powrotu drużyny anonimowej już się pokazało po pierwszym porannym raporcie (raz na grę; dalej kod
+      bierze się z Menu) */
+  kodPokazany?: boolean;
+  /** drużyna usunięta z serwera w Menu: ta gra toczy się dalej bez sieci, także po wczytaniu zapisu (nawet gdy gracz ma
+      już inną drużynę). `zajete` zostaje, żeby zapis odtworzył ten sam świat. */
+  usunieta?: boolean;
 }
 
 /** to, czego przepływ startu potrzebuje od serwera (w grze utworzApi z src/net/api.ts) */
