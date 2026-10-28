@@ -1801,7 +1801,17 @@ Bramka etapu na gałęzi `osada-ai` 567c51d4:
 
 Czego etap 2 nie robi (etap 3 i dalej): ich ludzi nie widać (kwadrat to teren, budynki i drzewa), poseł to sama karta bez pionka, nie ma dyplomacji, handlu, napadów między grami ani włamań; osada nie wygrywa i nie kończy naszej gry; silnik nie jest jeszcze strojony pod cudze budynki.
 
+### Wyjście na świat: projekt premiery, 28.10.2026 (gałąź `wyjscie-na-swiat` od `main` bebf5391, sam dokument, nic nie wypchnięte)
+
+Mateusz: „Pora wypchnąć tą moją grę na świat i zacząć na niej zarabiać.” Rozmowa o pięciu wątkach naraz, wynik w `docs/superpowers/specs/2026-10-28-wyjscie-na-swiat-design.md`, przeczytany przez recenzenta w roli budującego (sześć pytań: pięć rozstrzygniętych w dokumencie, jedno przez Mateusza).
+
+Ustalenia Mateusza: cel pierwszego miesiąca 50–100 graczy i około 100 dolarów, ale na start całkiem za darmo, bez płatności; gra sieciowa od pierwszego wejścia, asynchronicznie, zajęta klatka należy do zajmującego, gracze widzą się na mapie całego miasta, bez gry na żywo („ludzie muszą spać”); od razu wiadomości (gotowe zwroty przez krótkofalówkę) i handel, z każdą drużyną na świecie; nazwa zostaje „Za Murem”, adres na darmowym Vercelu bez kupowania domeny; samouczek sprawdza agent na ślepo i licznik po premierze, bez testów z ludźmi; nowy film zaczyna się od ulicy.
+
+Moje w dokumencie (lista na jego końcu): anonimowa drużyna z kodem powrotu, klatka wygasa po 14 dniach, konto po 180 dniach, znacznik na kwadracie około 400 m z wylosowaną nazwą drużyny, zapytania o zajęte klatki tylko w swojej okolicy, dwa serwery API, wyszukiwanie adresów przez nasz serwer, liczenie dziennych sum bez identyfikatora gracza, kolejność ujęć filmu.
+
 ## Następne
+
+- 28.10.2026, sesja „Wyjście na świat”: Mateusz czyta projekt premiery (`docs/superpowers/specs/2026-10-28-wyjscie-na-swiat-design.md`, dwanaście rozstrzygnięć na końcu). Po jego OK plan budowy. Do premiery na produkcji potrzebne dane firmy do informacji o danych osobowych: pełna nazwa, adres, NIP, e-mail do spraw danych.
 
 - 26.10.2026, 0:50, integrator: na serwer testowy poszedł etap 2 osady AI za flagą `?osada=1` (`osada-ai` 567c51d4 przez c218b06f, opis w „Zrobionych”): druga gra na sąsiednim kwadracie od 6:00 drugiego dnia krok w krok z naszą, w zapisie, poseł w dniach 4–6, potem widok ich kwadratu, etykieta nad siedzibą, karta osady i znacznik na mapie miasta. Gra bez flagi bez zmian (skróty botów jak w wierszu skrótów bazowych, zapis bajt w bajt). Przegląd całej gałęzi: gotowe do scalenia, drobne uwagi idą osobną rundą. Bramka na 54319857 zielona (jeden zrzut padł na zmianie sieci i przeszedł po nazwie). Zagrać z osadą: dopisać `?osada=1` do adresu nowej gry (demo albo prawdziwy adres w zwykłym trybie; bez sieci gry z sąsiadami i bez trybu zombie).
 - 25.10.2026, 6:20, integrator: na serwer testowy poszła druga runda telefonu (`spojnosc-uklad` 83cf69b4 przez 0f176af0, opis w „Zrobionych” we wpisie o przeglądzie spójności): telefon trzymany poziomo ze zwijanym paskiem (mapa 65–75% ekranu zamiast około 50%), „Więcej” na karcie osoby (karta 24% ekranu zamiast 33%), osobny przycisk zwijania paska i ostrzeżenie o zgasłej kozie przez 9 s. `pelna-gra` stoi teraz na `main` z PR #11 (3426ec43, wersja 1.0 na Pages), a ta poprawka idzie na niej. Bramka na 0f176af0 zielona, skróty botów jak w wierszu skrótów bazowych.
