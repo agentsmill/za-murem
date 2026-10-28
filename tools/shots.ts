@@ -11862,7 +11862,7 @@ async function stopkaKarty(
     );
     wymagaj(/Photon/.test(await stopka()), 'stopka z serwerem bez Photona');
     wymagaj(
-      !!(await page.$('.start-card > p.fine a[href="prywatnosc.html"]')),
+      !!(await page.$('.start-card > p.fine a[href^="prywatnosc.html"]')),
       'stopka z serwerem bez odnośnika do prywatności',
     );
     // zmiana języka zostawia wersję z serwerem
@@ -11884,11 +11884,36 @@ async function stopkaKarty(
   await page.locator('.start-card').screenshot({ path: path.join(OUT, `${nazwa}-karta.png`) });
 }
 
+/** Odnośniki do prywatności i regulaminu w bloku „Gra z sąsiadami” (`.sc-links`): oba są, otwierają się w nowej karcie, a
+    kotwica to język gry (#pl albo #en, bo strony prawne mają dwie sekcje językowe); wiersz mieści się w karcie. */
+async function odnosnikiPrawneBloku(page: Page, korzen: string, j: 'pl' | 'en', gdzie: string): Promise<void> {
+  for (const strona of ['prywatnosc', 'regulamin']) {
+    const a = await page.$(`${korzen} .sc-links a[href^="${strona}.html"][target="_blank"]`);
+    if (!a) throw new Error(`${gdzie}: brak odnośnika do ${strona} w .sc-links`);
+    const href = await a.getAttribute('href');
+    if (href !== `${strona}.html#${j}`)
+      throw new Error(`${gdzie}: odnośnik ${strona} ma ${href} zamiast ${strona}.html#${j}`);
+  }
+  const wiersz = await page.$eval(`${korzen} .sc-links`, (e) => {
+    const r = e.getBoundingClientRect();
+    const k = e.closest('.start-card')?.getBoundingClientRect();
+    return {
+      l: r.left,
+      r: r.right,
+      kl: k?.left ?? 0,
+      kr: k?.right ?? innerWidth,
+      przewija: e.scrollWidth > e.clientWidth + 1,
+    };
+  });
+  if (wiersz.l < wiersz.kl - 1 || wiersz.r > wiersz.kr + 1 || wiersz.przewija)
+    throw new Error(`${gdzie}: wiersz .sc-links wystaje z karty (${JSON.stringify(wiersz)})`);
+}
+
 /** Karta startowa z blokiem drużyny bez sesji: czysta (bez pól nicku i hasła, z kodem powrotu, odnośnikiem do dawnego
     logowania i do prywatności), „logowanie” pokazuje dawny formularz, „wróć” go chowa, zły kod daje komunikat z
     serwera, dobry loguje do drużyny z zapisem w chmurze. Zrzuty pośrednie <nazwa>-czysta i <nazwa>-logowanie, końcowy
     <nazwa> (po kodzie powrotu). Telefon: formularz adresu mieści się na pierwszym ekranie, nic nie przewija się w bok. */
-async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: boolean) {
+async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: boolean, j: 'pl' | 'en') {
   await fakeApi(page, { chmura: CHMURA_KARTY });
   await page.goto(`${base}?siec=1`);
   await page.waitForSelector('#siec:not([hidden]) #scKod');
@@ -11897,7 +11922,7 @@ async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: bo
     if (!ok) throw new Error(co);
   };
   wymagaj(!(await page.$('#scNick, #scHaslo, input[type=password]')), 'blok drużyny ma pola nicku albo hasła');
-  wymagaj(!!(await page.$('#siec a[href="prywatnosc.html"]')), 'brak odnośnika do prywatności');
+  await odnosnikiPrawneBloku(page, '#siec', j, 'blok drużyny');
   wymagaj(!(await tekst()).match(/próba|beta/i), 'nagłówek bloku z dopiskiem „próba”');
   if (telefon) {
     const dol = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
@@ -11911,6 +11936,7 @@ async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: bo
   await page.waitForSelector('#scNick');
   wymagaj(!(await page.$('#scKod')), 'kod powrotu został w formularzu logowania');
   wymagaj(!(await bokiem()), 'formularz logowania przewija kartę w bok');
+  await odnosnikiPrawneBloku(page, '#siec', j, 'formularz logowania');
   await page.screenshot({ path: path.join(OUT, `${nazwa}-logowanie.png`), fullPage: true });
   await page.click('[data-siec=wroc]');
   await page.waitForSelector('#scKod');
@@ -11968,7 +11994,7 @@ async function oknoWidoku(page: Page, opis: string): Promise<void> {
 /** Menu gry sieciowej drużyny anonimowej: przyciski kodu powrotu i usunięcia, okno kodu (kopiowanie), pytanie o
     usunięcie („Nie” wraca do Menu), usunięcie (gra toczy się dalej bez sieci, jeden komunikat, zapis nie idzie do chmury,
     Menu bez przycisków sieci). Zrzuty pośrednie <nazwa>-menu, -kod, -usun; końcowy <nazwa> to Menu po usunięciu. */
-async function kodWMenu(page: Page, base: string, nazwa: string): Promise<void> {
+async function kodWMenu(page: Page, base: string, nazwa: string, j: 'pl' | 'en'): Promise<void> {
   await fakeApi(page, { adres: true });
   const zapytania: string[] = [];
   page.on('request', (q) => {
@@ -11984,10 +12010,15 @@ async function kodWMenu(page: Page, base: string, nazwa: string): Promise<void> 
   await page.waitForSelector('#modal:not([hidden]) [data-act="menu-kod"]');
   wymagaj(!!(await page.$('[data-act="menu-usun"]')), 'Menu drużyny anonimowej bez usunięcia');
   wymagaj(
-    !!(await page.$('#modal a[href="prywatnosc.html"][target="_blank"]')) &&
-      !!(await page.$('#modal a[href="regulamin.html"][target="_blank"]')),
+    !!(await page.$('#modal a[href^="prywatnosc.html"][target="_blank"]')) &&
+      !!(await page.$('#modal a[href^="regulamin.html"][target="_blank"]')),
     'Menu gry sieciowej bez odnośników do prywatności i regulaminu',
   );
+  // kotwica odnośników to język gry (strony prawne mają dwie sekcje językowe)
+  for (const strona of ['prywatnosc', 'regulamin']) {
+    const href = await page.$eval(`#modal a[href^="${strona}.html"]`, (e) => e.getAttribute('href'));
+    wymagaj(href === `${strona}.html#${j}`, `odnośnik ${strona} w Menu ma kotwicę ${href} zamiast #${j}`);
+  }
   await oknoWidoku(page, 'Menu');
   await page.screenshot({ path: path.join(OUT, `${nazwa}-menu.png`) });
   // okno z kodem: nowy kod z serwera, kopiowanie (schowek albo zaznaczenie), „Zapisane” wraca do Menu
@@ -12045,7 +12076,7 @@ async function kodWMenu(page: Page, base: string, nazwa: string): Promise<void> 
   await page.waitForSelector('#modal:not([hidden]) [data-act="menu-start"]');
   wymagaj(!(await page.$('[data-act="menu-kod"], [data-act="menu-usun"]')), 'Menu po usunięciu ma przyciski sieci');
   wymagaj(
-    !(await page.$('#modal a[href="prywatnosc.html"], #modal a[href="regulamin.html"]')),
+    !(await page.$('#modal a[href^="prywatnosc.html"], #modal a[href^="regulamin.html"]')),
     'Menu po usunięciu ma odnośniki sieci',
   );
   await oknoWidoku(page, 'Menu po usunięciu');
@@ -12121,7 +12152,7 @@ function siecShots(): Shot[] {
         query: '',
         lang: lang as 'pl' | 'en',
         ...(telefon ? { w: 390, h: 844 } : {}),
-        run: (page, base) => kodWMenu(page, base, nazwa),
+        run: (page, base) => kodWMenu(page, base, nazwa, lang as 'pl' | 'en'),
       }),
     ),
     {
@@ -12243,20 +12274,20 @@ function siecShots(): Shot[] {
     {
       name: 'siec-druzyna',
       query: '',
-      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna', false),
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna', false, 'pl'),
     },
     {
       name: 'siec-druzyna-telefon',
       query: '',
       w: 390,
       h: 844,
-      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon', true),
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon', true, 'pl'),
     },
     {
       name: 'siec-druzyna-en',
       query: '',
       lang: 'en',
-      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-en', false),
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-en', false, 'en'),
     },
     {
       name: 'siec-druzyna-telefon-en',
@@ -12264,7 +12295,7 @@ function siecShots(): Shot[] {
       lang: 'en',
       w: 390,
       h: 844,
-      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon-en', true),
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon-en', true, 'en'),
     },
     // strony prawne (zadanie 12): informacja o danych osobowych i regulamin, komputer i telefon, po polsku i po angielsku
     ...(['prywatnosc', 'regulamin'] as const).flatMap((strona) =>
