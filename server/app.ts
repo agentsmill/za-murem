@@ -21,11 +21,19 @@
    Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); pozycja klatki musi leżeć przy budynku z jej
    klucza (kotwicaKlucza), każda klatka drużyny najwyżej `promienM` od siedziby (pierwszej klatki), najwyżej
    `limitKlatek` na konto; zapis bez tekstu adresu. Żądania zmieniające stan muszą mieć JSON (gdy niosą dane)
-   i nagłówek Origin z tej samej strony (albo żadnego). Limity prób w pamięci (limity.ts), liczone przed pierwszym
-   await, żeby równoległe żądania ich nie obeszły; adresów IP nie zapisujemy, IPv6 liczymy po sieci /64. scrypt idzie
-   przez kolejkę (najwyżej 2 naraz). Po ostatnim await zapis do bazy sprawdza sesję jeszcze raz. Zegar, koszt scrypt
-   i kolejkę da się podać w opcjach (testy). */
+   i nagłówek Origin z tej samej strony (albo żadnego); lista dozwolonych źródeł może mieć gwiazdkę (podglądy gałęzi
+   na Vercelu, `pasujeZrodlo`). Limity prób w pamięci (limity.ts), liczone przed pierwszym await, żeby równoległe
+   żądania ich nie obeszły; adresów IP nie zapisujemy, IPv6 liczymy po sieci /64. scrypt idzie przez kolejkę
+   (najwyżej 2 naraz). Po ostatnim await zapis do bazy sprawdza sesję jeszcze raz. Zegar, koszt scrypt i kolejkę
+   da się podać w opcjach (testy).
 
+   Adres klienta do limitów, po kolei: (1) za Vercelem (`proxySekret`): gdy żądanie ma nagłówek x-zm-proxy równy
+   sekretowi (porównanie w stałym czasie), adres bierzemy z nagłówka `proxyNaglowekIp` (domyślnie x-real-ip);
+   sekretu nikt poza naszym projektem na Vercelu nie zna, więc nagłówka z adresem nie da się podrobić z zewnątrz,
+   a bez sekretu nagłówek się nie liczy; (2) `zaufaneProxy`: ostatni wpis X-Forwarded-For (własny Caddy);
+   (3) adres połączenia. GET /api/zdrowie mówi, który z trzech zadziałał (`ip`: proxy, xff, polaczenie), bez adresu. */
+
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { promisify } from 'node:util';
 import { gunzip, gzip } from 'node:zlib';
@@ -70,6 +78,24 @@ const MIN = 60_000;
 const GODZ = 60 * MIN;
 const DOBA = 24 * GODZ;
 
+/** nagłówek z sekretem, który Vercel dokłada do żądań przekazywanych na ten serwer (wartość: `proxySekret`) */
+export const NAGLOWEK_PROXY = 'x-zm-proxy';
+
+/** skąd serwer wziął adres klienta do limitów (pole `ip` w odpowiedzi /api/zdrowie) */
+type ZrodloIp = NonNullable<Zdrowie['ip']>;
+
+/** Czy nagłówek Origin pasuje do któregoś ze wzorów. Wzór bez gwiazdki to dosłowne porównanie. Gwiazdka to jeden
+    kawałek nazwy hosta (`[a-z0-9-]+`: bez kropki, ukośnika i dwukropka), reszta wzoru jest dosłowna, więc
+    `https://zamurem-*-konto.vercel.app` przepuszcza podgląd gałęzi, ale nie inną domenę ani poddomenę. */
+export function pasujeZrodlo(origin: string, wzory: readonly string[]): boolean {
+  if (!origin || origin.length > 255) return false;
+  return wzory.some((wzor) => {
+    if (!wzor.includes('*')) return wzor === origin;
+    const kawalki = wzor.split('*').map((k) => k.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
+    return new RegExp(`^${kawalki.join('[a-z0-9-]+')}$`).test(origin);
+  });
+}
+
 export interface OpcjeSerwera {
   /** ścieżka pliku bazy albo ':memory:' */
   baza: string;
@@ -81,7 +107,13 @@ export interface OpcjeSerwera {
   bezpieczneCiasteczko?: boolean;
   /** adres klienta z ostatniego wpisu X-Forwarded-For (tylko za własnym proxy, np. Caddy) */
   zaufaneProxy?: boolean;
-  /** dozwolone nagłówki Origin; puste: ta sama strona co nagłówek Host (http albo https) */
+  /** sekret proxy (Vercel): żądanie z nagłówkiem x-zm-proxy równym sekretowi ma adres klienta z `proxyNaglowekIp`;
+      brak albo pusty: nagłówka nie sprawdzamy */
+  proxySekret?: string;
+  /** nagłówek z adresem klienta, któremu ufamy przy dobrym sekrecie (domyślnie x-real-ip) */
+  proxyNaglowekIp?: string;
+  /** dozwolone nagłówki Origin, wzór może mieć gwiazdkę (kawałek nazwy hosta, `pasujeZrodlo`); puste: ta sama strona
+      co nagłówek Host (http albo https) */
   zrodla?: string[];
   /** największy zapis gry w bajtach JSON (domyślnie 3 MiB) */
   limitZapisu?: number;
@@ -123,6 +155,8 @@ interface Kontekst {
   url: URL;
   /** klucz limitów dla klienta: IPv4 albo sieć /64 IPv6 */
   ip: string;
+  /** skąd wzięliśmy adres klienta (do /api/zdrowie) */
+  ipZrodlo: ZrodloIp;
   teraz: number;
   /** nagłówki do dołączenia (np. Set-Cookie przy przedłużeniu sesji) */
   naglowki: Record<string, string | string[]>;
@@ -144,7 +178,15 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const promienM = op.promienM ?? 600;
   const sesjaMs = (op.sesjaDni ?? 30) * DOBA;
   const dziennik = op.dziennik ?? ((w: string) => console.error(w));
-  const zrodla = new Set(op.zrodla ?? []);
+  const zrodla = op.zrodla ?? [];
+  const proxyNaglowekIp = (op.proxyNaglowekIp || 'x-real-ip').toLowerCase();
+  // skrót sekretu liczymy raz; porównanie skrótów w stałym czasie nie zdradza długości ani początku sekretu
+  const sekretSkrot = op.proxySekret ? createHash('sha256').update(op.proxySekret).digest() : null;
+  const dobrySekret = (req: IncomingMessage): boolean => {
+    const podany = req.headers[NAGLOWEK_PROXY];
+    if (!sekretSkrot || typeof podany !== 'string') return false;
+    return timingSafeEqual(createHash('sha256').update(podany).digest(), sekretSkrot);
+  };
 
   // limity w pamięci: nieudane logowania na IP i na nick, nowe konta i zajęte nicki na IP, wszystkie żądania na IP,
   // zapisy na konto
@@ -177,14 +219,21 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     ciasteczkoSesji(token, { nazwa: CIASTECZKO, maxAge: Math.floor(maxAgeMs / 1000), secure });
   const skasujCiasteczko = () => ciasteczko('', 0);
 
-  const ipZ = (req: IncomingMessage): string => {
+  /** klucz limitów dla klienta i skąd go wzięliśmy (kolejność w nagłówku na górze pliku) */
+  const ipZ = (req: IncomingMessage): { ip: string; zrodlo: ZrodloIp } => {
+    if (dobrySekret(req)) {
+      const wartosc = req.headers[proxyNaglowekIp];
+      // pierwszy wpis, gdyby proxy dołożyło listę; tu nagłówek jest zaufany, więc nic więcej nie sprawdzamy
+      const adres = (Array.isArray(wartosc) ? wartosc.join(',') : (wartosc ?? '')).split(',')[0].trim();
+      if (adres) return { ip: kluczIp(adres), zrodlo: 'proxy' };
+    }
     if (op.zaufaneProxy) {
       const xff = req.headers['x-forwarded-for'];
       const lista = (Array.isArray(xff) ? xff.join(',') : (xff ?? '')).split(',').map((s) => s.trim());
       const ostatni = lista.filter(Boolean).pop();
-      if (ostatni) return kluczIp(ostatni);
+      if (ostatni) return { ip: kluczIp(ostatni), zrodlo: 'xff' };
     }
-    return kluczIp(req.socket.remoteAddress ?? '?');
+    return { ip: kluczIp(req.socket.remoteAddress ?? '?'), zrodlo: 'polaczenie' };
   };
 
   const ja = (konto: Konto): Ja => ({
@@ -246,7 +295,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   // ---------- obsługa tras ----------
 
   const zdrowie: Obsluga = async (k) => {
-    const out: Zdrowie = { ok: true, gra: 'za-murem', wersja: API_WERSJA };
+    const out: Zdrowie = { ok: true, gra: 'za-murem', wersja: API_WERSJA, ip: k.ipZrodlo };
     wyslij(k.res, 200, out, k.naglowki);
   };
 
@@ -553,7 +602,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const obceZrodlo = (req: IncomingMessage): boolean => {
     const origin = req.headers.origin;
     if (!origin) return false;
-    if (zrodla.size) return !zrodla.has(origin);
+    if (zrodla.length) return !pasujeZrodlo(origin, zrodla);
     const host = req.headers.host;
     return !host || (origin !== `https://${host}` && origin !== `http://${host}`);
   };
@@ -565,7 +614,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     } catch {
       url = new URL('/', 'http://serwer');
     }
-    const k: Kontekst = { req, res, url, ip: ipZ(req), teraz: teraz(), naglowki: {} };
+    const { ip, zrodlo: ipZrodlo } = ipZ(req);
+    const k: Kontekst = { req, res, url, ip, ipZrodlo, teraz: teraz(), naglowki: {} };
     const metoda = req.method ?? 'GET';
     try {
       const czekaj = zadania.zablokowany(k.ip);

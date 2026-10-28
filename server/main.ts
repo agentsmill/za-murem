@@ -5,8 +5,13 @@
    PORT                 port HTTP (domyślnie 8787)
    HOST                 adres nasłuchu (domyślnie 127.0.0.1; w kontenerze 0.0.0.0)
    ZM_BAZA              ścieżka pliku SQLite (domyślnie ./za-murem.db; ':memory:' na próbę)
-   ZM_ZRODLA            dozwolone nagłówki Origin, po przecinku (np. https://zamurem.example); puste: ten sam Host
+   ZM_ZRODLA            dozwolone nagłówki Origin, po przecinku (np. https://zamurem.example); wzór może mieć
+                        gwiazdkę za jeden kawałek nazwy hosta (https://zamurem-*-konto.vercel.app: podglądy gałęzi
+                        na Vercelu); puste: ten sam Host
    ZM_ZAUFANE_PROXY     1: adres klienta z X-Forwarded-For (tylko za własnym Caddy)
+   ZM_PROXY_SEKRET      sekret, który Vercel wysyła w nagłówku x-zm-proxy; żądanie z dobrym sekretem ma adres
+                        klienta z nagłówka ZM_PROXY_IP; brak: bez tej ścieżki (tylko w .env na serwerze)
+   ZM_PROXY_IP          nagłówek z adresem klienta przy dobrym sekrecie (domyślnie x-real-ip)
    ZM_CIASTECZKO_SECURE 0: ciasteczko bez Secure (lokalnie po http); domyślnie 1
    ZM_LIMIT_ZAPISU      największy zapis gry w bajtach (domyślnie 3 MiB)
    ZM_LIMIT_KLATEK      najwięcej klatek na konto (domyślnie 60)
@@ -39,6 +44,8 @@ const gra = stworzSerwer({
     .map((s) => s.trim())
     .filter(Boolean),
   zaufaneProxy: env.ZM_ZAUFANE_PROXY === '1',
+  proxySekret: env.ZM_PROXY_SEKRET || undefined,
+  proxyNaglowekIp: env.ZM_PROXY_IP || 'x-real-ip',
   bezpieczneCiasteczko: env.ZM_CIASTECZKO_SECURE !== '0',
   limitZapisu: liczba(env.ZM_LIMIT_ZAPISU, 3 * 1024 * 1024),
   limitKlatek: liczba(env.ZM_LIMIT_KLATEK, 60),

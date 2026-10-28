@@ -61,7 +61,7 @@ describe('serwer gry: konta i sesje', () => {
     const s = await start();
     const r = await przegladarka(s.adres).zadanie('GET', '/api/zdrowie');
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ ok: true, gra: 'za-murem', wersja: 1 });
+    expect(r.body).toEqual({ ok: true, gra: 'za-murem', wersja: 1, ip: 'polaczenie' });
     expect(r.headers.get('cache-control')).toBe('no-store');
     expect(r.headers.get('x-content-type-options')).toBe('nosniff');
     expect(r.headers.get('content-type')).toContain('application/json');

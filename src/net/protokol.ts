@@ -161,6 +161,9 @@ export interface Zdrowie {
   ok: true;
   gra: 'za-murem';
   wersja: number;
+  /** skąd serwer bierze adres klienta do limitów (bez samego adresu): z nagłówka proxy Vercela z poprawnym
+      sekretem, z X-Forwarded-For własnego proxy albo z adresu połączenia; starszy serwer pola nie wysyła */
+  ip?: 'proxy' | 'xff' | 'polaczenie';
 }
 
 /** POST /api/konto (załóż) i POST /api/sesja (zaloguj) */

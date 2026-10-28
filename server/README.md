@@ -22,8 +22,10 @@ curl http://127.0.0.1:8787/api/zdrowie
 | `PORT` | 8787 | port HTTP |
 | `HOST` | 127.0.0.1 (w kontenerze 0.0.0.0) | adres nasłuchu |
 | `ZM_BAZA` | `./za-murem.db` (w kontenerze `/dane/za-murem.db`) | plik SQLite; `:memory:` na próbę |
-| `ZM_ZRODLA` | puste | dozwolone nagłówki Origin po przecinku, np. `https://twoja.domena`; puste: ta sama strona co nagłówek Host |
+| `ZM_ZRODLA` | puste | dozwolone nagłówki Origin po przecinku, np. `https://twoja.domena`; wzór może mieć gwiazdkę za jeden kawałek nazwy hosta (`[a-z0-9-]+`, bez kropki), np. `https://zamurem-*-konto.vercel.app` dla podglądów gałęzi na Vercelu; puste: ta sama strona co nagłówek Host |
 | `ZM_ZAUFANE_PROXY` | 0 (w kontenerze 1) | 1: adres klienta z ostatniego wpisu X-Forwarded-For; tylko za własnym proxy |
+| `ZM_PROXY_SEKRET` | brak | sekret, który Vercel wysyła w nagłówku `x-zm-proxy`; żądanie z dobrym sekretem ma adres klienta z nagłówka `ZM_PROXY_IP`, bez sekretu albo ze złym ten nagłówek się nie liczy; wartość tylko w `.env` na serwerze i w zmiennych Vercela, nigdy w repo ani w logach |
+| `ZM_PROXY_IP` | `x-real-ip` | nagłówek z adresem klienta, któremu serwer ufa przy dobrym `ZM_PROXY_SEKRET` |
 | `ZM_CIASTECZKO_SECURE` | 1 | 0: ciasteczko sesji bez Secure (lokalnie po http) |
 | `ZM_LIMIT_ZAPISU` | 3145728 | największy zapis gry w bajtach JSON |
 | `ZM_LIMIT_KLATEK` | 60 | najwięcej klatek na konto |
@@ -63,6 +65,8 @@ twoja.domena {
 ```
 
 Serwer bierze adres klienta z ostatniego wpisu X-Forwarded-For, czyli z tego, który dopisał Caddy (bez `trusted_proxies` Caddy nie przepuszcza tego nagłówka od klienta; warto to sprawdzić na wdrożonej wersji). Bezczynne połączenia Caddy trzyma do serwera 2 minuty, a serwer 130 s, żeby nie zamykał połączenia, które Caddy właśnie bierze na kolejne żądanie. Logi dostępu Caddy z adresami IP lepiej wyłączyć albo trzymać krótko (RODO).
+
+Za Vercelem (statyczna gra na Vercelu przekazuje `/api/*` na ten serwer) przez Caddy przychodzą adresy serwerów Vercela, a nie graczy, więc limity prób liczyłyby wszystkich graczy razem. Dlatego z `ZM_PROXY_SEKRET` serwer ufa nagłówkowi `ZM_PROXY_IP` (domyślnie `x-real-ip`) tylko wtedy, gdy żądanie ma nagłówek `x-zm-proxy` równy sekretowi (porównanie w stałym czasie). Bez sekretu albo ze złym nagłówek z adresem się nie liczy i działa dotychczasowa kolejność: `ZM_ZAUFANE_PROXY` (X-Forwarded-For), potem adres połączenia. `GET /api/zdrowie` w polu `ip` mówi, która ścieżka zadziałała (`proxy`, `xff` albo `polaczenie`), bez samego adresu; tak sprawdzamy po wdrożeniu, czy Vercel naprawdę przekazuje sekret. Podglądy gałęzi na Vercelu mają Origin w postaci `https://projekt-<gałąź>-<zespół>.vercel.app`, więc `ZM_ZRODLA` dostaje wzór z gwiazdką zamiast listy adresów.
 
 ## Restart planowy
 
