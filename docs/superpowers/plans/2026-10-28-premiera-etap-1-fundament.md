@@ -35,7 +35,7 @@ Kolejne etapy dostaną osobne plany, kiedy ten etap ustali nazwy w API: etap 2 d
 
 ---
 
-### Zadanie 1: Serwer za Vercelem — sekret proxy i źródła z gwiazdką
+### Zadanie 1: Serwer za Vercelem: sekret proxy i źródła z gwiazdką
 
 **Files:**
 - Modify: `server/app.ts` (`OpcjeSerwera`, `ipZ`, `obceZrodlo`, `zdrowie`, komentarz na górze)
@@ -47,7 +47,7 @@ Kolejne etapy dostaną osobne plany, kiedy ten etap ustali nazwy w API: etap 2 d
 **Interfaces:**
 - Produces: `NAGLOWEK_PROXY = 'x-zm-proxy'` (eksport z `server/app.ts`); `OpcjeSerwera.proxySekret?: string`, `OpcjeSerwera.proxyNaglowekIp?: string` (domyślnie `'x-real-ip'`); `pasujeZrodlo(origin: string, wzory: readonly string[]): boolean` (eksport z `server/app.ts`); `Zdrowie.ip?: 'proxy' | 'xff' | 'polaczenie'`.
 
-- [ ] **Krok 0: Zapisz skróty botów przed zmianami** — `npm run bot` i `npm run bot:zombie`, skróty wpisz do notatki zadania; porównasz je w zadaniu 14.
+- [ ] **Krok 0: Zapisz skróty botów przed zmianami**: `npm run bot` i `npm run bot:zombie`, skróty wpisz do notatki zadania; porównasz je w zadaniu 14.
 - [ ] **Krok 1: Napisz testy, które padają**
 
 ```ts
@@ -64,10 +64,10 @@ it('źródło z gwiazdką przepuszcza podgląd gałęzi i nic poza nim', ...)
   // 'https://zamurem.vercel.app' przy wzorze bez gwiazdki → true
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- serwer-proxy` — oczekiwane: FAIL (brak `pasujeZrodlo`, brak pola `ip`).
+- [ ] **Krok 2: Uruchom** `npm test -- serwer-proxy`, oczekiwane: FAIL (brak `pasujeZrodlo`, brak pola `ip`).
 - [ ] **Krok 3: Zaimplementuj.** Sekret porównuj w stałym czasie (`timingSafeEqual` na skrótach SHA-256 obu napisów). Gwiazdka we wzorze to jeden kawałek nazwy hosta `[a-z0-9-]+`, reszta wzoru dosłownie. `obceZrodlo` używa `pasujeZrodlo`, gdy lista źródeł nie jest pusta. W `server/main.ts` `proxySekret: env.ZM_PROXY_SEKRET || undefined`, `proxyNaglowekIp: env.ZM_PROXY_IP || 'x-real-ip'`. `Cache-Control: no-store` już jest w `NAGLOWKI` w `server/http.ts`: dopisz do testu sprawdzenie, że odpowiedź `/api/zdrowie` go ma.
-- [ ] **Krok 4: Uruchom** `npm test -- serwer` — oczekiwane: PASS (nowe i stare testy serwera).
-- [ ] **Krok 5: Commit** — `git commit -m "Serwer za Vercelem: sekret proxy, adres klienta z nagłówka, źródła z gwiazdką"`
+- [ ] **Krok 4: Uruchom** `npm test -- serwer`, oczekiwane: PASS (nowe i stare testy serwera).
+- [ ] **Krok 5: Commit** `git commit -m "Serwer za Vercelem: sekret proxy, adres klienta z nagłówka, źródła z gwiazdką"`
 
 ### Zadanie 2: Drużyna anonimowa i kod powrotu na serwerze
 
@@ -84,8 +84,8 @@ it('źródło z gwiazdką przepuszcza podgląd gałęzi i nic poza nim', ...)
   - migracja 2: `ALTER TABLE konta ADD COLUMN anonimowe INTEGER NOT NULL DEFAULT 0; ALTER TABLE konta ADD COLUMN kod TEXT; CREATE UNIQUE INDEX konta_kod ON konta(kod) WHERE kod IS NOT NULL;`
   - `Konto.anonimowe: boolean`, `Konto.kod: string | null` (skrót kodu)
   - `Baza.dodajDruzyne(teraz: number): Konto` (nick `''`, `nick_klucz` `'#'` + `nowyToken()`, hasło `''`, `anonimowe = 1`), `Baza.ustawKod(id: number, skrot: string): void`, `Baza.kontoPoKodzie(skrot: string): Konto | null`
-  - `nowyKod(): string` — 12 znaków z `KOD_ALFABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'` w postaci `XXXX-XXXX-XXXX`
-  - `normalizujKod(s: string): string | null` w `src/net/protokol.ts` — bez spacji i myślników, wielkie litery, dokładnie 12 znaków z alfabetu, inaczej `null`
+  - `nowyKod(): string`: 12 znaków z `KOD_ALFABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'` w postaci `XXXX-XXXX-XXXX`
+  - `normalizujKod(s: string): string | null` w `src/net/protokol.ts`: bez spacji i myślników, wielkie litery, dokładnie 12 znaków z alfabetu, inaczej `null`
   - `Ja`: `nick: string | null`, `anonimowe: boolean`, `znak: string` (nick konta z nickiem, `'#' + id` drużyny anonimowej), `kod: boolean` (czy drużyna ma kod)
   - trasy: `POST /api/druzyna` → 201 `Ja` + ciasteczko (z ważną sesją: 200 `Ja` tej sesji, bez nowego konta); `POST /api/druzyna/kod` → 200 `{ kod: string }` (nowy kod, stary przestaje działać; sesja wymagana); `POST /api/druzyna/powrot` `{ kod }` → 200 `Ja` + ciasteczko, zły kod 401 `zly_kod`; `DELETE /api/konto` dla drużyny anonimowej bez hasła
   - nowe `KodBledu`: `'zly_kod'`
@@ -107,10 +107,10 @@ it('drużyna anonimowa usuwa się bez hasła; konto z nickiem dalej wymaga hasł
 it('normalizujKod: małe litery, spacje i myślniki przechodzą, 0, O, 1, I i zła długość nie', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- serwer-druzyna` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- serwer-druzyna`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.** Nowe okno limitu `druzyny = okno(30, GODZ, teraz)` na IP; `powrot` liczy się do `logowania` tak jak złe hasło (doliczone przed `await`, oddane, gdy kod był dobry). Skrót kodu to `skrotTokenu(normalizujKod(kod))`. `ja()` liczy `znak` i `kod` z `Konto`. Klient gry używa dziś `Ja.nick` jako napisu: zmiana typu na `string | null` sprawdza `tsc`, a poprawki w kliencie robi zadanie 9 (do tego czasu `nick ?? ''` w `src/net/gra.ts`, żeby build przechodził).
-- [ ] **Krok 4: Uruchom** `npm test -- serwer api-klient siec` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Serwer: drużyna anonimowa, kod powrotu, usunięcie bez hasła"`
+- [ ] **Krok 4: Uruchom** `npm test -- serwer api-klient siec`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Serwer: drużyna anonimowa, kod powrotu, usunięcie bez hasła"`
 
 ### Zadanie 3: Wygasanie klatek i kont
 
@@ -137,10 +137,10 @@ it('wczytana gra po wygaśnięciu: wolna siedziba zajmuje się po cichu, zajęta
 
 Jeśli w `tests/unit/siec.test.ts` jest już test na `poWczytaniu` z zajętą siedzibą, dopisz tylko przypadek wolnej siedziby po wygaśnięciu.
 
-- [ ] **Krok 2: Uruchom** `npm test -- serwer-wygasanie siec` — oczekiwane: FAIL na serwerze.
+- [ ] **Krok 2: Uruchom** `npm test -- serwer-wygasanie siec`, oczekiwane: FAIL na serwerze.
 - [ ] **Krok 3: Zaimplementuj** zapytania i sprzątanie (granica `teraz - dni * DOBA`; pamiętaj, że `ostatnio` ma dokładność doby).
-- [ ] **Krok 4: Uruchom** `npm test -- serwer siec` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Serwer: klatki wygasają po 14 dniach bez gry, konta po 180"`
+- [ ] **Krok 4: Uruchom** `npm test -- serwer siec`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Serwer: klatki wygasają po 14 dniach bez gry, konta po 180"`
 
 ### Zadanie 4: Zapytania o zajęte klatki tylko w swojej okolicy
 
@@ -163,10 +163,10 @@ it('punkt startu zmienia się najwyżej 5 razy na dobę', ...)
 it('punkt startu jest tylko w pamięci serwera: po nowym stworzSerwer na tej samej bazie trzeba go podać jeszcze raz', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- serwer-okolica` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- serwer-okolica`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.** Punkty startu w `Map<number, { lat: number; lon: number }>` w `stworzSerwer` (nie w bazie: to w praktyce adres gracza, a siedziba i tak jest w `klatki`), zmiany liczone oknem `okno(5, DOBA, teraz)` na konto. Rogi prostokąta liczy `odlegloscM`. Popraw stare testy prostokąta w `tests/unit/serwer.test.ts` tak, żeby przed zapytaniem podawały punkt startu.
-- [ ] **Krok 4: Uruchom** `npm test -- serwer` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Serwer: zajęte klatki tylko w okolicy siedziby albo punktu startu"`
+- [ ] **Krok 4: Uruchom** `npm test -- serwer`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Serwer: zajęte klatki tylko w okolicy siedziby albo punktu startu"`
 
 ### Zadanie 5: Liczniki i powroty
 
@@ -195,10 +195,10 @@ it('powrót liczy się raz na dzień: konto założone w dniu D, wizyty w D, D+1
 it('odczyt liczników tylko z tokenem; bez tokenu w opcjach adresu nie ma', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- serwer-liczniki` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- serwer-liczniki`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.** W `sesjaZ`, gdy `dotknijKonta` zwróci `true`, `doliczPowrot(dzien(konto.utworzone), (dzien - dzien(konto.utworzone)) / DOBA)`. Token porównuj w stałym czasie jak sekret proxy.
-- [ ] **Krok 4: Uruchom** `npm test -- serwer` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Serwer: liczniki zdarzeń i powrotów bez identyfikatora gracza"`
+- [ ] **Krok 4: Uruchom** `npm test -- serwer`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Serwer: liczniki zdarzeń i powrotów bez identyfikatora gracza"`
 
 ### Zadanie 6: Wyszukiwanie adresu przez nasz serwer
 
@@ -228,10 +228,10 @@ it('dwadzieścia zapytań z jednego IP w kwadrans przechodzi, 31. w minutę to 4
 it('dziennik błędów nie zawiera tekstu zapytania', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- serwer-adres` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- serwer-adres`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.** Pamięć to `Map` z wymianą najstarszego wpisu przy przepełnieniu (przy trafieniu wpis przenosi się na koniec). Adresy: `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=<j>&q=`, `https://photon.komoot.io/api/?limit=1&lang=<j>&q=` (Photon zna `de`, `en`, `fr`; dla `pl` bez `lang`). User-Agent: `ZaMurem/1.0 (+https://zamurem.vercel.app; <kontakt>)`, bez części po średniku, gdy kontaktu nie ma.
-- [ ] **Krok 4: Uruchom** `npm test -- serwer` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Serwer: wyszukiwanie adresu z kolejką do Nominatim, Photonem i pamięcią"`
+- [ ] **Krok 4: Uruchom** `npm test -- serwer`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Serwer: wyszukiwanie adresu z kolejką do Nominatim, Photonem i pamięcią"`
 
 ### Zadanie 7: Klient API dla nowych tras
 
@@ -252,10 +252,10 @@ it('nowe kody błędów mają angielski komunikat', ...)
   // komunikatEn({ blad: 'zly_kod', komunikat: '…' }), 'poza_okolica', 'brak_startu' → angielskie zdania
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- api-klient` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- api-klient`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj** metody i komunikaty.
-- [ ] **Krok 4: Uruchom** `npm test -- api-klient` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Klient API: drużyna, kod powrotu, punkt startu, zdarzenia, adres"`
+- [ ] **Krok 4: Uruchom** `npm test -- api-klient`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Klient API: drużyna, kod powrotu, punkt startu, zdarzenia, adres"`
 
 ### Zadanie 8: Gra szuka adresu przez serwer
 
@@ -265,7 +265,7 @@ it('nowe kody błędów mają angielski komunikat', ...)
 
 **Interfaces:**
 - Consumes: `ApiGry.adres` z zadania 7.
-- Produces: `geocode(q: string, api?: Pick<ApiGry, 'adres'>): Promise<GeocodeResult>` — najpierw `api.adres(q, jezyk())` (domyślnie `utworzApi()`); wynik albo `nie_ma` kończą sprawę (przy `nie_ma` dzisiejszy błąd „Nie znalazłem takiego adresu…”); `brak_serwera`, `siec`, `czas`, `serwer_zajety` i 429 idą dzisiejszą drogą wprost do Nominatim.
+- Produces: `geocode(q: string, api?: Pick<ApiGry, 'adres'>): Promise<GeocodeResult>`: najpierw `api.adres(q, jezyk())` (domyślnie `utworzApi()`); wynik albo `nie_ma` kończą sprawę (przy `nie_ma` dzisiejszy błąd „Nie znalazłem takiego adresu…”); `brak_serwera`, `siec`, `czas`, `serwer_zajety` i 429 idą dzisiejszą drogą wprost do Nominatim.
 
 - [ ] **Krok 1: Napisz testy, które padają** (udawane `api` i podmieniony `globalThis.fetch`)
 
@@ -275,10 +275,10 @@ it('adres, którego nie ma: błąd „Nie znalazłem…” i żadnego zapytania 
 it('bez serwera (Pages, demo): jak dziś, wprost do Nominatim', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- geocode` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- geocode`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.**
-- [ ] **Krok 4: Uruchom** `npm test` — oczekiwane: PASS.
-- [ ] **Krok 5: Commit** — `git commit -m "Gra szuka adresu przez serwer, bez serwera wprost w Nominatim"`
+- [ ] **Krok 4: Uruchom** `npm test`, oczekiwane: PASS.
+- [ ] **Krok 5: Commit** `git commit -m "Gra szuka adresu przez serwer, bez serwera wprost w Nominatim"`
 
 ### Zadanie 9: Gra sieciowa bez formularza
 
@@ -293,8 +293,8 @@ it('bez serwera (Pages, demo): jak dziś, wprost do Nominatim', ...)
 **Interfaces:**
 - Consumes: `ApiGry.druzyna`, `powrot`, `punktStartu`, `Ja.znak`, `Ja.anonimowe` z zadań 2 i 7.
 - Produces:
-  - `siecWlaczona(params: URLSearchParams, env?: Record<string, string | undefined>): boolean` — `?siec=0` wyłącza, `?siec=1` włącza, inaczej `env.VITE_SIEC === '1'`; `env` domyślnie `(import.meta as { env?: Record<string, string | undefined> }).env ?? {}`, żeby moduł działał w Node bez Vite
-  - `WidokSieci.stan: 'druzyna' | 'zalogowani' | 'logowanie'` — `druzyna`: gra w sieci bez formularza (drużyna jeszcze nie założona albo anonimowa), pole kodu powrotu `#scKod` z przyciskiem `data-siec="powrot"`, odnośnik `data-siec="logowanie"` do starego logowania nickiem i odnośnik do `prywatnosc.html`; `zalogowani`: konto z nickiem jak dziś; `logowanie`: dzisiejszy formularz z przyciskiem `data-siec="wroc"`
+  - `siecWlaczona(params: URLSearchParams, env?: Record<string, string | undefined>): boolean`: `?siec=0` wyłącza, `?siec=1` włącza, inaczej `env.VITE_SIEC === '1'`; `env` domyślnie `(import.meta as { env?: Record<string, string | undefined> }).env ?? {}`, żeby moduł działał w Node bez Vite
+  - `WidokSieci.stan: 'druzyna' | 'zalogowani' | 'logowanie'`: `druzyna`: gra w sieci bez formularza (drużyna jeszcze nie założona albo anonimowa), pole kodu powrotu `#scKod` z przyciskiem `data-siec="powrot"`, odnośnik `data-siec="logowanie"` do starego logowania nickiem i odnośnik do `prywatnosc.html`; `zalogowani`: konto z nickiem jak dziś; `logowanie`: dzisiejszy formularz z przyciskiem `data-siec="wroc"`
   - `StanSieci.konto` trzyma `Ja.znak` (stare zapisy z nickiem działają bez zmian, bo znak konta z nickiem to nick)
   - `GraSieciowa.anonimowa(): boolean`
 
@@ -312,11 +312,11 @@ it('odświeżenie klatek po restarcie serwera (brak_startu) podaje punkt startu 
 it('blok na karcie startowej po angielsku: bez pól nicku i hasła, z polem kodu i odnośnikiem do prywatności', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- siec druzyna-siec-en siec-flaga` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- siec druzyna-siec-en siec-flaga`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.** Drużynę zakłada `przygotuj` przy nowej grze na prawdziwym adresie (nie przy wejściu na stronę, żeby nie robić kont dla tych, którzy tylko zajrzeli). Napisy bloku: nagłówek „Gra z sąsiadami” bez dopisku „próba”, jedno zdanie, że drużyna powstaje przy pierwszej grze i że konto nie ma e-maila ani hasła.
-- [ ] **Krok 4: Uruchom** `npm test` i `npm run build` — oczekiwane: PASS, build bez błędów typów.
+- [ ] **Krok 4: Uruchom** `npm test` i `npm run build`, oczekiwane: PASS, build bez błędów typów.
 - [ ] **Krok 5: Zrzuty.** `npm run shots -- siec` (istniejące scenariusze sieci), obejrzyj kartę startową na komputerze i telefonie po polsku i po angielsku; dopisz scenariusz `siec-druzyna` (karta startowa z blokiem `druzyna`) w `tools/shots.ts`, jeśli żaden nie pokazuje nowego bloku.
-- [ ] **Krok 6: Commit** — `git commit -m "Gra sieciowa bez formularza: drużyna przy pierwszej grze, kod powrotu na karcie startowej"`
+- [ ] **Krok 6: Commit** `git commit -m "Gra sieciowa bez formularza: drużyna przy pierwszej grze, kod powrotu na karcie startowej"`
 
 ### Zadanie 10: Kod powrotu i usunięcie drużyny w grze
 
@@ -331,9 +331,9 @@ it('blok na karcie startowej po angielsku: bez pól nicku i hasła, z polem kodu
 **Interfaces:**
 - Consumes: `ApiGry.nowyKod`, `usunDruzyne` z zadania 7.
 - Produces:
-  - `menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet` — z `siec` dwa przyciski: `menu-kod` („Kod powrotu drużyny” / “Team return code”) i, dla drużyny anonimowej, `menu-usun` („Usuń drużynę z serwera” / “Delete the team from the server”)
-  - `kodSheet(kod: string | null, blad?: Tx | string): Sheet` — kod dużą czcionką, przycisk `data-act="kod-kopiuj"`, zdanie „Zapiszcie go. Z tym kodem wrócicie do drużyny w innej przeglądarce. Nowy kod unieważnia poprzedni.” i angielska para
-  - `usunSheet(): Sheet` — potwierdzenie z przyciskami `usun-tak` i `usun-nie`
+  - `menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet`: z `siec` dwa przyciski: `menu-kod` („Kod powrotu drużyny” / “Team return code”) i, dla drużyny anonimowej, `menu-usun` („Usuń drużynę z serwera” / “Delete the team from the server”)
+  - `kodSheet(kod: string | null, blad?: Tx | string): Sheet`: kod dużą czcionką, przycisk `data-act="kod-kopiuj"`, zdanie „Zapiszcie go. Z tym kodem wrócicie do drużyny w innej przeglądarce. Nowy kod unieważnia poprzedni.” i angielska para
+  - `usunSheet(): Sheet`: potwierdzenie z przyciskami `usun-tak` i `usun-nie`
   - `GraSieciowa.kod(): Promise<string | null>`, `GraSieciowa.usun(): Promise<boolean>`, `GraSieciowa.pokazacKod(): boolean` (gra sieciowa drużyny anonimowej, kod jeszcze nie pokazany), `GraSieciowa.kodPokazany(): void`
 - Zachowanie: po zatwierdzeniu pierwszego porannego raportu (`report-ok`), gdy `siec.pokazacKod()`, gra pokazuje `kodSheet` z nowym kodem raz (pole `kodPokazany` w stanie sieci trafia do zapisu). Usunięcie drużyny kończy grę sieciową: gra toczy się dalej bez sieci z komunikatem.
 
@@ -346,11 +346,11 @@ it('pokazacKod jest prawdą raz: po kodPokazany i po zapisie z wczytaniem już n
 it('usun: po 204 gra bez sieci, bez dalszych zapisów do chmury', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- siec-kod` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- siec-kod`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj.**
-- [ ] **Krok 4: Uruchom** `npm test` — oczekiwane: PASS.
+- [ ] **Krok 4: Uruchom** `npm test`, oczekiwane: PASS.
 - [ ] **Krok 5: Zrzuty.** `npm run shots -- siec-kod` (Menu i okno kodu, komputer i telefon 390×844, po polsku i po angielsku), obejrzyj; okno mieści się na ekranie telefonu, a atrybucja map jest widoczna poza oknem.
-- [ ] **Krok 6: Commit** — `git commit -m "Kod powrotu po pierwszej nocy i w Menu, usunięcie drużyny z serwera"`
+- [ ] **Krok 6: Commit** `git commit -m "Kod powrotu po pierwszej nocy i w Menu, usunięcie drużyny z serwera"`
 
 ### Zadanie 11: Liczniki w grze
 
@@ -362,10 +362,10 @@ it('usun: po 204 gra bez sieci, bez dalszych zapisów do chmury', ...)
 **Interfaces:**
 - Consumes: `ApiGry.zdarzenie`, `ZDARZENIE_WZOR`, `siecWlaczona`.
 - Produces:
-  - `noweCele(przed: Record<string, number>, po: Record<string, number>): string[]` — klucze `StanSciezki.zrobione`, których nie było, jako `cel:<klucz>`
+  - `noweCele(przed: Record<string, number>, po: Record<string, number>): string[]`: klucze `StanSciezki.zrobione`, których nie było, jako `cel:<klucz>`
   - `zdarzenieStartu(tryb: 'zwykly' | 'zombie', jezyk: 'pl' | 'en', telefon: boolean): string`
-  - `progiDni(dzienPrzed: number, dzienPo: number): string[]` — `dzien:2`, `dzien:3`, `dzien:7` przy przekroczeniu
-  - `utworzLiczniki(api: Pick<ApiGry, 'zdarzenie'>, wlaczone: boolean): { wyslij(z: string): void }` — nic nie robi, gdy `wlaczone` jest fałszem albo zdarzenie nie pasuje do `ZDARZENIE_WZOR`; błędy sieci przemilcza
+  - `progiDni(dzienPrzed: number, dzienPo: number): string[]`: `dzien:2`, `dzien:3`, `dzien:7` przy przekroczeniu
+  - `utworzLiczniki(api: Pick<ApiGry, 'zdarzenie'>, wlaczone: boolean): { wyslij(z: string): void }`: nic nie robi, gdy `wlaczone` jest fałszem albo zdarzenie nie pasuje do `ZDARZENIE_WZOR`; błędy sieci przemilcza
 - Zachowanie: `wlaczone` to `siecWlaczona(params)` i działający serwer; start liczy się tylko w nowej grze (nie przy wczytaniu zapisu), cele tylko te zaliczone teraz (wczytany zapis z zaliczonymi celami niczego nie wysyła).
 
 - [ ] **Krok 1: Napisz testy, które padają**
@@ -377,10 +377,10 @@ it('wyłączone liczniki i złe nazwy zdarzeń nie wołają api', ...)
 it('błąd sieci przy wysyłce nie rzuca', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- liczniki` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- liczniki`, oczekiwane: FAIL.
 - [ ] **Krok 3: Zaimplementuj** moduł i trzy zaczepy w `src/main.ts` (w `widokCelow` porównaj `sciezka.zrobione` przed i po `krokSciezki`).
-- [ ] **Krok 4: Uruchom** `npm test` i `npm run bot` — oczekiwane: PASS, skrót bota bez zmian.
-- [ ] **Krok 5: Commit** — `git commit -m "Gra wysyła liczniki startu, celów i dni bez identyfikatora gracza"`
+- [ ] **Krok 4: Uruchom** `npm test` i `npm run bot`, oczekiwane: PASS, skrót bota bez zmian.
+- [ ] **Krok 5: Commit** `git commit -m "Gra wysyła liczniki startu, celów i dni bez identyfikatora gracza"`
 
 ### Zadanie 12: Informacja o danych osobowych i regulamin
 
@@ -404,11 +404,11 @@ it('obie strony mają sekcje #pl i #en i miejsca na dane firmy', ...)
 it('blok sieci i Menu gry sieciowej prowadzą do prywatnosc.html', ...)
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- prywatnosc` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- prywatnosc`, oczekiwane: FAIL.
 - [ ] **Krok 3: Napisz strony i odnośniki.**
-- [ ] **Krok 4: Uruchom** `npm test` i `npm run build` — oczekiwane: PASS, strony w `dist/`.
+- [ ] **Krok 4: Uruchom** `npm test` i `npm run build`, oczekiwane: PASS, strony w `dist/`.
 - [ ] **Krok 5: Zrzut** obu stron w Chromium (komputer i telefon), obejrzyj.
-- [ ] **Krok 6: Commit** — `git commit -m "Szkic informacji o danych osobowych i regulaminu z miejscami na dane firmy"`
+- [ ] **Krok 6: Commit** `git commit -m "Szkic informacji o danych osobowych i regulaminu z miejscami na dane firmy"`
 
 ### Zadanie 13: Konfiguracja wdrożenia (Vercel i drugi serwer API)
 
@@ -454,10 +454,10 @@ it('vercel.json: /api idzie pod ${ZM_API} z sekretem ze zmiennej, w pliku nie ma
   // tekst pliku nie zawiera 'sslip.io' ani 'hetzner'; brak kluczy 'rewrites' i 'headers'
 ```
 
-- [ ] **Krok 2: Uruchom** `npm test -- vercel-json` — oczekiwane: FAIL.
+- [ ] **Krok 2: Uruchom** `npm test -- vercel-json`, oczekiwane: FAIL.
 - [ ] **Krok 3: Napisz** `vercel.json`, zmiany compose i opisy w README (`.env` na serwerze z sekretami, krok po kroku: wdrożenie `api-prod`, blok Caddy z kopią Caddyfile przed zmianą, ustawienie projektu na Vercelu).
-- [ ] **Krok 4: Uruchom** `npm test -- vercel-json` i `docker compose -f deploy/hetzner/compose.obok.yml config` z przykładowym `.env` (bez demona) — oczekiwane: PASS i poprawna konfiguracja.
-- [ ] **Krok 5: Commit** — `git commit -m "Wdrożenie: vercel.json z /api przez zmienną, drugi serwer API dla produkcji"`
+- [ ] **Krok 4: Uruchom** `npm test -- vercel-json` i `docker compose -f deploy/hetzner/compose.obok.yml config` z przykładowym `.env` (bez demona), oczekiwane: PASS i poprawna konfiguracja.
+- [ ] **Krok 5: Commit** `git commit -m "Wdrożenie: vercel.json z /api przez zmienną, drugi serwer API dla produkcji"`
 - [ ] **Krok 6: Zatrzymaj się i poproś Mateusza o OK** na: założenie projektu `zamurem` w zespole „Mateusz's projects” na Vercelu z podpiętym repo `agentsmill/za-murem` (sprawdź wtedy, czy adres `zamurem.vercel.app` jest wolny; jeśli nie, zapytaj o inny i popraw `ZM_ZRODLA`), ustawienie zmiennych, wdrożenie `api-prod` i bloku Caddy na `cergo-rw-prod`. Bez OK dalsze kroki tego zadania czekają, a etap kończy się na zadaniu 14 lokalnie.
 - [ ] **Krok 7 (po OK): Sprawdź podgląd gałęzi na Vercelu.** `GET <podgląd>/api/zdrowie` daje `ip: 'proxy'`; Playwright na podglądzie: karta startowa z blokiem `druzyna`, nowa gra na prawdziwym adresie startuje w sieci, kod powrotu działa w drugim kontekście przeglądarki, `/v03/` działa, w konsoli bez błędów; zrzuty obejrzane.
 - [ ] **Krok 8 (po OK): Sprawdź bezpośredni adres serwera testowego bez sekretu.** Żądanie z obcym `x-real-ip` liczy się po adresie połączenia (`ip: 'xff'`), a `GET /api/liczniki` bez tokenu daje 404 albo 401.
@@ -467,10 +467,10 @@ it('vercel.json: /api idzie pod ${ZM_API} z sekretem ze zmiennej, w pliku nie ma
 **Files:**
 - Modify: `docs/POSTEP.md` (wpis w „Zrobione”, „Następne”), `CLAUDE.md` (sekcje „Wersje i gałęzie” i „Komendy”: Vercel, `VITE_SIEC`, nowe zmienne serwera)
 
-- [ ] **Krok 1:** `npm test` — oczekiwane: wszystkie zielone (poza znanymi oczekiwanymi porażkami z `main`).
-- [ ] **Krok 2:** `npx biome check src tests tools server index.html` — czysto.
-- [ ] **Krok 3:** `npm run build` — bez błędów; w `dist/` są `prywatnosc.html`, `regulamin.html`, `v03/`.
-- [ ] **Krok 4:** `npm run bot` i `npm run bot:zombie` — skróty takie jak w kroku 0 zadania 1.
-- [ ] **Krok 5:** `npm run shots -- --dalej` — bez błędów strony (znany niestabilny `dotyk` powtórzyć po nazwie); obejrzane `siec-druzyna`, `siec-kod` i karta startowa na telefonie.
+- [ ] **Krok 1:** `npm test`, oczekiwane: wszystkie zielone (poza znanymi oczekiwanymi porażkami z `main`).
+- [ ] **Krok 2:** `npx biome check src tests tools server index.html`: czysto.
+- [ ] **Krok 3:** `npm run build`: bez błędów; w `dist/` są `prywatnosc.html`, `regulamin.html`, `v03/`.
+- [ ] **Krok 4:** `npm run bot` i `npm run bot:zombie`: skróty takie jak w kroku 0 zadania 1.
+- [ ] **Krok 5:** `npm run shots -- --dalej`: bez błędów strony (znany niestabilny `dotyk` powtórzyć po nazwie); obejrzane `siec-druzyna`, `siec-kod` i karta startowa na telefonie.
 - [ ] **Krok 6:** Przegląd całej gałęzi przez świeżego recenzenta (tylko odczyt), poprawki z testami, które przed poprawką padały.
 - [ ] **Krok 7:** Wpis w `docs/POSTEP.md` i poprawki `CLAUDE.md`; commit `"Dziennik: premiera, etap 1"`. Do Mateusza: dane firmy do informacji o danych osobowych i zatwierdzenie tekstu; dopiero potem `VITE_SIEC=1` na produkcji i przekierowanie z Pages.
