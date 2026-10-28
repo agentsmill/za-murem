@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# UWAGA: gałąź bez tego wdroz.sh (i bez profilu prod w compose.obok.yml) nadpisuje .env jednym printf, kasując sekrety, a
-# jej `up --remove-orphans` usuwa działający kontener api-prod; wdrażać tak tylko po scaleniu tej zmiany (README, krok 0).
+# UWAGA (README, krok 0): zanim serwer z gałęzi wyjscie-na-swiat (albo z gałęzi, która ją zawiera) trafi na serwer testowy,
+# każda gałąź wdrażana tam (pelna-gra, noc-integracja i inne) musi zawierać tę zmianę, bo sam ten serwer podnosi schemat
+# bazy testowej do wersji 3, której starsze gałęzie nie znają (pętla restartów), a ich wdroz.sh nadpisuje .env jednym
+# printf i usuwa api-prod jako sierotę; wycofanie z kopii bazy (ZM_KOPIE) jest w tym samym kroku 0.
 # Build gry i wdrożenie na serwer Hetznera (Docker: gra i serwer gry sieciowej, katalog /srv/za-murem).
 # Dwa tryby, drugi tylko obok innej aplikacji (compose.obok.yml):
 #
@@ -9,12 +11,15 @@
 #    Obok innej aplikacji: ZM_IP=1.2.3.4 ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh
 #      (bez własnego Caddy: gra i API w sieci Dockera tamtej aplikacji, adres za-murem.<ip z kreskami>.sslip.io,
 #      blok dla tamtego Caddy w deploy/hetzner/README.md). Inny adres strony: ZM_SITE.
-#    Buduje i podnosi grę (www) oraz serwer testowy (api). Serwer produkcji (api-prod) leży w profilu `prod`, więc to
-#    wdrożenie go nie buduje, nie startuje, nie zatrzymuje i nie restartuje, z jakiejkolwiek gałęzi by szło.
+#    Buduje grę z VITE_SIEC=1 (gra z sąsiadami bez ?siec=1; ten przełącznik znika najpierw na serwerze testowym, a na
+#    produkcji na Vercelu dopiero po zatwierdzeniu informacji o danych osobowych) i podnosi grę (www) oraz serwer
+#    testowy (api). Serwer produkcji (api-prod) leży w profilu `prod`, więc to wdrożenie go nie buduje, nie startuje,
+#    nie zatrzymuje i nie restartuje, z jakiejkolwiek gałęzi by szło.
 #    Sekrety w .env na serwerze nie są warunkiem: gdy brakuje ZM_PROXY_SEKRET_TEST albo ZM_KONTAKT, skrypt ostrzega
 #    (sama nazwa zmiennej, nigdy wartość) i idzie dalej, a serwer traktuje puste wartości jak nieustawione.
 #
 # 2. Wdrożenie produkcji: ZM_PROD=1 ZM_IP=1.2.3.4 ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh
+#    Nie buduje gry (gra produkcyjna stoi na Vercelu i buduje się tam bez VITE_SIEC), wdraża tylko serwer API.
 #    Tylko z lokalnej gałęzi `main`, z czystym drzewem i dokładnie równej origin/main (skrypt sam robi
 #    `git fetch origin main`; inaczej komunikat i kod 1, zanim cokolwiek pójdzie na serwer). Wymaga w .env na serwerze: ZM_PROXY_SEKRET_PROD, ZM_LICZNIKI_TOKEN, ZM_KONTAKT (oraz SITE i ZM_SIEC z
 #    wcześniejszego zwykłego wdrożenia); bez nich staje przed jakąkolwiek zmianą na serwerze (sprawdzenie .env to
@@ -92,7 +97,8 @@ fi
 # w deploy/hetzner/README.md): skrypt odświeża tylko własne trzy linie (SITE, IP, ZM_SIEC), resztę zostawia, plik ma 0600.
 ODSWIEZ_ENV="touch .env && { grep -v -E '^(SITE|IP|ZM_SIEC)=' .env || true; printf 'SITE=%s\nIP=%s\nZM_SIEC=%s\n' '$SITE' '$IP' '$SIEC'; } > .env.nowy && mv .env.nowy .env"
 
-npm run build
+# gra z sąsiadami bez ?siec=1 na serwerze testowym (tryb ZM_PROD=1 gry nie buduje)
+VITE_SIEC=1 npm run build
 ssh "root@$IP" "mkdir -p $DIR/www && cd $DIR && (umask 077; $ODSWIEZ_ENV)"
 if [ -n "$SIEC" ]; then
   # serwer testowy z compose.obok.yml bierze te dwie wartości z .env; bez nich wstaje jak dziś (puste = nieustawione)

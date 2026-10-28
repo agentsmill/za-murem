@@ -27,6 +27,10 @@ exec sh -c "$cmd"
 const ATRAPA_LOG = `#!/bin/bash
 echo "$(basename "$0") $*" >> "$ZM_LOG"
 `;
+/** atrapa npm: loguje też, z jaką wartością VITE_SIEC wywołano budowę (ustawioną w otoczeniu przez skrypt) */
+const ATRAPA_NPM = `#!/bin/bash
+echo "npm $* VITE_SIEC=\${VITE_SIEC-nieustawione}" >> "$ZM_LOG"
+`;
 
 let katalogi: string[] = [];
 afterEach(() => {
@@ -96,7 +100,7 @@ function przygotuj(envSerwera?: string): Srodowisko {
   git(repo, 'push', '-q', 'origin', 'main');
   for (const n of ['ssh', 'rsync', 'scp', 'docker', 'npm']) {
     const plik = join(bin, n);
-    writeFileSync(plik, n === 'ssh' ? ATRAPA_SSH : ATRAPA_LOG);
+    writeFileSync(plik, n === 'ssh' ? ATRAPA_SSH : n === 'npm' ? ATRAPA_NPM : ATRAPA_LOG);
     chmodSync(plik, 0o755);
   }
   if (envSerwera !== undefined) writeFileSync(join(srv, '.env'), envSerwera, { mode: 0o600 });
@@ -176,6 +180,19 @@ describe('wdroz.sh: zwykłe wdrożenie (test)', () => {
     // .env: odświeżone trzy własne linie, sekrety zachowane
     expect(s.env()).toContain('ZM_PROXY_SEKRET_PROD=wartosc-prod-2');
     expect(s.env()).toContain(`IP=${IP}`);
+  });
+
+  it('buduje grę z VITE_SIEC=1 (?siec=1 znika najpierw na serwerze testowym), także gdy w otoczeniu jest inna wartość', () => {
+    for (const otoczenie of [{}, { VITE_SIEC: '0' }]) {
+      const s = przygotuj(WSZYSTKIE);
+      const w = s.uruchom({ ZM_SIEC: 'cergo_default', ...otoczenie });
+      expect(w.status).toBe(0);
+      expect(s.dziennik()).toContain('npm run build VITE_SIEC=1');
+    }
+    // bez ZM_SIEC (własny serwer z Caddy) tak samo
+    const wlasny = przygotuj(WSZYSTKIE);
+    expect(wlasny.uruchom().status).toBe(0);
+    expect(wlasny.dziennik()).toContain('npm run build VITE_SIEC=1');
   });
 
   it('idzie z dowolnej gałęzi i z brudnego drzewa (nocna integracja)', () => {
@@ -322,5 +339,90 @@ describe('wdroz.sh: produkcja (ZM_PROD=1)', () => {
     expect(s.env()).toBe(przed);
     for (const wartosc of WARTOSCI) expect(w.stdout + w.stderr + dziennik).not.toContain(wartosc);
     expect(w.stdout).toContain('Produkcja (api-prod) wdrożona z gałęzi main');
+  });
+});
+
+describe('deploy/hetzner/README.md i nagłówek wdroz.sh: krok 0, kolejność wdrożenia, sprawdzenie podglądu', () => {
+  const README = readFileSync(new URL('../../deploy/hetzner/README.md', import.meta.url), 'utf8');
+  /** treść punktu listy „Kolejność, gdy jest OK” o danym numerze (do początku następnego punktu) */
+  const punkt = (n: number): string => {
+    const od = README.indexOf(`\n${n}. `);
+    const doNastepnego = README.indexOf(`\n${n + 1}. `, od + 1);
+    expect(od, `brak punktu ${n}`).toBeGreaterThan(-1);
+    return README.slice(od, doNastepnego === -1 ? undefined : doNastepnego);
+  };
+
+  it('krok 0: każda gałąź wdrażana na serwer testowy musi zawierać tę zmianę, trzy powody i wycofanie z kopii bazy', () => {
+    const k0 = punkt(0);
+    for (const g of ['pelna-gra', 'noc-integracja', 'wyjscie-na-swiat']) expect(k0, g).toContain(g);
+    expect(k0).toMatch(/zanim/i);
+    // trzy powody: schemat bazy (wersja 3 kontra 1, pętla restartów), nadpisany .env, usunięty api-prod jako sierota
+    expect(k0).toContain('Baza ma schemat w wersji 3');
+    expect(k0).toContain('wersji 1');
+    expect(k0).toContain('pętl');
+    expect(k0).toContain('.env');
+    expect(k0).toContain('printf');
+    expect(k0).toContain('sierot');
+    expect(k0).toContain('api-prod');
+    // wycofanie: kopia bazy sprzed wdrożenia z ZM_KOPIE, krok po kroku jak w server/README.md
+    expect(k0).toContain('ZM_KOPIE');
+    expect(k0).toContain('Przywracanie z kopii');
+    expect(k0).toContain('server/README.md');
+    expect(k0).toContain('docker compose stop api');
+  });
+
+  it('nagłówek wdroz.sh jednym zdaniem odsyła do kroku 0 i podaje powody', () => {
+    const naglowek = SKRYPT.split('\nset -euo pipefail')[0];
+    expect(naglowek).toContain('pelna-gra');
+    expect(naglowek).toContain('schemat');
+    expect(naglowek).toContain('wersji 3');
+    expect(naglowek).toContain('.env');
+    expect(naglowek).toContain('sierot');
+    expect(naglowek).toContain('krok 0');
+    // stary opis „gałąź bez tego wdroz.sh…” (który nie dotyczył niczego, co by go czytało) zniknął
+    expect(naglowek).not.toContain('gałąź bez tego wdroz.sh');
+  });
+
+  it('api-prod wdraża się dopiero po zatwierdzeniu informacji o danych osobowych, a OK Mateusza przed tym obejmuje Vercel, podglądy i serwer testowy', () => {
+    const ok = punkt(1);
+    expect(ok).toContain('OK Mateusza');
+    expect(ok).toMatch(/projektu na Vercelu/i);
+    expect(ok).toMatch(/zmienne podglądów/i);
+    expect(ok).toMatch(/serwer testowy/i);
+    expect(ok).not.toContain('ZM_PROD=1');
+    // wszystko, co dotyka produkcji (sekrety produkcji, blok Caddy, ZM_PROD=1), jest w punktach po zatwierdzeniu informacji
+    const indeksZatwierdzenia = README.indexOf('zatwierdzeniu informacji o danych osobowych', README.indexOf('\n0. '));
+    expect(indeksZatwierdzenia).toBeGreaterThan(-1);
+    expect(README.indexOf('ZM_PROD=1 ZM_IP=')).toBeGreaterThan(indeksZatwierdzenia);
+    expect(README.indexOf('dopisujemy raz: skrypt poniżej')).toBeGreaterThan(indeksZatwierdzenia);
+    const poZatwierdzeniu = README.slice(indeksZatwierdzenia - 300, indeksZatwierdzenia + 700);
+    expect(poZatwierdzeniu).toContain('?siec=1');
+    expect(poZatwierdzeniu).toContain('zamurem.vercel.app');
+    expect(poZatwierdzeniu).toContain('miejsca');
+  });
+
+  it('sprawdzenie podglądu ma cztery dodatkowe sprawdzenia: X-Real-IP 301 razy, zapis 2–3 MB, /api/adres z parametrem, docker ps po zwykłym wdrożeniu', () => {
+    const od = README.indexOf('### Sprawdzenie podglądu');
+    expect(od).toBeGreaterThan(-1);
+    const nastepny = README.indexOf('\n### ', od + 1);
+    const sekcja = README.slice(od, nastepny === -1 ? undefined : nastepny);
+    expect(sekcja).toContain('/api/zdrowie');
+    expect(sekcja).toContain('"ip": "proxy"');
+    expect(sekcja).toMatch(/X-Real-IP/);
+    expect(sekcja).toContain('301');
+    expect(sekcja).toContain('429');
+    expect(sekcja).toMatch(/2.3 MB/);
+    expect(sekcja).toContain('/api/adres?q=');
+    expect(sekcja).toContain('docker ps');
+    expect(sekcja).toContain('api-prod');
+  });
+
+  it('opis restartu planowego nie twierdzi, że skrypt wdrożenia i stos cergo są bez zmian', () => {
+    expect(README).not.toContain('Skrypt wdrożenia i stos cergo bez zmian');
+    const i = README.indexOf('Obie zmienne wejdą na serwer przy najbliższym wdrożeniu');
+    expect(i).toBeGreaterThan(-1);
+    const zdanie = README.slice(i, README.indexOf('\n', i));
+    // zmienne wchodzą razem ze zmianami wdroz.sh i compose.obok.yml z tej gałęzi (krok 0)
+    expect(zdanie).toMatch(/krok(u)? 0/);
   });
 });
