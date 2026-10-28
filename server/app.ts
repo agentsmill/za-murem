@@ -29,6 +29,8 @@
      POST   /api/zdarzenie          dolicz zdarzenie do sum dziennych {z}    → 204, bez sesji; 400 nieznane, 429
      GET    /api/liczniki?od=<ms>   sumy zdarzeń i powroty kont              → {liczniki, powroty}; tylko z nagłówkiem
                                     Authorization: Bearer <token>, bez tokenu w opcjach 404, zły token 401
+     GET    /api/adres?q=&j=pl|en   adres → miejsce (WynikAdresu), bez sesji → 200, 404 nie_ma, 400 (puste albo
+                                    dłuższe niż 200 znaków), 503 serwer_zajety, 429 po 30 w minutę
 
    Drużyna anonimowa (POST /api/druzyna) to konto bez nicku i hasła, z numerem jako znakiem (`#12`), zakładane przy
    pierwszym wejściu bez formularza; najwyżej 30 nowych na IP na godzinę (żądanie z ważną sesją się nie liczy).
@@ -49,6 +51,15 @@
    GET /api/liczniki działa tylko z `tokenLicznikow` w opcjach (ZM_LICZNIKI_TOKEN, porównanie skrótów w stałym czasie,
    jak sekret proxy); bez niego trasa daje 404, a po 10 złych próbach z IP w kwadrans 429. `od` odcina doby liczników
    i kohorty powrotów założone przed tą chwilą.
+
+   Wyszukiwanie adresu (server/adres.ts): GET /api/adres pyta za gracza publiczny Nominatim, spokojnie i raz na adres.
+   Zapytania idą do Nominatim w odstępach co najmniej 1100 ms; które musiałoby czekać dłużej niż 3 s, idzie od razu do
+   Photona (komoot), tak samo jak zapytanie po błędzie, 429 albo przekroczeniu 6 s. Wyniki leżą w pamięci procesu pod
+   kluczem SHA-256 znormalizowanego zapytania (30 dni, brak wyniku i wynik z Photona dobę, najwyżej 5000 wpisów), a po
+   restarcie serwera pamięć jest pusta. Bez sesji i bez ciasteczka; najwyżej 30 zapytań na IP na minutę (okno w
+   pamięci, liczone przed pierwszym await, także trafienia w pamięć i zapytania błędne). Serwer nie zapisuje tekstu
+   zapytań ani adresów IP, także w dzienniku błędów: gdy zawiodą oba dostawcy, do dziennika idzie jedna linia z samymi
+   powodami (najwyżej raz na minutę). `ZM_KONTAKT` (opcje: `adres.kontakt`) trafia do User-Agent dla Nominatim.
 
    Zajęte klatki widać tylko w swojej okolicy: każdy z czterech rogów prostokąta GET /api/klatki musi leżeć najwyżej
    `ZASIEG_ZAPYTAN_M` (1500 m) od siedziby drużyny, a drużyna bez siedziby (jeszcze nie zajęła klatki albo ją zwolniła)
@@ -95,6 +106,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { promisify } from 'node:util';
 import { gunzip, gzip } from 'node:zlib';
 import {
+  ADRES_MAX_ZNAKOW,
   API_WERSJA,
   type DaneLogowania,
   HASLO_MAX,
@@ -122,6 +134,7 @@ import {
   zleHaslo,
   zlyNick,
 } from '../src/net/protokol.ts';
+import { AdresNiedostepny, type OpcjeAdresu, wyszukiwarka } from './adres.ts';
 import { type Baza, type Klatka, type Konto, otworzBaze } from './baza.ts';
 import {
   atrapaHasla,
@@ -194,6 +207,9 @@ export interface OpcjeSerwera {
   klatkiDni?: number;
   /** po ilu dniach bez gry konto znika z sesjami, klatkami i zapisem (domyślnie KONTA_DNI, czyli 180) */
   kontaDni?: number;
+  /** wyszukiwanie adresu (GET /api/adres): kontakt do User-Agent, rozmiar pamięci, odstępy kolejki, `fetch` i czekanie
+      w testach; zegar bierze z `teraz` serwera, jeśli tu go nie podano */
+  adres?: OpcjeAdresu;
   /** zegar (ms od 1970) */
   teraz?: () => number;
   /** dziennik błędów serwera (domyślnie console.error) */
@@ -269,8 +285,8 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const dobrySekret = (req: IncomingMessage): boolean => zgodnySkrot(sekretSkrot, req.headers[NAGLOWEK_PROXY]);
 
   // limity w pamięci: nieudane logowania (i powroty z kodem) na IP i na nick, nowe konta, nowe drużyny anonimowe
-  // i zajęte nicki na IP, wszystkie żądania na IP, przyjęte zdarzenia liczników i złe tokeny liczników na IP,
-  // zapisy i nowe kody powrotu na konto
+  // i zajęte nicki na IP, wszystkie żądania na IP, zapytania o adres na IP, przyjęte zdarzenia liczników i złe tokeny
+  // liczników na IP, zapisy i nowe kody powrotu na konto
   const logowania: Okno = okno(10, 15 * MIN, teraz);
   const logowaniaNicku: Okno = okno(20, 15 * MIN, teraz);
   const rejestracje: Okno = okno(5, GODZ, teraz);
@@ -280,6 +296,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   const zapisy: Okno = okno(60, GODZ, teraz);
   const kody: Okno = okno(10, GODZ, teraz);
   const zdarzenia: Okno = okno(120, GODZ, teraz);
+  const adresy: Okno = okno(30, MIN, teraz);
   const zleTokeny: Okno = okno(10, 15 * MIN, teraz);
   /** zmiany okolicy na konto: punkt startu, nowa siedziba daleko od punktu startu i przeniesienie siedziby przy
       zwolnieniu (najwyżej 5 na dobę) */
@@ -294,12 +311,17 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     zapisy,
     kody,
     zdarzenia,
+    adresy,
     zleTokeny,
     zmianyStartu,
   ];
   /** punkty startu drużyn (PUT /api/druzyna/start), tylko w pamięci procesu: to w praktyce adres gracza, a siedziba
       drużyny i tak leży w `klatki`. `uzyty` to chwila ostatniej zmiany albo zapytania, z której korzysta sprzataj. */
   const punktyStartu = new Map<number, { lat: number; lon: number; uzyty: number }>();
+  /** wyszukiwanie adresu: kolejka do Nominatim i pamięć wyników w procesie (server/adres.ts), na zegarze serwera */
+  const szukajAdresu = wyszukiwarka({ ...op.adres, teraz: op.adres?.teraz ?? teraz });
+  /** chwila ostatniego wpisu w dzienniku o awarii wyszukiwania adresu (najwyżej jeden na minutę) */
+  let awariaAdresuOd = Number.NEGATIVE_INFINITY;
   /** konta, których zapis właśnie się wysyła: drugi naraz to 429 */
   const zapisyWToku = new Set<number>();
   /** chwila ostatniego przebiegu wygasania klatek i kont (sprzataj liczy je najwyżej raz na godzinę) */
@@ -845,6 +867,41 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     }
   };
 
+  /** GET /api/adres?q=&j=pl|en: bez sesji. Próba liczy się od razu (przed await), także trafienie w pamięć i zapytanie
+      błędne. Tekstu zapytania nie zapisujemy: do dziennika idą same powody awarii, a niespodziewany wyjątek wyszukiwarki
+      idzie dalej bez swojego komunikatu (mógłby nieść zapytanie), tylko z nazwą błędu. */
+  const adres: Obsluga = async (k) => {
+    const czekaj = adresy.zablokowany(k.ip);
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo wyszukiwań adresu z tego miejsca. Spróbujcie za chwilę.');
+    adresy.dolicz(k.ip);
+    const q = (k.url.searchParams.get('q') ?? '').trim();
+    if (!q || q.length > ADRES_MAX_ZNAKOW)
+      throw new BladHttp(400, 'zle_dane', `Podajcie adres, najwyżej ${ADRES_MAX_ZNAKOW} znaków.`);
+    const j = k.url.searchParams.get('j') ?? 'pl';
+    if (j !== 'pl' && j !== 'en') throw new BladHttp(400, 'zle_dane', 'Język to pl albo en.');
+    let wynik: Awaited<ReturnType<typeof szukajAdresu.szukaj>>;
+    try {
+      wynik = await szukajAdresu.szukaj(q, j);
+    } catch (e) {
+      if (!(e instanceof AdresNiedostepny))
+        throw new Error(`wyszukiwarka adresów: ${e instanceof Error ? e.name : typeof e}`);
+      if (k.teraz - awariaAdresuOd >= MIN) {
+        awariaAdresuOd = k.teraz;
+        dziennik(`adres: wyszukiwanie niedostępne (${e.message})`);
+      }
+      throw new BladHttp(503, 'serwer_zajety', 'Wyszukiwarka adresów jest teraz niedostępna. Spróbujcie za chwilę.', {
+        'Retry-After': '5',
+      });
+    }
+    if (!wynik)
+      throw new BladHttp(
+        404,
+        'nie_ma',
+        'Nie znalazłem takiego adresu. Spróbujcie z miastem, np. „Wołoska 12, Warszawa”.',
+      );
+    wyslij(k.res, 200, wynik, k.naglowki);
+  };
+
   /** trasa istnieje tylko z tokenem w opcjach (TRASY), więc `zgodnySkrot` nigdy nie dostaje tu null */
   const odczytajLiczniki: Obsluga = async (k) => {
     const czekaj = zleTokeny.zablokowany(k.ip);
@@ -874,6 +931,7 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     '/api/klatki/moje': { GET: mojeKlatki, DELETE: zwolnijMoje },
     '/api/zapis': { GET: pobierzZapis, PUT: wyslijZapis, DELETE: usunZapis },
     '/api/zdarzenie': { POST: zdarzenie },
+    '/api/adres': { GET: adres },
     // bez tokenu w opcjach tej trasy nie ma w ogóle (404 dla każdej metody), więc nic nie zdradza, że istnieje
     ...(tokenSkrot ? { '/api/liczniki': { GET: odczytajLiczniki } } : {}),
   };

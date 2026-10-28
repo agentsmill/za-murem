@@ -1,6 +1,6 @@
 # Serwer gry Za Murem
 
-Małe API pod `/api` dla gry sieciowej: konta (nick i hasło), drużyny anonimowe z kodem powrotu, sesje, zajęte klatki, zapis gry w chmurze i anonimowe liczniki zdarzeń. Gra dalej liczy się w przeglądarce, serwer pilnuje tylko, kto ma którą klatkę. Projekt: `docs/superpowers/specs/2026-10-18-multiplayer-design.md`. Lista adresów API jest w nagłówku `server/app.ts`, typy i kody błędów w `src/net/protokol.ts`.
+Małe API pod `/api` dla gry sieciowej: konta (nick i hasło), drużyny anonimowe z kodem powrotu, sesje, zajęte klatki, zapis gry w chmurze, anonimowe liczniki zdarzeń i wyszukiwanie adresu. Gra dalej liczy się w przeglądarce, serwer pilnuje tylko, kto ma którą klatkę. Projekt: `docs/superpowers/specs/2026-10-18-multiplayer-design.md`. Lista adresów API jest w nagłówku `server/app.ts`, typy i kody błędów w `src/net/protokol.ts`.
 
 Node 24 (działa od 22.18) bez zależności z npm: TypeScript uruchamiany wprost, `node:http`, `node:sqlite`, `node:crypto`, `node:zlib`. Gra na GitHub Pages i dema offline działają bez serwera.
 
@@ -76,6 +76,32 @@ curl -s -H "Authorization: Bearer $ZM_LICZNIKI_TOKEN" "https://<adres api>/api/l
 
 Testy: `npm test -- serwer-liczniki`.
 
+## Wyszukiwanie adresu
+
+`GET /api/adres?q=<adres>&j=pl|en` szuka adresu za gracza, żeby fala graczy (np. z Reddita) nie zablokowała nam publicznego Nominatim, który pozwala na jedno zapytanie na sekundę i wymaga User-Agent z kontaktem. Bez sesji i bez ciasteczka, `j` to język etykiety (domyślnie `pl`). Odpowiedź ma kształt `WynikAdresu` z `src/net/protokol.ts`, czyli wynik geokodera z `src/world/osm.ts`:
+
+```json
+{ "lat": 54.4153, "lon": 18.5748, "label": "4, Obrońców Wybrzeża, Przymorze Małe, …", "area": "Przymorze Małe", "street": "Obrońców Wybrzeża", "city": "Gdańsk" }
+```
+
+| odpowiedź | kiedy |
+|---|---|
+| 200 `WynikAdresu` | adres znaleziony (z pamięci, Nominatim albo Photona) |
+| 404 `nie_ma` | Nominatim (albo Photon, gdy Nominatim nie mógł odpowiedzieć) nie zna takiego adresu |
+| 400 `zle_dane` | puste zapytanie, dłuższe niż 200 znaków (`ADRES_MAX_ZNAKOW`) albo język inny niż `pl` i `en` |
+| 429 `za_duzo_prob` | więcej niż 30 zapytań na minutę z jednego IP (liczą się też trafienia w pamięć i zapytania błędne); dwadzieścia w kwadrans z akademika przechodzi bez problemu |
+| 503 `serwer_zajety` | zawiodły i Nominatim, i Photon; klient pyta wtedy Nominatim sam |
+
+Jak serwer to robi (`server/adres.ts`):
+
+- **Pamięć.** Wyniki leżą w pamięci procesu pod kluczem SHA-256 znormalizowanego zapytania z językiem (wielkość liter, nadmiarowe spacje i rozłożone znaki nie mają znaczenia, więc „Obrońców Wybrzeża 4, Gdańsk” i „  obrońców  wybrzeża 4,  GDAŃSK ” to jeden wpis). Najwyżej 5000 wpisów: najstarszy odpada, trafienie przenosi wpis na koniec. Wynik z Nominatim żyje 30 dni, brak wyniku i wszystko z Photona dobę; awarii nie pamiętamy. Dwa takie same zapytania naraz to jedno zapytanie na zewnątrz. Po restarcie serwera pamięć jest pusta. Nie ma jej na dysku ani w bazie.
+- **Kolejka do Nominatim.** Zapytania startują co najmniej 1100 ms po sobie. Które musiałoby czekać dłużej niż 3 s, idzie od razu do Photona (komoot, `photon.komoot.io`, język `en`; polski bez `lang`, bo Photon go nie zna). Po 429 albo 403 od Nominatim (blokada) serwer nie pyta go przez minutę, tylko Photon. Zapytanie do dostawcy trwa najwyżej 6 s.
+- **Photon w zapasie.** Błąd, 429, zła odpowiedź albo przekroczony czas Nominatim to zapytanie do Photona; jego wynik ma te same pola, a etykieta jest składana z ulicy, numeru, dzielnicy i miasta (Photon bywa mniej dokładny, dlatego jego wyniki pamiętamy tylko dobę).
+- **User-Agent.** `ZaMurem/1.0 (+https://zamurem.vercel.app; <ZM_KONTAKT>)`; bez `ZM_KONTAKT` bez części po średniku. Polityka Nominatim wymaga prawdziwego kontaktu, więc na produkcji `ZM_KONTAKT` ustawiamy (adres e-mail Mateusza albo strona z formularzem).
+- **Prywatność.** Tekst zapytania wychodzi tylko w adresie URL do dostawcy. Serwer nie zapisuje go ani adresu IP, także w dzienniku błędów: gdy zawiodą oba dostawcy, do dziennika idzie jedna linia z samymi powodami (`adres: wyszukiwanie niedostępne (Nominatim: http 429; Photon: czas)`), najwyżej raz na minutę. Dostawcy widzą zapytania z adresu IP serwera, nie gracza.
+
+Testy bez sieci (udawany `fetch`, zegar i czekanie w kolejce): `npm test -- serwer-adres`.
+
 ## Zmienne środowiskowe
 
 | zmienna | domyślnie | co robi |
@@ -88,6 +114,7 @@ Testy: `npm test -- serwer-liczniki`.
 | `ZM_PROXY_SEKRET` | brak | sekret, który Vercel wysyła w nagłówku `x-zm-proxy`; żądanie z dobrym sekretem ma adres klienta z nagłówka `ZM_PROXY_IP`, bez sekretu albo ze złym ten nagłówek się nie liczy; wartość tylko w `.env` na serwerze i w zmiennych Vercela, nigdy w repo ani w logach |
 | `ZM_PROXY_IP` | `x-real-ip` | nagłówek z adresem klienta, któremu serwer ufa przy dobrym `ZM_PROXY_SEKRET` |
 | `ZM_LICZNIKI_TOKEN` | brak | token odczytu `GET /api/liczniki` (nagłówek `Authorization: Bearer`); bez niego trasa odpowiada 404; wartość tylko w `.env` na serwerze, nigdy w repo ani w logach |
+| `ZM_KONTAKT` | brak | adres kontaktowy (e-mail albo strona) w User-Agent, którym serwer przedstawia się Nominatim przy wyszukiwaniu adresów; polityka Nominatim go wymaga; tylko w `.env` na serwerze i w zmiennych wdrożenia, nigdy w repo |
 | `ZM_CIASTECZKO_SECURE` | 1 | 0: ciasteczko sesji bez Secure (lokalnie po http) |
 | `ZM_LIMIT_ZAPISU` | 3145728 | największy zapis gry w bajtach JSON |
 | `ZM_LIMIT_KLATEK` | 60 | najwięcej klatek na konto |

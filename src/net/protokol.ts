@@ -13,6 +13,9 @@
      wizyty przez KONTA_DNI dni znika z klatkami, sesjami i zapisem (liczy się wizyta z dokładnością do doby),
    - liczniki: POST /api/zdarzenie dolicza zdarzenie ze wzoru ZDARZENIE_WZOR do sumy na dobę (bez sesji, bez śladu
      gracza), powroty kont liczy sam serwer, a odczyt (Liczniki) jest tylko z tokenem właściciela,
+   - wyszukiwanie adresu: GET /api/adres?q=&j=pl|en (bez sesji) oddaje WynikAdresu, ten sam kształt co wynik geokodera
+     w src/world/osm.ts; serwer pyta Nominatim przez kolejkę (jedno zapytanie na sekundę), pamięta wyniki i w razie
+     potrzeby pyta Photon, a tekstu zapytań nie zapisuje nigdzie poza pamięcią procesu (skrót SHA-256),
    - zapis gry w chmurze to obiekt JSON bez tekstu adresu: bez data.addr i data.street, bez tagów addr:* przy
      budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza),
    - serwer mówi po polsku (komunikat w odpowiedzi z błędem); angielska wersja gry tłumaczy go u klienta po kodzie
@@ -317,6 +320,20 @@ export const ZDARZENIE_WZOR = /^(start:(zwykly|zombie):(pl|en):(tel|komp)|cel:[A
 export interface Liczniki {
   liczniki: { dzien: number; zdarzenie: string; n: number }[];
   powroty: { zalozone: number; poDniach: number; n: number }[];
+}
+
+/** Najdłuższe zapytanie o adres w znakach (GET /api/adres?q=): dłuższe to 400 zle_dane. */
+export const ADRES_MAX_ZNAKOW = 200;
+
+/** GET /api/adres?q=&j=pl|en: współrzędne i opis miejsca; ten sam kształt co `GeocodeResult` w src/world/osm.ts
+    (`label` to pełna etykieta, `area` osiedle albo okolica, `street` ulica, `city` miejscowość; puste, gdy nie ma) */
+export interface WynikAdresu {
+  lat: number;
+  lon: number;
+  label: string;
+  area: string;
+  street: string;
+  city: string;
 }
 
 type Obiekt = Record<string, unknown>;
