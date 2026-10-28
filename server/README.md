@@ -109,12 +109,12 @@ Testy bez sieci (udawany `fetch`, zegar i czekanie w kolejce): `npm test -- serw
 | `PORT` | 8787 | port HTTP |
 | `HOST` | 127.0.0.1 (w kontenerze 0.0.0.0) | adres nasłuchu |
 | `ZM_BAZA` | `./za-murem.db` (w kontenerze `/dane/za-murem.db`) | plik SQLite; `:memory:` na próbę |
-| `ZM_ZRODLA` | puste | dozwolone nagłówki Origin po przecinku, np. `https://twoja.domena`; wzór może mieć gwiazdkę za jeden kawałek nazwy hosta (`[a-z0-9-]+`, bez kropki), np. `https://zamurem-*-konto.vercel.app` dla podglądów gałęzi na Vercelu; puste: ta sama strona co nagłówek Host |
+| `ZM_ZRODLA` | puste | dozwolone nagłówki Origin po przecinku, np. `https://twoja.domena`; wzór może mieć gwiazdkę za jeden kawałek nazwy hosta (`[a-z0-9-]+`, bez kropki), np. `https://zamurem-*-konto.vercel.app` dla podglądów gałęzi na Vercelu (nigdy `https://*.vercel.app`); puste: ta sama strona co nagłówek Host |
 | `ZM_ZAUFANE_PROXY` | 0 (w kontenerze 1) | 1: adres klienta z ostatniego wpisu X-Forwarded-For; tylko za własnym proxy |
 | `ZM_PROXY_SEKRET` | brak | sekret, który Vercel wysyła w nagłówku `x-zm-proxy`; żądanie z dobrym sekretem ma adres klienta z nagłówka `ZM_PROXY_IP`, bez sekretu albo ze złym ten nagłówek się nie liczy; wartość tylko w `.env` na serwerze i w zmiennych Vercela, nigdy w repo ani w logach |
 | `ZM_PROXY_IP` | `x-real-ip` | nagłówek z adresem klienta, któremu serwer ufa przy dobrym `ZM_PROXY_SEKRET` |
 | `ZM_LICZNIKI_TOKEN` | brak | token odczytu `GET /api/liczniki` (nagłówek `Authorization: Bearer`); bez niego trasa odpowiada 404; wartość tylko w `.env` na serwerze, nigdy w repo ani w logach |
-| `ZM_KONTAKT` | brak | adres kontaktowy (e-mail albo strona) w User-Agent, którym serwer przedstawia się Nominatim przy wyszukiwaniu adresów; polityka Nominatim go wymaga; tylko w `.env` na serwerze i w zmiennych wdrożenia, nigdy w repo |
+| `ZM_KONTAKT` | brak | adres kontaktowy (e-mail albo strona) w User-Agent, którym serwer przedstawia się Nominatim przy wyszukiwaniu adresów; polityka Nominatim go wymaga, więc na produkcji musi być ustawiony (wartość podaje Mateusz); tylko w `.env` na serwerze i w zmiennych wdrożenia, nigdy w repo |
 | `ZM_CIASTECZKO_SECURE` | 1 | 0: ciasteczko sesji bez Secure (lokalnie po http) |
 | `ZM_LIMIT_ZAPISU` | 3145728 | największy zapis gry w bajtach JSON |
 | `ZM_LIMIT_KLATEK` | 60 | najwięcej klatek na konto |
@@ -136,7 +136,7 @@ docker run -d --name za-murem-serwer --restart unless-stopped \
   -e ZM_ZRODLA=https://twoja.domena -e ZM_RESTART_H=48 -e ZM_KOPIE=/dane/kopie za-murem-serwer
 ```
 
-Dwie ostatnie zmienne włączają restart co 48 godzin i codzienne kopie bazy (niżej); bez nich serwer działa jak dotąd. W compose z `deploy/hetzner` obie są ustawione, a kontener nazywa się `za-murem-api`.
+Dwie ostatnie zmienne włączają restart co 48 godzin i codzienne kopie bazy (niżej); bez nich serwer działa jak dotąd. W compose z `deploy/hetzner` obie są ustawione. Kontener serwera testowego nazywa się `za-murem-api` (usługa `api`), a produkcji `za-murem-api-prod` (usługa `api-prod`, osobny wolumen `dane_prod`); to ten sam obraz z różnymi zmiennymi.
 
 Port wystawiamy tylko na `127.0.0.1`: kontener ufa X-Forwarded-For (`ZM_ZAUFANE_PROXY=1`), więc wystawiony na świat pozwoliłby obejść limity prób podrobionym nagłówkiem. Przed serwerem stoi Caddy z HTTPS na tej samej domenie co gra, na przykład:
 
@@ -157,7 +157,9 @@ twoja.domena {
 
 Serwer bierze adres klienta z ostatniego wpisu X-Forwarded-For, czyli z tego, który dopisał Caddy (bez `trusted_proxies` Caddy nie przepuszcza tego nagłówka od klienta; warto to sprawdzić na wdrożonej wersji). Bezczynne połączenia Caddy trzyma do serwera 2 minuty, a serwer 130 s, żeby nie zamykał połączenia, które Caddy właśnie bierze na kolejne żądanie. Logi dostępu Caddy z adresami IP lepiej wyłączyć albo trzymać krótko (RODO).
 
-Za Vercelem (statyczna gra na Vercelu przekazuje `/api/*` na ten serwer) przez Caddy przychodzą adresy serwerów Vercela, a nie graczy, więc limity prób liczyłyby wszystkich graczy razem. Dlatego z `ZM_PROXY_SEKRET` serwer ufa nagłówkowi `ZM_PROXY_IP` (domyślnie `x-real-ip`) tylko wtedy, gdy żądanie ma nagłówek `x-zm-proxy` równy sekretowi (porównanie w stałym czasie). Bez sekretu albo ze złym nagłówek z adresem się nie liczy i działa dotychczasowa kolejność: `ZM_ZAUFANE_PROXY` (X-Forwarded-For), potem adres połączenia. `GET /api/zdrowie` w polu `ip` mówi, która ścieżka zadziałała (`proxy`, `xff` albo `polaczenie`), bez samego adresu; tak sprawdzamy po wdrożeniu, czy Vercel naprawdę przekazuje sekret. Podglądy gałęzi na Vercelu mają Origin w postaci `https://projekt-<gałąź>-<zespół>.vercel.app`, więc `ZM_ZRODLA` dostaje wzór z gwiazdką zamiast listy adresów.
+Za Vercelem (statyczna gra na Vercelu przekazuje `/api/*` na ten serwer) przez Caddy przychodzą adresy serwerów Vercela, a nie graczy, więc limity prób liczyłyby wszystkich graczy razem. Dlatego z `ZM_PROXY_SEKRET` serwer ufa nagłówkowi `ZM_PROXY_IP` (domyślnie `x-real-ip`) tylko wtedy, gdy żądanie ma nagłówek `x-zm-proxy` równy sekretowi (porównanie w stałym czasie). Bez sekretu albo ze złym nagłówek z adresem się nie liczy i działa dotychczasowa kolejność: `ZM_ZAUFANE_PROXY` (X-Forwarded-For), potem adres połączenia. `GET /api/zdrowie` w polu `ip` mówi, która ścieżka zadziałała (`proxy`, `xff` albo `polaczenie`), bez samego adresu; tak sprawdzamy po wdrożeniu, czy Vercel naprawdę przekazuje sekret. Podglądy gałęzi na Vercelu mają Origin w postaci `https://projekt-<gałąź>-<zespół>.vercel.app`, więc `ZM_ZRODLA` dostaje wzór z gwiazdką zamiast listy adresów. Gwiazdka zostaje w nazwach naszego projektu (`https://zamurem-*-mateuszs-projects-73382f2a.vercel.app`), nigdy `https://*.vercel.app`: to wpuściłoby strony z dowolnego cudzego projektu.
+
+Konfiguracja Vercela i obu serwerów jest w repozytorium: `vercel.json` (trasa `/api/*` na adres z `${ZM_API}` z sekretem `$ZM_PROXY_SEKRET` w nagłówku `x-zm-proxy`, bez adresów i sekretów w pliku) oraz `deploy/hetzner/compose.obok.yml` z dwiema usługami na tym samym obrazie: `api` (serwer testowy, `ZM_PROXY_SEKRET_TEST`, podglądy gałęzi) i `api-prod` (produkcja, osobny wolumen `dane_prod`, `ZM_PROXY_SEKRET_PROD`, `ZM_LICZNIKI_TOKEN`). Wdrożenie, `.env` z sekretami (`openssl rand -hex 32`), blok Caddy i ustawienie projektu na Vercelu: `deploy/hetzner/README.md`, „Vercel i dwa serwery API”. Wpisany adres jedzie w `/api/adres?q=` przez serwery Vercela, więc dzienniki żądań Vercela mogą go zawierać (nasz serwer go nie zapisuje); trzeba to uwzględnić w informacji o danych osobowych.
 
 ## Restart planowy
 
@@ -179,7 +181,7 @@ docker exec za-murem-serwer node -e "new (require('node:sqlite').DatabaseSync)('
 
 ### Przywracanie z kopii
 
-Serwer stoi na czas przywracania. Pliki `-wal` i `-shm` starej bazy trzeba usunąć razem z plikiem bazy: inaczej SQLite nałożyłby stary dziennik na przywrócony plik. Kolejność jest bezpieczna na literówkę: najpierw sprawdzamy, że wybrana kopia istnieje, i kopiujemy ją obok jako `za-murem.db.nowa`, dopiero potem odkładamy starą bazę i podmieniamy plik. Zła nazwa kopii zatrzymuje skrypt, zanim cokolwiek ruszy, więc `/dane` nigdy nie zostaje bez bazy (a `docker compose start api` bez bazy założyłby pustą). Na serwerze z compose (`/srv/za-murem`):
+Serwer stoi na czas przywracania. Pliki `-wal` i `-shm` starej bazy trzeba usunąć razem z plikiem bazy: inaczej SQLite nałożyłby stary dziennik na przywrócony plik. Kolejność jest bezpieczna na literówkę: najpierw sprawdzamy, że wybrana kopia istnieje, i kopiujemy ją obok jako `za-murem.db.nowa`, dopiero potem odkładamy starą bazę i podmieniamy plik. Zła nazwa kopii zatrzymuje skrypt, zanim cokolwiek ruszy, więc `/dane` nigdy nie zostaje bez bazy (a `docker compose start api` bez bazy założyłby pustą). Na serwerze z compose (`/srv/za-murem`; dla produkcji wszędzie `api-prod` zamiast `api`, a baza i kopie leżą w jego wolumenie `dane_prod`):
 
 ```bash
 cd /srv/za-murem

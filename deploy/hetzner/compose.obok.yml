@@ -1,6 +1,10 @@
 # Za Murem obok innej aplikacji na tym samym serwerze (na przykład cergo-rw-prod), bez własnego Caddy na 80/443.
-# Gra (www, kopia dist/) i serwer gry sieciowej (api) stoją w sieci Dockera tamtej aplikacji (ZM_SIEC w .env),
-# a jej Caddy przekazuje do nich ruch dla adresu gry (blok w deploy/hetzner/README.md).
+# Gra (www, kopia dist/) i dwa serwery gry sieciowej stoją w sieci Dockera tamtej aplikacji (ZM_SIEC w .env),
+# a jej Caddy przekazuje do nich ruch (bloki w deploy/hetzner/README.md):
+#   api       serwer testowy (adres testowy gry i podglądy gałęzi z Vercela), baza w wolumenie `dane`
+#   api-prod  serwer produkcji (zamurem.vercel.app), osobna baza w wolumenie `dane_prod`, osobny sekret proxy
+# Sekrety i kontakt (ZM_PROXY_SEKRET_TEST, ZM_PROXY_SEKRET_PROD, ZM_LICZNIKI_TOKEN, ZM_KONTAKT) są tylko w .env na
+# serwerze (`openssl rand -hex 32`), tutaj wyłącznie jako ${…}, nigdy wartość.
 services:
   www:
     image: caddy:2
@@ -20,13 +24,39 @@ services:
     container_name: za-murem-api
     restart: unless-stopped
     environment:
-      - ZM_ZRODLA=https://${SITE}
+      # adres testowy gry i podglądy gałęzi na Vercelu (gwiazdka tylko w nazwach naszego projektu, nie na całe vercel.app)
+      - ZM_ZRODLA=https://${SITE},https://zamurem-*-mateuszs-projects-73382f2a.vercel.app
+      - ZM_ZAUFANE_PROXY=1
+      # sekret testowy: podglądy na Vercelu wysyłają go w nagłówku x-zm-proxy, a serwer bierze wtedy adres gracza z x-real-ip
+      - ZM_PROXY_SEKRET=${ZM_PROXY_SEKRET_TEST}
+      # kontakt do User-Agent dla Nominatim (polityka wymaga); wartość z .env na serwerze
+      - ZM_KONTAKT=${ZM_KONTAKT}
       # restart planowy co 48 godzin: serwer kończy się czysto, a restart: unless-stopped podnosi go od nowa na tej samej bazie
       - ZM_RESTART_H=48
       # codzienne kopie bazy na tym samym wolumenie (7 dni, 3:00 UTC); chronią przed pomyłką, nie przed utratą dysku
       - ZM_KOPIE=/dane/kopie
     volumes:
       - dane:/dane
+    networks: [proxy]
+
+  api-prod:
+    build:
+      context: ./serwer-zrodla
+      dockerfile: server/Dockerfile
+    container_name: za-murem-api-prod
+    restart: unless-stopped
+    environment:
+      # tylko produkcyjny adres gry na Vercelu; podglądy gałęzi tu nie wchodzą
+      - ZM_ZRODLA=https://zamurem.vercel.app
+      - ZM_ZAUFANE_PROXY=1
+      - ZM_PROXY_SEKRET=${ZM_PROXY_SEKRET_PROD}
+      - ZM_KONTAKT=${ZM_KONTAKT}
+      # token odczytu GET /api/liczniki; bez niego trasa odpowiada 404
+      - ZM_LICZNIKI_TOKEN=${ZM_LICZNIKI_TOKEN}
+      - ZM_RESTART_H=48
+      - ZM_KOPIE=/dane/kopie
+    volumes:
+      - dane_prod:/dane
     networks: [proxy]
 
 networks:
@@ -36,5 +66,6 @@ networks:
 
 volumes:
   dane:
+  dane_prod:
   www_config:
   www_data:

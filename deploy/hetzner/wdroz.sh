@@ -22,8 +22,16 @@ fi
 DIR=/srv/za-murem
 cd "$(dirname "$0")/../.."
 
+# .env na serwerze trzyma też sekrety (ZM_PROXY_SEKRET_TEST, ZM_PROXY_SEKRET_PROD, ZM_LICZNIKI_TOKEN, ZM_KONTAKT; opis
+# w deploy/hetzner/README.md): skrypt odświeża tylko własne trzy linie (SITE, IP, ZM_SIEC), resztę zostawia, plik ma 0600.
+ODSWIEZ_ENV="touch .env && { grep -v -E '^(SITE|IP|ZM_SIEC)=' .env || true; printf 'SITE=%s\nIP=%s\nZM_SIEC=%s\n' '$SITE' '$IP' '$SIEC'; } > .env.nowy && mv .env.nowy .env"
+# obok innej aplikacji compose.obok.yml bierze sekrety z .env: bez nich serwery wstałyby bez sekretu proxy (limity
+# liczyłyby adresy Vercela zamiast graczy), bez tokenu liczników i bez kontaktu dla Nominatim, więc wdrożenie staje
+SPRAWDZ_ENV='for z in ZM_PROXY_SEKRET_TEST ZM_PROXY_SEKRET_PROD ZM_LICZNIKI_TOKEN ZM_KONTAKT; do grep -q "^$z=." .env || { echo "brak $z w .env na serwerze" >&2; exit 1; }; done'
+
 npm run build
-ssh "root@$IP" "mkdir -p $DIR/www && printf 'SITE=%s\nIP=%s\nZM_SIEC=%s\n' '$SITE' '$IP' '$SIEC' > $DIR/.env"
+ssh "root@$IP" "mkdir -p $DIR/www && cd $DIR && (umask 077; $ODSWIEZ_ENV)"
+if [ -n "$SIEC" ]; then ssh "root@$IP" "cd $DIR && $SPRAWDZ_ENV"; fi
 rsync -az --delete dist/ "root@$IP:$DIR/www/"
 rsync -az "deploy/hetzner/$COMPOSE" "root@$IP:$DIR/compose.yml"
 rsync -az --delete "deploy/hetzner/$CONF/" "root@$IP:$DIR/$CONF/"
