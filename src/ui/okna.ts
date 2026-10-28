@@ -514,7 +514,7 @@ export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
     Okna kodu i usunięcia są w src/ui/siec.ts. */
 export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
   const sieciowe = siec
-    ? btn('menu-kod', L('Kod powrotu drużyny', 'Team return code')) +
+    ? btn('menu-kod', L('Nowy kod powrotu drużyny', 'New team return code')) +
       (siec.anonimowa
         ? btn('menu-usun', L('Usuń drużynę z serwera', 'Delete the team from the server'), 'btn ghost')
         : '')

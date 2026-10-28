@@ -21,7 +21,10 @@
 
    Kod powrotu i usunięcie drużyny w grze (Menu, main.ts): `menuSieci` mówi Menu, które przyciski sieci pokazać; `kod` bierze
    z serwera nowy kod (każdy unieważnia poprzedni, porażka daje null i powód w `blad`); `pokazacKod` i `kodPokazany` dają
-   okno z kodem raz po pierwszym porannym raporcie drużyny anonimowej (StanSieci.kodPokazany, w zapisie); `usun` kasuje
+   okno z kodem raz po pierwszym porannym raporcie drużyny anonimowej, która jeszcze nigdy nie miała kodu (`maKod`: Ja.kod
+   z serwera przy każdym zalogowaniu, powrocie kodem i założeniu drużyny albo udane `kod()` z Menu, bo serwer nie pokaże
+   istniejącego kodu, a nowy unieważniłby ten, który gracz już trzyma; StanSieci.kodPokazany, w zapisie, pilnuje raz na
+   grę); `usun` kasuje
    drużynę anonimową z serwera bez hasła i kończy sieć w tej grze (StanSieci.usunieta: bez zapisów do chmury, bez
    odświeżania klatek, bez przycisków sieci, a zapis wczytuje się bez sieci na czyimkolwiek koncie). Zapis drużyny
    anonimowej wczytany bez jej sesji (zgubione ciasteczko, inna przeglądarka) toczy się bez sieci i dostaje jeden komunikat
@@ -125,6 +128,9 @@ export class GraSieciowa {
   private znak: string | null = null;
   /** zalogowana drużyna jest anonimowa (bez nicku i hasła) */
   private anonimowe = false;
+  /** zalogowane konto ma już kod powrotu (Ja.kod z serwera albo kod() w tej grze): serwer nie pokaże istniejącego kodu,
+      a każdy nowy unieważnia poprzedni, więc kod po raporcie dostaje tylko drużyna, która go jeszcze nie miała */
+  private maKod = false;
   private chmura: Save | null = null;
   /** wersja zapisu z chmury (GET /api/zapis) */
   private wersjaZChmury: number | undefined;
@@ -244,15 +250,21 @@ export class GraSieciowa {
     this.bladSerwera = null;
     if (!this.menuSieci()) return null;
     const r = await this.api.nowyKod();
-    if (r.ok) return r.dane.kod;
+    if (r.ok) {
+      // gracz ma kod w ręku: okno po porannym raporcie by go unieważniło, więc już się nie pokaże (także po wczytaniu zapisu)
+      this.maKod = true;
+      if (this.stan) this.stan.kodPokazany = true;
+      return r.dane.kod;
+    }
     this.bladSerwera = txBledu(r);
     return null;
   }
 
-  /** Czy po pierwszym porannym raporcie trzeba pokazać kod powrotu: gra sieciowa drużyny anonimowej, kod jeszcze nie
-      pokazany (StanSieci.kodPokazany, w zapisie, więc raz na grę także po wczytaniu). */
+  /** Czy po pierwszym porannym raporcie trzeba pokazać kod powrotu: gra sieciowa drużyny anonimowej, która jeszcze nigdy
+      nie miała kodu (Ja.kod z serwera, także po powrocie kodem i w każdej następnej grze drużyny, i kod() z Menu) i dla
+      której okno jeszcze się nie pokazało (StanSieci.kodPokazany, w zapisie, więc raz na grę także po wczytaniu). */
   pokazacKod(): boolean {
-    return this.anonimowa() && !!this.stan && !this.bezSieci && !this.stan.kodPokazany;
+    return this.anonimowa() && !!this.stan && !this.bezSieci && !this.maKod && !this.stan.kodPokazany;
   }
 
   /** kod pokazany (także gdy serwer go nie dał: bez ponawiania, dalej jest w Menu); trafia do następnego zapisu */
@@ -279,6 +291,7 @@ export class GraSieciowa {
     this.zalogowani = false;
     this.znak = null;
     this.anonimowe = false;
+    this.maKod = false;
     this.bezSieci = true;
     this.chmura = null;
     this.wersjaZChmury = undefined;
@@ -296,6 +309,7 @@ export class GraSieciowa {
     this.zalogowani = true;
     this.znak = ja.znak;
     this.anonimowe = ja.anonimowe;
+    this.maKod = ja.kod === true;
   }
 
   /** blok, jaki gracz widzi na karcie startowej bez niczego w toku: drużyna (bez sesji albo anonimowa) lub konto z nickiem */
@@ -365,6 +379,7 @@ export class GraSieciowa {
       this.zalogowani = false;
       this.znak = null;
       this.anonimowe = false;
+      this.maKod = false;
       this.chmura = null;
       this.widok = {
         stan: 'druzyna',

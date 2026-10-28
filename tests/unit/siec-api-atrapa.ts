@@ -21,15 +21,19 @@ export const zle = <T>(status: number, blad: KodBledu, komunikat = 'błąd'): Wy
   komunikat,
 });
 
-/** Ja z serwera: nick konta albo „#<id>” drużyny anonimowej */
-export const jaSerwera = (znak: string): Ja => ({
+/** Kod powrotu, który udawany serwer wydaje za n-tym razem (od 1): w kształcie XXXX-XXXX-XXXX z alfabetu kodu, a cyfra
+    od 2, bo alfabet nie ma 0 ani 1 (KOD_ALFABET w src/net/protokol.ts) */
+export const kodTestowy = (n: number): string => `ABCD-EFGH-JK${n + 1}M`;
+
+/** Ja z serwera: nick konta albo „#<id>” drużyny anonimowej; `kod`: drużyna ma już kod powrotu (Ja.kod) */
+export const jaSerwera = (znak: string, kod = false): Ja => ({
   nick: znak.startsWith('#') ? null : znak,
   utworzone: 1,
   klatki: 0,
   zapis: false,
   anonimowe: znak.startsWith('#'),
   znak,
-  kod: false,
+  kod,
 });
 
 /** udawane API dla GraSieciowa: serwer działa, gracz zalogowany (nick null: bez sesji), zapis i klatki w pamięci */
@@ -56,8 +60,10 @@ export function udawaneApiGry(
     start?: (n: number) => Wynik<undefined>;
     /** zajete odpowiada 409 brak_startu, dopóki punkt startu nie został podany (jak serwer po restarcie) */
     wymagaStartu?: boolean;
-    /** odpowiedź na nowy kod powrotu, n-te wywołanie od 1 (bez niej: kod „NOWE-KODN-R<n>” z dopiskiem numeru) */
+    /** odpowiedź na nowy kod powrotu, n-te wywołanie od 1 (bez niej: kodTestowy(n)); udany kod ustawia Ja.kod sesji */
     nowyKod?: (n: number) => Wynik<KodPowrotu>;
+    /** drużyna albo konto z sesją z początku ma już kod powrotu (Ja.kod prawda), jak drużyna po poprzedniej grze */
+    maKod?: boolean;
     /** odpowiedź na usunięcie drużyny (bez niej: 204) */
     usunDruzyne?: () => Wynik<undefined>;
   } = {},
@@ -66,7 +72,7 @@ export function udawaneApiGry(
   let pytan = 0;
   let startPodany = false;
   const nick = o.nick === undefined ? 'Sasiad' : o.nick;
-  let sesja: Ja | null = o.anonimowa ? jaSerwera(o.anonimowa) : nick ? jaSerwera(nick) : null;
+  let sesja: Ja | null = o.anonimowa ? jaSerwera(o.anonimowa, o.maKod) : nick ? jaSerwera(nick, o.maKod) : null;
   let zawsze409 = false;
   let startow = 0;
   let kodow = 0;
@@ -83,13 +89,16 @@ export function udawaneApiGry(
       log.push(`powrot ${kod}`);
       const znak = o.kody?.[normalizujKod(kod) ?? ''];
       if (!znak) return zle<Ja>(401, 'zly_kod', 'Ten kod nie pasuje do żadnej drużyny.');
-      sesja = jaSerwera(znak);
+      // kto wraca kodem, ten kod ma
+      sesja = jaSerwera(znak, true);
       return ok(sesja);
     },
     nowyKod: async () => {
       log.push('kod');
       kodow++;
-      return o.nowyKod ? o.nowyKod(kodow) : ok<KodPowrotu>({ kod: `ABCD-EFGH-JK${kodow}M` });
+      const r = o.nowyKod ? o.nowyKod(kodow) : ok<KodPowrotu>({ kod: kodTestowy(kodow) });
+      if (r.ok && sesja) sesja = { ...sesja, kod: true };
+      return r;
     },
     usunDruzyne: async () => {
       log.push('usun-druzyne');

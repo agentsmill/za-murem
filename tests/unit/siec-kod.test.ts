@@ -1,8 +1,9 @@
 /* Kod powrotu i usunięcie drużyny w grze (zadanie 10 planu 2026-10-28-premiera-etap-1-fundament): Menu gry sieciowej
-   (menuSheet), okna kodu i usunięcia (src/ui/siec.ts), kod pokazywany raz po pierwszym porannym raporcie (pokazacKod,
-   kodPokazany), usunięcie drużyny, które kończy sieć w tej grze (usun), kopiowanie kodu bez błędu przy odmowie schowka
-   oraz komunikat o zgubionej sesji drużyny anonimowej przy wczytaniu jej zapisu. GraSieciowa chodzi na udawanym API
-   z siec-api-atrapa.ts, bez DOM. */
+   (menuSheet), okna kodu i usunięcia (src/ui/siec.ts), kod pokazywany raz po pierwszym porannym raporcie, ale tylko drużynie,
+   która jeszcze nigdy nie miała kodu (pokazacKod, kodPokazany; kod z Menu, Ja.kod po powrocie kodem i kolejne gry tej
+   samej drużyny go nie powtarzają, bo każdy nowy kod unieważnia stary), usunięcie drużyny, które kończy sieć w tej
+   grze (usun), kopiowanie kodu bez błędu przy odmowie schowka oraz komunikat o zgubionej sesji drużyny anonimowej przy
+   wczytaniu jej zapisu. GraSieciowa chodzi na udawanym API z siec-api-atrapa.ts, bez DOM. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { tr, ustawJezyk } from '../../src/core/jezyk.ts';
@@ -16,7 +17,8 @@ import type { Loaded } from '../../src/world/load.ts';
 import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
-import { udawaneApiGry, zle } from './siec-api-atrapa.ts';
+import { jaSerwera, kodTestowy, ok, udawaneApiGry, zle } from './siec-api-atrapa.ts';
+import { atrapaBloku } from './siec-blok-atrapa.ts';
 
 const adr = ADDRESSES.find((a) => a.key === 'lanciego') as (typeof ADDRESSES)[number];
 const geo = toGeoT(decodedTiles(adr), adr.lat, adr.lon, LOAD_RADIUS);
@@ -67,11 +69,11 @@ describe('kod powrotu i usunięcie drużyny w Menu (src/ui/okna.ts, src/ui/siec.
     // pozostałe przyciski Menu zostają na swoim miejscu, a zapis i powrót do ekranu startowego jest ostatni
     expect(akcje(druzyna)[0]).toBe('menu-back');
     expect(akcje(druzyna).at(-1)).toBe('menu-start');
-    expect(druzyna.body).toContain('Kod powrotu drużyny');
+    expect(druzyna.body).toContain('Nowy kod powrotu drużyny');
     expect(druzyna.body).toContain('Usuń drużynę z serwera');
     ustawJezyk('en');
     const en = menuSheet('x', { anonimowa: true });
-    expect(en.body).toContain('Team return code');
+    expect(en.body).toContain('New team return code');
     expect(en.body).toContain('Delete the team from the server');
 
     // GraSieciowa podaje Menu to, co gra naprawdę ma: sieć drużyny anonimowej, sieć konta z nickiem, nic poza siecią
@@ -155,16 +157,16 @@ describe('kod powrotu i usunięcie drużyny w grze (src/net/gra.ts)', () => {
       nowyKod: (n) =>
         n === 3
           ? zle(503, 'serwer_zajety', 'Serwer jest przeciążony. Spróbujcie za chwilę.')
-          : { ok: true, status: 200, dane: { kod: `ABCD-EFGH-JK${n}M` } },
+          : ok({ kod: kodTestowy(n) }),
     });
-    expect(await g.kod()).toBe('ABCD-EFGH-JK1M');
-    expect(await g.kod()).toBe('ABCD-EFGH-JK2M');
+    expect(await g.kod()).toBe(kodTestowy(1));
+    expect(await g.kod()).toBe(kodTestowy(2));
     expect(log.filter((x) => x === 'kod')).toHaveLength(2);
     expect(g.blad()).toBeNull();
     expect(await g.kod()).toBeNull();
     expect(tr(g.blad())).toBe('Serwer jest przeciążony. Spróbujcie za chwilę.');
     // następna próba zaczyna od czystego błędu
-    expect(await g.kod()).toBe('ABCD-EFGH-JK4M');
+    expect(await g.kod()).toBe(kodTestowy(4));
     expect(g.blad()).toBeNull();
     // gra bez sieci nie pyta serwera o kod
     const bez = udawaneApiGry({ nick: null });
@@ -210,6 +212,92 @@ describe('kod powrotu i usunięcie drużyny w grze (src/net/gra.ts)', () => {
     await bezSesji.init();
     await bezSesji.przygotuj(dane, zbuduj, przed);
     expect(bezSesji.pokazacKod()).toBe(false);
+  });
+
+  it('kod z Menu, potem brak automatycznego okna po raporcie (kod w ręku nie jest wymieniany)', async () => {
+    const { g, log } = await graAnonimowa();
+    expect(g.pokazacKod()).toBe(true);
+    // kod wzięty z Menu przed pierwszym porannym raportem: okno po raporcie unieważniłoby go
+    expect(await g.kod()).toBe(kodTestowy(1));
+    expect(g.pokazacKod()).toBe(false);
+    expect(g.stan?.kodPokazany).toBe(true);
+    // także zapis tej gry wczytany później (kodPokazany w zapisie, a serwer podaje już Ja.kod prawdę)
+    const zapis = zapisGry(JSON.parse(JSON.stringify(g.stan)));
+    expect(zapis.siec?.kodPokazany).toBe(true);
+    // nieudany kod z Menu niczego nie zmienia: drużyna wciąż nie ma kodu, więc okno po raporcie się należy
+    const lezy = await graAnonimowa({ nowyKod: () => zle(503, 'serwer_zajety', 'Serwer jest przeciążony.') });
+    expect(await lezy.g.kod()).toBeNull();
+    expect(lezy.g.pokazacKod()).toBe(true);
+    expect(lezy.g.stan?.kodPokazany).toBeUndefined();
+    // jedno żądanie kodu i żadnych dodatkowych w tle
+    expect(log.filter((x) => x === 'kod')).toHaveLength(1);
+  });
+
+  it('Ja.kod prawda (powrót kodem, druzyna() z istniejącą sesją, sesja z kodem): brak automatycznego okna', async () => {
+    // sesja drużyny, która ma już kod, już przy wejściu na stronę (init)
+    const zKodem = udawaneApiGry({ anonimowa: '#7', maKod: true });
+    const g1 = new GraSieciowa(opcje(zKodem.api));
+    await g1.init();
+    await g1.przygotuj(dane, zbuduj);
+    expect(g1.anonimowa()).toBe(true);
+    expect(g1.pokazacKod()).toBe(false);
+    // powrót kodem na karcie startowej (druga przeglądarka): kto wraca kodem, ten go ma, także w zapisie sprzed kodu
+    const przed = zapisGry({ zajete: [], dom: true, konto: '#7' });
+    const powrot = udawaneApiGry({ nick: null, kody: { ABCDEFGHJKLM: '#7' } });
+    const blok = atrapaBloku();
+    const g2 = new GraSieciowa({ ...opcje(powrot.api), el: blok.el as unknown as HTMLElement });
+    await g2.init();
+    blok.pole('#scKod').value = 'ABCD-EFGH-JKLM';
+    blok.klik('powrot');
+    await chwila();
+    await chwila();
+    expect(g2.anonimowa()).toBe(true);
+    await g2.przygotuj(dane, zbuduj, przed);
+    expect(g2.podglad().bezSieci).toBe(false);
+    expect(g2.pokazacKod()).toBe(false);
+    await g2.przygotuj(dane, zbuduj);
+    expect(g2.pokazacKod()).toBe(false);
+    // druzyna() odpowiada kontem, które już jest (200, Ja.kod prawda): też bez okna
+    const istniejaca = udawaneApiGry({ nick: null, druzyna: () => ok(jaSerwera('#7', true)) });
+    const g3 = new GraSieciowa(opcje(istniejaca.api));
+    await g3.init();
+    await g3.przygotuj(dane, zbuduj);
+    expect(g3.anonimowa()).toBe(true);
+    expect(g3.pokazacKod()).toBe(false);
+    // kontrola: nowa drużyna bez kodu dostaje okno (Ja.kod fałsz)
+    const nowa = udawaneApiGry({ nick: null });
+    const g4 = new GraSieciowa(opcje(nowa.api));
+    await g4.init();
+    await g4.przygotuj(dane, zbuduj);
+    expect(g4.pokazacKod()).toBe(true);
+  });
+
+  it('druga gra drużyny z kodem: brak automatycznego okna po jej pierwszej nocy', async () => {
+    // pierwsza gra: pierwszy poranek pokazuje okno, czyli bierze kod z serwera (jak main.ts) i oznacza go jako pokazany
+    const pierwsza = await graAnonimowa();
+    expect(pierwsza.g.pokazacKod()).toBe(true);
+    pierwsza.g.kodPokazany();
+    expect(await pierwsza.g.kod()).toBe(kodTestowy(1));
+    // druga gra tej samej drużyny w tej samej przeglądarce (ta sama sesja, nowy stan sieci bez kodPokazany)
+    await pierwsza.g.przygotuj(dane, zbuduj);
+    expect(pierwsza.g.stan?.kodPokazany).toBeUndefined();
+    expect(pierwsza.g.pokazacKod()).toBe(false);
+    // nowa karta tej przeglądarki (init z sesją, Ja.kod prawda z serwera): nowa gra, wczytany zapis bez kodPokazany
+    const karta = new GraSieciowa(opcje(pierwsza.api));
+    await karta.init();
+    await karta.przygotuj(dane, zbuduj);
+    expect(karta.pokazacKod()).toBe(false);
+    const stary = zapisGry({ zajete: [], dom: true, konto: '#7' });
+    await karta.przygotuj(dane, zbuduj, stary);
+    expect(karta.pokazacKod()).toBe(false);
+    // jeśli w pierwszej grze serwer nie dał kodu (503), drużyna kodu nie ma i następna gra pokaże okno jeszcze raz
+    const bezKodu = await graAnonimowa({ nowyKod: () => zle(503, 'serwer_zajety', 'Serwer jest przeciążony.') });
+    bezKodu.g.kodPokazany();
+    expect(await bezKodu.g.kod()).toBeNull();
+    const nastepna = new GraSieciowa(opcje(bezKodu.api));
+    await nastepna.init();
+    await nastepna.przygotuj(dane, zbuduj);
+    expect(nastepna.pokazacKod()).toBe(true);
   });
 
   it('usun: po 204 gra bez sieci, bez dalszych zapisów do chmury', async () => {
