@@ -301,3 +301,83 @@ describe('stopka karty startowej: dokąd idzie adres', () => {
     expect(wpis.htmlSerwer!.en).not.toMatch(/[ąćęłńóśźż]|\b(adres trafia|serwer gry)\b/i);
   });
 });
+
+describe('informacja o danych osobowych: poprawki z przeglądu (twierdzenia zgodne z kodem)', () => {
+  const pl = () => tekst(sekcja(strona('prywatnosc'), 'pl'));
+  const en = () => tekst(sekcja(strona('prywatnosc'), 'en'));
+  const adres = czytaj('server/adres.ts');
+
+  it('gra bez serwera nie ma przykładu z osiedlami demo: sprawdzenie serwera i liczniki idą w każdej grze, gdy sieć działa', () => {
+    expect(pl()).not.toMatch(/Gra bez serwera \(na przykład/);
+    expect(en()).not.toMatch(/The game without the server \(the example estates/);
+    expect(pl()).toContain('Gra bez serwera (serwer wyłączony albo nie odpowiada)');
+    expect(pl()).toContain('także na przykładowych osiedlach');
+    expect(pl()).toContain('otwarcie karty startowej sprawdza, czy serwer działa i czy przeglądarka ma sesję');
+    expect(en()).toContain('The game without the server (the server is switched off or does not answer)');
+    expect(en()).toContain('the example estates included');
+    expect(en()).toContain(
+      'just opening the start screen checks that the server works and whether your browser has a session',
+    );
+  });
+
+  it('usunięcie z Menu dotyczy drużyny bez nicku, konto z nickiem usuwa się przez e-mail (obie strony, oba języki)', () => {
+    const wzor = {
+      pl: /nie ma w grze przycisku usunięcia[^.]*\[E-MAIL DO SPRAW DANYCH\]/,
+      en: /has no delete button in the game[^.]*\[E-MAIL DO SPRAW DANYCH\]/,
+    };
+    const druzyna = { pl: /powstała sama \(bez nicku\)/, en: /created on its own \(with no username\)/ };
+    for (const nazwa of STRONY)
+      for (const j of ['pl', 'en'] as const) {
+        const t = tekst(sekcja(strona(nazwa), j));
+        expect(t, `${nazwa} ${j}`).toMatch(wzor[j]);
+        expect(t, `${nazwa} ${j}`).toMatch(druzyna[j]);
+      }
+  });
+
+  it('menuSheet pokazuje usunięcie tylko drużynie bez nicku, więc strony nie obiecują go wszystkim', () => {
+    expect(menuSheet('x', { anonimowa: true }).body).toContain('menu-usun');
+    expect(menuSheet('x', { anonimowa: false }).body).not.toContain('menu-usun');
+  });
+
+  it('zapis, punkt startu, Overpass: współrzędne punktu przypisanego adresowi, z których da się odczytać adres', () => {
+    expect(pl()).toContain('współrzędne punktu, który wyszukiwarka przypisała twojemu adresowi');
+    expect(pl()).toContain('z tych współrzędnych da się adres odczytać');
+    expect(pl()).toContain(
+      'współrzędne punktu startu, czyli w praktyce punktu, który wyszukiwarka przypisała twojemu adresowi (da się z nich odczytać adres)',
+    );
+    expect(pl()).toContain('wysyła współrzędne punktu, który wyszukiwarka przypisała twojemu adresowi, oraz promień');
+    expect(en()).toContain('the coordinates of the point the search assigned to your address');
+    expect(en()).toContain('the address can be read from those coordinates');
+    expect(en()).toContain(
+      'the coordinates of the start point, in practice the point the search assigned to your address (the address can be read from them)',
+    );
+    expect(en()).toContain('sends the coordinates of the point the search assigned to your address, and a radius');
+    // dawne sformułowania o „okolicy” zniknęły
+    expect(pl()).not.toContain('współrzędnymi okolicy');
+    expect(en()).not.toContain('the coordinates of the area');
+  });
+
+  it('pamięć wyników adresów: pełna etykieta ze współrzędnymi, najwyżej 5000 wpisów, 30 dni, 1 dzień dla Photona i braku wyniku', () => {
+    expect(Number(/o\.wpisow \?\? (\d+)/.exec(adres)?.[1])).toBe(5000);
+    expect(Number(/o\.dniPamieci \?\? (\d+)/.exec(adres)?.[1])).toBe(30);
+    expect(adres).toMatch(/Math\.min\(pamietajMs, DOBA\)/);
+    expect(pl()).toContain('ulica, numer domu, dzielnica i miasto, razem ze współrzędnymi');
+    expect(pl()).toContain(
+      'najwyżej 5000 wyników: wynik z Nominatim trzymamy 30 dni, a wynik z Photona i wpis o braku wyniku 1 dzień',
+    );
+    expect(en()).toContain('street, house number, district and city, together with the coordinates');
+    expect(en()).toContain(
+      'at most 5000 results: a result from Nominatim is kept for 30 days, and a result from Photon or a no-result entry for 1 day',
+    );
+  });
+
+  it('kopie bazy: 7 dni tylko o ile kopie powstają, przy awarii ostatnie dobre zostają dłużej (jak w server/kopie.ts)', () => {
+    expect(czytaj('server/kopie.ts')).toContain('stare kasuje się dopiero po udanej nowej');
+    expect(pl()).toContain('trzymamy 7 dni, o ile kopie powstają');
+    expect(pl()).toContain('Starą kopię kasujemy dopiero po udanej nowej');
+    expect(pl()).toContain('ostatnie dobre zostają dłużej niż 7 dni');
+    expect(en()).toContain('kept for 7 days, as long as backups are being made');
+    expect(en()).toContain('removed only after a new one succeeds');
+    expect(en()).toContain('the last good ones stay longer than 7 days');
+  });
+});
