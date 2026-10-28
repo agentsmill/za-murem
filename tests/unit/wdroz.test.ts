@@ -183,7 +183,7 @@ describe('wdroz.sh: zwykłe wdrożenie (test)', () => {
   });
 
   it('buduje grę z VITE_SIEC=1 (?siec=1 znika najpierw na serwerze testowym), także gdy w otoczeniu jest inna wartość', () => {
-    for (const otoczenie of [{}, { VITE_SIEC: '0' }]) {
+    for (const otoczenie of [{}, { VITE_SIEC: '0' }] as Record<string, string>[]) {
       const s = przygotuj(WSZYSTKIE);
       const w = s.uruchom({ ZM_SIEC: 'cergo_default', ...otoczenie });
       expect(w.status).toBe(0);
