@@ -408,13 +408,68 @@ describe('adres: wyszukiwarka', () => {
     expect(await s.w.szukaj('Tajna Ulica 77, Gdańsk', 'pl')).toEqual(Z_NOMINATIM);
   });
 
-  it('Photon w zapasie bez wyniku to brak wyniku, a Photon z błędem po awarii Nominatim to AdresNiedostepny', async () => {
-    // Photon odpowiada, ale nic nie znajduje: to brak wyniku, nie awaria
-    const pusty = szukacz((url) => (url.hostname === NOM ? json({}, 500) : json({ features: [] })));
-    expect(await pusty.w.szukaj('Nigdzie 1', 'pl')).toBeNull();
-    // Photon odpowiada błędem: awaria obu
+  it('Photon z błędem po awarii Nominatim to AdresNiedostepny', async () => {
     const zly = szukacz((url) => json({}, url.hostname === NOM ? 429 : 502));
     await expect(zly.w.szukaj('Nigdzie 1', 'pl')).rejects.toBeInstanceOf(AdresNiedostepny);
+  });
+
+  it('pusty Photon, gdy Nominatim zawiódł, to AdresNiedostepny (nie „nie ma adresu”) i niczego nie pamięta', async () => {
+    let nominatimDziala = false;
+    const s = szukacz((url) =>
+      url.hostname === NOM ? (nominatimDziala ? json(NOMINATIM_GDANSK) : json({}, 500)) : json({ features: [] }),
+    );
+    const blad = await s.w.szukaj('Obrońców Wybrzeża 4, Gdańsk', 'pl').catch((e) => e);
+    expect(blad).toBeInstanceOf(AdresNiedostepny);
+    // powody bez tekstu zapytania, ale z obu dostawców
+    expect(blad.message).toContain('Nominatim: http 500');
+    expect(blad.message).toContain('Photon');
+    expect(blad.message).not.toMatch(/obro|wybrze|gda/i);
+    // nic w pamięci: kolejne zapytanie po minucie znów idzie do Nominatim i dostaje wynik
+    expect(s.nom()).toHaveLength(1);
+    nominatimDziala = true;
+    s.z.przesun(MIN);
+    expect(await s.w.szukaj('Obrońców Wybrzeża 4, Gdańsk', 'pl')).toEqual(Z_NOMINATIM);
+    expect(s.nom()).toHaveLength(2);
+  });
+
+  it('pusty Photon, gdy Nominatim nie był pytany (pełna kolejka), to AdresNiedostepny i niczego nie pamięta', async () => {
+    const s = szukacz((url) => (url.hostname === NOM ? json(NOMINATIM_GDANSK) : json({ features: [] })));
+    const wyniki = await Promise.allSettled(
+      ['Adres A 1, Gdańsk', 'Adres B 2, Gdańsk', 'Adres C 3, Gdańsk', 'Adres D 4, Gdańsk'].map((q) =>
+        s.w.szukaj(q, 'pl'),
+      ),
+    );
+    // czwarty nie zmieścił się w kolejce (czekałby 3300 ms), poszedł do Photona, który nic nie znalazł
+    expect(s.pho()).toHaveLength(1);
+    expect(wyniki.slice(0, 3).map((w) => w.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+    expect(wyniki[3].status).toBe('rejected');
+    expect((wyniki[3] as PromiseRejectedResult).reason).toBeInstanceOf(AdresNiedostepny);
+    // po odczekaniu to samo zapytanie trafia do Nominatim, bez wpisu o braku wyniku w pamięci
+    s.z.przesun(10_000);
+    expect(await s.w.szukaj('Adres D 4, Gdańsk', 'pl')).toEqual(Z_NOMINATIM);
+    expect(s.nom()).toHaveLength(4);
+  });
+
+  it('pusty Photon w minucie po 429 z Nominatim to AdresNiedostepny, a po minucie Nominatim odpowiada', async () => {
+    let blokada = true;
+    const s = szukacz((url) =>
+      url.hostname === NOM ? (blokada ? json({}, 429) : json(NOMINATIM_GDANSK)) : json({ features: [] }),
+    );
+    await expect(s.w.szukaj('Adres A 1, Gdańsk', 'pl')).rejects.toBeInstanceOf(AdresNiedostepny);
+    s.z.przesun(5_000); // blokada trwa: Nominatim nie jest pytany, Photon pusty
+    await expect(s.w.szukaj('Adres B 2, Gdańsk', 'pl')).rejects.toBeInstanceOf(AdresNiedostepny);
+    expect(s.nom()).toHaveLength(1);
+    blokada = false;
+    s.z.przesun(60_000);
+    expect(await s.w.szukaj('Adres B 2, Gdańsk', 'pl')).toEqual(Z_NOMINATIM);
+  });
+
+  it('niepusty wynik z Photona po awarii Nominatim dalej jest wynikiem (pamiętanym dobę)', async () => {
+    const s = szukacz((url) => (url.hostname === NOM ? json({}, 500) : json(PHOTON_GDANSK)));
+    expect(await s.w.szukaj('Adres A 1, Gdańsk', 'pl')).toEqual(Z_PHOTONA);
+    s.z.przesun(DOBA - 1);
+    expect(await s.w.szukaj('Adres A 1, Gdańsk', 'pl')).toEqual(Z_PHOTONA);
+    expect(s.wywolania).toHaveLength(2);
   });
 
   it('brak wyniku z Nominatim: null, bez pytania Photona, pamiętany przez dobę', async () => {
@@ -550,6 +605,28 @@ describe('GET /api/adres', () => {
     s.czekaj(2);
     expect((await zapytanie(p, 'asdfgh 99999, nigdzie')).status).toBe(404);
     expect(a.wywolania).toHaveLength(2);
+  });
+
+  it('Nominatim zawiódł, a Photon nic nie znalazł: 503 serwer_zajety bez pamięci, a nie 404 „nie ma adresu” na dobę', async () => {
+    let nominatimDziala = false;
+    const a = atrapa((url) =>
+      url.hostname === NOM ? (nominatimDziala ? json(NOMINATIM_GDANSK) : json({}, 500)) : json({ features: [] }),
+    );
+    const s = await start({ fetch: a.fetch });
+    const p = przegladarka(s.adres);
+    const r = await zapytanie(p, 'Obrońców Wybrzeża 4, Gdańsk');
+    expect(r.status, r.tekst).toBe(503);
+    expect(r.body.blad).toBe('serwer_zajety');
+    expect(r.headers.get('retry-after')).toBeTruthy();
+    // drugi raz też 503 i drugie pytanie do Nominatim: nic nie zostało w pamięci
+    s.czekaj(MIN);
+    expect((await zapytanie(p, 'obrońców wybrzeża 4, gdańsk')).status).toBe(503);
+    expect(a.nom()).toHaveLength(2);
+    nominatimDziala = true;
+    s.czekaj(MIN);
+    const dobry = await zapytanie(p, 'Obrońców Wybrzeża 4, Gdańsk');
+    expect(dobry.status).toBe(200);
+    expect(dobry.body).toEqual(Z_NOMINATIM);
   });
 
   it('puste zapytanie, brak q, za długie zapytanie i zły język to 400 zle_dane, bez pytania na zewnątrz', async () => {

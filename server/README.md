@@ -91,16 +91,16 @@ Testy: `npm test -- serwer-liczniki`.
 | odpowiedź | kiedy |
 |---|---|
 | 200 `WynikAdresu` | adres znaleziony (z pamięci, Nominatim albo Photona) |
-| 404 `nie_ma` | Nominatim (albo Photon, gdy Nominatim nie mógł odpowiedzieć) nie zna takiego adresu; komunikat to `KOMUNIKAT_BRAK_ADRESU` z `src/net/protokol.ts`, po nim klient odróżnia to od 404 `nie_ma` na nieznaną trasę („Nie ma takiego adresu API.”) |
+| 404 `nie_ma` | Nominatim odpowiedział, że nie zna takiego adresu (pusta lista; pamiętane dobę); komunikat to `KOMUNIKAT_BRAK_ADRESU` z `src/net/protokol.ts`, po nim klient odróżnia to od 404 `nie_ma` na nieznaną trasę („Nie ma takiego adresu API.”) |
 | 400 `zle_dane` | puste zapytanie, dłuższe niż 200 znaków (`ADRES_MAX_ZNAKOW`) albo język inny niż `pl` i `en` |
 | 429 `za_duzo_prob` | więcej niż 30 zapytań na minutę z jednego IP (liczą się też trafienia w pamięć i zapytania błędne); dwadzieścia w kwadrans z akademika przechodzi bez problemu |
-| 503 `serwer_zajety` | zawiodły i Nominatim, i Photon; klient pyta wtedy Nominatim sam |
+| 503 `serwer_zajety` | zawiodły i Nominatim, i Photon, albo Nominatim milczał (kolejka, pauza po blokadzie, błąd), a Photon nic nie znalazł: Photon zna mniej niż Nominatim, więc to nie dowód, że adresu nie ma. Nic nie idzie do pamięci, a klient pyta wtedy Nominatim sam |
 
 Jak serwer to robi (`server/adres.ts`):
 
 - **Pamięć.** Wyniki leżą w pamięci procesu pod kluczem SHA-256 znormalizowanego zapytania z językiem (wielkość liter, nadmiarowe spacje i rozłożone znaki nie mają znaczenia, więc „Obrońców Wybrzeża 4, Gdańsk” i „  obrońców  wybrzeża 4,  GDAŃSK ” to jeden wpis). Najwyżej 5000 wpisów: najstarszy odpada, trafienie przenosi wpis na koniec. Wynik z Nominatim żyje 30 dni, brak wyniku i wszystko z Photona dobę; awarii nie pamiętamy. Dwa takie same zapytania naraz to jedno zapytanie na zewnątrz. Po restarcie serwera pamięć jest pusta. Nie ma jej na dysku ani w bazie.
 - **Kolejka do Nominatim.** Zapytania startują co najmniej 1100 ms po sobie. Które musiałoby czekać dłużej niż 3 s, idzie od razu do Photona (komoot, `photon.komoot.io`, język `en`; polski bez `lang`, bo Photon go nie zna). Po 429 albo 403 od Nominatim (blokada) serwer nie pyta go przez minutę, tylko Photon. Zapytanie do dostawcy trwa najwyżej 6 s.
-- **Photon w zapasie.** Błąd, 429, zła odpowiedź albo przekroczony czas Nominatim to zapytanie do Photona; jego wynik ma te same pola, a etykieta jest składana z ulicy, numeru, dzielnicy i miasta (Photon bywa mniej dokładny, dlatego jego wyniki pamiętamy tylko dobę).
+- **Photon w zapasie.** Błąd, 429, zła odpowiedź, przekroczony czas albo pełna kolejka Nominatim to zapytanie do Photona; jego wynik ma te same pola, a etykieta jest składana z ulicy, numeru, dzielnicy i miasta (Photon bywa mniej dokładny, dlatego jego wyniki pamiętamy tylko dobę). Pusty wynik Photona, gdy Nominatim nie odpowiedział, to nie „nie ma adresu”, tylko brak odpowiedzi (503 wyżej); 404 daje tylko pusta odpowiedź samego Nominatim.
 - **User-Agent.** `ZaMurem/1.0 (+https://zamurem.vercel.app; <ZM_KONTAKT>)`; bez `ZM_KONTAKT` bez części po średniku. Polityka Nominatim wymaga prawdziwego kontaktu, więc na produkcji `ZM_KONTAKT` ustawiamy (adres e-mail Mateusza albo strona z formularzem).
 - **Prywatność.** Tekst zapytania wychodzi tylko w adresie URL do dostawcy. Serwer nie zapisuje go ani adresu IP, także w dzienniku błędów: gdy zawiodą oba dostawcy, do dziennika idzie jedna linia z samymi powodami (`adres: wyszukiwanie niedostępne (Nominatim: http 429; Photon: czas)`), najwyżej raz na minutę. Dostawcy widzą zapytania z adresu IP serwera, nie gracza.
 

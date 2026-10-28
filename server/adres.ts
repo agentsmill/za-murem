@@ -12,8 +12,10 @@
      429 albo 403 od Nominatim (blokada) kolejka stoi minutę, a w tym czasie pyta się tylko Photon;
    - Photon (komoot) w zapasie: gdy Nominatim odpowie błędem, złą odpowiedzią albo nie zdąży w `czasMs` (6 s), pytamy
      Photon. Gdy zawiodą oba, `szukaj` rzuca AdresNiedostepny (trasa zamienia go na 503).
-   Pusta odpowiedź Nominatim to „nie ma takiego adresu” (null) i Photon już się nie pyta; pusta odpowiedź samego
-   Photona też.
+   Pusta odpowiedź Nominatim to „nie ma takiego adresu” (null, pamiętany dobę) i Photon już się nie pyta. Pusta
+   odpowiedź Photona, gdy Nominatim nie odpowiedział (kolejka, pauza po blokadzie, błąd), to nie „nie ma adresu”, bo
+   Photon zna mniej: `szukaj` rzuca wtedy AdresNiedostepny, trasa daje 503 bez pamięci, a przeglądarka pyta Nominatim
+   sama.
 
    Tekst zapytania wychodzi tylko w adresie URL do dostawcy. Błędy dostawców nigdy nie przenoszą swoich komunikatów
    dalej (bywają w nich pełne adresy URL z zapytaniem): AdresNiedostepny niesie tylko krótkie powody („http 429”, „czas”,
@@ -47,11 +49,13 @@ export interface OpcjeAdresu {
 }
 
 export interface Wyszukiwarka {
-  /** wynik dla adresu, null gdy takiego adresu nie ma; rzuca AdresNiedostepny, gdy zawiodły Nominatim i Photon */
+  /** wynik dla adresu, null gdy Nominatim odpowiedział, że takiego adresu nie ma; rzuca AdresNiedostepny, gdy
+      zawiodły Nominatim i Photon albo Nominatim milczał, a Photon nic nie znalazł */
   szukaj(q: string, jezyk: JezykAdresu): Promise<WynikAdresu | null>;
 }
 
-/** Nominatim i Photon nie odpowiedziały sensownie. Komunikat to same powody („Nominatim: http 429; Photon: czas”),
+/** Nominatim i Photon nie odpowiedziały sensownie (albo Nominatim milczał, a Photon nic nie znalazł). Komunikat to
+    same powody („Nominatim: http 429; Photon: czas”, „Nominatim: kolejka; Photon: pusto”),
     bez tekstu zapytania i bez komunikatów dostawców. */
 export class AdresNiedostepny extends Error {}
 
@@ -262,6 +266,13 @@ export function wyszukiwarka(o: OpcjeAdresu = {}): Wyszukiwarka {
         wynik = await photon(q, jezyk);
       } catch (e) {
         powody.push(`Photon: ${powodAwarii(e)}`);
+        throw new AdresNiedostepny(powody.join('; '));
+      }
+      // Photon pusty, a Nominatim nie powiedział nic (kolejka, pauza po blokadzie, błąd): nie wiemy, czy adresu nie
+      // ma, bo Photon zna mniej niż Nominatim. To nie „nie ma takiego adresu” na dobę, tylko brak odpowiedzi, a wtedy
+      // przeglądarka pyta Nominatim sama.
+      if (wynik === null) {
+        powody.push('Photon: pusto');
         throw new AdresNiedostepny(powody.join('; '));
       }
     }
