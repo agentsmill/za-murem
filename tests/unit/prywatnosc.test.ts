@@ -375,11 +375,17 @@ describe('informacja o danych osobowych: poprawki z przeglądu (twierdzenia zgod
     expect(Number(/o\.wpisow \?\? (\d+)/.exec(adres)?.[1])).toBe(5000);
     expect(Number(/o\.dniPamieci \?\? (\d+)/.exec(adres)?.[1])).toBe(30);
     expect(adres).toMatch(/Math\.min\(pamietajMs, DOBA\)/);
-    expect(pl()).toContain('ulica, numer domu, dzielnica i miasto, razem ze współrzędnymi');
+    // etykieta to display_name z Nominatim w całości, nie tylko ulica i miasto
+    expect(adres).toMatch(/label: tekst\(wpis\.display_name\)/);
+    expect(pl()).toContain(
+      'ulica, numer domu, dzielnica, miasto, powiat, województwo, kod pocztowy i kraj, razem ze współrzędnymi',
+    );
     expect(pl()).toContain(
       'najwyżej 5000 wyników: wynik z Nominatim trzymamy 30 dni, a wynik z Photona i wpis o braku wyniku 1 dzień',
     );
-    expect(en()).toContain('street, house number, district and city, together with the coordinates');
+    expect(en()).toContain(
+      'street, house number, district, city, county, voivodeship, postcode and country, together with the coordinates',
+    );
     expect(en()).toContain(
       'at most 5000 results: a result from Nominatim is kept for 30 days, and a result from Photon or a no-result entry for 1 day',
     );
@@ -393,5 +399,69 @@ describe('informacja o danych osobowych: poprawki z przeglądu (twierdzenia zgod
     expect(en()).toContain('kept for 7 days, as long as backups are being made');
     expect(en()).toContain('removed only after a new one succeeds');
     expect(en()).toContain('the last good ones stay longer than 7 days');
+  });
+});
+
+describe('informacja o danych osobowych: ścisłość względem kodu (przegląd całej gałęzi)', () => {
+  const pl = () => tekst(sekcja(strona('prywatnosc'), 'pl'));
+  const en = () => tekst(sekcja(strona('prywatnosc'), 'en'));
+
+  it('Photon pyta serwer także przy pełnej kolejce i po blokadzie Nominatim, nie tylko gdy Nominatim milczy', () => {
+    const adres = czytaj('server/adres.ts');
+    // w kodzie: kolejka dłuższa niż 3 s idzie do Photona, po 429 i 403 Nominatim stoi minutę
+    expect(adres).toMatch(/o\.czekajMaxMs \?\? 3000/);
+    expect(adres).toMatch(/PAUZA_PO_BLOKADZIE_MS = 60_000/);
+    expect(adres).toMatch(/e\.status === 429 \|\| e\.status === 403/);
+    expect(pl()).toContain('gdy Nominatim nie odpowie albo zwróci błąd');
+    expect(pl()).toContain('gdy do Nominatim stoi kolejka dłuższa niż kilka sekund');
+    expect(pl()).toContain('przez minutę po tym, jak Nominatim nas zablokował');
+    expect(en()).toContain('when Nominatim does not answer or returns an error');
+    expect(en()).toContain('when the queue for Nominatim is longer than a few seconds');
+    expect(en()).toContain('for a minute after Nominatim has blocked us');
+  });
+
+  it('przeglądarka pyta Nominatim sama po każdej porażce serwera poza „nie ma takiego adresu”, także po 429 i 503', () => {
+    // w kodzie: tylko nie_ma ze zdaniem KOMUNIKAT_BRAK_ADRESU kończy wyszukiwanie, reszta idzie do Nominatim
+    expect(czytaj('src/world/osm.ts')).toMatch(
+      /r\.blad === 'nie_ma' && r\.komunikat === KOMUNIKAT_BRAK_ADRESU\) throw nieMaAdresu\(\);\s+\}\s+return geocodeNominatim\(q\)/,
+    );
+    expect(pl()).toContain('czyli kody 503 i 429');
+    expect(pl()).toContain('Jedyny wyjątek to odpowiedź serwera, że wyszukiwarka sprawdziła i takiego adresu nie ma');
+    expect(en()).toContain('that is, the codes 503 and 429');
+    expect(en()).toContain(
+      'The only exception is the server’s answer that the search checked and there is no such address',
+    );
+  });
+
+  it('przy leżącym serwerze gra dalej pyta /api/zdrowie przy otwarciu karty startowej i nic więcej', () => {
+    // w kodzie: init() sprawdza serwer, gdy sieć jest włączona, a bez odpowiedzi kończy; niczego więcej nie wysyła
+    const gra = czytaj('src/net/gra.ts');
+    expect(gra).toMatch(/if \(!this\.o\.wlaczona\) return;\s+if \(!\(await this\.api\.serwerDostepny\(\)\)\) return;/);
+    expect(czytaj('src/net/api.ts')).toMatch(/zadanie<Zdrowie>\('GET', '\/zdrowie'/);
+    // tekst() zamienia znaczniki na spacje, więc <code>/api/zdrowie</code> ma wokół siebie spacje
+    expect(pl()).toMatch(
+      /wysyła do niego tylko pytanie, czy serwer żyje \( \/api\/zdrowie , przy każdym otwarciu karty startowej/,
+    );
+    expect(pl()).toContain('Gdy gra z sąsiadami jest wyłączona, gra nie wysyła do serwera nic');
+    expect(en()).toMatch(
+      /sends it only a question whether the server is alive \( \/api\/zdrowie , each time the start screen opens/,
+    );
+    expect(en()).toContain('When playing with the neighbours is off, the game sends nothing to the server');
+    // dawne twierdzenie, że gra bez serwera „nic do niego nie wysyła”, było nieprawdą
+    expect(pl()).not.toContain('nic do niego nie wysyła');
+    expect(en()).not.toContain('sends nothing to it');
+  });
+
+  it('zapis w chmurze: nazwa dzielnicy (data.name) i nazwy budynków, sklepów i usług z OSM są w tekście; znaczniki adresowe i nazwa z cyframi nie', () => {
+    // w kodzie: zapisBezAdresu zostawia data.name (poza nazwą z cyframi → „Osiedle”) i tagi budynków poza addr:*
+    const protokol = czytaj('src/net/protokol.ts');
+    expect(protokol).toMatch(/if \(nazwaJakAdres\(data\)\) out\.name = 'Osiedle'/);
+    expect(protokol).toMatch(/filter\(\(\[k\]\) => !k\.startsWith\('addr:'\)\)/);
+    expect(pl()).toContain('nazwa dzielnicy albo osiedla, którą podała wyszukiwarka (na przykład „Przymorze Małe”)');
+    expect(pl()).toContain('nazwy budynków, sklepów i usług z OpenStreetMap');
+    expect(pl()).toContain('znaczniki adresowe addr:* usuwamy');
+    expect(en()).toContain('the name of the district or estate that the search gave (for example “Przymorze Małe”)');
+    expect(en()).toContain('names of buildings, shops and services from OpenStreetMap');
+    expect(en()).toContain('we remove address tags addr:*');
   });
 });
