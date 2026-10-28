@@ -106,12 +106,25 @@ describe('deploy/hetzner/compose.obok.yml', () => {
     expect(prod).toContain('ZM_RESTART_H=48');
     expect(prod).toContain('ZM_KOPIE=/dane/kopie');
     expect(prod).toContain('- dane_prod:/dane');
-    // ten sam obraz: oba budują z tych samych źródeł
-    for (const u of [test, prod]) {
-      expect(u).toContain('context: ./serwer-zrodla');
-      expect(u).toContain('dockerfile: server/Dockerfile');
-    }
+    // ten sam Dockerfile, ale osobne katalogi źródeł (patrz niżej)
+    for (const u of [test, prod]) expect(u).toContain('dockerfile: server/Dockerfile');
     expect(tekst).toMatch(/^volumes:\n(?:.*\n)*? {2}dane_prod:/m);
+  });
+
+  it('api-prod jest w profilu prod i buduje z własnego katalogu, a api zostaje przy ./serwer-zrodla i wolumenie dane', () => {
+    const test = usluga('api');
+    const prod = usluga('api-prod');
+    // zwykłe `docker compose up --build` (każde wdrożenie testowe) nie budowało ani nie podmieniało produkcji
+    expect(prod).toMatch(/^ {4}profiles: \["prod"\]$/m);
+    expect(prod).toMatch(/^ {6}context: \.\/serwer-prod$/m);
+    expect(prod).not.toContain('serwer-zrodla');
+    expect(test).not.toContain('profiles:');
+    expect(test).toMatch(/^ {6}context: \.\/serwer-zrodla$/m);
+    expect(test).not.toContain('serwer-prod');
+    expect(test).toContain('- dane:/dane');
+    expect(prod).not.toContain('- dane:/dane');
+    // www też bez profilu: zwykłe wdrożenie dalej podnosi grę
+    expect(usluga('www')).not.toContain('profiles:');
   });
 
   it('sekrety i kontakt tylko jako ${…} z .env, zawsze ze znakiem zastępczym, nigdy wartość w pliku', () => {

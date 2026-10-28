@@ -2,7 +2,9 @@
 # Gra (www, kopia dist/) i dwa serwery gry sieciowej stoją w sieci Dockera tamtej aplikacji (ZM_SIEC w .env),
 # a jej Caddy przekazuje do nich ruch (bloki w deploy/hetzner/README.md):
 #   api       serwer testowy (adres testowy gry i podglądy gałęzi z Vercela), baza w wolumenie `dane`
-#   api-prod  serwer produkcji (zamurem.vercel.app), osobna baza w wolumenie `dane_prod`, osobny sekret proxy
+#   api-prod  serwer produkcji (zamurem.vercel.app), osobna baza w wolumenie `dane_prod`, osobny sekret proxy;
+#             profil `prod` i własny katalog źródeł ./serwer-prod: zwykłe wdrożenia go nie dotykają, produkcja idzie
+#             tylko z gałęzi main przez ZM_PROD=1 (deploy/hetzner/wdroz.sh)
 # Sekrety i kontakt (ZM_PROXY_SEKRET_TEST, ZM_PROXY_SEKRET_PROD, ZM_LICZNIKI_TOKEN, ZM_KONTAKT) są tylko w .env na
 # serwerze (`openssl rand -hex 32`), tutaj wyłącznie jako ${…}, nigdy wartość.
 services:
@@ -40,8 +42,12 @@ services:
     networks: [proxy]
 
   api-prod:
+    # profil prod: zwykłe `docker compose up` (wdroz.sh bez ZM_PROD) go nie buduje, nie startuje, nie zatrzymuje
+    # i nie restartuje; rusza go tylko `--profile prod` z wdroz.sh w trybie ZM_PROD=1 (tylko z gałęzi main)
+    profiles: ["prod"]
     build:
-      context: ./serwer-zrodla
+      # własny katalog źródeł, żeby wdrożenie testowe z dowolnej gałęzi nie podmieniło kodu (i migracji) produkcji
+      context: ./serwer-prod
       dockerfile: server/Dockerfile
     container_name: za-murem-api-prod
     restart: unless-stopped

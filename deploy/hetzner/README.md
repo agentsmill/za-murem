@@ -1,6 +1,6 @@
 # Wdrożenie na Hetznera
 
-Gra (pliki z `dist/`) i serwer gry sieciowej (`server/`, kontenery `api` i `api-prod`) w Dockerze, w katalogu `/srv/za-murem` na serwerze. Skrypt `deploy/hetzner/wdroz.sh` buduje grę, kopiuje pliki i źródła serwera, odświeża w `.env` adres strony, IP i sieć (sekretów w `.env` nie rusza) i podnosi kontenery.
+Gra (pliki z `dist/`) i serwer gry sieciowej (`server/`, kontenery `api` i `api-prod`) w Dockerze, w katalogu `/srv/za-murem` na serwerze. Skrypt `deploy/hetzner/wdroz.sh` buduje grę, kopiuje pliki i źródła serwera, odświeża w `.env` adres strony, IP i sieć (sekretów w `.env` nie rusza) i podnosi kontenery gry (`www`) i serwera testowego (`api`). Serwer produkcji (`api-prod`) wdraża tylko osobny tryb `ZM_PROD=1` z czystego `main` (niżej, „Wdrożenie `api-prod` i blok Caddy”).
 
 Docelowo grę serwuje Vercel (`zamurem.vercel.app`, plik `vercel.json` w korzeniu repozytorium), a Hetzner trzyma serwery API, do których Vercel przekazuje `/api/*` (niżej, „Vercel i dwa serwery API”). Kontener `za-murem-www` z kopią gry dalej stoi pod adresem testowym.
 
@@ -50,6 +50,7 @@ Gra na Vercelu woła `/api/*` na własnym adresie, a `vercel.json` przekazuje to
 | `ZM_ZRODLA` | adres testowy i wzór podglądów projektu | tylko `https://zamurem.vercel.app` |
 | sekret proxy | `ZM_PROXY_SEKRET_TEST` | `ZM_PROXY_SEKRET_PROD` |
 | token liczników | brak (`/api/liczniki` odpowiada 404) | `ZM_LICZNIKI_TOKEN` |
+| kod i wdrożenie | źródła w `serwer-zrodla`, każde zwykłe wdrożenie z dowolnej gałęzi | źródła w osobnym `serwer-prod`, profil `prod` w compose, wdrożenie tylko z `main` (`ZM_PROD=1`) |
 
 ### `.env` na serwerze
 
@@ -65,20 +66,35 @@ ZM_KONTAKT=<e-mail albo strona z formularzem>
 - Sekrety i token generujemy poleceniem `openssl rand -hex 32`, każdy osobno (dwa sekrety proxy muszą się różnić). Te same wartości wpisujemy w zmiennych projektu na Vercelu (niżej), tam jako zmienne wrażliwe (Sensitive).
 - `ZM_KONTAKT` musi być ustawiony na produkcji: polityka użycia Nominatim wymaga w User-Agent prawdziwego kontaktu, a serwer przedstawia się nim przy wyszukiwaniu adresów. Wartość (e-mail albo strona z formularzem) podaje Mateusz; bez niej Nominatim ma prawo zablokować serwer przy większym ruchu.
 - Wpisy dopisujemy w edytorze na serwerze (`nano /srv/za-murem/.env`), nie w poleceniu z wartością, żeby sekret nie został w historii powłoki.
-- `wdroz.sh` w trybie „obok” staje przed kopiowaniem plików, jeśli któregoś z czterech wpisów brakuje albo jest pusty: serwery wstałyby bez sekretu proxy (limity liczyłyby adresy Vercela zamiast graczy), bez tokenu liczników albo bez kontaktu dla Nominatim. Dlatego `.env` trzeba uzupełnić przed pierwszym wdrożeniem po tej zmianie.
+- Zwykłe wdrożenie (test, nocna integracja) nie wymaga żadnego z tych wpisów: gdy w `.env` brakuje `ZM_PROXY_SEKRET_TEST` albo `ZM_KONTAKT`, `wdroz.sh` ostrzega nazwą zmiennej (nigdy wartością) i idzie dalej, a serwer testowy wstaje jak dotąd (pusta wartość znaczy: nieustawiona, więc limity liczą adres Vercela, a User-Agent jest bez kontaktu). Wdrożenie produkcji (`ZM_PROD=1`) wymaga `ZM_PROXY_SEKRET_PROD`, `ZM_LICZNIKI_TOKEN` i `ZM_KONTAKT` oraz `SITE` i `ZM_SIEC` (te dwa zapisuje zwykłe wdrożenie) i staje przed jakąkolwiek zmianą na serwerze, jeśli któregoś brakuje albo jest pusty.
+- W `.env` nie ustawiamy `COMPOSE_PROFILES`: profil `prod` włącza wyłącznie wdrożenie produkcji.
 - Docker Compose bierze `${ZM_PROXY_SEKRET_TEST}` i pozostałe właśnie z tego `.env`. Sprawdzenie składni na przykładowym pliku (z wymyślonymi wartościami, bez demona): `docker compose -f deploy/hetzner/compose.obok.yml --env-file <przykład.env> config`.
 
 ### Wdrożenie `api-prod` i blok Caddy
 
-Wdrożenie, zmiana Caddyfile cergo i założenie projektu na Vercelu wymagają wyraźnego OK Mateusza (`CLAUDE.md`, „Twarde zasady”). Kolejność, gdy je ma:
+Wdrożenie, zmiana Caddyfile cergo i założenie projektu na Vercelu wymagają wyraźnego OK Mateusza (`CLAUDE.md`, „Twarde zasady”).
+
+**Dlaczego produkcja ma osobne wdrożenie.** Zwykłe wdrożenie (`docker compose up -d --build`) buduje wszystko z jednego katalogu źródeł i przy okazji uruchamia migracje bazy. Gdyby `api-prod` budował się razem z `api`, każde wdrożenie testowe, także nocnej integracji z gałęzi roboczej, podmieniłoby kod i schemat bazy produkcji. Dlatego `api-prod` ma w compose profil `prod` (zwykłe wdrożenie go nie buduje, nie startuje, nie zatrzymuje i nie restartuje) i własny katalog źródeł `serwer-prod`, a `wdroz.sh` w trybie `ZM_PROD=1` wdraża tylko jego i tylko z lokalnej gałęzi `main` z czystym drzewem.
+
+Kolejność, gdy jest OK:
 
 1. Uzupełnić `.env` na serwerze (wyżej).
-2. Wdrożyć jak dotąd: `ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh`. Skrypt podniesie też `api-prod` i wolumen `dane_prod`; serwer testowy dostanie przy tym nowe zmienne (`ZM_PROXY_SEKRET`, `ZM_KONTAKT`, wzór podglądów w `ZM_ZRODLA`), więc zrestartuje się na chwilę.
-3. Kopia Caddyfile przed zmianą, potem dopisanie bloku w miejscu (plik jest montowany pojedynczo, więc `cat >>`), sprawdzenie i przeładowanie bez restartu:
+2. Zwykłe wdrożenie jak dotąd: `ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh`. Zapisze w `.env` `SITE`, `IP` i `ZM_SIEC` (potrzebne produkcji) i podniesie grę oraz serwer testowy `api`, który dostanie nowe zmienne (`ZM_PROXY_SEKRET`, `ZM_KONTAKT`, wzór podglądów w `ZM_ZRODLA`), więc zrestartuje się na chwilę. `api-prod` nie rusza.
+3. Blok Caddy (niżej).
+4. Produkcja, z lokalnego `main` i czystego drzewa: `ZM_PROD=1 ZM_IP=$(hcloud --context cergo-rw server ip cergo-rw-prod) ZM_SIEC=cergo_default deploy/hetzner/wdroz.sh`. Skrypt odmawia (komunikat i kod 1, nic nie idzie na serwer) z innej gałęzi, z brudnego drzewa albo bez `ZM_SIEC`; potem sprawdza w `.env` na serwerze same nazwy `ZM_PROXY_SEKRET_PROD`, `ZM_LICZNIKI_TOKEN`, `ZM_KONTAKT`, `SITE`, `ZM_SIEC` (odczyt, bez zmian) i dopiero wtedy kopiuje `compose.obok.yml` oraz źródła z `main` do `serwer-prod` i uruchamia na serwerze wyłącznie `docker compose --profile prod up -d --build api-prod`. Gry (`www`), serwera testowego, Caddy i `.env` nie rusza. Baza produkcji (`dane_prod`) dostaje migracje tylko z kodu `main`.
+
+Blok Caddy dopisujemy raz: skrypt poniżej sprawdza, czy blok już jest, robi kopię Caddyfile (plik jest montowany pojedynczo, więc przepisujemy w miejscu), a gdy sprawdzenie albo przeładowanie się nie uda, przywraca kopię, przeładowuje stary Caddyfile i kończy się błędem (kod różny od 0). Uruchomić na serwerze jako root, w bash:
 
 ```bash
-cp /opt/cergo/Caddyfile /opt/cergo/Caddyfile.przed-za-murem-api-prod-$(date +%F)
-cat >> /opt/cergo/Caddyfile <<'EOF'
+CF=/opt/cergo/Caddyfile
+HOST=za-murem-api.5-75-147-27.sslip.io
+CADDY="docker exec cergo-caddy-1 caddy"
+if grep -qF "$HOST {" "$CF"; then
+  echo "Blok $HOST już jest w Caddyfile, nic nie dopisano"
+else
+  KOPIA="$CF.przed-za-murem-api-prod-$(date +%F-%H%M)"
+  cp "$CF" "$KOPIA"
+  cat >> "$CF" <<'EOF'
 
 za-murem-api.5-75-147-27.sslip.io {
 	handle /api/* {
@@ -92,11 +108,15 @@ za-murem-api.5-75-147-27.sslip.io {
 	}
 }
 EOF
-docker exec cergo-caddy-1 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-docker exec cergo-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+  $CADDY validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+    && $CADDY reload --config /etc/caddy/Caddyfile --adapter caddyfile \
+    || { echo "Caddy odrzucił nowy blok: przywracam $KOPIA" >&2; cat "$KOPIA" > "$CF"; $CADDY reload --config /etc/caddy/Caddyfile --adapter caddyfile; false; }
+fi
 ```
 
-Pierwsze żądanie na nowy adres zamawia certyfikat (kilka sekund), a sslip.io rozwiązuje `za-murem-api.5-75-147-27.sslip.io` na 5.75.147.27 bez wpisów DNS. Stos cergo i reszta jej Caddyfile zostają bez zmian. Cofnięcie: przepisać kopię w miejscu (`cat /opt/cergo/Caddyfile.przed-za-murem-api-prod-<data> > /opt/cergo/Caddyfile`), przeładować Caddy, potem `cd /srv/za-murem && docker compose stop api-prod`. Wolumen `dane_prod` zostaje (to dane osobowe, więc usuwamy go świadomie, nie przy cofaniu).
+Pierwsze żądanie na nowy adres zamawia certyfikat (kilka sekund), a sslip.io rozwiązuje `za-murem-api.5-75-147-27.sslip.io` na 5.75.147.27 bez wpisów DNS. Stos cergo i reszta jej Caddyfile zostają bez zmian.
+
+Cofnięcie produkcji: `cd /srv/za-murem && docker compose --profile prod stop api-prod`. Kontener zostaje zatrzymany, bo zwykłe wdrożenia go nie startują (do ponownego uruchomienia służy `ZM_PROD=1` albo `docker compose --profile prod start api-prod`). Bloku Caddy nie trzeba cofać; gdyby jednak, przepisać wybraną kopię w miejscu (`cat /opt/cergo/Caddyfile.przed-za-murem-api-prod-<data> > /opt/cergo/Caddyfile`) i przeładować Caddy. Wolumen `dane_prod` zostaje (to dane osobowe, więc usuwamy go świadomie, nie przy cofaniu).
 
 Kontrola po wdrożeniu, bez sekretów w poleceniu:
 
@@ -127,6 +147,7 @@ Podglądy na Vercelu są domyślnie za logowaniem (Deployment Protection), więc
 ### Czego tu nie robić
 
 - Nie rozszerzać `ZM_ZRODLA` do `https://*.vercel.app`. Gwiazdka ma zostać w nazwach naszego projektu (`https://zamurem-*-mateuszs-projects-73382f2a.vercel.app`): wzór na całe `vercel.app` uznałby za dozwolone źródło strony z dowolnego cudzego projektu. Wzór pasuje tylko do jednego kawałka nazwy hosta (bez kropki), a `tests/unit/vercel-json.test.ts` pilnuje, żeby `compose.obok.yml` nie dostał szerszego.
+- Nie wdrażać produkcji z gałęzi roboczej ani ręcznym `docker compose --profile prod up` z innego katalogu niż `serwer-prod`: tylko `ZM_PROD=1` z czystego `main`. Zwykłe `wdroz.sh` (bez `ZM_PROD`) niczego produkcyjnego nie dotyka i tak ma zostać; `tests/unit/wdroz.test.ts` sprawdza to na atrapach.
 - Nie wpisywać adresów serwerów ani sekretów do `vercel.json`: adres to `${ZM_API}`, sekret `$ZM_PROXY_SEKRET`, a test sprawdza, że w pliku nie ma `sslip.io`.
 - Nie łączyć `routes` z `rewrites`, `headers` ani `redirects` w `vercel.json`: Vercel na to nie pozwala, dlatego nagłówki pamięci podręcznej (jak w `conf-obok/Caddyfile`) są trasami z `continue`.
 
