@@ -3,7 +3,10 @@
 
    Co jest w bazie (RODO, docs/superpowers/specs/2026-10-18-multiplayer-design.md):
    - konta: nick (i jego postać do porównań), skrót hasła, dzień założenia i ostatniej wizyty; bez e-maila, imion,
-     adresu ani IP,
+     adresu ani IP. Drużyna anonimowa (anonimowe = 1, założona bez formularza) ma pusty nick i pusty skrót hasła, a jej
+     klucz nicku to „#” i losowy token, którego nie da się wpisać w logowaniu ani założyć zwykłym kontem (nick bez „#”).
+     Kolumna kod to SHA-256 kodu powrotu (server/hasla.ts), unikalna, bez samego kodu: wyciek bazy nie daje kodów
+     wprost,
    - sesje: skrót SHA-256 tokenu, konto, termin ważności,
    - klatki: klucz klatki i budynku (src/world/klucze.ts), środek klatki (stopnie zaokrąglone do 1e-5, około 1 m),
      konto, czy to siedziba drużyny, chwila zajęcia,
@@ -12,11 +15,13 @@
    Usunięcie konta kasuje kaskadą jego sesje, klatki i zapis (klucze obce z ON DELETE CASCADE), a numery kont nie
    wracają (AUTOINCREMENT), więc spóźnione żądanie usuniętego konta nie trafi do nowego. secure_delete zamazuje
    usunięte dane w pliku bazy.
-   Wersja schematu w PRAGMA user_version; nowa wersja to nowy wpis w MIGRACJE. */
+   Wersja schematu w PRAGMA user_version; nowa wersja to nowy wpis w MIGRACJE (istniejących wpisów nie zmieniamy:
+   baza w pliku przechodzi tylko brakujące). */
 
 import { DatabaseSync } from 'node:sqlite';
+import { nowyToken } from './hasla.ts';
 
-const MIGRACJE: string[] = [
+export const MIGRACJE: readonly string[] = [
   `CREATE TABLE konta (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      nick TEXT NOT NULL,
@@ -50,14 +55,24 @@ const MIGRACJE: string[] = [
      wersja INTEGER NOT NULL,
      zmieniony INTEGER NOT NULL
    ) STRICT;`,
+  // drużyna anonimowa i kod powrotu; stare konta zostają zwykłymi kontami (anonimowe = 0, bez kodu)
+  `ALTER TABLE konta ADD COLUMN anonimowe INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE konta ADD COLUMN kod TEXT;
+   CREATE UNIQUE INDEX konta_kod ON konta(kod) WHERE kod IS NOT NULL;`,
 ];
 
 export interface Konto {
   id: number;
+  /** nick; pusty u drużyny anonimowej */
   nick: string;
+  /** skrót scrypt; pusty u drużyny anonimowej */
   haslo: string;
   utworzone: number;
   ostatnio: number;
+  /** drużyna założona bez nicku i hasła */
+  anonimowe: boolean;
+  /** skrót kodu powrotu albo null, gdy drużyna go nie ma */
+  kod: string | null;
 }
 
 export interface Klatka {
@@ -81,6 +96,11 @@ export interface Baza {
   readonly db: DatabaseSync;
   /** nowe konto; null, gdy nick (bez względu na wielkość liter) jest zajęty */
   dodajKonto(nick: string, nickKlucz: string, haslo: string, teraz: number): Konto | null;
+  /** nowa drużyna anonimowa: pusty nick i hasło, klucz nicku „#” i losowy token, bez kodu powrotu */
+  dodajDruzyne(teraz: number): Konto;
+  /** ustawia (albo wymienia) skrót kodu powrotu konta; rzuca, gdy ten skrót ma już inne konto */
+  ustawKod(id: number, skrot: string): void;
+  kontoPoKodzie(skrot: string): Konto | null;
   kontoPoNicku(nickKlucz: string): Konto | null;
   konto(id: number): Konto | null;
   /** dzień ostatniej wizyty (ms od 1970, z dokładnością do doby) */
@@ -132,6 +152,8 @@ const kontoZ = (r: Wiersz): Konto => ({
   haslo: str(r.haslo),
   utworzone: num(r.utworzone),
   ostatnio: num(r.ostatnio),
+  anonimowe: num(r.anonimowe) === 1,
+  kod: r.kod === null || r.kod === undefined ? null : str(r.kod),
 });
 const klatkaZ = (r: Wiersz): Klatka => ({
   klucz: str(r.klucz),
@@ -167,6 +189,11 @@ export function otworzBaze(sciezka: string): Baza {
     dodajKonto: db.prepare(
       'INSERT INTO konta (nick, nick_klucz, haslo, utworzone, ostatnio) VALUES (?, ?, ?, ?, ?) ON CONFLICT(nick_klucz) DO NOTHING',
     ),
+    dodajDruzyne: db.prepare(
+      "INSERT INTO konta (nick, nick_klucz, haslo, utworzone, ostatnio, anonimowe) VALUES ('', ?, '', ?, ?, 1)",
+    ),
+    ustawKod: db.prepare('UPDATE konta SET kod = ? WHERE id = ?'),
+    kontoPoKodzie: db.prepare('SELECT * FROM konta WHERE kod = ?'),
     kontoPoNicku: db.prepare('SELECT * FROM konta WHERE nick_klucz = ?'),
     konto: db.prepare('SELECT * FROM konta WHERE id = ?'),
     dotknij: db.prepare('UPDATE konta SET ostatnio = ? WHERE id = ? AND ostatnio < ?'),
@@ -229,7 +256,34 @@ export function otworzBaze(sciezka: string): Baza {
     dodajKonto(nick, nickKlucz, haslo, teraz) {
       const r = q.dodajKonto.run(nick, nickKlucz, haslo, teraz, teraz);
       if (!r.changes) return null;
-      return { id: num(r.lastInsertRowid), nick, haslo, utworzone: teraz, ostatnio: teraz };
+      return {
+        id: num(r.lastInsertRowid),
+        nick,
+        haslo,
+        utworzone: teraz,
+        ostatnio: teraz,
+        anonimowe: false,
+        kod: null,
+      };
+    },
+    dodajDruzyne(teraz) {
+      const r = q.dodajDruzyne.run(`#${nowyToken()}`, teraz, teraz);
+      return {
+        id: num(r.lastInsertRowid),
+        nick: '',
+        haslo: '',
+        utworzone: teraz,
+        ostatnio: teraz,
+        anonimowe: true,
+        kod: null,
+      };
+    },
+    ustawKod(id, skrot) {
+      q.ustawKod.run(skrot, id);
+    },
+    kontoPoKodzie(skrot) {
+      const r = q.kontoPoKodzie.get(skrot) as Wiersz | undefined;
+      return r ? kontoZ(r) : null;
     },
     kontoPoNicku(nickKlucz) {
       const r = q.kontoPoNicku.get(nickKlucz) as Wiersz | undefined;

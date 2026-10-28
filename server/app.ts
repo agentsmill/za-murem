@@ -1,14 +1,19 @@
-/* Serwer API gry sieciowej, etap 1 (docs/superpowers/specs/2026-10-18-multiplayer-design.md): konta, sesje,
-   zajęte klatki i zapis gry w chmurze. Node 24 bez zależności z npm: node:http, node:sqlite, node:crypto,
-   node:zlib. Gra w przeglądarce symuluje się sama; serwer pilnuje tylko, kto ma którą klatkę, i trzyma zapisy.
+/* Serwer API gry sieciowej, etap 1 (docs/superpowers/specs/2026-10-18-multiplayer-design.md): konta, drużyny
+   anonimowe, sesje, zajęte klatki i zapis gry w chmurze. Node 24 bez zależności z npm: node:http, node:sqlite,
+   node:crypto, node:zlib. Gra w przeglądarce symuluje się sama; serwer pilnuje tylko, kto ma którą klatkę, i trzyma
+   zapisy.
 
    API pod /api (typy i kody błędów w src/net/protokol.ts):
      GET    /api/zdrowie            czy serwer żyje
      POST   /api/konto              załóż konto {nick, haslo} i zaloguj      → 201 Ja + ciasteczko
      GET    /api/konto              kim jestem                               → Ja
-     DELETE /api/konto              usuń konto {haslo} z klatkami i zapisem  → 204
+     DELETE /api/konto              usuń konto {haslo} z klatkami i zapisem  → 204 (drużyna anonimowa: bez hasła)
      POST   /api/sesja              zaloguj {nick, haslo}                    → Ja + ciasteczko
      DELETE /api/sesja              wyloguj                                  → 204
+     POST   /api/druzyna            załóż drużynę anonimową {} i zaloguj     → 201 Ja + ciasteczko (z ważną sesją
+                                    200 Ja tej sesji, bez nowego konta)
+     POST   /api/druzyna/kod        nowy kod powrotu {} (stary wygasa)       → {kod}, 401 bez sesji
+     POST   /api/druzyna/powrot     wróć do drużyny {kod}                    → 200 Ja + ciasteczko, 401 zly_kod
      GET    /api/klatki?s=&w=&n=&e= zajęte klatki w prostokącie (stopnie)    → {klatki}
      POST   /api/klatki             zajmij {klucz, budynek, lat, lon}        → 201 {klatka}, 409 zajęta
      GET    /api/klatki/moje        moje klatki                              → {klatki}
@@ -17,6 +22,16 @@
      GET    /api/zapis              zapis w chmurze                          → {dane, wersja, zmieniony, rozmiar}
      PUT    /api/zapis              zapisz {dane, wersja?}                   → {wersja, zmieniony, rozmiar}, 409
      DELETE /api/zapis              usuń zapis                               → 204
+
+   Drużyna anonimowa (POST /api/druzyna) to konto bez nicku i hasła, z numerem jako znakiem (`#12`), zakładane przy
+   pierwszym wejściu bez formularza; najwyżej 30 nowych na IP na godzinę (żądanie z ważną sesją się nie liczy).
+   Kod powrotu (XXXX-XXXX-XXXX, 60 bitów, alfabet w protokol.ts) pozwala wejść do tej samej drużyny z innej
+   przeglądarki: nowa sesja, stare dalej działają. Kod pokazujemy raz, w bazie leży tylko jego SHA-256 w postaci
+   znormalizowanej (wielkość liter, spacje i myślniki bez znaczenia), a każdy nowy kod wygasza poprzedni. Kod może
+   wymienić każde zalogowane konto, także z nickiem (najwyżej 10 razy na godzinę na konto); zły kod w powrocie liczy
+   się do tego samego limitu nieudanych prób z IP co złe hasło (10 na 15 minut), dobry nie. Drużyna anonimowa usuwa się
+   bez hasła (nie ma go), konto z nickiem dalej z hasłem; w logowaniu nickiem drużyny anonimowej nie ma. Wszystkie POST
+   niosą Content-Type: application/json, także puste (`{}`).
 
    Zasady: cudza klatka to tylko „zajęta” (bez nicku i numeru konta); pozycja klatki musi leżeć przy budynku z jej
    klucza (kotwicaKlucza), każda klatka drużyny najwyżej `promienM` od siedziby (pierwszej klatki), najwyżej
@@ -45,9 +60,11 @@ import {
   KLATKI_W_ODPOWIEDZI_MAX,
   KLUCZ_KLATKI_WZOR,
   KLUCZ_MAX,
+  type KodPowrotu,
   kotwicaKlucza,
   maAdres,
   nickKlucz,
+  normalizujKod,
   odlegloscM,
   PROSTOKAT_MAX_DLUG,
   PROSTOKAT_MAX_SZER,
@@ -62,6 +79,7 @@ import { type Baza, type Klatka, type Konto, otworzBaze } from './baza.ts';
 import {
   atrapaHasla,
   DOMYSLNE_HASLO,
+  nowyKod,
   nowyToken,
   type ParametryHasla,
   skrotHasla,
@@ -188,15 +206,17 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     return timingSafeEqual(createHash('sha256').update(podany).digest(), sekretSkrot);
   };
 
-  // limity w pamięci: nieudane logowania na IP i na nick, nowe konta i zajęte nicki na IP, wszystkie żądania na IP,
-  // zapisy na konto
+  // limity w pamięci: nieudane logowania (i powroty z kodem) na IP i na nick, nowe konta, nowe drużyny anonimowe
+  // i zajęte nicki na IP, wszystkie żądania na IP, zapisy i nowe kody powrotu na konto
   const logowania: Okno = okno(10, 15 * MIN, teraz);
   const logowaniaNicku: Okno = okno(20, 15 * MIN, teraz);
   const rejestracje: Okno = okno(5, GODZ, teraz);
+  const druzyny: Okno = okno(30, GODZ, teraz);
   const zajeteNicki: Okno = okno(30, GODZ, teraz);
   const zadania: Okno = okno(300, MIN, teraz);
   const zapisy: Okno = okno(60, GODZ, teraz);
-  const okna = [logowania, logowaniaNicku, rejestracje, zajeteNicki, zadania, zapisy];
+  const kody: Okno = okno(10, GODZ, teraz);
+  const okna = [logowania, logowaniaNicku, rejestracje, druzyny, zajeteNicki, zadania, zapisy, kody];
   /** konta, których zapis właśnie się wysyła: drugi naraz to 429 */
   const zapisyWToku = new Set<number>();
   const scryptKolejka: Kolejka = kolejka(op.scrypt?.naraz ?? 2, op.scrypt?.czeka ?? 64);
@@ -237,10 +257,13 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   };
 
   const ja = (konto: Konto): Ja => ({
-    nick: konto.nick,
+    nick: konto.anonimowe ? null : konto.nick,
     utworzone: konto.utworzone,
     klatki: baza.liczbaKlatek(konto.id),
     zapis: baza.maZapis(konto.id),
+    anonimowe: konto.anonimowe,
+    znak: konto.anonimowe ? `#${konto.id}` : konto.nick,
+    kod: konto.kod !== null,
   });
 
   const jakoOdpowiedz = (k: Klatka, moje: number | null): ZajetaKlatka => {
@@ -352,7 +375,9 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
         }
         logowaniaNicku.dolicz(nick);
       }
-      const konto = nick && dane.haslo.length <= HASLO_MAX ? baza.kontoPoNicku(nick) : null;
+      const znalezione = nick && dane.haslo.length <= HASLO_MAX ? baza.kontoPoNicku(nick) : null;
+      // drużyna anonimowa nie ma hasła: logowanie nickiem jej nie widzi (klucz nicku to „#” i token, nie nick)
+      const konto = znalezione && !znalezione.anonimowe ? znalezione : null;
       const haslo = dane.haslo.slice(0, HASLO_MAX);
       const skrot = konto?.haslo ?? (await atrapa);
       const dobre = await scrypt(() => sprawdzHaslo(haslo, skrot));
@@ -370,6 +395,57 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     }
   };
 
+  const zalozDruzyne: Obsluga = async (k) => {
+    // ważna sesja (też konta z nickiem) dostaje swoje konto z powrotem; bez await, więc nic nie wyprzedzi limitu
+    const s = sesjaZ(k);
+    if (s) {
+      wyslij(k.res, 200, ja(s.konto), k.naglowki);
+      return;
+    }
+    const czekaj = druzyny.zablokowany(k.ip);
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo nowych drużyn z tego miejsca. Spróbujcie później.');
+    druzyny.dolicz(k.ip);
+    const konto = baza.dodajDruzyne(k.teraz);
+    zaloguj(k, konto);
+    wyslij(k.res, 201, ja(konto), k.naglowki);
+  };
+
+  const wymienKod: Obsluga = async (k) => {
+    const s = wymagajSesji(k);
+    const id = String(s.konto.id);
+    const czekaj = kody.zablokowany(id);
+    if (czekaj) throw zaDuzo(czekaj, 'Za często wymieniacie kod. Spróbujcie później.');
+    kody.dolicz(id);
+    const kod = nowyKod();
+    // zapis bez await po sprawdzeniu sesji; stary kod przestaje działać w tej samej chwili
+    baza.ustawKod(s.konto.id, skrotTokenu(normalizujKod(kod) as string));
+    const out: KodPowrotu = { kod };
+    wyslij(k.res, 200, out, k.naglowki);
+  };
+
+  const powrotDoDruzyny: Obsluga = async (k) => {
+    const czekaj = logowania.zablokowany(k.ip);
+    if (czekaj) throw zaDuzo(czekaj, 'Za dużo nieudanych prób. Spróbujcie za kilka minut.');
+    // jak złe hasło: próba liczy się od razu (przed await), a odlicza, jeśli kod był dobry albo nie było czego sprawdzać
+    logowania.dolicz(k.ip);
+    let zly = false;
+    try {
+      const b = await czytajJson(k.req, MALE_CIALO);
+      if (typeof b.kod !== 'string') throw new BladHttp(400, 'zle_dane', 'Podajcie kod powrotu.');
+      // za długi tekst to na pewno nie kod (bez obcinania, żeby kod z doklejonym śmieciem nie przechodził)
+      const kod = b.kod.length <= 64 ? normalizujKod(b.kod) : null;
+      const konto = kod ? baza.kontoPoKodzie(skrotTokenu(kod)) : null;
+      if (!konto) {
+        zly = true;
+        throw new BladHttp(401, 'zly_kod', 'Zły kod powrotu.');
+      }
+      zaloguj(k, konto);
+      wyslij(k.res, 200, ja(konto), k.naglowki);
+    } finally {
+      if (!zly) logowania.odlicz(k.ip);
+    }
+  };
+
   const wyloguj: Obsluga = async (k) => {
     const token = ciasteczka(k.req).get(CIASTECZKO);
     if (token && token.length <= 100) baza.usunSesje(skrotTokenu(token));
@@ -383,6 +459,12 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
 
   const usunKonto: Obsluga = async (k) => {
     const s = wymagajSesji(k);
+    if (s.konto.anonimowe) {
+      // drużyna anonimowa nie ma hasła, a sesja (albo kod powrotu) to jedyne, czym się wykazuje; bez await w środku
+      baza.usunKonto(s.konto.id);
+      wyslij(k.res, 204, undefined, { ...k.naglowki, 'Set-Cookie': skasujCiasteczko() });
+      return;
+    }
     const czekaj = logowania.zablokowany(k.ip);
     if (czekaj) throw zaDuzo(czekaj, 'Za dużo nieudanych prób. Spróbujcie za kilka minut.');
     logowania.dolicz(k.ip);
@@ -574,6 +656,9 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
     '/api/zdrowie': { GET: zdrowie },
     '/api/konto': { POST: zalozKonto, GET: kimJestem, DELETE: usunKonto },
     '/api/sesja': { POST: zalogujSie, DELETE: wyloguj },
+    '/api/druzyna': { POST: zalozDruzyne },
+    '/api/druzyna/kod': { POST: wymienKod },
+    '/api/druzyna/powrot': { POST: powrotDoDruzyny },
     '/api/klatki': { GET: klatkiWProstokacie, POST: zajmijKlatke },
     '/api/klatki/moje': { GET: mojeKlatki, DELETE: zwolnijMoje },
     '/api/zapis': { GET: pobierzZapis, PUT: wyslijZapis, DELETE: usunZapis },

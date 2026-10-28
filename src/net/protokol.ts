@@ -4,6 +4,8 @@
 
    Kontrakt w skrócie:
    - konto to nick i hasło, bez e-maila; sesja w ciasteczku HttpOnly (klient go nie widzi ani nie wysyła sam),
+   - drużyna anonimowa to konto bez nicku i hasła, zakładane jednym POST-em przy pierwszym wejściu; wrócić do niej z
+     innej przeglądarki można kodem powrotu (KOD_ALFABET, normalizujKod), a usunąć ją bez hasła,
    - inni gracze widzą tylko, że klatka jest zajęta („moja: false”), nigdy czyj to nick ani numer konta,
    - klucze klatek i budynków liczy klient (src/world/klucze.ts); serwer sprawdza ich postać i to, czy pozycja
      klatki leży przy budynku z klucza (kotwicaKlucza), więc nie da się zająć klatki w innym mieście,
@@ -129,6 +131,7 @@ export type KodBledu =
   | 'nick_zajety'
   | 'brak_sesji'
   | 'zle_logowanie'
+  | 'zly_kod'
   | 'za_duzo_prob'
   | 'zajeta'
   | 'nie_ma'
@@ -177,15 +180,48 @@ export interface UsunKonto {
   haslo: string;
 }
 
-/** odpowiedź POST /api/konto, POST /api/sesja i GET /api/konto */
+/** odpowiedź POST /api/konto, POST /api/druzyna, POST /api/sesja, POST /api/druzyna/powrot i GET /api/konto */
 export interface Ja {
-  nick: string;
+  /** nick konta; null u drużyny anonimowej (bez nicku i hasła) */
+  nick: string | null;
   /** chwila założenia konta (ms od 1970) */
   utworzone: number;
   /** liczba zajętych klatek */
   klatki: number;
   /** czy jest zapis w chmurze */
   zapis: boolean;
+  /** drużyna założona bez nicku i hasła (POST /api/druzyna) */
+  anonimowe: boolean;
+  /** jak drużynę nazwać na ekranie: nick konta z nickiem, „#” i numer u drużyny anonimowej */
+  znak: string;
+  /** czy drużyna ma kod powrotu (sam kod serwer pokazuje tylko raz, w odpowiedzi POST /api/druzyna/kod) */
+  kod: boolean;
+}
+
+/** Kod powrotu: 12 znaków z tego alfabetu (bez 0, O, 1 i I, które łatwo pomylić przy przepisywaniu), pokazywany jako
+    XXXX-XXXX-XXXX. 32 znaki to dokładnie 5 bitów na znak, razem 60 bitów. */
+export const KOD_ALFABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const KOD_DLUGOSC = 12;
+const KOD_WZOR = new RegExp(`^[${KOD_ALFABET}]{${KOD_DLUGOSC}}$`);
+
+/** Kod w postaci do porównań: bez spacji i myślników, wielkimi literami. Null, gdy to nie jest kod (zła długość albo
+    znak spoza alfabetu, także spoza ASCII). Serwer trzyma tylko skrót tej postaci. */
+export function normalizujKod(s: string): string | null {
+  if (typeof s !== 'string') return null;
+  const bez = s.replace(/[\s-]+/g, '');
+  if (!/^[A-Za-z0-9]+$/.test(bez)) return null;
+  const kod = bez.toUpperCase();
+  return KOD_WZOR.test(kod) ? kod : null;
+}
+
+/** POST /api/druzyna/kod: nowy kod powrotu drużyny (stary przestaje działać) */
+export interface KodPowrotu {
+  kod: string;
+}
+
+/** POST /api/druzyna/powrot: kod w dowolnej wielkości liter, z myślnikami albo spacjami */
+export interface PowrotDruzyny {
+  kod: string;
 }
 
 /** prostokąt w stopniach: południe, zachód, północ, wschód (GET /api/klatki?s=&w=&n=&e=) */

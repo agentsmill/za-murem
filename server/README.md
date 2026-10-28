@@ -1,6 +1,6 @@
 # Serwer gry Za Murem
 
-Małe API pod `/api` dla gry sieciowej: konta (nick i hasło), sesje, zajęte klatki i zapis gry w chmurze. Gra dalej liczy się w przeglądarce, serwer pilnuje tylko, kto ma którą klatkę. Projekt: `docs/superpowers/specs/2026-10-18-multiplayer-design.md`. Lista adresów API jest w nagłówku `server/app.ts`, typy i kody błędów w `src/net/protokol.ts`.
+Małe API pod `/api` dla gry sieciowej: konta (nick i hasło), drużyny anonimowe z kodem powrotu, sesje, zajęte klatki i zapis gry w chmurze. Gra dalej liczy się w przeglądarce, serwer pilnuje tylko, kto ma którą klatkę. Projekt: `docs/superpowers/specs/2026-10-18-multiplayer-design.md`. Lista adresów API jest w nagłówku `server/app.ts`, typy i kody błędów w `src/net/protokol.ts`.
 
 Node 24 (działa od 22.18) bez zależności z npm: TypeScript uruchamiany wprost, `node:http`, `node:sqlite`, `node:crypto`, `node:zlib`. Gra na GitHub Pages i dema offline działają bez serwera.
 
@@ -14,6 +14,20 @@ curl http://127.0.0.1:8787/api/zdrowie
 ```
 
 `ZM_CIASTECZKO_SECURE=0` jest potrzebne tylko przy zwykłym http, kiedy przeglądarka nie przyjmuje ciasteczka z atrybutem Secure. Gra jeszcze nie woła API (to etap 2); klient jest w `src/net/api.ts`. Testy serwera i klienta: `npm test -- serwer api-klient`.
+
+## Drużyna anonimowa i kod powrotu
+
+Gracz nie musi niczego wypełniać: `POST /api/druzyna` zakłada drużynę bez nicku i hasła i od razu loguje (201 i ciasteczko sesji; `Ja` ma `nick: null`, `anonimowe: true` i `znak` w postaci `#12`). Z ważną sesją to samo wywołanie oddaje konto tej sesji (200), nie zakłada nowego. Nowych drużyn jest najwyżej 30 na IP na godzinę (żądanie z ważną sesją się nie liczy), więc akademik albo sieć komórkowa za jednym adresem wystarczy dla dwudziestu osób w kwadrans.
+
+Kod powrotu pozwala wejść do tej samej drużyny z innej przeglądarki (aplikacja Reddita, karta prywatna, drugi telefon):
+
+| wywołanie | co robi |
+|---|---|
+| `POST /api/druzyna/kod` (sesja) | nowy kod `XXXX-XXXX-XXXX`, 12 znaków z alfabetu `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (bez 0, O, 1, I); poprzedni kod przestaje działać; najwyżej 10 razy na godzinę na drużynę. Dostaje go także konto z nickiem. |
+| `POST /api/druzyna/powrot` `{ "kod": "…" }` | nowa sesja w tej drużynie (200 i ciasteczko, `Ja`); wielkość liter, spacje i myślniki bez znaczenia; zły kod to 401 `zly_kod`. Sesje na innych urządzeniach dalej działają. |
+| `DELETE /api/konto` | drużyna anonimowa usuwa się bez hasła (razem z klatkami, zapisem i kodem); konto z nickiem dalej prosi o hasło. |
+
+Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA-256 (kolumna `konta.kod`, unikalna), więc wyciek bazy nie daje kodów wprost, a serwer nie umie go pokazać drugi raz. Zły kod w `powrot` liczy się do tego samego limitu co złe hasło (10 nieudanych prób na IP w 15 minut, potem 429), dobry nie. Wszystkie `POST` niosą `Content-Type: application/json`, także te bez danych (`{}`). Drużyny anonimowej nie ma w logowaniu nickiem. Schemat: migracja 2 w `server/baza.ts` (kolumny `anonimowe` i `kod`), stare konta zostają zwykłymi kontami. Testy: `npm test -- serwer-druzyna`.
 
 ## Zmienne środowiskowe
 

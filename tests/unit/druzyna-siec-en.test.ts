@@ -448,7 +448,15 @@ const zle = <T>(status: number, blad: KodBledu, komunikat: string, ponowZa?: num
 });
 const obca = (k: ZajmijKlatke): ZajetaKlatka => ({ ...k, moja: false });
 const chwila = () => new Promise((r) => setTimeout(r, 0));
-const ja = (nick: string): Ja => ({ nick, utworzone: 1, klatki: 0, zapis: false });
+const ja = (nick: string): Ja => ({
+  nick,
+  utworzone: 1,
+  klatki: 0,
+  zapis: false,
+  anonimowe: false,
+  znak: nick,
+  kod: false,
+});
 
 /** udawany serwer gry: polskie komunikaty jak z server/app.ts */
 function atrapaApi(

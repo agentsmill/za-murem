@@ -72,7 +72,15 @@ describe('serwer gry: konta i sesje', () => {
     const p = przegladarka(s.adres);
     const r = await p.zadanie('POST', '/api/konto', DANE);
     expect(r.status).toBe(201);
-    expect(r.body).toEqual({ nick: 'Mateusz_test', utworzone: s.teraz(), klatki: 0, zapis: false });
+    expect(r.body).toEqual({
+      nick: 'Mateusz_test',
+      utworzone: s.teraz(),
+      klatki: 0,
+      zapis: false,
+      anonimowe: false,
+      znak: 'Mateusz_test',
+      kod: false,
+    });
     const c = r.headers.getSetCookie()[0];
     expect(c).toMatch(/^zm_sesja=[A-Za-z0-9_-]{43}; /);
     for (const a of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/api', `Max-Age=${30 * 24 * 3600}`])
@@ -82,7 +90,17 @@ describe('serwer gry: konta i sesje', () => {
     expect(ja.body.nick).toBe('Mateusz_test');
     // w bazie skrót scrypt zamiast hasła i SHA-256 zamiast tokenu; żadnych innych danych o osobie
     const [konto] = wiersze(s, 'SELECT * FROM konta');
-    expect(Object.keys(konto).sort()).toEqual(['haslo', 'id', 'nick', 'nick_klucz', 'ostatnio', 'utworzone']);
+    expect(Object.keys(konto).sort()).toEqual([
+      'anonimowe',
+      'haslo',
+      'id',
+      'kod',
+      'nick',
+      'nick_klucz',
+      'ostatnio',
+      'utworzone',
+    ]);
+    expect(konto).toMatchObject({ anonimowe: 0, kod: null });
     expect(String(konto.haslo)).toMatch(/^scrypt\$10\$8\$1\$/);
     expect(String(konto.haslo)).not.toContain(DANE.haslo);
     const token = p.ciasteczko.split('=')[1];

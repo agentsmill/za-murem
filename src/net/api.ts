@@ -96,6 +96,8 @@ const LOGOWANIE_EN: Readonly<Record<string, string>> = Object.fromEntries(
 /** za dużo prób: zdanie bez „spróbujcie”, a kiedy spróbować, mówi czas z nagłówka Retry-After */
 const PROBY_EN: Readonly<Record<string, string>> = {
   'Za dużo nowych kont z tego miejsca. Spróbujcie później.': 'Too many new accounts from here.',
+  'Za dużo nowych drużyn z tego miejsca. Spróbujcie później.': 'Too many new teams from here.',
+  'Za często wymieniacie kod. Spróbujcie później.': 'You are changing your return code too often.',
   'Za dużo nieudanych prób. Spróbujcie za kilka minut.': 'Too many failed attempts.',
   'Za dużo nieudanych prób na to konto. Spróbujcie za kilka minut.': 'Too many failed attempts on this account.',
   'Za często zapisujecie. Spróbujcie za chwilę.': 'You are saving too often.',
@@ -124,6 +126,7 @@ const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
   nick_zajety: () => 'That username is already taken.',
   brak_sesji: () => 'Log in first.',
   zle_logowanie: zdania({ 'Złe hasło.': 'Wrong password.' }, 'Wrong username or password.'),
+  zly_kod: () => 'That return code doesn’t work. Check it and try again.',
   za_duzo_prob: (pl, b) => {
     const min = b.ponowZa ? Math.max(1, Math.ceil(b.ponowZa / 60)) : 0;
     return `${zMapy(PROBY_EN, pl) ?? 'Too many attempts.'} ${min ? `Try again in ${min} min.` : 'Try again later.'}`;

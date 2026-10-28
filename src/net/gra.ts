@@ -167,7 +167,7 @@ export class GraSieciowa {
     const ja = await this.api.ja();
     this.zalogowani = ja.ok;
     this.nick = ja.ok ? ja.dane.nick : null;
-    this.widok = ja.ok ? { stan: 'zalogowani', nick: ja.dane.nick } : { stan: 'wylogowani' };
+    this.widok = ja.ok ? { stan: 'zalogowani', nick: ja.dane.nick ?? '' } : { stan: 'wylogowani' };
     if (ja.ok) await this.wczytajChmure();
     if (!el) return;
     el.hidden = false;
@@ -243,7 +243,7 @@ export class GraSieciowa {
         this.nick = r.dane.nick;
         this.widok = {
           stan: 'zalogowani',
-          nick: r.dane.nick,
+          nick: r.dane.nick ?? '',
           komunikat:
             a === 'zaloz'
               ? tx(
