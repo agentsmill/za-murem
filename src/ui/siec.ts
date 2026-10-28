@@ -5,11 +5,15 @@
    Trzy stany bloku:
    - druzyna: gra w sieci bez formularza. Drużyna powstaje sama przy pierwszej grze na prawdziwym adresie (bez e-maila,
      nicku i hasła), więc blok mówi tylko to i daje dwie drogi z boku: pole kodu powrotu (data-siec="powrot", #scKod) dla
-     kogoś, kto wraca z innej przeglądarki, oraz odnośnik do dawnego logowania nickiem (data-siec="logowanie"); pod spodem
-     odnośniki do informacji o prywatności (prywatnosc.html) i regulaminu (regulamin.html), oba z public/. Gdy drużyna już jest, blok pokazuje jej znak („#12”) i zapis
-     z chmury, bez wylogowania (bez kodu powrotu drużyny nie dałoby się odzyskać),
+     kogoś, kto wraca z innej przeglądarki, oraz odnośnik do dawnego logowania nickiem (data-siec="logowanie"). Gdy
+     drużyna już jest, blok pokazuje jej znak („#12”) i zapis z chmury, bez wylogowania (bez kodu powrotu drużyny nie
+     dałoby się odzyskać),
    - zalogowani: konto z nickiem jak dotąd (nick, zapis z chmury, wylogowanie),
    - logowanie: dawny formularz z nickiem i hasłem (logowanie i zakładanie konta) z przyciskiem „Wróć” (data-siec="wroc").
+
+   Odnośniki do informacji o prywatności (prywatnosc.html) i regulaminu (regulamin.html), oba z public/, są pod blokiem we
+   wszystkich trzech stanach (`odnosnikiPrawne`), w nowej karcie, z kotwicą języka gry (#pl albo #en, bo strony mają
+   dwie sekcje językowe): kto się loguje albo wraca do konta, też ma je zobaczyć, zanim cokolwiek poda.
 
    Napisy w bieżącym języku (src/core/jezyk.ts) przy rysowaniu; komunikat w widoku może być Tx, więc po zmianie języka
    blok rysuje się od nowa w nowym języku (GraSieciowa.przerysuj). Nick i kod zostają takie, jak je wpisano.
@@ -26,7 +30,7 @@
      kodu bez żadnego błędu na ekranie. */
 
 import './siec.css';
-import { L, type Tx, tr, tx } from '../core/jezyk.ts';
+import { jezyk, L, type Tx, tr, tx } from '../core/jezyk.ts';
 import { btn, type Sheet } from './okna.ts';
 import { esc } from './tekst.ts';
 
@@ -45,6 +49,13 @@ export interface WidokSieci {
   czeka?: boolean;
 }
 
+/** Odnośniki „Prywatność” i „Regulamin” w nowej karcie, z kotwicą bieżącego języka gry (#pl, #en). `przed`: HTML przed
+    nimi w tym samym akapicie (w stanie druzyna odnośnik do dawnego logowania). Wspólne dla trzech stanów bloku. */
+export function odnosnikiPrawne(przed = ''): string {
+  const j = jezyk();
+  return `<p class="sc-links">${przed}<a href="prywatnosc.html#${j}" class="sc-link" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a><a href="regulamin.html#${j}" class="sc-link" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`;
+}
+
 /** HTML bloku „Gra z sąsiadami” */
 export function htmlSieci(v: WidokSieci): string {
   const off = v.czeka ? ' disabled' : '';
@@ -58,14 +69,14 @@ export function htmlSieci(v: WidokSieci): string {
       `Gracie jako <b>${esc(v.nick ?? '')}</b>. Wpiszcie adres: jeśli wasza klatka jest wolna, zostaje wasza. Jeśli ktoś ją zajął, zaczynacie bez domu.`,
       `Playing as <b>${esc(v.nick ?? '')}</b>. Enter your address: if your stairwell is free, it’s yours. If someone has taken it, you start out homeless.`,
     );
-    return `${head}<p class="sc-who">${kto}</p><div class="sc-row">${chmura}<button type="button" class="btn ghost" data-siec="wyloguj"${off}>${L('Wyloguj', 'Log out')}</button></div>${kom}`;
+    return `${head}<p class="sc-who">${kto}</p><div class="sc-row">${chmura}<button type="button" class="btn ghost" data-siec="wyloguj"${off}>${L('Wyloguj', 'Log out')}</button></div>${kom}${odnosnikiPrawne()}`;
   }
   if (v.stan === 'logowanie') {
     const notka = L(
       'Konto to tylko nick i hasło, bez e-maila. Zapomniane hasło to stracone konto.',
       'An account is just a username and a password, with no email, so a forgotten password means a lost account.',
     );
-    return `${head}<div class="sc-form"><input id="scNick" name="nick" autocomplete="username" placeholder="${L('nick', 'username')}" aria-label="${L('Nick', 'Username')}" maxlength="24"${off}><input id="scHaslo" name="haslo" type="password" autocomplete="current-password" placeholder="${L('hasło', 'password')}" aria-label="${L('Hasło', 'Password')}" maxlength="200"${off}><button type="button" class="btn go" data-siec="zaloguj"${off}>${L('Zaloguj', 'Log in')}</button><button type="button" class="btn" data-siec="zaloz"${off}>${L('Załóż konto', 'Create account')}</button><button type="button" class="btn ghost" data-siec="wroc"${off}>${L('Wróć', 'Back')}</button></div><p class="sc-note">${notka}</p>${kom}`;
+    return `${head}<div class="sc-form"><input id="scNick" name="nick" autocomplete="username" placeholder="${L('nick', 'username')}" aria-label="${L('Nick', 'Username')}" maxlength="24"${off}><input id="scHaslo" name="haslo" type="password" autocomplete="current-password" placeholder="${L('hasło', 'password')}" aria-label="${L('Hasło', 'Password')}" maxlength="200"${off}><button type="button" class="btn go" data-siec="zaloguj"${off}>${L('Zaloguj', 'Log in')}</button><button type="button" class="btn" data-siec="zaloz"${off}>${L('Załóż konto', 'Create account')}</button><button type="button" class="btn ghost" data-siec="wroc"${off}>${L('Wróć', 'Back')}</button></div><p class="sc-note">${notka}</p>${kom}${odnosnikiPrawne()}`;
   }
   // druzyna: bez formularza
   const opis = v.znak
@@ -79,7 +90,9 @@ export function htmlSieci(v: WidokSieci): string {
       )}</p>`;
   const wiersz = chmura ? `<div class="sc-row">${chmura}</div>` : '';
   const kod = `<div class="sc-kod"><label class="sc-lab" for="scKod">${L('Masz kod powrotu?', 'Have a return code?')}</label><input id="scKod" name="kod" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" maxlength="24"${off}><button type="button" class="btn" data-siec="powrot"${off}>${L('Wróć do drużyny', 'Rejoin your team')}</button></div>`;
-  const linki = `<p class="sc-links"><button type="button" class="sc-link" data-siec="logowanie"${off}>${L('Mam konto z nickiem i hasłem', 'I have a username and password')}</button><a href="prywatnosc.html" class="sc-link" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a><a href="regulamin.html" class="sc-link" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`;
+  const linki = odnosnikiPrawne(
+    `<button type="button" class="sc-link" data-siec="logowanie"${off}>${L('Mam konto z nickiem i hasłem', 'I have a username and password')}</button>`,
+  );
   return `${head}${opis}${wiersz}${kod}${kom}${linki}`;
 }
 

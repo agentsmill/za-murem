@@ -225,33 +225,58 @@ describe('regulamin: co zawiera', () => {
 });
 
 describe('odnośniki do obu stron: karta startowa i Menu gry sieciowej', () => {
-  it('blok sieci na karcie startowej: prywatność i regulamin obok siebie, po polsku i po angielsku', () => {
+  const STANY = ['druzyna', 'logowanie', 'zalogowani'] as const;
+
+  it('blok sieci na karcie startowej we wszystkich trzech stanach: prywatność i regulamin obok siebie, z kotwicą języka gry', () => {
     for (const [j, priv, reg] of [
       ['pl', 'Prywatność', 'Regulamin'],
       ['en', 'Privacy', 'Terms'],
     ] as const) {
       ustawJezyk(j);
-      const h = htmlSieci({ stan: 'druzyna' });
-      expect(h).toMatch(new RegExp(`<a href="prywatnosc\\.html"[^>]*>${priv}</a>`));
-      expect(h).toMatch(new RegExp(`<a href="regulamin\\.html"[^>]*>${reg}</a>`));
-      const linki = /<p class="sc-links">([\s\S]*?)<\/p>/.exec(h)![1];
-      expect(linki.indexOf('prywatnosc.html')).toBeGreaterThan(-1);
-      expect(linki.indexOf('regulamin.html')).toBeGreaterThan(linki.indexOf('prywatnosc.html'));
+      for (const stan of STANY) {
+        const h = htmlSieci({ stan, nick: 'Gracz', znak: '#12' });
+        expect(h, `${j} ${stan}`).toMatch(
+          new RegExp(`<a href="prywatnosc\\.html#${j}"[^>]*target="_blank"[^>]*>${priv}</a>`),
+        );
+        expect(h, `${j} ${stan}`).toMatch(
+          new RegExp(`<a href="regulamin\\.html#${j}"[^>]*target="_blank"[^>]*>${reg}</a>`),
+        );
+        const linki = /<p class="sc-links">([\s\S]*?)<\/p>/.exec(h)?.[1] ?? '';
+        expect(linki.indexOf('prywatnosc.html'), `${j} ${stan}`).toBeGreaterThan(-1);
+        expect(linki.indexOf('regulamin.html'), `${j} ${stan}`).toBeGreaterThan(linki.indexOf('prywatnosc.html'));
+      }
     }
   });
 
-  it('Menu gry sieciowej (drużyna anonimowa i konto z nickiem) ma oba odnośniki, Menu gry bez sieci żadnego', () => {
+  it('kotwica odnośników bloku zmienia się z językiem gry (pl → #pl, en → #en)', () => {
+    ustawJezyk('en');
+    const en = htmlSieci({ stan: 'zalogowani', nick: 'Gracz' });
+    expect(en).toContain('href="prywatnosc.html#en"');
+    expect(en).not.toContain('prywatnosc.html#pl');
+    ustawJezyk('pl');
+    const pl = htmlSieci({ stan: 'zalogowani', nick: 'Gracz' });
+    expect(pl).toContain('href="regulamin.html#pl"');
+    expect(pl).not.toContain('regulamin.html#en');
+  });
+
+  it('Menu gry sieciowej (drużyna anonimowa i konto z nickiem) ma oba odnośniki z kotwicą języka, Menu gry bez sieci żadnego', () => {
     for (const j of ['pl', 'en'] as const) {
       ustawJezyk(j);
       for (const anonimowa of [true, false]) {
         const b = menuSheet('x', { anonimowa }).body;
-        expect(b, `${j} ${anonimowa}`).toMatch(/<a [^>]*href="prywatnosc\.html"[^>]*target="_blank"/);
-        expect(b, `${j} ${anonimowa}`).toMatch(/<a [^>]*href="regulamin\.html"[^>]*target="_blank"/);
+        expect(b, `${j} ${anonimowa}`).toMatch(new RegExp(`<a [^>]*href="prywatnosc\\.html#${j}"[^>]*target="_blank"`));
+        expect(b, `${j} ${anonimowa}`).toMatch(new RegExp(`<a [^>]*href="regulamin\\.html#${j}"[^>]*target="_blank"`));
       }
       const bez = menuSheet('x').body;
       expect(bez).not.toContain('prywatnosc.html');
       expect(bez).not.toContain('regulamin.html');
     }
+  });
+
+  it('strony mają sekcje #pl i #en, do których kotwice prowadzą', () => {
+    for (const nazwa of STRONY)
+      for (const j of ['pl', 'en'] as const)
+        expect(strona(nazwa), `${nazwa} #${j}`).toMatch(new RegExp(`<section[^>]*\\bid="${j}"`));
   });
 });
 

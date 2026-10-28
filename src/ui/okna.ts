@@ -25,7 +25,7 @@ import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
 import { OSOB_DOMYSLNIE } from '../content/druzyna.ts';
 import { MENU as DRZWI } from '../content/napisy-sasiedzi.ts';
-import { L, mnogaPl, type Tx, tr, tx } from '../core/jezyk.ts';
+import { jezyk, L, mnogaPl, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import {
   deterrence,
@@ -511,8 +511,8 @@ export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
 
 /** Menu. `siec` podaje gra sieciowa (GraSieciowa.menuSieci, src/net/gra.ts): gra w sieci ma przycisk kodu powrotu
     (`menu-kod`), a drużyna anonimowa także usunięcia drużyny z serwera (`menu-usun`); do tego odnośniki do informacji
-    o prywatności i regulaminu (public/prywatnosc.html, public/regulamin.html, w nowej karcie, żeby nie wyjść z gry).
-    Gra bez sieci nie ma żadnego z nich. Okna kodu i usunięcia są w src/ui/siec.ts. */
+    o prywatności i regulaminu (public/prywatnosc.html, public/regulamin.html, w nowej karcie, żeby nie wyjść z gry, z
+    kotwicą języka gry #pl albo #en, bo strony mają dwie sekcje językowe). Gra bez sieci nie ma żadnego z nich. Okna kodu i usunięcia są w src/ui/siec.ts. */
 export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
   const sieciowe = siec
     ? btn('menu-kod', L('Nowy kod powrotu drużyny', 'New team return code')) +
@@ -521,7 +521,7 @@ export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
         : '')
     : '';
   const prawo = siec
-    ? `<p class="fine menu-prawo"><a href="prywatnosc.html" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a> · <a href="regulamin.html" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`
+    ? `<p class="fine menu-prawo"><a href="prywatnosc.html#${jezyk()}" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a> · <a href="regulamin.html#${jezyk()}" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`
     : '';
   return {
     tone: 'menu',

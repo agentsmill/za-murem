@@ -572,7 +572,7 @@ describe('gra z sąsiadami po angielsku (src/ui/siec.ts, src/net/gra.ts, src/net
     expect(dr).toContain('Have a return code?');
     expect(dr).toContain('data-siec="logowanie"');
     expect(dr).toContain('I have a username and password');
-    expect(dr).toMatch(/<a href="prywatnosc\.html"[^>]*>Privacy<\/a>/);
+    expect(dr).toMatch(/<a href="prywatnosc\.html#en"[^>]*>Privacy<\/a>/);
     expect(polskie(dr)).toEqual([]);
     // drużyna, która już jest: znak po angielsku i zapis z chmury, wciąż bez pól nicku i hasła
     const jest = htmlSieci({ stan: 'druzyna', znak: '#7', chmura: 'Ursynów, day 2, 06:40' });

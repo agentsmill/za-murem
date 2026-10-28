@@ -231,7 +231,7 @@ describe('gra z sąsiadami: siedziba i start (src/net/siec.ts)', () => {
     expect(dr).toContain('id="scKod"');
     expect(dr).toContain('data-siec="powrot"');
     expect(dr).toContain('data-siec="logowanie"');
-    expect(dr).toContain('href="prywatnosc.html"');
+    expect(dr).toContain('href="prywatnosc.html#pl"');
     expect(dr).not.toContain('Kontynuuj z chmury');
     // drużyna anonimowa, która już jest: znak i zapis z chmury, bez wylogowania (bez kodu byłoby nie do odzyskania)
     const jest = htmlSieci({ stan: 'druzyna', znak: '#7', chmura: 'Lanciego, dzień 2, 06:40' });
