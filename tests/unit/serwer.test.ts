@@ -61,7 +61,7 @@ describe('serwer gry: konta i sesje', () => {
     const s = await start();
     const r = await przegladarka(s.adres).zadanie('GET', '/api/zdrowie');
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ ok: true, gra: 'za-murem', wersja: 1 });
+    expect(r.body).toEqual({ ok: true, gra: 'za-murem', wersja: 1, ip: 'polaczenie' });
     expect(r.headers.get('cache-control')).toBe('no-store');
     expect(r.headers.get('x-content-type-options')).toBe('nosniff');
     expect(r.headers.get('content-type')).toContain('application/json');
@@ -72,7 +72,15 @@ describe('serwer gry: konta i sesje', () => {
     const p = przegladarka(s.adres);
     const r = await p.zadanie('POST', '/api/konto', DANE);
     expect(r.status).toBe(201);
-    expect(r.body).toEqual({ nick: 'Mateusz_test', utworzone: s.teraz(), klatki: 0, zapis: false });
+    expect(r.body).toEqual({
+      nick: 'Mateusz_test',
+      utworzone: s.teraz(),
+      klatki: 0,
+      zapis: false,
+      anonimowe: false,
+      znak: 'Mateusz_test',
+      kod: false,
+    });
     const c = r.headers.getSetCookie()[0];
     expect(c).toMatch(/^zm_sesja=[A-Za-z0-9_-]{43}; /);
     for (const a of ['HttpOnly', 'Secure', 'SameSite=Lax', 'Path=/api', `Max-Age=${30 * 24 * 3600}`])
@@ -82,7 +90,17 @@ describe('serwer gry: konta i sesje', () => {
     expect(ja.body.nick).toBe('Mateusz_test');
     // w bazie skrót scrypt zamiast hasła i SHA-256 zamiast tokenu; żadnych innych danych o osobie
     const [konto] = wiersze(s, 'SELECT * FROM konta');
-    expect(Object.keys(konto).sort()).toEqual(['haslo', 'id', 'nick', 'nick_klucz', 'ostatnio', 'utworzone']);
+    expect(Object.keys(konto).sort()).toEqual([
+      'anonimowe',
+      'haslo',
+      'id',
+      'kod',
+      'nick',
+      'nick_klucz',
+      'ostatnio',
+      'utworzone',
+    ]);
+    expect(konto).toMatchObject({ anonimowe: 0, kod: null });
     expect(String(konto.haslo)).toMatch(/^scrypt\$10\$8\$1\$/);
     expect(String(konto.haslo)).not.toContain(DANE.haslo);
     const token = p.ciasteczko.split('=')[1];
@@ -164,15 +182,16 @@ describe('serwer gry: konta i sesje', () => {
     const s = await start();
     const p = await druzyna(s, 'Sesyjny');
     s.czekaj(10 * DOBA);
+    // pierwsza wizyta konta tej doby: sesja przedłuża się do pełnych 30 dni (konto z nickiem nie dostaje dłuższej)
     let r = await p.zadanie('GET', '/api/konto');
-    expect(r.status).toBe(200);
-    expect(r.headers.getSetCookie()).toEqual([]);
-    s.czekaj(6 * DOBA);
-    // zostało mniej niż pół ważności: sesja przedłuża się o pełne 30 dni
-    r = await p.zadanie('GET', '/api/konto');
     expect(r.status).toBe(200);
     expect(r.headers.getSetCookie()[0]).toContain(`Max-Age=${30 * 24 * 3600}`);
     expect(Number(wiersze(s, 'SELECT wygasa FROM sesje')[0].wygasa)).toBe(s.teraz() + 30 * DOBA);
+    // druga wizyta tej samej doby niczego nie przedłuża
+    s.czekaj(60 * 60 * 1000);
+    r = await p.zadanie('GET', '/api/konto');
+    expect(r.status).toBe(200);
+    expect(r.headers.getSetCookie()).toEqual([]);
     s.czekaj(31 * DOBA);
     expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
     expect(wiersze(s, 'SELECT * FROM sesje')).toHaveLength(0);
@@ -222,6 +241,8 @@ describe('serwer gry: zajęte klatki', () => {
     expect(konflikt.body.blad).toBe('zajeta');
     expect(konflikt.tekst).not.toContain('Pierwsi');
     const q = '/api/klatki?s=54.40&w=18.59&n=54.42&e=18.61';
+    // druga drużyna nie ma siedziby, więc najpierw podaje punkt startu (okolica zapytań, serwer-okolica.test.ts)
+    expect((await b.zadanie('PUT', '/api/druzyna/start', { lat: K1.lat, lon: K1.lon })).status).toBe(204);
     const widokB = await b.zadanie('GET', q);
     expect(widokB.body).toEqual({ klatki: [{ ...K1, lat: do5(K1.lat), lon: do5(K1.lon), moja: false }] });
     expect(widokB.tekst).not.toMatch(/Pierwsi|konto|siedziba|zajeta"/);
@@ -247,7 +268,10 @@ describe('serwer gry: zajęte klatki', () => {
     const lista = async (u: string) => (await a.zadanie('GET', u)).body.klatki.map((k: { klucz: string }) => k.klucz);
     expect(await lista(w(54.409, 18.598, 54.4095, 18.599))).toEqual([K1.klucz]);
     expect(await lista(w(54.4095, 18.599, 54.41, 18.6))).toEqual([daleko.klucz]);
-    expect(await lista(w(54.0, 18.0, 54.01, 18.01))).toEqual([]);
+    // daleko od siedziby drużyny (tu ponad 40 km) pytać nie wolno, nawet o pusty kawałek mapy
+    const poza = await a.zadanie('GET', w(54.0, 18.0, 54.01, 18.01));
+    expect(poza.status).toBe(403);
+    expect(poza.body.blad).toBe('poza_okolica');
     for (const zly of [
       w(54.42, 18.59, 54.4, 18.61),
       w(54.3, 18.5, 54.4, 18.6),

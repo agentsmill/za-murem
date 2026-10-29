@@ -5,9 +5,11 @@
    kiedyś podnieść bez psucia starych kont. Porównanie w stałym czasie. Dla nieistniejącego nicku serwer i tak liczy
    scrypt na atrapie (atrapaHasla), żeby czas odpowiedzi nie zdradzał, które nicki są zajęte.
    Token sesji: 32 losowe bajty (base64url) w ciasteczku; w bazie tylko jego SHA-256, więc wyciek bazy nie daje
-   cudzych sesji. */
+   cudzych sesji. Kod powrotu drużyny (nowyKod): 12 losowych znaków z KOD_ALFABET w postaci XXXX-XXXX-XXXX, w bazie
+   tylko SHA-256 jego postaci znormalizowanej (normalizujKod z src/net/protokol.ts). */
 
 import { createHash, randomBytes, type ScryptOptions, scrypt, timingSafeEqual } from 'node:crypto';
+import { KOD_ALFABET, KOD_DLUGOSC } from '../src/net/protokol.ts';
 
 /** parametry scrypt: N = 2^logN; 2^15 i r = 8 to 32 MiB pamięci na jedno liczenie */
 export interface ParametryHasla {
@@ -55,5 +57,14 @@ export function atrapaHasla(par: ParametryHasla = DOMYSLNE_HASLO): Promise<strin
 /** nowy token sesji dla ciasteczka */
 export const nowyToken = (): string => randomBytes(32).toString('base64url');
 
-/** skrót tokenu do bazy */
+/** nowy kod powrotu: XXXX-XXXX-XXXX z KOD_ALFABET; alfabet ma 32 znaki, więc pięć młodszych bitów bajtu wybiera znak
+    bez żadnego przekosu */
+export function nowyKod(): string {
+  const bajty = randomBytes(KOD_DLUGOSC);
+  let znaki = '';
+  for (const b of bajty) znaki += KOD_ALFABET[b & 31];
+  return `${znaki.slice(0, 4)}-${znaki.slice(4, 8)}-${znaki.slice(8)}`;
+}
+
+/** skrót tokenu (albo znormalizowanego kodu powrotu) do bazy */
 export const skrotTokenu = (token: string): string => createHash('sha256').update(token).digest('hex');

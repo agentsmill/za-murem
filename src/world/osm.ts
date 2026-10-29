@@ -1,10 +1,24 @@
-/* Dane z OpenStreetMap: geokodowanie (Nominatim), Overpass jako zapas, kategorie miejsc
-   i osiedle zapasowe. Przeniesione z js/osm.js (0.3); rasteryzacja jest nowa (raster.ts). Komunikaty dla gracza
-   w bieżącym języku; nazwy miejsc i osiedle zapasowe zostają polskie, bo to dane świata. */
+/* Dane z OpenStreetMap: wyszukiwanie adresu (Nominatim wprost, a gdy gra dostanie klienta API, najpierw przez serwer
+   gry), Overpass jako zapas, kategorie miejsc i osiedle zapasowe. Przeniesione z js/osm.js (0.3); rasteryzacja jest
+   nowa (raster.ts). Komunikaty dla gracza w bieżącym języku; nazwy miejsc i osiedle zapasowe zostają polskie, bo to
+   dane świata.
+
+   Kontrakt geocode(q, api?). Bez `api` (tak woła main.ts, dopóki gra sieciowa jest wyłączona) adres z pola idzie tylko
+   do Nominatim, jedno zapytanie, jak przed serwerem gry; serwera gry nie dotykamy. Z `api` najpierw GET /api/adres
+   (src/net/api.ts, bez sesji; serwer ma kolejkę do Nominatim, pamięć wyników i zapas w Photonie), zawsze z językiem
+   `pl`: etykieta adresu (`Loaded.addr`) liczy się do ziarna świata i kluczy imion, więc nie może zależeć od języka
+   gracza. Wynik serwera kończy sprawę; odpowiedź `nie_ma` ze zdaniem KOMUNIKAT_BRAK_ADRESU (adresu nie ma) też: gracz
+   dostaje ten sam błąd „Nie znalazłem takiego adresu…”, a przeglądarka nie pyta już sama Nominatim. Inne `nie_ma`
+   (serwer bez trasy /api/adres odpowiada 404 „Nie ma takiego adresu API.”) i każda inna porażka (brak serwera na Pages
+   i w demach offline, brak sieci, czas, zajęty serwer, 429) idą dotychczasową drogą wprost do Nominatim: jedno
+   zapytanie, bez ponowień i bez błędu z serwera na ekranie.
+   Moduł działa w Node: src/net/api.ts nie dotyka okna ani DOM przy imporcie, a niczego z src/world nie importuje. */
 
 import { FOODSHOP } from '../content/data.ts';
 import { L } from '../core/jezyk.ts';
 import { mulberry } from '../core/rng.ts';
+import type { ApiGry } from '../net/api.ts';
+import { KOMUNIKAT_BRAK_ADRESU } from '../net/protokol.ts';
 import type { AreaKind, Geo, Pt } from './geo.ts';
 import { pikselZ, tagiKlucza } from './klucze.ts';
 import { kluczPunktu } from './miasto.ts';
@@ -34,7 +48,17 @@ export interface GeocodeResult {
   city: string;
 }
 
-export async function geocode(q: string): Promise<GeocodeResult> {
+/** błąd „adresu nie ma” (serwer gry powiedział nie_ma albo Nominatim nic nie zwrócił) */
+const nieMaAdresu = () =>
+  new Error(
+    L(
+      'Nie znalazłem takiego adresu. Spróbuj z miastem, np. „Wołoska 12, Warszawa”.',
+      'Couldn’t find that address. Try adding the town, e.g. “Wołoska 12, Warszawa”.',
+    ),
+  );
+
+/** wyszukiwanie wprost w Nominatim z przeglądarki (droga sprzed serwera gry; zapas, gdy serwera nie ma) */
+async function geocodeNominatim(q: string): Promise<GeocodeResult> {
   const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=pl&q=${encodeURIComponent(q)}`;
   const r = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!r.ok)
@@ -42,13 +66,7 @@ export async function geocode(q: string): Promise<GeocodeResult> {
       L(`Wyszukiwarka adresów odpowiedziała błędem ${r.status}`, `The address search answered with error ${r.status}.`),
     );
   const j = await r.json();
-  if (!j.length)
-    throw new Error(
-      L(
-        'Nie znalazłem takiego adresu. Spróbuj z miastem, np. „Wołoska 12, Warszawa”.',
-        'Couldn’t find that address. Try adding the town, e.g. “Wołoska 12, Warszawa”.',
-      ),
-    );
+  if (!j.length) throw nieMaAdresu();
   const a = j[0].address || {};
   const area = a.neighbourhood || a.quarter || a.suburb || a.city_district || a.village || a.town || a.city || '';
   return {
@@ -59,6 +77,18 @@ export async function geocode(q: string): Promise<GeocodeResult> {
     street: a.road || '',
     city: a.city || a.town || a.village || '',
   };
+}
+
+/** adres → miejsce. Bez `api` wprost Nominatim. Z `api` najpierw serwer gry (zawsze `pl`, bo z etykiety liczy się
+    ziarno świata); adres, którego serwer nie zna (`nie_ma` ze zdaniem KOMUNIKAT_BRAK_ADRESU), to błąd „Nie
+    znalazłem…” bez drugiego zapytania, a każda inna porażka idzie jednym zapytaniem wprost do Nominatim */
+export async function geocode(q: string, api?: Pick<ApiGry, 'adres'>): Promise<GeocodeResult> {
+  if (api) {
+    const r = await api.adres(q, 'pl');
+    if (r.ok) return r.dane;
+    if (r.blad === 'nie_ma' && r.komunikat === KOMUNIKAT_BRAK_ADRESU) throw nieMaAdresu();
+  }
+  return geocodeNominatim(q);
 }
 
 export async function overpass(lat: number, lon: number, R: number, onStatus?: (s: string) => void): Promise<unknown> {

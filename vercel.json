@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "${ZM_API}/api/$1",
+      "env": ["ZM_API"],
+      "transforms": [
+        { "type": "request.headers", "op": "set", "target": { "key": "x-zm-proxy" }, "args": "$ZM_PROXY_SEKRET", "env": ["ZM_PROXY_SEKRET"] }
+      ]
+    },
+    { "src": "/assets/(.*)", "headers": { "cache-control": "public, max-age=31536000, immutable" }, "continue": true },
+    { "src": "/(|index\\.html|v03/|v03/index\\.html|demo/.*)", "headers": { "cache-control": "no-cache" }, "continue": true },
+    { "handle": "filesystem" }
+  ]
+}

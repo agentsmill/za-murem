@@ -1352,7 +1352,8 @@ a.btn {
 .sheet.noc {
   --plate: #1b3263;
 }
-.sheet.ogien {
+.sheet.ogien,
+.sheet.usun {
   --plate: #9a3a26;
 }
 .sheet.wydarzenie {
@@ -1936,6 +1937,16 @@ a.btn {
   }
   .sheet-foot .btn {
     flex: 1;
+  }
+  /* okno przy dolnej krawędzi nie zasłania atrybucji map (zawsze widocznej): pod Menu, kodem powrotu i pytaniem o usunięcie
+     drużyny zostaje jej pas, a ona sama leży nad zasłoną okna, jak przy wiki; wyższe okno przewija się w środku */
+  .sheet.menu,
+  .sheet.usun {
+    margin-bottom: calc(var(--attrib-h, 21px) + 6px);
+    max-height: calc(100dvh - 22px - var(--attrib-h, 21px));
+  }
+  .app:has(.modal:not([hidden]) :is(.sheet.menu, .sheet.usun)) .attrib {
+    z-index: 11;
   }
 }
 /* telefon 360 px z dziewięcioma kafelkami trybu zombie po polsku: przy tej szerokości nawet dziewięć pikseli etykiety bez

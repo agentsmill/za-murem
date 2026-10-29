@@ -1,19 +1,45 @@
 /* Gra sieciowa w przeglądarce, etap 2 (docs/superpowers/specs/2026-10-18-multiplayer-design.md): blok „Gra z sąsiadami”
-   na karcie startowej (logowanie, zakładanie konta, wylogowanie, zapis z chmury), start drużyny przez serwer (klatka pod
-   adresem albo start bez domu), znaczniki zajętych klatek na mapie, „Zajmij klatkę” w menu i zapis w chmurze. Spina
-   src/net/api.ts, czyste funkcje z src/net/siec.ts i HTML z src/ui/siec.ts z DOM; main.ts woła tylko kilka metod.
+   na karcie startowej (kod powrotu do drużyny, dawne logowanie nickiem, zapis z chmury), start drużyny przez serwer
+   (klatka pod adresem albo start bez domu), znaczniki zajętych klatek na mapie, „Zajmij klatkę” w menu i zapis w chmurze.
+   Spina src/net/api.ts, czyste funkcje z src/net/siec.ts i HTML z src/ui/siec.ts z DOM; main.ts woła tylko kilka metod.
 
-   Wszystko działa tylko z ?siec=1 w adresie strony i przy odpowiadającym serwerze (informację o danych osobowych
-   i administratora danych musi jeszcze dać Mateusz). Bez tego każda metoda zachowuje się jak gra bez sieci: zwykły świat,
-   bez znaczników, bez dodatkowych poleceń. Symulacji nic tu nie zmienia w trakcie kroku: zajęte klatki wchodzą do gry
-   jako wejście startu (lista budynków dla buildWorld i miejsce startu zarządu przed new Sim) i poleceniem zajete
-   w kolejce (M2 fala 2: drzwi klatek innych drużyn zamknięte na stałe, po każdej zmianie listy).
+   Wszystko działa tylko przy włączonej sieci (src/net/flaga.ts: ?siec=1 albo VITE_SIEC=1 z budowy strony) i przy
+   odpowiadającym serwerze (informację o danych osobowych i administratora danych musi jeszcze dać Mateusz). Bez tego
+   każda metoda zachowuje się jak gra bez sieci: zwykły świat, bez znaczników, bez dodatkowych poleceń. Symulacji nic tu
+   nie zmienia w trakcie kroku: zajęte klatki wchodzą do gry jako wejście startu (lista budynków dla buildWorld i miejsce
+   startu zarządu przed new Sim) i poleceniem zajete w kolejce (M2 fala 2: drzwi klatek innych drużyn zamknięte na stałe,
+   po każdej zmianie listy).
 
-   Gra sieciowa należy do konta, które ją zaczęło (StanSieci.konto): wczytana na innym koncie albo bez zalogowania toczy
-   się dalej bez sieci (bez zajmowania i bez chmury). Zapis w chmurze idzie od wersji, którą ta gra ostatnio wysłała
-   (StanSieci.wersja), a zapis wczytany z chmury od wersji z serwera, więc stary zapis z innego urządzenia nie nadpisze
-   nowszej gry bez ostrzeżenia. Odpowiedzi z sieci sprawdzają numer gry (gen): spóźniona odpowiedź z poprzedniej gry
-   nic nie zmienia w nowej.
+   Bez formularza: drużynę (konto bez nicku i hasła, POST /api/druzyna) zakłada `przygotuj` przy nowej grze na prawdziwym
+   adresie, jeśli gracz nie ma jeszcze sesji, a nie wejście na stronę, żeby ci, którzy tylko zajrzeli, nie dostawali
+   kont. Dzieje się to raz na start gry; błąd (503, brak sieci, cokolwiek) to gra bez sieci z jednym komunikatem i bez
+   drugiej próby w tym starcie. Demo, zapisy i ponowny start drużyny nie zakładają niczego. Wracać do drużyny z innej
+   przeglądarki można kodem powrotu z karty startowej (akcja `powrot`), a konto z nickiem i hasłem działa dalej za
+   odnośnikiem „logowanie” (stan `logowanie` bloku). Serwer trzyma punkt startu drużyny tylko w pamięci, więc po jego
+   restarcie odświeżanie klatek, które dostanie 409 brak_startu, podaje punkt startu i pyta jeszcze raz (raz); każda
+   inna porażka odświeżenia (429 też) zostawia ostatnią listę, bez komunikatu.
+
+   Kod powrotu i usunięcie drużyny w grze (Menu, main.ts): `menuSieci` mówi Menu, które przyciski sieci pokazać; `kod` bierze
+   z serwera nowy kod (każdy unieważnia poprzedni, porażka daje null i powód w `blad`); `pokazacKod` i `kodPokazany` dają
+   okno z kodem raz po pierwszym porannym raporcie drużyny anonimowej, która jeszcze nigdy nie miała kodu (`maKod`: Ja.kod
+   z serwera przy każdym zalogowaniu, powrocie kodem i założeniu drużyny albo udane `kod()` z Menu, bo serwer nie pokaże
+   istniejącego kodu, a nowy unieważniłby ten, który gracz już trzyma; StanSieci.kodPokazany, w zapisie, pilnuje raz na
+   grę); `usun` kasuje
+   drużynę anonimową z serwera bez hasła i kończy sieć w tej grze (StanSieci.usunieta: bez zapisów do chmury, bez
+   odświeżania klatek, bez przycisków sieci, a zapis wczytuje się bez sieci na czyimkolwiek koncie). Zapis drużyny
+   anonimowej wczytany bez jej sesji (zgubione ciasteczko, inna przeglądarka) toczy się bez sieci i dostaje jeden komunikat
+   o kodzie powrotu z karty startowej, o ile serwer odpowiada (inaczej karta nie ma pola kodu, a gra bez serwera milczy
+   jak dotąd).
+
+   `apiAdresu` (wyszukiwanie adresu przez serwer) i `apiLicznikow` (zdarzenia do liczników, src/net/liczniki.ts) oddają
+   klienta API tylko przy włączonej sieci i odpowiadającym serwerze (po init), inaczej undefined: gra bez sieci niczego
+   nie pyta i niczego nie wysyła.
+
+   Gra sieciowa należy do konta, które ją zaczęło (StanSieci.konto = Ja.znak: nick konta z nickiem, „#<id>” drużyny
+   anonimowej): wczytana na innym koncie albo bez zalogowania toczy się dalej bez sieci (bez zajmowania i bez chmury).
+   Zapis w chmurze idzie od wersji, którą ta gra ostatnio wysłała (StanSieci.wersja), a zapis wczytany z chmury od
+   wersji z serwera, więc stary zapis z innego urządzenia nie nadpisze nowszej gry bez ostrzeżenia. Odpowiedzi z sieci
+   sprawdzają numer gry (gen): spóźniona odpowiedź z poprzedniej gry nic nie zmienia w nowej.
 
    Język (src/core/jezyk.ts): komunikat w bloku #siec trzymamy jako Tx, a opis zapisu z chmury liczymy przy każdym
    rysowaniu, więc po zmianie języka blok rysuje się od nowa w nowym (przerysuj, woła ją main.ts). Znaczniki klatek
@@ -29,7 +55,7 @@ import { type Klatka, type LatLon, prostokatMapy } from '../world/klucze.ts';
 import type { Loaded } from '../world/load.ts';
 import type { World } from '../world/world.ts';
 import { type ApiGry, komunikatBledu, txBledu, utworzApi } from './api.ts';
-import type { ZajetaKlatka } from './protokol.ts';
+import { type Ja, normalizujKod, type ZajetaKlatka } from './protokol.ts';
 import {
   budynkiObcych,
   celeBezDomu,
@@ -61,7 +87,7 @@ export interface OpcjeGry {
   el: HTMLElement | null;
   /** warstwa znaczników klatek nad mapą (#klatki) */
   warstwa: HTMLElement | null;
-  /** ?siec=1 w adresie strony */
+  /** sieć włączona dla tej strony (siecWlaczona z src/net/flaga.ts: ?siec=1 albo VITE_SIEC=1) */
   wlaczona: boolean;
   touch: boolean;
   /** podpowiedź na dole ekranu gry */
@@ -97,9 +123,18 @@ function zapisZChmury(dane: unknown): Save | null {
 export class GraSieciowa {
   private readonly o: OpcjeGry;
   private readonly api: ApiGry;
-  private widok: WidokSieci = { stan: 'wylogowani' };
+  private widok: WidokSieci = { stan: 'druzyna' };
+  /** serwer gry odpowiedział przy init (sieć włączona i serwer działa) */
+  private dostepny = false;
+  /** jest sesja: konto z nickiem albo drużyna anonimowa */
   private zalogowani = false;
-  private nick: string | null = null;
+  /** Ja.znak zalogowanego konta (nick albo „#<id>”); null bez sesji */
+  private znak: string | null = null;
+  /** zalogowana drużyna jest anonimowa (bez nicku i hasła) */
+  private anonimowe = false;
+  /** zalogowane konto ma już kod powrotu (Ja.kod z serwera albo kod() w tej grze): serwer nie pokaże istniejącego kodu,
+      a każdy nowy unieważnia poprzedni, więc kod po raporcie dostaje tylko drużyna, która go jeszcze nie miała */
+  private maKod = false;
   private chmura: Save | null = null;
   /** wersja zapisu z chmury (GET /api/zapis) */
   private wersjaZChmury: number | undefined;
@@ -121,9 +156,13 @@ export class GraSieciowa {
   private bezSieci = false;
   /** zajmowanie nowej siedziby przerwane (błąd serwera, który się nie zmieni): cele jak zwykle */
   private porzucone = false;
+  /** limit zmian okolicy (429) przy podawaniu punktu startu: w tej grze już nie próbujemy */
+  private startZablokowany = false;
   private restartuje = false;
   /** komunikat startu: Tx albo napis w języku z chwili startu (z startSieci) */
   private komunikat: Tx | string | null = null;
+  /** powód ostatniej porażki kod() albo usun() */
+  private bladSerwera: Tx | null = null;
   private klatki: ZajetaKlatka[] = [];
   private cel: Klatka | null = null;
   private zn: Znacznik[] = [];
@@ -158,17 +197,19 @@ export class GraSieciowa {
     return this.o.sesja === undefined ? globalThis.sessionStorage : this.o.sesja;
   }
 
-  /** Sprawdza serwer i sesję, pokazuje blok na karcie startowej (bez bloku, np. w testach, tylko sprawdza). Bez
-      ?siec=1 albo bez serwera nic nie robi. */
+  /** Sprawdza serwer i sesję, pokazuje blok na karcie startowej (bez bloku, np. w testach, tylko sprawdza). Przy
+      wyłączonej sieci albo bez serwera nic nie robi. Drużyny nie zakłada: to dopiero pierwsza gra (przygotuj). */
   async init(): Promise<void> {
     const el = this.o.el;
     if (!this.o.wlaczona) return;
     if (!(await this.api.serwerDostepny())) return;
+    this.dostepny = true;
     const ja = await this.api.ja();
-    this.zalogowani = ja.ok;
-    this.nick = ja.ok ? ja.dane.nick : null;
-    this.widok = ja.ok ? { stan: 'zalogowani', nick: ja.dane.nick } : { stan: 'wylogowani' };
-    if (ja.ok) await this.wczytajChmure();
+    if (ja.ok) {
+      this.zaloguj(ja.dane);
+      await this.wczytajChmure();
+    }
+    this.widok = this.widokBazowy();
     if (!el) return;
     el.hidden = false;
     this.rysuj();
@@ -177,11 +218,114 @@ export class GraSieciowa {
       if (b) void this.akcja(b.dataset.siec ?? '');
     });
     el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+      const pole = e.target as HTMLElement;
+      if (e.key === 'Enter' && pole.tagName === 'INPUT') {
         e.preventDefault();
-        void this.akcja('zaloguj');
+        void this.akcja(pole.id === 'scKod' ? 'powrot' : 'zaloguj');
       }
     });
+  }
+
+  /** klient API do wyszukiwania adresu (loadAddress): tylko przy włączonej sieci i odpowiadającym serwerze (po init),
+      inaczej undefined i adres szuka się w przeglądarce jak bez sieci */
+  apiAdresu(): Pick<ApiGry, 'adres'> | undefined {
+    return this.dostepny ? this.api : undefined;
+  }
+
+  /** klient API do liczników (src/net/liczniki.ts, POST /api/zdarzenie bez sesji): ten sam warunek co `apiAdresu`, czyli
+      sieć włączona i odpowiadający serwer (po init), inaczej undefined i gra niczego nie wysyła */
+  apiLicznikow(): Pick<ApiGry, 'zdarzenie'> | undefined {
+    return this.dostepny ? this.api : undefined;
+  }
+
+  /** czy gracz gra jako drużyna anonimowa (sesja bez nicku i hasła) */
+  anonimowa(): boolean {
+    return this.zalogowani && this.anonimowe;
+  }
+
+  /** Co Menu ma dać z sieci (menuSheet): przycisk kodu powrotu w grze sieciowej, a drużynie anonimowej też usunięcie z
+      serwera. Undefined, gdy ta gra nie ma sieci (bez serwera, inne konto, zgubiona sesja, usunięta drużyna). */
+  menuSieci(): { anonimowa: boolean } | undefined {
+    return this.zalogowani && this.stan && !this.bezSieci ? { anonimowa: this.anonimowe } : undefined;
+  }
+
+  /** powód ostatniej porażki kod() albo usun() w bieżącym języku (Tx z komunikatu serwera); null po udanej próbie */
+  blad(): Tx | null {
+    return this.bladSerwera;
+  }
+
+  /** Nowy kod powrotu drużyny z serwera (POST /api/druzyna/kod; stary przestaje działać), do pokazania w kodSheet.
+      Null bez sieci w tej grze albo przy błędzie serwera (powód w blad()); nie ponawia sam. */
+  async kod(): Promise<string | null> {
+    this.bladSerwera = null;
+    if (!this.menuSieci()) return null;
+    const r = await this.api.nowyKod();
+    if (r.ok) {
+      // gracz ma kod w ręku: okno po porannym raporcie by go unieważniło, więc już się nie pokaże (także po wczytaniu zapisu)
+      this.maKod = true;
+      if (this.stan) this.stan.kodPokazany = true;
+      return r.dane.kod;
+    }
+    this.bladSerwera = txBledu(r);
+    return null;
+  }
+
+  /** Czy po pierwszym porannym raporcie trzeba pokazać kod powrotu: gra sieciowa drużyny anonimowej, która jeszcze nigdy
+      nie miała kodu (Ja.kod z serwera, także po powrocie kodem i w każdej następnej grze drużyny, i kod() z Menu) i dla
+      której okno jeszcze się nie pokazało (StanSieci.kodPokazany, w zapisie, więc raz na grę także po wczytaniu). */
+  pokazacKod(): boolean {
+    return this.anonimowa() && !!this.stan && !this.bezSieci && !this.maKod && !this.stan.kodPokazany;
+  }
+
+  /** kod pokazany (także gdy serwer go nie dał: bez ponawiania, dalej jest w Menu); trafia do następnego zapisu */
+  kodPokazany(): void {
+    if (this.stan) this.stan.kodPokazany = true;
+  }
+
+  /** Usuwa drużynę anonimową z serwera (DELETE /api/konto, bez hasła: klatki, zapis w chmurze, kod powrotu i sesja).
+      Po 204 sieć w tej grze się kończy: gra toczy się dalej bez zapisów do chmury, odświeżania klatek i przycisków sieci
+      w Menu, a stan sieci zostaje w zapisie z `usunieta` (ten sam świat, gra bez sieci także po wczytaniu). Porażka
+      (powód w blad()) niczego nie zmienia. Konto z nickiem usuwa się hasłem poza grą, więc tu daje false bez pytania. */
+  async usun(): Promise<boolean> {
+    this.bladSerwera = null;
+    if (!this.anonimowa() || !this.stan || this.bezSieci) return false;
+    const stan = this.stan;
+    const r = await this.api.usunDruzyne();
+    if (!r.ok) {
+      this.bladSerwera = txBledu(r);
+      return false;
+    }
+    // spóźnione odpowiedzi z sieci tej gry (odświeżenie klatek, zapis do chmury) nic już nie zmieniają
+    this.gen++;
+    stan.usunieta = true;
+    this.zalogowani = false;
+    this.znak = null;
+    this.anonimowe = false;
+    this.maKod = false;
+    this.bezSieci = true;
+    this.chmura = null;
+    this.wersjaZChmury = undefined;
+    this.wersjaChmury = undefined;
+    this.klatki = [];
+    this.cel = null;
+    this.zn = [];
+    this.widok = this.widokBazowy();
+    this.rysuj();
+    return true;
+  }
+
+  /** sesja z odpowiedzi serwera (konto z nickiem, drużyna anonimowa, powrót kodem) */
+  private zaloguj(ja: Ja) {
+    this.zalogowani = true;
+    this.znak = ja.znak;
+    this.anonimowe = ja.anonimowe;
+    this.maKod = ja.kod === true;
+  }
+
+  /** blok, jaki gracz widzi na karcie startowej bez niczego w toku: drużyna (bez sesji albo anonimowa) lub konto z nickiem */
+  private widokBazowy(): WidokSieci {
+    if (!this.zalogowani) return { stan: 'druzyna' };
+    return this.anonimowe ? { stan: 'druzyna', znak: this.znak ?? '' } : { stan: 'zalogowani', nick: this.znak ?? '' };
   }
 
   /** ponowny start po przeładowaniu (dane osiedla i tryb gry), żeby main.ts od razu wszedł do gry */
@@ -189,25 +333,29 @@ export class GraSieciowa {
     return this.ponownie ? { data: this.ponownie.data, tryb: this.ponownie.tryb } : null;
   }
 
-  /** blok w bieżącym języku; opis zapisu z chmury liczony przy każdym rysowaniu (zależy od języka) */
-  private rysuj(nick?: string, haslo?: string) {
+  /** blok w bieżącym języku; opis zapisu z chmury liczony przy każdym rysowaniu (zależy od języka). `wpis` to to, co
+      gracz miał w polach (nowy HTML ma pola puste). */
+  private rysuj(wpis: { nick?: string; haslo?: string; kod?: string } = {}) {
     const el = this.o.el;
     if (!el) return;
     el.innerHTML = htmlSieci({ ...this.widok, chmura: this.chmura ? saveLabel(this.chmura) : null });
-    const pole = el.querySelector<HTMLInputElement>('#scNick');
-    if (pole && nick) pole.value = nick;
-    const pole2 = el.querySelector<HTMLInputElement>('#scHaslo');
-    if (pole2 && haslo) pole2.value = haslo;
+    for (const [id, wartosc] of [
+      ['#scNick', wpis.nick],
+      ['#scHaslo', wpis.haslo],
+      ['#scKod', wpis.kod],
+    ] as const) {
+      const pole = el.querySelector<HTMLInputElement>(id);
+      if (pole && wartosc) pole.value = wartosc;
+    }
   }
 
   /** Po zmianie języka (woła main.ts): blok „Gra z sąsiadami” od nowa w bieżącym języku, z tym samym komunikatem
-      i z wpisanym nickiem i hasłem. Bez bloku na ekranie (bez ?siec=1, bez serwera) nic nie robi. */
+      i z wpisanym nickiem, hasłem i kodem. Bez bloku na ekranie (sieć wyłączona, bez serwera) nic nie robi. */
   przerysuj(): void {
     const el = this.o.el;
     if (!el || el.hidden) return;
-    const nick = el.querySelector<HTMLInputElement>('#scNick')?.value;
-    const haslo = el.querySelector<HTMLInputElement>('#scHaslo')?.value;
-    this.rysuj(nick, haslo);
+    const wartosc = (id: string) => el.querySelector<HTMLInputElement>(id)?.value;
+    this.rysuj({ nick: wartosc('#scNick'), haslo: wartosc('#scHaslo'), kod: wartosc('#scKod') });
   }
 
   private async wczytajChmure() {
@@ -223,27 +371,62 @@ export class GraSieciowa {
       if (this.chmura) this.o.onChmura(this.chmura);
       return;
     }
+    // przełączniki bloku bez sieci: dawne logowanie nickiem i powrót do bloku drużyny
+    if (a === 'logowanie' || a === 'wroc') {
+      this.widok = a === 'logowanie' ? { stan: 'logowanie' } : this.widokBazowy();
+      this.rysuj();
+      return;
+    }
     const nick = el.querySelector<HTMLInputElement>('#scNick')?.value.trim() ?? '';
     const haslo = el.querySelector<HTMLInputElement>('#scHaslo')?.value ?? '';
+    const kod = el.querySelector<HTMLInputElement>('#scKod')?.value.trim() ?? '';
+    // kod zostaje w polu po błędzie (żeby poprawić literówkę), a po udanym powrocie znika
+    let zostawKod = true;
     this.widok = { ...this.widok, czeka: true, komunikat: undefined };
-    this.rysuj(nick);
+    this.rysuj({ nick, kod });
     if (a === 'wyloguj') {
       await this.api.wyloguj();
       this.zalogowani = false;
-      this.nick = null;
+      this.znak = null;
+      this.anonimowe = false;
+      this.maKod = false;
       this.chmura = null;
       this.widok = {
-        stan: 'wylogowani',
+        stan: 'druzyna',
         komunikat: tx('Wylogowani. Gra działa dalej bez sieci.', 'Logged out. The game carries on offline.'),
       };
+    } else if (a === 'powrot') {
+      if (!normalizujKod(kod)) {
+        // nie kod: bez pytania serwera
+        this.widok = {
+          ...this.widokBazowy(),
+          komunikat: tx(
+            'Kod powrotu ma 12 znaków: litery i cyfry w trzech czwórkach.',
+            'A return code has 12 characters: letters and digits in three groups of four.',
+          ),
+        };
+      } else {
+        const r = await this.api.powrot(kod);
+        if (r.ok) {
+          this.zaloguj(r.dane);
+          await this.wczytajChmure();
+          zostawKod = false;
+          this.widok = {
+            ...this.widokBazowy(),
+            komunikat: tx(`Wróciliście do drużyny ${r.dane.znak}.`, `You are back with team ${r.dane.znak}.`),
+          };
+        } else {
+          const czekaj = r.ponowZa ? tx(` Spróbujcie za ${Math.ceil(r.ponowZa / 60)} min.`, '') : '';
+          this.widok = { ...this.widokBazowy(), komunikat: txCat(txBledu(r), czekaj) };
+        }
+      }
     } else if (a === 'zaloguj' || a === 'zaloz') {
       const r = a === 'zaloz' ? await this.api.zaloz(nick, haslo) : await this.api.zaloguj(nick, haslo);
       if (r.ok) {
-        this.zalogowani = true;
-        this.nick = r.dane.nick;
+        this.zaloguj(r.dane);
+        await this.wczytajChmure();
         this.widok = {
-          stan: 'zalogowani',
-          nick: r.dane.nick,
+          ...this.widokBazowy(),
           komunikat:
             a === 'zaloz'
               ? tx(
@@ -252,21 +435,21 @@ export class GraSieciowa {
                 )
               : undefined,
         };
-        await this.wczytajChmure();
       } else {
         // angielski komunikat o limicie prób sam mówi, za ile spróbować (txBledu bierze czas z Retry-After)
         const czekaj = r.ponowZa ? tx(` Spróbujcie za ${Math.ceil(r.ponowZa / 60)} min.`, '') : '';
-        this.widok = { stan: 'wylogowani', komunikat: txCat(txBledu(r), czekaj) };
+        this.widok = { stan: 'logowanie', komunikat: txCat(txBledu(r), czekaj) };
       }
     }
     this.widok.czeka = false;
-    this.rysuj(nick);
+    this.rysuj({ nick, kod: zostawKod ? kod : undefined });
   }
 
   /**
    * Świat do gry. Zapis gry sieciowej: świat z tymi samymi wykluczeniami co przy starcie (także bez sieci). Nowa gra
-   * zalogowanej drużyny na prawdziwym adresie: start przez serwer (startSieci). Inaczej, także przy błędzie serwera,
-   * zwykły świat (zbuduj(null)).
+   * na prawdziwym adresie przy odpowiadającym serwerze: drużyna z sesją od razu startuje przez serwer (startSieci), a
+   * gracz bez sesji dostaje najpierw drużynę anonimową (jedno wywołanie druzyna(), bez ponawiania). Inaczej, także przy
+   * błędzie serwera (z jednym komunikatem startu), zwykły świat (zbuduj(null)). Demo nigdy nie zakłada drużyny.
    */
   async przygotuj(data: Loaded, zbuduj: BudowaSwiata, saved?: Save): Promise<World> {
     this.gen++;
@@ -280,16 +463,25 @@ export class GraSieciowa {
     this.chmuraStop = false;
     this.bezSieci = false;
     this.porzucone = false;
+    this.startZablokowany = false;
     this.restartuje = false;
     if (saved?.siec) {
       const swiat = zbuduj(saved.siec.zajete);
       this.ustaw(data, swiat, { ...saved.siec });
-      const obce = !!saved.siec.konto && saved.siec.konto !== this.nick;
-      this.bezSieci = !this.zalogowani || obce;
+      // drużyna usunięta z serwera w Menu: ta gra jest już bez sieci na stałe, na czyimkolwiek koncie
+      const usunieta = !!saved.siec.usunieta;
+      const obce = !usunieta && !!saved.siec.konto && saved.siec.konto !== this.znak;
+      this.bezSieci = usunieta || !this.zalogowani || obce;
       if (this.zalogowani && obce)
         this.komunikat = tx(
           'Ten zapis jest z gry innego konta, więc gra toczy się bez sieci.',
           'This save is from another account’s game, so it carries on offline.',
+        );
+      else if (!usunieta && !this.zalogowani && this.dostepny && saved.siec.konto?.startsWith('#'))
+        // zgubione ciasteczko (inna przeglądarka, karta prywatna): gra nie ma po co milczeć, kod powrotu jest na karcie startowej
+        this.komunikat = tx(
+          'Nie ma tu sesji waszej drużyny, więc gra toczy się bez sieci. Kod powrotu wpisany na karcie startowej przywróci grę w sieci.',
+          'There is no session for your team in this browser, so the game carries on offline. Entering your return code on the start card brings it back online.',
         );
       // zapis z chmury albo ten sam zapis co w chmurze (ta sama chwila zapisu, np. wysłany przy zamykaniu strony, kiedy
       // odpowiedź z nową wersją już nie doszła): od wersji z serwera; inny zapis z przeglądarki: od wersji, którą ta gra
@@ -303,7 +495,7 @@ export class GraSieciowa {
     if (p && p.data.geo === data.geo) {
       this.ponownie = null;
       const swiat = zbuduj(p.stan.zajete);
-      this.ustaw(data, swiat, { ...p.stan, konto: this.nick ?? p.stan.konto });
+      this.ustaw(data, swiat, { ...p.stan, konto: this.znak ?? p.stan.konto });
       this.bezSieci = !this.zalogowani;
       this.komunikat = tx(
         'Inna drużyna była szybsza. Siedzibą zostaje następna wolna klatka: dojdźcie do niej przed nocą.',
@@ -313,7 +505,8 @@ export class GraSieciowa {
       if (!this.bezSieci) void this.odswiez(this.gen);
       return swiat;
     }
-    if (!this.zalogowani || data.src === 'demo') return zbuduj(null);
+    if (!this.dostepny || data.src === 'demo') return zbuduj(null);
+    if (!this.zalogowani && !(await this.zalozDruzyne())) return zbuduj(null);
     this.o.status?.(
       L(
         'Sprawdzam na serwerze gry, czy wasza klatka jest wolna…',
@@ -327,12 +520,28 @@ export class GraSieciowa {
       return zbuduj(null);
     }
     this.klatki = r.klatki;
-    this.ustaw(data, r.swiat, { ...r.stan, ...(this.nick ? { konto: this.nick } : {}) });
+    this.ustaw(data, r.swiat, { ...r.stan, ...(this.znak ? { konto: this.znak } : {}) });
     this.komunikat = r.komunikat;
     // nowa gra nadpisuje stary zapis w chmurze (jeden na konto)
     this.wersjaChmury = undefined;
     this.odswiezono = performance.now();
     return r.swiat;
+  }
+
+  /** Drużyna anonimowa przy pierwszej grze na prawdziwym adresie (POST /api/druzyna, od razu z sesją). Jedna próba na
+      start gry: błąd (przeciążony serwer, brak sieci, limit nowych drużyn z jednego miejsca) daje jeden komunikat startu
+      i grę bez sieci, a następna próba dopiero przy następnym starcie. */
+  private async zalozDruzyne(): Promise<boolean> {
+    this.o.status?.(L('Zakładam drużynę na serwerze gry…', 'Creating your team on the game server…'));
+    const r = await this.api.druzyna();
+    if (!r.ok) {
+      this.komunikat = txCat(txBledu(r), tx(' Gramy bez sieci.', ' Playing offline.'));
+      return false;
+    }
+    this.zaloguj(r.dane);
+    this.widok = this.widokBazowy();
+    this.rysuj();
+    return true;
   }
 
   private ustaw(data: Loaded, swiat: World, stan: StanSieci) {
@@ -342,7 +551,7 @@ export class GraSieciowa {
     this.srodek = data.geo.c;
     this.stan = stan;
     this.dane = data;
-    this.cel = stan.dom ? null : klatkaSiedziby(swiat, data.geo.c);
+    this.cel = stan.dom || stan.usunieta ? null : klatkaSiedziby(swiat, data.geo.c);
   }
 
   /** wczytana gra sieciowa: nasza klatka jeszcze raz na serwerze (bez zmian, jeśli jest nasza) i znaczniki */
@@ -423,7 +632,16 @@ export class GraSieciowa {
     const srodek = this.srodek;
     if (!swiat || !srodek) return;
     const nr = ++this.odsw;
-    const r = await this.api.zajete(prostokatMapy(swiat, srodek));
+    const prostokat = prostokatMapy(swiat, srodek);
+    let r = await this.api.zajete(prostokat);
+    // serwer po restarcie nie pamięta punktu startu drużyny bez siedziby (409 brak_startu): podajemy go i pytamy jeszcze
+    // raz, raz. Inna porażka, także limit zmian okolicy (429), zostawia ostatnią listę bez komunikatu; po 429 w tej grze
+    // punktu już nie podajemy
+    if (!r.ok && r.blad === 'brak_startu' && gen === this.gen && nr === this.odsw && !this.startZablokowany) {
+      const start = await this.api.punktStartu(srodek[0], srodek[1]);
+      if (start.ok) r = await this.api.zajete(prostokat);
+      else if (start.status === 429) this.startZablokowany = true;
+    }
     if (r.ok && gen === this.gen && nr === this.odsw) {
       this.klatki = r.dane.klatki;
       this.zn = [];

@@ -7,6 +7,13 @@
    Pages), 'brak_serwera'. serwerDostepny() mówi, czy pod /api odpowiada serwer gry: na Pages i w demach offline
    go nie ma i gra działa jak dotąd.
 
+   Trasy: konto z nickiem (zaloz, zaloguj, wyloguj, ja, usunKonto), drużyna anonimowa bez nicku i hasła (druzyna,
+   nowyKod, powrot kodem z innej przeglądarki, punktStartu, usunDruzyne), zajęte klatki (zajete, zajmij, zwolnij,
+   zwolnijWszystkie, moje), zapis w chmurze, liczniki (zdarzenie, bez sesji) i wyszukiwanie adresu przez serwer (adres,
+   bez sesji). Serwer chce JSON w każdym POST i PUT, także bez danych, więc druzyna, nowyKod i usunDruzyne niosą `{}`
+   (samo `zadanie` ustawia Content-Type tylko przy podanym ciele). Czas na odpowiedź: domyślnie 10 s, zdrowie i
+   zdarzenie 3 s, adres 8 s (serwer czeka w kolejce do Nominatim); krótszy `czas` z opcji skraca też te.
+
    Nic tu nie rusza gry. Etap 2 podepnie klienta pod ekran startowy i symulację: odpowiedzi serwera wchodzą do gry
    tylko jako jawne wejście startu albo polecenie w kolejce stanu, nigdy w środku kroku symulacji.
 
@@ -17,13 +24,19 @@
 
 import { type Tx, tr, tx } from '../core/jezyk.ts';
 import {
+  ADRES_MAX_ZNAKOW,
   type Blad,
   type DaneLogowania,
   type Ja,
+  KOMUNIKAT_BRAK_ADRESU,
   type KodBledu,
+  type KodPowrotu,
   type ListaKlatek,
   POWODY_LOGOWANIA,
+  type PowrotDruzyny,
   type Prostokat,
+  type PunktStartu,
+  type WynikAdresu,
   type WyslijZapis,
   type ZajetaOdpowiedz,
   type ZajmijKlatke,
@@ -61,6 +74,9 @@ const KOMUNIKATY: Partial<Record<KodBledu, string>> = {
   czas: 'Serwer gry nie odpowiedział na czas.',
   brak_serwera: 'Pod tym adresem nie ma serwera gry.',
 };
+/** czas na odpowiedź w ms: zdarzenie do liczników (gra nie czeka) i wyszukiwanie adresu (serwer czeka w kolejce) */
+const CZAS_ZDARZENIA = 3000;
+const CZAS_ADRESU = 8000;
 /** zdanie klienta, gdy odpowiedź z błędem nie ma własnego */
 const OGOLNY = 'Coś poszło nie tak.';
 
@@ -96,6 +112,12 @@ const LOGOWANIE_EN: Readonly<Record<string, string>> = Object.fromEntries(
 /** za dużo prób: zdanie bez „spróbujcie”, a kiedy spróbować, mówi czas z nagłówka Retry-After */
 const PROBY_EN: Readonly<Record<string, string>> = {
   'Za dużo nowych kont z tego miejsca. Spróbujcie później.': 'Too many new accounts from here.',
+  'Za dużo nowych drużyn z tego miejsca. Spróbujcie później.': 'Too many new teams from here.',
+  'Za często wymieniacie kod. Spróbujcie później.': 'You are changing your return code too often.',
+  'Za dużo zdarzeń z tego miejsca. Spróbujcie później.': 'Too many events from here.',
+  'Za dużo wyszukiwań adresu z tego miejsca. Spróbujcie za chwilę.': 'Too many address searches from here.',
+  'Za często zmieniacie okolicę drużyny (siedzibę albo punkt startu). Spróbujcie później.':
+    'You are changing your team’s HQ or start point too often.',
   'Za dużo nieudanych prób. Spróbujcie za kilka minut.': 'Too many failed attempts.',
   'Za dużo nieudanych prób na to konto. Spróbujcie za kilka minut.': 'Too many failed attempts on this account.',
   'Za często zapisujecie. Spróbujcie za chwilę.': 'You are saving too often.',
@@ -113,6 +135,9 @@ const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
       'Zły klucz klatki.': 'Bad stairwell key.',
       'Zapis musi być obiektem JSON.': 'A save has to be a JSON object.',
       'Zła wersja zapisu.': 'Bad save version.',
+      'Podajcie punkt startu: lat i lon w stopniach.': 'Provide a start point: lat and lon in degrees.',
+      'Podajcie kod powrotu.': 'Enter a return code.',
+      [`Podajcie adres, najwyżej ${ADRES_MAX_ZNAKOW} znaków.`]: `Enter an address, ${ADRES_MAX_ZNAKOW} characters at most.`,
     },
     'The server could not make sense of that request.',
   ),
@@ -124,6 +149,7 @@ const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
   nick_zajety: () => 'That username is already taken.',
   brak_sesji: () => 'Log in first.',
   zle_logowanie: zdania({ 'Złe hasło.': 'Wrong password.' }, 'Wrong username or password.'),
+  zly_kod: () => 'That return code doesn’t work. Check it and try again.',
   za_duzo_prob: (pl, b) => {
     const min = b.ponowZa ? Math.max(1, Math.ceil(b.ponowZa / 60)) : 0;
     return `${zMapy(PROBY_EN, pl) ?? 'Too many attempts.'} ${min ? `Try again in ${min} min.` : 'Try again later.'}`;
@@ -133,6 +159,7 @@ const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
     {
       'Nie macie takiej klatki.': 'You don’t have that stairwell.',
       'Nie ma takiego adresu API.': 'No such API address.',
+      [KOMUNIKAT_BRAK_ADRESU]: 'I couldn’t find that address. Try adding the city.',
     },
     'Not found.',
   ),
@@ -147,6 +174,8 @@ const BLEDY_EN: Readonly<Record<KodBledu, NaAngielski>> = {
     'That stairwell is too far from your HQ.',
   ),
   zla_pozycja: () => 'That stairwell’s position or number doesn’t match its building.',
+  poza_okolica: () => 'That area is too far from your team’s neighbourhood.',
+  brak_startu: () => 'The server doesn’t know your team’s start point yet.',
   serwer_zajety: () => 'The server is busy. Try again in a moment.',
   konflikt_wersji: () => 'There is a newer save on the server.',
   za_duze: zdania({ 'Zapis jest za duży.': 'The save is too big.' }, 'Too much data.'),
@@ -249,6 +278,33 @@ export function utworzApi(opcje: OpcjeApi = {}) {
     ja: () => zadanie<Ja>('GET', '/konto'),
     /** usuwa konto razem z klatkami i zapisem w chmurze (hasło jeszcze raz) */
     usunKonto: (haslo: string) => zadanie<undefined>('DELETE', '/konto', { haslo }),
+    /** drużyna anonimowa bez nicku i hasła, od razu zalogowana (201); z ważną sesją serwer oddaje jej konto (200) i
+        nie zakłada nowego. Wołać raz na start gry. Serwer chce JSON także przy pustym żądaniu, stąd `{}`. */
+    druzyna: () => zadanie<Ja>('POST', '/druzyna', {}),
+    /** nowy kod powrotu drużyny (XXXX-XXXX-XXXX), pokazywany graczowi raz; stary kod przestaje działać */
+    nowyKod: () => zadanie<KodPowrotu>('POST', '/druzyna/kod', {}),
+    /** powrót do drużyny z innej przeglądarki: kod w dowolnej wielkości liter, z myślnikami albo spacjami; zły kod to
+        blad 'zly_kod' (401). Nowa sesja, stare dalej działają. */
+    powrot: (kod: string) => zadanie<Ja>('POST', '/druzyna/powrot', { kod } satisfies PowrotDruzyny),
+    /** punkt startu drużyny w stopniach: okolica zapytań o zajęte klatki, dopóki drużyna nie ma siedziby; zmiana
+        okolicy ma dzienny limit (429 za_duzo_prob) */
+    punktStartu: (lat: number, lon: number) =>
+      zadanie<undefined>('PUT', '/druzyna/start', { lat, lon } satisfies PunktStartu),
+    /** usuwa drużynę anonimową z klatkami i zapisem, bez hasła (konto z nickiem usuwa się przez usunKonto) */
+    usunDruzyne: () => zadanie<undefined>('DELETE', '/konto', {}),
+    /** zdarzenie do liczników na dobę (ZDARZENIE_WZOR w protokol.ts), bez sesji i bez śladu gracza; krótki czas, bo
+        gra nie czeka na odpowiedź */
+    zdarzenie: (z: string) => zadanie<undefined>('POST', '/zdarzenie', { z }, Math.min(czasDomyslny, CZAS_ZDARZENIA)),
+    /** wyszukiwanie adresu przez serwer gry (nie przez przeglądarkę): bez sesji, ten sam kształt co wynik geokodera;
+        blad 'nie_ma' (404), gdy takiego adresu nie ma, 'serwer_zajety' (503), gdy zawiodły oba źródła. Dłuższy czas,
+        bo serwer czeka w kolejce do Nominatim. */
+    adres: (q: string, j: 'pl' | 'en') =>
+      zadanie<WynikAdresu>(
+        'GET',
+        `/adres?${new URLSearchParams({ q, j })}`,
+        undefined,
+        Math.min(czasDomyslny, CZAS_ADRESU),
+      ),
     /** zajęte klatki w prostokącie (stopnie); cudze mają moja: false i nic więcej o drużynie */
     zajete: (p: Prostokat) => {
       const q = new URLSearchParams({ s: String(p.s), w: String(p.w), n: String(p.n), e: String(p.e) });

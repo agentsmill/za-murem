@@ -3,20 +3,33 @@
 
    Co jest w bazie (RODO, docs/superpowers/specs/2026-10-18-multiplayer-design.md):
    - konta: nick (i jego postać do porównań), skrót hasła, dzień założenia i ostatniej wizyty; bez e-maila, imion,
-     adresu ani IP,
+     adresu ani IP. Drużyna anonimowa (anonimowe = 1, założona bez formularza) ma pusty nick i pusty skrót hasła, a jej
+     klucz nicku to „#” i losowy token, którego nie da się wpisać w logowaniu ani założyć zwykłym kontem (nick bez „#”).
+     Kolumna kod to SHA-256 kodu powrotu (server/hasla.ts), unikalna, bez samego kodu: wyciek bazy nie daje kodów
+     wprost,
    - sesje: skrót SHA-256 tokenu, konto, termin ważności,
    - klatki: klucz klatki i budynku (src/world/klucze.ts), środek klatki (stopnie zaokrąglone do 1e-5, około 1 m),
      konto, czy to siedziba drużyny, chwila zajęcia,
    - zapisy: jeden zapis gry na konto (JSON skompresowany gzipem, bez tekstu adresu), wersja i chwila zmiany;
-     usunięty zapis zostaje jako pusty wiersz z wyższą wersją, żeby stary telefon nie nadpisał nowej gry.
+     usunięty zapis zostaje jako pusty wiersz z wyższą wersją, żeby stary telefon nie nadpisał nowej gry,
+   - liczniki: dzienne sumy zdarzeń (start gry, krok ścieżki celów, dzień 2, 3 i 7), samo „dzień, zdarzenie, ile razy”,
+   - powroty: ile kont założonych w danej dobie wróciło po tylu dniach, samo „doba założenia, po ilu dniach, ile kont”.
+     Liczniki i powroty nie wskazują ani konta, ani gracza, ani adresu, więc zostają po usunięciu konta.
+   Wygasanie (server/app.ts, sprzataj): klatki kont z `ostatnio` przed granicą wracają do wolnych, a konta z `ostatnio`
+   przed dalszą granicą są usuwane. `ostatnio` to dzień ostatniej wizyty (dotknijKonta, dokładność doby); nowe konto
+   ma w nim chwilę założenia co do milisekundy. Ta sama zmiana `ostatnio` jest powrotem: dotknijKonta mówi, czy ją
+   zrobiło, a serwer dolicza wtedy jedynkę do powrotów (dzień założenia nigdy, bo `ostatnio` jest w nim już późniejsze
+   od północy).
    Usunięcie konta kasuje kaskadą jego sesje, klatki i zapis (klucze obce z ON DELETE CASCADE), a numery kont nie
    wracają (AUTOINCREMENT), więc spóźnione żądanie usuniętego konta nie trafi do nowego. secure_delete zamazuje
    usunięte dane w pliku bazy.
-   Wersja schematu w PRAGMA user_version; nowa wersja to nowy wpis w MIGRACJE. */
+   Wersja schematu w PRAGMA user_version; nowa wersja to nowy wpis w MIGRACJE (istniejących wpisów nie zmieniamy:
+   baza w pliku przechodzi tylko brakujące). */
 
 import { DatabaseSync } from 'node:sqlite';
+import { nowyToken } from './hasla.ts';
 
-const MIGRACJE: string[] = [
+export const MIGRACJE: readonly string[] = [
   `CREATE TABLE konta (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      nick TEXT NOT NULL,
@@ -50,14 +63,42 @@ const MIGRACJE: string[] = [
      wersja INTEGER NOT NULL,
      zmieniony INTEGER NOT NULL
    ) STRICT;`,
+  // drużyna anonimowa i kod powrotu; stare konta zostają zwykłymi kontami (anonimowe = 0, bez kodu)
+  `ALTER TABLE konta ADD COLUMN anonimowe INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE konta ADD COLUMN kod TEXT;
+   CREATE UNIQUE INDEX konta_kod ON konta(kod) WHERE kod IS NOT NULL;`,
+  // liczniki zdarzeń i powroty: same sumy, bez identyfikatora gracza (dzień i zalozone to początki dób UTC w ms)
+  `CREATE TABLE liczniki (
+     dzien INTEGER NOT NULL,
+     zdarzenie TEXT NOT NULL,
+     n INTEGER NOT NULL,
+     PRIMARY KEY (dzien, zdarzenie)
+   ) STRICT;
+   CREATE TABLE powroty (
+     zalozone INTEGER NOT NULL,
+     po_dniach INTEGER NOT NULL,
+     n INTEGER NOT NULL,
+     PRIMARY KEY (zalozone, po_dniach)
+   ) STRICT;`,
 ];
+
+/** Ile różnych zdarzeń `cel:…` baza przyjmie na dobę. Ścieżka celów ma ich kilkadziesiąt, a endpoint nie wymaga sesji,
+    więc bez tego limitu ktoś mógłby wypełnić tabelę własnymi nazwami. Nowy cel ponad limit jest po prostu
+    pomijany; starty i dni mają wzór z garstką wartości, więc ich limit nie dotyczy. */
+export const ROZNYCH_CELOW_NA_DZIEN = 300;
 
 export interface Konto {
   id: number;
+  /** nick; pusty u drużyny anonimowej */
   nick: string;
+  /** skrót scrypt; pusty u drużyny anonimowej */
   haslo: string;
   utworzone: number;
   ostatnio: number;
+  /** drużyna założona bez nicku i hasła */
+  anonimowe: boolean;
+  /** skrót kodu powrotu albo null, gdy drużyna go nie ma */
+  kod: string | null;
 }
 
 export interface Klatka {
@@ -81,10 +122,16 @@ export interface Baza {
   readonly db: DatabaseSync;
   /** nowe konto; null, gdy nick (bez względu na wielkość liter) jest zajęty */
   dodajKonto(nick: string, nickKlucz: string, haslo: string, teraz: number): Konto | null;
+  /** nowa drużyna anonimowa: pusty nick i hasło, klucz nicku „#” i losowy token, bez kodu powrotu */
+  dodajDruzyne(teraz: number): Konto;
+  /** ustawia (albo wymienia) skrót kodu powrotu konta; rzuca, gdy ten skrót ma już inne konto */
+  ustawKod(id: number, skrot: string): void;
+  kontoPoKodzie(skrot: string): Konto | null;
   kontoPoNicku(nickKlucz: string): Konto | null;
   konto(id: number): Konto | null;
-  /** dzień ostatniej wizyty (ms od 1970, z dokładnością do doby) */
-  dotknijKonta(id: number, dzien: number): void;
+  /** dzień ostatniej wizyty (ms od 1970, z dokładnością do doby); true, gdy to pierwsza wizyta tej doby, czyli gdy
+      `ostatnio` się zmieniło (doba założenia konta i kolejne wizyty tej samej doby dają false) */
+  dotknijKonta(id: number, dzien: number): boolean;
   usunKonto(id: number): void;
 
   dodajSesje(skrot: string, konto: number, teraz: number, wygasa: number): void;
@@ -106,6 +153,10 @@ export interface Baza {
   /** zwalnia klatkę konta; siedziba przechodzi na najstarszą z pozostałych; false, gdy to nie jego klatka */
   zwolnijKlatke(konto: number, klucz: string): boolean;
   zwolnijKlatkiKonta(konto: number): number;
+  /** zwalnia wszystkie klatki kont z `ostatnio` < granica (konta, sesje i zapisy zostają); zwraca liczbę klatek */
+  zwolnijKlatkiNieaktywnych(granica: number): number;
+  /** usuwa konta z `ostatnio` < granica razem z sesjami, klatkami i zapisem (kaskada); zwraca liczbę kont */
+  usunNieaktywneKonta(granica: number): number;
 
   /** zapis albo null, gdy go nie ma (także usunięty) */
   zapis(konto: number): Zapis | null;
@@ -116,6 +167,16 @@ export interface Baza {
   /** wersja zapisu (0: nigdy nie było), rośnie też przy usunięciu */
   wersjaZapisu(konto: number): number;
   maZapis(konto: number): boolean;
+
+  /** dolicza jedynkę do zdarzenia w dobie `dzien` (początek doby UTC w ms); false, gdy to nowy `cel:` ponad
+      ROZNYCH_CELOW_NA_DZIEN i nic nie zapisano */
+  dolicz(dzien: number, zdarzenie: string): boolean;
+  /** dolicza jedynkę do powrotów kont założonych w dobie `zalozone` po `poDniach` dniach od założenia */
+  doliczPowrot(zalozone: number, poDniach: number): void;
+  /** liczniki z dób od `od` (ms od 1970) wzwyż, po dobie i nazwie */
+  liczniki(od: number): { dzien: number; zdarzenie: string; n: number }[];
+  /** powroty kohort założonych od `od` (ms od 1970) wzwyż, po dobie założenia i liczbie dni */
+  powroty(od: number): { zalozone: number; poDniach: number; n: number }[];
 
   /** wykonuje fn w jednej transakcji (BEGIN IMMEDIATE … COMMIT, przy błędzie ROLLBACK) */
   transakcja<T>(fn: () => T): T;
@@ -132,6 +193,8 @@ const kontoZ = (r: Wiersz): Konto => ({
   haslo: str(r.haslo),
   utworzone: num(r.utworzone),
   ostatnio: num(r.ostatnio),
+  anonimowe: num(r.anonimowe) === 1,
+  kod: r.kod === null || r.kod === undefined ? null : str(r.kod),
 });
 const klatkaZ = (r: Wiersz): Klatka => ({
   klucz: str(r.klucz),
@@ -167,6 +230,11 @@ export function otworzBaze(sciezka: string): Baza {
     dodajKonto: db.prepare(
       'INSERT INTO konta (nick, nick_klucz, haslo, utworzone, ostatnio) VALUES (?, ?, ?, ?, ?) ON CONFLICT(nick_klucz) DO NOTHING',
     ),
+    dodajDruzyne: db.prepare(
+      "INSERT INTO konta (nick, nick_klucz, haslo, utworzone, ostatnio, anonimowe) VALUES ('', ?, '', ?, ?, 1)",
+    ),
+    ustawKod: db.prepare('UPDATE konta SET kod = ? WHERE id = ?'),
+    kontoPoKodzie: db.prepare('SELECT * FROM konta WHERE kod = ?'),
     kontoPoNicku: db.prepare('SELECT * FROM konta WHERE nick_klucz = ?'),
     konto: db.prepare('SELECT * FROM konta WHERE id = ?'),
     dotknij: db.prepare('UPDATE konta SET ostatnio = ? WHERE id = ? AND ostatnio < ?'),
@@ -193,6 +261,8 @@ export function otworzBaze(sciezka: string): Baza {
     najstarsza: db.prepare('SELECT klucz FROM klatki WHERE konto = ? ORDER BY zajeta, klucz LIMIT 1'),
     ustawSiedzibe: db.prepare('UPDATE klatki SET siedziba = 1 WHERE klucz = ?'),
     usunKlatkiKonta: db.prepare('DELETE FROM klatki WHERE konto = ?'),
+    zwolnijNieaktywnych: db.prepare('DELETE FROM klatki WHERE konto IN (SELECT id FROM konta WHERE ostatnio < ?)'),
+    usunNieaktywne: db.prepare('DELETE FROM konta WHERE ostatnio < ?'),
     zapis: db.prepare('SELECT dane, rozmiar, wersja, zmieniony FROM zapisy WHERE konto = ? AND dane IS NOT NULL'),
     wersjaZapisu: db.prepare('SELECT wersja FROM zapisy WHERE konto = ?'),
     maZapis: db.prepare('SELECT 1 AS jest FROM zapisy WHERE konto = ? AND dane IS NOT NULL'),
@@ -204,6 +274,16 @@ export function otworzBaze(sciezka: string): Baza {
     usunZapis: db.prepare(
       'UPDATE zapisy SET dane = NULL, rozmiar = 0, wersja = wersja + 1, zmieniony = ? WHERE konto = ? AND dane IS NOT NULL',
     ),
+    doliczZdarzenie: db.prepare(
+      'INSERT INTO liczniki (dzien, zdarzenie, n) VALUES (?, ?, 1) ON CONFLICT(dzien, zdarzenie) DO UPDATE SET n = n + 1',
+    ),
+    jestZdarzenie: db.prepare('SELECT 1 AS jest FROM liczniki WHERE dzien = ? AND zdarzenie = ?'),
+    celeDnia: db.prepare("SELECT COUNT(*) AS n FROM liczniki WHERE dzien = ? AND substr(zdarzenie, 1, 4) = 'cel:'"),
+    doliczPowrot: db.prepare(
+      'INSERT INTO powroty (zalozone, po_dniach, n) VALUES (?, ?, 1) ON CONFLICT(zalozone, po_dniach) DO UPDATE SET n = n + 1',
+    ),
+    liczniki: db.prepare('SELECT dzien, zdarzenie, n FROM liczniki WHERE dzien >= ? ORDER BY dzien, zdarzenie'),
+    powroty: db.prepare('SELECT zalozone, po_dniach, n FROM powroty WHERE zalozone >= ? ORDER BY zalozone, po_dniach'),
   };
 
   let otwarta = true;
@@ -229,7 +309,34 @@ export function otworzBaze(sciezka: string): Baza {
     dodajKonto(nick, nickKlucz, haslo, teraz) {
       const r = q.dodajKonto.run(nick, nickKlucz, haslo, teraz, teraz);
       if (!r.changes) return null;
-      return { id: num(r.lastInsertRowid), nick, haslo, utworzone: teraz, ostatnio: teraz };
+      return {
+        id: num(r.lastInsertRowid),
+        nick,
+        haslo,
+        utworzone: teraz,
+        ostatnio: teraz,
+        anonimowe: false,
+        kod: null,
+      };
+    },
+    dodajDruzyne(teraz) {
+      const r = q.dodajDruzyne.run(`#${nowyToken()}`, teraz, teraz);
+      return {
+        id: num(r.lastInsertRowid),
+        nick: '',
+        haslo: '',
+        utworzone: teraz,
+        ostatnio: teraz,
+        anonimowe: true,
+        kod: null,
+      };
+    },
+    ustawKod(id, skrot) {
+      q.ustawKod.run(skrot, id);
+    },
+    kontoPoKodzie(skrot) {
+      const r = q.kontoPoKodzie.get(skrot) as Wiersz | undefined;
+      return r ? kontoZ(r) : null;
     },
     kontoPoNicku(nickKlucz) {
       const r = q.kontoPoNicku.get(nickKlucz) as Wiersz | undefined;
@@ -240,7 +347,7 @@ export function otworzBaze(sciezka: string): Baza {
       return r ? kontoZ(r) : null;
     },
     dotknijKonta(id, dzien) {
-      q.dotknij.run(dzien, id, dzien);
+      return num(q.dotknij.run(dzien, id, dzien).changes) > 0;
     },
     usunKonto(id) {
       q.usunKonto.run(id);
@@ -305,6 +412,12 @@ export function otworzBaze(sciezka: string): Baza {
     zwolnijKlatkiKonta(konto) {
       return num(q.usunKlatkiKonta.run(konto).changes);
     },
+    zwolnijKlatkiNieaktywnych(granica) {
+      return num(q.zwolnijNieaktywnych.run(granica).changes);
+    },
+    usunNieaktywneKonta(granica) {
+      return num(q.usunNieaktywne.run(granica).changes);
+    },
     zapis(konto) {
       const r = q.zapis.get(konto) as Wiersz | undefined;
       if (!r) return null;
@@ -329,6 +442,34 @@ export function otworzBaze(sciezka: string): Baza {
     wersjaZapisu,
     maZapis(konto) {
       return q.maZapis.get(konto) !== undefined;
+    },
+    dolicz(dzien, zdarzenie) {
+      // bez await między sprawdzeniem a wstawieniem, więc równoległe żądania nie przekroczą limitu celów
+      if (
+        zdarzenie.startsWith('cel:') &&
+        !q.jestZdarzenie.get(dzien, zdarzenie) &&
+        num((q.celeDnia.get(dzien) as Wiersz).n) >= ROZNYCH_CELOW_NA_DZIEN
+      )
+        return false;
+      q.doliczZdarzenie.run(dzien, zdarzenie);
+      return true;
+    },
+    doliczPowrot(zalozone, poDniach) {
+      q.doliczPowrot.run(zalozone, poDniach);
+    },
+    liczniki(od) {
+      return (q.liczniki.all(od) as Wiersz[]).map((r) => ({
+        dzien: num(r.dzien),
+        zdarzenie: str(r.zdarzenie),
+        n: num(r.n),
+      }));
+    },
+    powroty(od) {
+      return (q.powroty.all(od) as Wiersz[]).map((r) => ({
+        zalozone: num(r.zalozone),
+        poDniach: num(r.po_dniach),
+        n: num(r.n),
+      }));
     },
     transakcja,
     zamknij() {

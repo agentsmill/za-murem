@@ -1,7 +1,7 @@
 /* Gra sieciowa w grze, etap 2 (docs/superpowers/specs/2026-10-18-multiplayer-design.md, sekcja „Etap 2”): czyste
-   funkcje bez DOM. Start zalogowanej drużyny na adresie, start bez domu, dojście do nowej siedziby, znaczniki
-   zajętych klatek i klatka pod kursorem. Sieć dostają przez wstrzyknięte API (ApiSieci, w grze utworzApi), więc
-   testy w Node puszczają cały przepływ na udawanym serwerze.
+   funkcje bez DOM. Start drużyny z sesją (konto z nickiem albo drużyna anonimowa) na adresie, start bez domu, dojście
+   do nowej siedziby, znaczniki zajętych klatek i klatka pod kursorem. Sieć dostają przez wstrzyknięte API (ApiSieci,
+   w grze utworzApi), więc testy w Node puszczają cały przepływ na udawanym serwerze.
 
    Wersja minimalna (noc z 17 na 18.10.2026): symulacja się nie zmienia. Zajęte klatki wchodzą do gry tylko jako
    jawne wejście startu:
@@ -12,6 +12,9 @@
      zarządu w stanie przed new Sim; losowania i reszta stanu bez zmian),
    - klatkę nowej siedziby gra zajmuje na serwerze, kiedy ktoś z zarządu dojdzie do jej drzwi (naProgu). Gdy w tym
      czasie zajęła ją inna drużyna, gra zaczyna od nowa z kolejnym budynkiem na liście (sessionStorage i przeładowanie).
+   Zanim gra zapyta o zajęte klatki, podaje serwerowi punkt startu drużyny (środek mapy w stopniach, PUT
+   /api/druzyna/start): serwer pokazuje klatki tylko w okolicy siedziby albo punktu startu, a punkt startu żyje w pamięci
+   serwera i znika przy jego restarcie (odświeżanie klatek w src/net/gra.ts podaje go wtedy od nowa).
    Cudze klatki to tylko znaczniki na mapie; „Zajmij klatkę” na innym budynku zajmuje ją na serwerze bez skutków
    w symulacji (dom drużyny jako lista drzwi zostaje na później).
 
@@ -45,14 +48,23 @@ export interface StanSieci {
   dom: boolean;
   /** budynek pod adresem, w którym ktoś zajął naszą klatkę (przed jego drzwiami drużyna zaczyna) */
   utracony?: string;
-  /** nick konta, które zaczęło grę (na innym koncie gra toczy się bez sieci) */
+  /** znak konta, które zaczęło grę (Ja.znak: nick konta z nickiem, „#<id>” drużyny anonimowej); na innym koncie gra
+      toczy się bez sieci. Zapisy sprzed drużyn anonimowych mają tu nick, który jest znakiem konta z nickiem. */
   konto?: string;
   /** wersja zapisu w chmurze, którą ta gra ostatnio wysłała (następny zapis idzie od niej) */
   wersja?: number;
+  /** okno z kodem powrotu drużyny anonimowej już się pokazało po pierwszym porannym raporcie (raz na grę; dalej kod
+      bierze się z Menu) */
+  kodPokazany?: boolean;
+  /** drużyna usunięta z serwera w Menu: ta gra toczy się dalej bez sieci, także po wczytaniu zapisu (nawet gdy gracz ma
+      już inną drużynę). `zajete` zostaje, żeby zapis odtworzył ten sam świat. */
+  usunieta?: boolean;
 }
 
 /** to, czego przepływ startu potrzebuje od serwera (w grze utworzApi z src/net/api.ts) */
 export interface ApiSieci {
+  /** punkt startu drużyny w stopniach (okolica zapytań o zajęte klatki); dzienny limit zmian: 429 */
+  punktStartu(lat: number, lon: number): Promise<Wynik<undefined>>;
   zajete(p: Prostokat): Promise<Wynik<ListaKlatek>>;
   zajmij(k: ZajmijKlatke): Promise<Wynik<ZajetaOdpowiedz>>;
   zwolnijWszystkie(): Promise<Wynik<undefined>>;
@@ -98,9 +110,12 @@ export type WynikStartu =
   | { ok: false; komunikat: string };
 
 /**
- * Start zalogowanej drużyny na adresie. zbuduj(bez) buduje świat z listą budynków, które nie mogą być siedzibą
- * (bez: [] to świat bez wykluczeń). Nowa gra zwalnia najpierw stare klatki konta. Klatka pod adresem wolna: zajmujemy ją
- * i drużyna zaczyna w siedzibie jak dziś. Zajęta (na liście z serwera albo 409 przy zajmowaniu): świat bez budynków
+ * Start drużyny z sesją na adresie. zbuduj(bez) buduje świat z listą budynków, które nie mogą być siedzibą
+ * (bez: [] to świat bez wykluczeń). Nowa gra zwalnia najpierw stare klatki konta i podaje punkt startu (środek mapy),
+ * bez którego serwer nie odpowie na pytanie o zajęte klatki. Punkt odrzucony przez dzienny limit zmian okolicy (429)
+ * nie zatrzymuje startu, bo drużyna może mieć z poprzedniej gry punkt w tej samej okolicy: decyduje pytanie o klatki,
+ * a gdy ono zawiedzie, gracz dostaje komunikat o limicie. Inny błąd punktu startu to gra bez sieci. Klatka pod adresem
+ * wolna: zajmujemy ją i drużyna zaczyna w siedzibie jak dziś. Zajęta (na liście z serwera albo 409 przy zajmowaniu): świat bez budynków
  * z cudzymi klatkami, siedzibą zostaje najbliższy wolny mieszkalny, a drużyna zaczyna bez domu. Błąd sieci albo
  * inny błąd serwera: ok false (gra rusza bez sieci). Świat bez kluczy: zwykły start bez zajmowania.
  */
@@ -121,8 +136,10 @@ export async function startSieci(
     };
   const zwolnione = await api.zwolnijWszystkie();
   if (!zwolnione.ok) return { ok: false, komunikat: komunikatBledu(zwolnione) };
+  const start = await api.punktStartu(srodek[0], srodek[1]);
+  if (!start.ok && start.status !== 429) return { ok: false, komunikat: komunikatBledu(start) };
   const lista = await api.zajete(prostokatMapy(swiat, srodek));
-  if (!lista.ok) return { ok: false, komunikat: komunikatBledu(lista) };
+  if (!lista.ok) return { ok: false, komunikat: komunikatBledu(start.ok ? lista : start) };
   let klatki = lista.dane.klatki;
   if (!klatki.some((k) => k.klucz === k0.klucz)) {
     const r = await api.zajmij(doZajecia(k0));

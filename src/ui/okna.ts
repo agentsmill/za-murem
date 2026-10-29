@@ -1,6 +1,7 @@
 /* Treść okien interfejsu: karta nocy, uchwała, wydarzenie, poranny raport, potwierdzenia (palenie mebli, włączenie
-   sieci, polecenia nieodwracalne), menu (z linią o źródłach danych mieszkańców i przyciskiem ekranu dróg do
-   zwycięstwa, który rysuje src/ui/zwyciestwo.ts), jak grać (sterowanie, budowa, praca ludzi z panelem Pracy i klawiszem
+   sieci, polecenia nieodwracalne), menu (z linią o źródłach danych mieszkańców, przyciskiem ekranu dróg do
+   zwycięstwa, który rysuje src/ui/zwyciestwo.ts, i w grze sieciowej przyciskami kodu powrotu drużyny i usunięcia
+   drużyny z serwera, których okna są w src/ui/siec.ts), jak grać (sterowanie, budowa, praca ludzi z panelem Pracy i klawiszem
    P, poza siatką: mapa miasta z klawiszem M, sąsiednie budynki, handlarz i wędrowcy, badania z klawiszem T, zarząd
    z drogami do zwycięstwa, tryb zombie, „Na razie”) i koniec gry. Czyste funkcje: dostają odczyt zarządu i zwracają HTML
    w czterech częściach (nagłówek, tytuł, treść, przyciski); przyciski mają data-act i data-arg, które obsługuje main.ts.
@@ -24,7 +25,7 @@ import { ENDINGS_EN, PATHS_EN } from '../content/data.en.ts';
 import { ENDINGS, type EndingId, PATHS } from '../content/data.ts';
 import { OSOB_DOMYSLNIE } from '../content/druzyna.ts';
 import { MENU as DRZWI } from '../content/napisy-sasiedzi.ts';
-import { L, mnogaPl, type Tx, tr, tx } from '../core/jezyk.ts';
+import { jezyk, L, mnogaPl, type Tx, tr, tx } from '../core/jezyk.ts';
 import { BLOK, type Words, type WordsEn, wordsEn, wordsOf } from '../gov/miejsce.ts';
 import {
   deterrence,
@@ -65,7 +66,8 @@ export interface Sheet {
       mapa miasta (okno na cały ekran, src/ui/miasto.ts), plan wyprawy z mapy (zwykłe okno w barwie mapy,
       src/ui/wyprawa.ts), ekran dróg do zwycięstwa (szeroka tabliczka w złocie) i epilog zwycięstwa (ta sama barwa,
       zwykła szerokość), oba z src/ui/zwyciestwo.ts, odkrycie (karta po ukończeniu badania, w kolorze korka
-      tablicy) i wiki (szerokie okno z listą i artykułem, src/ui/wiki.ts) */
+      tablicy), wiki (szerokie okno z listą i artykułem, src/ui/wiki.ts) i usun (pytanie o usunięcie drużyny z serwera,
+      src/ui/siec.ts: czerwona tabliczka jak ogień, ale na telefonie z pasem na atrybucję map pod oknem jak Menu) */
   tone:
     | 'noc'
     | 'uchwala'
@@ -81,7 +83,8 @@ export interface Sheet {
     | 'drogi'
     | 'zwyciestwo'
     | 'odkrycie'
-    | 'wiki';
+    | 'wiki'
+    | 'usun';
   /** można zamknąć bez decyzji (Esc, poza oknem) */
   closable?: boolean;
   /** linia „Cel: …” pod nagłówkiem: tekst celu ze ścieżki celów, który dotyczy tego okna (`celWOknie` w src/ui/sciezka.ts;
@@ -506,7 +509,21 @@ export const DANE_MIESZKANCOW_EN =
   'Demographic data: GUS (NSP 2021 census with the publication “Warunki mieszkaniowe w Polsce”, BDL under CC BY 4.0, BREC 2021, life tables 2025, Prognoza ludności 2023-2060, Rocznik Demograficzny 2025, Sytuacja demograficzna Polski do 2025 r.) and Eurostat (CC BY 4.0), processed into made-up residents; first names and surnames: PESEL register, Ministerstwo Cyfryzacji, dane.gov.pl (CC0); name declension: SGJP (BSD-2, full notice in the repository).';
 export const LICENCJE_MIESZKANCOW = 'data/mieszkancy/LICENCJE.md';
 
-export function menuSheet(note: string): Sheet {
+/** Menu. `siec` podaje gra sieciowa (GraSieciowa.menuSieci, src/net/gra.ts): gra w sieci ma przycisk kodu powrotu
+    (`menu-kod`), a drużyna anonimowa także usunięcia drużyny z serwera (`menu-usun`); do tego odnośniki do informacji
+    o prywatności i regulaminu (public/prywatnosc.html, public/regulamin.html, w nowej karcie, żeby nie wyjść z gry, z
+    kotwicą języka gry #pl albo #en, bo strony mają dwie sekcje językowe). Gra bez sieci nie ma żadnego z nich. Okna
+    kodu i usunięcia są w src/ui/siec.ts. */
+export function menuSheet(note: string, siec?: { anonimowa: boolean }): Sheet {
+  const sieciowe = siec
+    ? btn('menu-kod', L('Nowy kod powrotu drużyny', 'New team return code')) +
+      (siec.anonimowa
+        ? btn('menu-usun', L('Usuń drużynę z serwera', 'Delete the team from the server'), 'btn ghost')
+        : '')
+    : '';
+  const prawo = siec
+    ? `<p class="fine menu-prawo"><a href="prywatnosc.html#${jezyk()}" target="_blank" rel="noopener">${L('Prywatność', 'Privacy')}</a> · <a href="regulamin.html#${jezyk()}" target="_blank" rel="noopener">${L('Regulamin', 'Terms')}</a></p>`
+    : '';
   return {
     tone: 'menu',
     kicker: 'Za Murem 1.0',
@@ -514,10 +531,10 @@ export function menuSheet(note: string): Sheet {
     body: `<div class="menu-list">${btn('menu-back', L('Wróć do gry', 'Back to the game'), 'btn go')}${btn(
       'menu-help',
       L('Jak grać', 'How to play'),
-    )}${btn('menu-wiki', L('Wiki', 'Wiki'))}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${btn(
+    )}${btn('menu-wiki', L('Wiki', 'Wiki'))}${btn('menu-zwyciestwo', L('Drogi do zwycięstwa', 'Roads to victory'))}${sieciowe}${btn(
       'menu-start',
       L('Zapisz i wróć do ekranu startowego', 'Save and go back to the start screen'),
-    )}</div><p class="fine">${esc(note)}</p><p class="fine dane">${esc(
+    )}</div>${prawo}<p class="fine">${esc(note)}</p><p class="fine dane">${esc(
       L(DANE_MIESZKANCOW, DANE_MIESZKANCOW_EN),
     )} <a href="${LICENCJE_MIESZKANCOW}" target="_blank" rel="noopener">${L('Źródła i licencje', 'Sources and licences')}</a></p>`,
     foot: '',

@@ -1,0 +1,221 @@
+/* Wspólny wygląd stron prawnych gry (public/prywatnosc.html i public/regulamin.html): kolory, czcionki, siatka tła i
+   „tabliczka” z karty startowej (src/style.css), bloki jak „Gra z sąsiadami” (src/ui/siec.css). Strony są statyczne
+   i nie przechodzą przez Vite, więc zmienne są tu przepisane, a nie importowane. Pokazuje się jedna sekcja językowa
+   (#pl albo #en): wybiera ją skrypt na stronie (adres z #pl albo #en, potem język zapisany w grze, potem język
+   przeglądarki); bez skryptu widać obie, jedna pod drugą. */
+
+:root {
+  --slab: #2a2f32;
+  --slab-deep: #1f2326;
+  --slab-raised: #353b3f;
+  --seam: #32383b;
+  --line: #454c51;
+  --ink: #e7e4dc;
+  --ink-dim: #a3a7a2;
+  --enamel: #2457a8;
+  --enamel-rim: #f4f3ee;
+  --lamp: #e6a540;
+  --f-sign: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  background: var(--slab);
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font: 400 16px / 1.55 var(--f-body);
+  background-color: var(--slab);
+  background-image:
+    linear-gradient(var(--seam) 2px, transparent 2px), linear-gradient(90deg, var(--seam) 2px, transparent 2px);
+  background-size:
+    100% 190px,
+    320px 100%;
+}
+a {
+  color: #9db8e6;
+}
+a:hover {
+  color: var(--ink);
+}
+:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+
+/* jedna sekcja językowa naraz (skrypt ustawia data-j na <html>) */
+html[data-j="pl"] #en,
+html[data-j="en"] #pl {
+  display: none;
+}
+
+.strona {
+  padding: 24px 16px 56px;
+  display: flex;
+  justify-content: center;
+}
+.karta {
+  width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.karta > section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* tabliczka jak na karcie startowej, tu jako odnośnik do gry */
+.sign {
+  position: relative;
+  align-self: flex-start;
+  display: inline-flex;
+  flex-direction: column;
+  background: var(--enamel);
+  color: var(--enamel-rim);
+  border-radius: 8px;
+  padding: 5px 34px 6px;
+  box-shadow:
+    inset 0 0 0 3px var(--enamel),
+    inset 0 0 0 5px var(--enamel-rim),
+    0 3px 0 #15181a;
+  text-decoration: none;
+  max-width: 100%;
+}
+.sign:hover {
+  color: var(--enamel-rim);
+}
+.sign::before,
+.sign::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c3c7cc;
+  transform: translateY(-50%);
+}
+.sign::before {
+  left: 8px;
+}
+.sign::after {
+  right: 8px;
+}
+.sign b {
+  font: 700 28px / 1.05 var(--f-sign);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* przełącznik języka: link w rogu, jak EN/PL na karcie startowej */
+.jezyk {
+  margin: 0;
+  align-self: flex-end;
+  font: 600 13px / 1 var(--f-sign);
+  letter-spacing: 0.1em;
+}
+.jezyk a {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 7px 11px;
+  color: var(--ink-dim);
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.jezyk a:hover {
+  color: var(--ink);
+  background: var(--slab-raised);
+}
+
+h1 {
+  margin: 0;
+  font: 700 34px / 1.08 var(--f-sign);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.wstep {
+  margin: 0;
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
+
+/* blok jak „Gra z sąsiadami” na karcie startowej */
+.blok {
+  background: var(--slab-deep);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--enamel);
+  border-radius: 6px;
+  padding: 12px 16px 14px;
+}
+.blok h2 {
+  margin: 0 0 8px;
+  font: 600 17px / 1.2 var(--f-sign);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.blok p {
+  margin: 0 0 10px;
+}
+.blok p:last-child,
+.blok ul:last-child {
+  margin-bottom: 0;
+}
+.blok ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.blok li {
+  margin-bottom: 6px;
+}
+.blok li:last-child {
+  margin-bottom: 0;
+}
+.blok li b {
+  font-weight: 600;
+}
+code {
+  font: 500 0.9em ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--slab-raised);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  overflow-wrap: anywhere;
+}
+
+/* miejsce, które wypełnia administrator, widać z daleka */
+mark {
+  background: rgba(230, 165, 64, 0.18);
+  color: var(--lamp);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.inne {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 28px;
+  }
+  .blok {
+    padding: 10px 12px 12px;
+  }
+}

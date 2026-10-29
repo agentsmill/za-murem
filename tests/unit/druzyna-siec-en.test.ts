@@ -36,6 +36,7 @@ import { GraSieciowa, PONOWNY_START } from '../../src/net/gra.ts';
 import {
   type Ja,
   type KodBledu,
+  normalizujKod,
   POWODY_LOGOWANIA,
   type ZajetaKlatka,
   type ZajetaOdpowiedz,
@@ -70,6 +71,7 @@ import { toGeoT } from '../../src/world/mvt.ts';
 import { buildWorld, LOAD_RADIUS, type World } from '../../src/world/world.ts';
 import { ADDRESSES, decodedTiles } from './fixtures.ts';
 import { polskieSlowa } from './po-angielsku.ts';
+import { atrapaBloku } from './siec-blok-atrapa.ts';
 
 afterEach(() => ustawJezyk('pl'));
 
@@ -448,7 +450,15 @@ const zle = <T>(status: number, blad: KodBledu, komunikat: string, ponowZa?: num
 });
 const obca = (k: ZajmijKlatke): ZajetaKlatka => ({ ...k, moja: false });
 const chwila = () => new Promise((r) => setTimeout(r, 0));
-const ja = (nick: string): Ja => ({ nick, utworzone: 1, klatki: 0, zapis: false });
+const ja = (znak: string): Ja => ({
+  nick: znak.startsWith('#') ? null : znak,
+  utworzone: 1,
+  klatki: 0,
+  zapis: false,
+  anonimowe: znak.startsWith('#'),
+  znak,
+  kod: false,
+});
 
 /** udawany serwer gry: polskie komunikaty jak z server/app.ts */
 function atrapaApi(
@@ -458,12 +468,28 @@ function atrapaApi(
     zajmij?: (k: ZajmijKlatke) => Wynik<ZajetaOdpowiedz>;
     zaloguj?: () => Wynik<Ja>;
     bezSieci?: boolean;
+    /** odpowiedź na założenie drużyny (bez niej: nowa drużyna „#7”) */
+    druzyna?: () => Wynik<Ja>;
+    /** kody powrotu (znormalizowane) → znak drużyny */
+    kody?: Record<string, string>;
   } = {},
 ): ApiGry {
   let nick = o.nick === undefined ? 'Sasiad' : o.nick;
   return {
     serwerDostepny: async () => true,
     ja: async () => (nick ? ok(ja(nick)) : zle(401, 'brak_sesji', 'Zalogujcie się.')),
+    druzyna: async () => {
+      const r = o.druzyna ? o.druzyna() : ok(ja('#7'), 201);
+      if (r.ok) nick = r.dane.znak;
+      return r;
+    },
+    powrot: async (kod: string) => {
+      const znak = o.kody?.[normalizujKod(kod) ?? ''];
+      if (!znak) return zle(401, 'zly_kod', 'Zły kod powrotu.');
+      nick = znak;
+      return ok(ja(znak));
+    },
+    punktStartu: async () => ok(undefined, 204),
     pobierzZapis: async () => zle(404, 'brak_zapisu', 'Nie ma zapisu w chmurze.'),
     zwolnijWszystkie: async () => (o.bezSieci ? zle(0, 'siec', 'Brak połączenia z serwerem gry.') : ok(undefined, 204)),
     zajete: async () => ok({ klatki: o.zajeteNaStarcie ?? [] }),
@@ -508,49 +534,106 @@ function naDrzwiach(sim: Sim, w: World) {
   p.y = Math.floor(door / w.size) + 0.5;
 }
 
-/** blok #siec bez przeglądarki: nowy HTML tworzy nowe, puste pola nicku i hasła (jak prawdziwy DOM) */
-function atrapaBloku() {
-  let html = '';
-  let pola: Record<string, { value: string }> = {};
-  const sluchacze: Record<string, (e: unknown) => void> = {};
-  const el = {
-    hidden: true,
-    get innerHTML() {
-      return html;
-    },
-    set innerHTML(v: string) {
-      html = v;
-      pola = { '#scNick': { value: '' }, '#scHaslo': { value: '' } };
-    },
-    querySelector: (s: string) => (html.includes(`id="${s.slice(1)}"`) ? (pola[s] ?? null) : null),
-    addEventListener: (t: string, f: (e: unknown) => void) => {
-      sluchacze[t] = f;
-    },
-  };
-  return {
-    el,
-    pole: (s: string) => pola[s],
-    klik: (siec: string) => sluchacze.click?.({ target: { closest: () => ({ dataset: { siec } }) } }),
-  };
-}
-
 describe('gra z sąsiadami po angielsku (src/ui/siec.ts, src/net/gra.ts, src/net/siec.ts)', () => {
   it('blok na karcie startowej i znaczniki: angielskie napisy, nick i nazwy miejsc po polsku, komunikat jako Tx', () => {
     ustawJezyk('en');
-    const wyl = htmlSieci({ stan: 'wylogowani' });
+    const dr = htmlSieci({ stan: 'druzyna' });
+    expect(dr).toContain('Play with the neighbours');
+    expect(dr).not.toContain('beta');
+    expect(dr).toContain('Your team is created when you first play a real address');
+    expect(dr).toContain('no email and no password');
+    expect(polskie(dr)).toEqual([]);
+    const wyl = htmlSieci({ stan: 'logowanie' });
     expect(wyl).toContain('id="scNick"');
     expect(wyl).toContain('a forgotten password means a lost account');
+    expect(wyl).toContain('data-siec="wroc"');
     expect(polskie(wyl)).toEqual([]);
     const zal = htmlSieci({ stan: 'zalogowani', nick: 'Sąsiad', chmura: 'Ursynów, day 2, 06:40' });
     expect(zal).toContain('Playing as <b>Sąsiad</b>');
     expect(zal).toContain('Continue from the cloud: Ursynów, day 2, 06:40');
     expect(polskie(zal, ['Sąsiad', ...MIEJSCA])).toEqual([]);
     const kom = tx('Wylogowani. Gra działa dalej bez sieci.', 'Logged out. The game carries on offline.');
-    expect(htmlSieci({ stan: 'wylogowani', komunikat: kom })).toContain('Logged out. The game carries on offline.');
+    expect(htmlSieci({ stan: 'druzyna', komunikat: kom })).toContain('Logged out. The game carries on offline.');
     expect(Object.values(NAPIS_ZNACZNIKA).map((t) => tr(t))).toEqual(['taken', 'your stairwell', 'free stairwell']);
     ustawJezyk('pl');
-    expect(htmlSieci({ stan: 'wylogowani', komunikat: kom })).toContain('Wylogowani. Gra działa dalej bez sieci.');
+    expect(htmlSieci({ stan: 'druzyna', komunikat: kom })).toContain('Wylogowani. Gra działa dalej bez sieci.');
     expect(Object.values(NAPIS_ZNACZNIKA).map((t) => tr(t))).toEqual(['zajęte', 'wasza klatka', 'wolna klatka']);
+  });
+
+  it('blok na karcie startowej po angielsku: bez pól nicku i hasła, z polem kodu i odnośnikiem do prywatności', () => {
+    ustawJezyk('en');
+    const dr = htmlSieci({ stan: 'druzyna' });
+    expect(dr).not.toContain('id="scNick"');
+    expect(dr).not.toContain('id="scHaslo"');
+    expect(dr).not.toContain('type="password"');
+    expect(dr).toContain('id="scKod"');
+    expect(dr).toContain('data-siec="powrot"');
+    expect(dr).toContain('Rejoin your team');
+    expect(dr).toContain('Have a return code?');
+    expect(dr).toContain('data-siec="logowanie"');
+    expect(dr).toContain('I have a username and password');
+    expect(dr).toMatch(/<a href="prywatnosc\.html#en"[^>]*>Privacy<\/a>/);
+    expect(polskie(dr)).toEqual([]);
+    // drużyna, która już jest: znak po angielsku i zapis z chmury, wciąż bez pól nicku i hasła
+    const jest = htmlSieci({ stan: 'druzyna', znak: '#7', chmura: 'Ursynów, day 2, 06:40' });
+    expect(jest).toContain('Playing as <b>team #7</b>');
+    expect(jest).toContain('Continue from the cloud: Ursynów, day 2, 06:40');
+    expect(jest).not.toContain('id="scNick"');
+    expect(polskie(jest, MIEJSCA)).toEqual([]);
+  });
+
+  it('kod powrotu i zakładanie drużyny po angielsku: błędy po kodzie, komunikaty startu bez polskich słów', async () => {
+    ustawJezyk('en');
+    const blok = atrapaBloku();
+    const g = new GraSieciowa({ ...opcje(atrapaApi({ nick: null })), el: blok.el as unknown as HTMLElement });
+    await g.init();
+    blok.pole('#scKod').value = 'abc';
+    blok.klik('powrot');
+    await chwila();
+    expect(blok.el.innerHTML).toContain('A return code has 12 characters: letters and digits in three groups of four.');
+    expect(polskie(blok.el.innerHTML)).toEqual([]);
+    blok.pole('#scKod').value = 'ZZZZ-ZZZZ-ZZZZ';
+    blok.klik('powrot');
+    await chwila();
+    await chwila();
+    expect(blok.el.innerHTML).toContain('That return code doesn’t work. Check it and try again.');
+    expect(polskie(blok.el.innerHTML)).toEqual([]);
+    // język zmieniony po błędzie: ten sam komunikat po polsku, pole z kodem zostaje
+    ustawJezyk('pl');
+    g.przerysuj();
+    expect(blok.el.innerHTML).toContain('Zły kod powrotu.');
+    expect(blok.pole('#scKod').value).toBe('ZZZZ-ZZZZ-ZZZZ');
+    ustawJezyk('en');
+    const udane = atrapaBloku();
+    const g2 = new GraSieciowa({
+      ...opcje(atrapaApi({ nick: null, kody: { ABCDEFGHJKLM: '#7' } })),
+      el: udane.el as unknown as HTMLElement,
+    });
+    await g2.init();
+    udane.pole('#scKod').value = 'ABCD-EFGH-JKLM';
+    udane.klik('powrot');
+    await chwila();
+    await chwila();
+    expect(udane.el.innerHTML).toContain('You are back with team #7.');
+    expect(udane.el.innerHTML).toContain('Playing as <b>team #7</b>');
+    expect(polskie(udane.el.innerHTML)).toEqual([]);
+    // nowa gra bez konta: napis o zakładaniu drużyny, a przy błędzie serwera zdanie po kodzie i „Playing offline.”
+    const status: string[] = [];
+    const nowa = new GraSieciowa(opcje(atrapaApi({ nick: null }), { status }));
+    await nowa.init();
+    await nowa.przygotuj(dane, zbuduj);
+    expect(status[0]).toBe('Creating your team on the game server…');
+    expect(nowa.komunikatStartu()).toMatch(/was free/);
+    const zajety = atrapaApi({
+      nick: null,
+      druzyna: () => zle(503, 'serwer_zajety', 'Serwer jest przeciążony. Spróbujcie za chwilę.'),
+    });
+    const bez = new GraSieciowa(opcje(zajety));
+    await bez.init();
+    await bez.przygotuj(dane, zbuduj);
+    expect(bez.komunikatStartu()).toBe('The server is busy. Try again in a moment. Playing offline.');
+    ustawJezyk('pl');
+    expect(bez.komunikatStartu()).toBe('Serwer jest przeciążony. Spróbujcie za chwilę. Gramy bez sieci.');
   });
 
   it('logowanie i konto po angielsku; przerysuj po zmianie języka pokazuje to samo w nowym, z wpisanym nickiem i hasłem', async () => {
@@ -563,6 +646,9 @@ describe('gra z sąsiadami po angielsku (src/ui/siec.ts, src/net/gra.ts, src/net
     const g = new GraSieciowa({ ...opcje(api), el: blok.el as unknown as HTMLElement });
     await g.init();
     expect(blok.el.hidden).toBe(false);
+    // domyślnie bez formularza; dawne logowanie nickiem za odnośnikiem
+    expect(blok.el.innerHTML).not.toContain('id="scNick"');
+    blok.klik('logowanie');
     expect(blok.el.innerHTML).toContain('Log in');
     expect(polskie(blok.el.innerHTML)).toEqual([]);
     blok.pole('#scNick').value = 'Sąsiad';
@@ -594,6 +680,7 @@ describe('gra z sąsiadami po angielsku (src/ui/siec.ts, src/net/gra.ts, src/net
     await chwila();
     await chwila();
     expect(blok.el.innerHTML).toContain('Logged out. The game carries on offline.');
+    expect(blok.el.innerHTML).not.toContain('id="scNick"');
     expect(polskie(blok.el.innerHTML)).toEqual([]);
   });
 
@@ -653,6 +740,7 @@ describe('gra z sąsiadami po angielsku (src/ui/siec.ts, src/net/gra.ts, src/net
     await offline.przygotuj(dane, zbuduj);
     expect(offline.komunikatStartu()).toBe('No connection to the game server. Playing offline.');
     const sieci: ApiSieci = {
+      punktStartu: async () => ok(undefined, 204),
       zwolnijWszystkie: async () => zle(0, 'siec', 'Brak połączenia z serwerem gry.'),
       zajete: async () => ok({ klatki: [] }),
       zajmij: async (k) => ok({ klatka: { ...k, moja: true } }, 201),

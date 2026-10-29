@@ -18,16 +18,40 @@
   text-transform: uppercase;
   color: var(--ink-dim);
 }
-.sc-title small {
-  margin-left: 6px;
-  letter-spacing: 0.1em;
-  color: var(--lamp);
-}
 .sc-form,
-.sc-row {
+.sc-row,
+.sc-kod {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.sc-kod {
+  align-items: center;
+}
+.sc-lab {
+  flex: 1 0 100%;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+.sc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin: 0;
+  font-size: 14px;
+}
+.sc-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font: inherit;
+  color: var(--ink-dim);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.sc-link:hover {
+  color: var(--ink);
 }
 .start .siec input {
   flex: 1 1 140px;
@@ -48,6 +72,36 @@
   color: var(--ink-dim);
 }
 .sc-msg {
+  color: var(--lamp);
+}
+
+/* okno z kodem powrotu drużyny (kodSheet): kod dużą czcionką, jedno kliknięcie zaznacza go całego (zaznaczenie jest też
+   rezerwą przycisku „Kopiuj”, kiedy schowek odmawia), na telefonie font skaluje się z szerokością, żeby kod z myślnikami
+   mieścił się w jednym wierszu */
+.kod-wartosc {
+  text-align: center;
+}
+.kod-kod {
+  display: inline-block;
+  max-width: 100%;
+  padding: 10px 14px;
+  background: var(--slab-deep);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--lamp);
+  border-radius: 6px;
+  font:
+    700 clamp(22px, 7.2vw, 34px) / 1.15 ui-monospace,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  color: var(--lamp);
+  user-select: all;
+  -webkit-user-select: all;
+  white-space: nowrap;
+}
+.kod-blad {
   color: var(--lamp);
 }
 

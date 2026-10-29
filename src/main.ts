@@ -2,7 +2,10 @@
    po zmianie wszystko, co widać, rysuje się od nowa), start (z panelem „Wasz zarząd”: liczba osób i własna drużyna),
    wczytanie osiedla i tabel mieszkańców
    (zarząd i mieszkańcy siedziby z generatora, src/sim/osiedle.ts; bez tabel postaci jak dawniej), gra z sąsiadami
-   z ?siec=1 (src/net/gra.ts; mieszkańcy z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
+   przy włączonej sieci (src/net/flaga.ts: ?siec=1 albo VITE_SIEC=1 z budowy; src/net/gra.ts: drużyna anonimowa zakładana
+   przy pierwszej grze na prawdziwym adresie, kod powrotu na karcie startowej, w Menu i raz po pierwszym porannym
+   raporcie, usunięcie drużyny z serwera w Menu, adres przez serwer gry tylko przy odpowiadającym serwerze; mieszkańcy
+   z generatora także w niej, dla siedziby, którą wybrał start sieciowy, ale bez
    zmiany imion, bo zapis idzie na serwer: `imionaWGrze`), pętla gry z zarządem (uchwały, karta nocy, wydarzenia,
    raport), okienko celów ze ścieżki (src/ui/sciezka.ts: krok i widok otwartego rozdziału i okazji co odświeżenie
    okienka, HTML z `celeHtml`, nagłówek zwija i rozwija je na telefonie i na komputerze, a okienko wyższe od ekranu
@@ -43,7 +46,7 @@
    (zapis w jej trakcie to `czeka`). Dane ośmiu kandydatów: dema z public/demo/<klucz>-kwadraty.json przed pierwszym krokiem gry,
    prawdziwy adres w tle po starcie, po jednym kwadracie, bez czekania (jego ciężkie kroki idą wtedy w grze, po jednym na klatkę);
    bez kompletu do 6:00 drugiego dnia osady nie ma. Bez flagi nic z tego nie jest ładowane (`import()` dopiero przy fladze), a
-   zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z `?siec=1` (jedno ostrzeżenie w konsoli); gdy kod osady się
+   zapis nie ma pola `osada`. Bez osady w trybie zombie i w nowej grze z włączoną siecią (jedno ostrzeżenie w konsoli); gdy kod osady się
    nie załaduje, nowa gra rusza bez niej (`osadaBezKodu`), a gra z zapisu z osadą kończy się błędem wczytania.
    `window.zm.osada()` pokazuje stan osady (null bez flagi) i `kwadrat`, numer jej kwadratu w widoku (−1 przed odkryciem).
    Widok ich kwadratu (zadanie 5 etapu 2): przed odkryciem ośmiu sąsiadów domu leży pod mgłą „?” (`view.ustawMgleDomu`, osada czeka albo
@@ -102,7 +105,9 @@ import type { Odmiana } from './mieszkancy/historie.ts';
 import { nazwaDoOkolicyZDanych } from './mieszkancy/kronika.ts';
 import { PRZYPADKI } from './mieszkancy/odmiana.ts';
 import { type DaneMieszkancow, wczytajDaneMieszkancow, wczytajKoncowki, wczytajOdmiane } from './mieszkancy/wczytaj.ts';
+import { siecWlaczona } from './net/flaga.ts';
 import { GraSieciowa } from './net/gra.ts';
+import { type Liczniki, noweCele, progiDni, utworzLiczniki, zdarzenieStartu } from './net/liczniki.ts';
 import { opcjeSceny } from './render/art/kwadratyScena.ts';
 import { buildScene, type Scene, TILE } from './render/art/scene.ts';
 import { gameLights, strangerVisibility } from './render/game.ts';
@@ -179,7 +184,14 @@ import {
   zmianaZPol,
   zTejOsobyGeneratora,
 } from './ui/imiona.ts';
-import { alarmTytul, podepnijPrzelacznik, przelacznikHtml, STATYCZNE, startJezyka } from './ui/jezyk.ts';
+import {
+  alarmTytul,
+  podepnijPrzelacznik,
+  przelacznikHtml,
+  STATYCZNE,
+  startJezyka,
+  ustawAdresPrzezSerwer,
+} from './ui/jezyk.ts';
 import { groupCard, personCard } from './ui/karta.ts';
 import { daneKartyOsady, kartaOsadyHtml } from './ui/kartaOsady.ts';
 import { ListaLudzi } from './ui/lista.ts';
@@ -253,6 +265,7 @@ import {
 } from './ui/sciezka.ts';
 import { DOBY_NOWI_ZAPAS, EKRAN_NOWI_ZAPAS } from './ui/sciezka-rozdzialy.ts';
 import { govFence } from './ui/siatka.ts';
+import { kodSheet, kopiujKod, usunSheet } from './ui/siec.ts';
 import { spotkanieSheet, zdanieNapisu } from './ui/spotkanie.ts';
 import { pointerButton, wheelKind, zoomFactor } from './ui/sterowanie.ts';
 import {
@@ -651,12 +664,12 @@ const druzyna = druzynaEl ? new Druzyna(druzynaEl) : null;
 const status = (t: string) => {
   $('startStatus').textContent = t;
 };
-/* gra z sąsiadami (src/net/gra.ts): blok #siec, start przez serwer, znaczniki klatek, zapis w chmurze; tylko z ?siec=1
-   i przy działającym serwerze, inaczej wszystko jak bez sieci */
+/* gra z sąsiadami (src/net/gra.ts): blok #siec, drużyna przy pierwszej grze, start przez serwer, znaczniki klatek, zapis
+   w chmurze; tylko przy włączonej sieci (siecWlaczona) i działającym serwerze, inaczej wszystko jak bez sieci */
 const siec = new GraSieciowa({
   el: document.getElementById('siec'),
   warstwa: document.getElementById('klatki'),
-  wlaczona: params.get('siec') === '1',
+  wlaczona: siecWlaczona(params),
   touch: touchUI,
   say: (t, ms) => say(t, ms),
   screenOf: (x, y) => screenOf(x, y),
@@ -665,7 +678,22 @@ const siec = new GraSieciowa({
   tryb: () => mode,
 });
 const siecGotowa = siec.init().catch((e) => console.warn('gra z sąsiadami', e));
-/** ekran startowy od nowa (z ?siec=1, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
+/* stopka karty startowej mówi, dokąd idzie adres: przez serwer gry (ten sam warunek, co przy wyszukiwaniu adresu w start()) albo wprost do Nominatim */
+void siecGotowa.then(() => ustawAdresPrzezSerwer(!!siec.apiAdresu()));
+/* liczniki (src/net/liczniki.ts): start gry, zaliczone cele i dni 2, 3, 7 idą do serwera bez sesji i bez śladu gracza, ogniem
+   i zapomnij. Tylko przy włączonej sieci i działającym serwerze (apiLicznikow), więc GitHub Pages, dema offline i produkcja
+   bez VITE_SIEC niczego nie wysyłają. Zakładane przy pierwszym zdarzeniu, bo dopiero po `siecGotowa` wiadomo, czy serwer
+   odpowiada (start() czeka na nią przed pierwszą grą) */
+let liczniki: Liczniki | null = null;
+function licznik(z: string): void {
+  const api = siec.apiLicznikow();
+  if (!api) return;
+  liczniki ??= utworzLiczniki(api, true);
+  liczniki.wyslij(z);
+}
+/** dzień gry z poprzedniego kroku symulacji: z niego `krokSymulacji` widzi przekroczenie progu (ustawia go `enter`) */
+let dzienGry = 1;
+/** ekran startowy od nowa (z ?siec=, ?pietra=1, ?lancuchy=0 i ?lang=, dopóki są w adresie; src/ui/zapis.ts) */
 const startUrl = () => adresStartowy(location.pathname, location.search);
 /** opisy przykładów po angielsku (public/demo/index.json z tools/make-demos.ts ma polskie) */
 const DEMO_LABEL_EN: Record<string, string> = {
@@ -696,7 +724,9 @@ demoList().then((list) => {
 $('startForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const q = $<HTMLInputElement>('addr').value.trim();
-  if (q) start(() => loadAddress(q, status));
+  // adres przez serwer gry tylko przy włączonej sieci i odpowiadającym serwerze (apiAdresu); inaczej wprost do Nominatim.
+  // Funkcja jest wołana w start() po odpowiedzi serwera (siecGotowa), więc apiAdresu() już wie, czy serwer działa
+  if (q) start(() => loadAddress(q, status, siec.apiAdresu()));
 });
 const resume = readSave();
 // usunięcie zapisu w dwóch krokach, bez natywnego confirm: drugi klik w ciągu ARM_MS usuwa
@@ -777,7 +807,7 @@ async function start(get: () => Promise<Loaded>, saved?: Save) {
   if (busy) return;
   busy = true;
   try {
-    // gra z sąsiadami: start zależy od zalogowania, więc najpierw odpowiedź serwera (bez ?siec=1 od razu)
+    // gra z sąsiadami: start zależy od sesji i od tego, czy serwer w ogóle jest, więc najpierw jego odpowiedź (przy wyłączonej sieci od razu)
     await siecGotowa;
     const data = await get();
     // tabele mieszkańców dla punktu osiedla (pliki gry z public/data/mieszkancy/, bez wysyłania adresu); bez nich
@@ -830,10 +860,12 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   const pietra = pietraWlaczone(saved ?? null, params);
   pietraGry = pietra;
   // osada AI (?osada=1): tak samo zapis wygrywa z adresem; przestarzały zapis (niżej) zachowuje flagę, ale zaczyna osadę od nowa.
-  // Nowa gra z ?siec=1 (gra z sąsiadami) osady nie dostaje: w tym etapie nie łączymy obu rzeczy, jedno ostrzeżenie w konsoli
+  // Nowa gra z włączoną siecią (gra z sąsiadami) osady nie dostaje: w tym etapie nie łączymy obu rzeczy, jedno ostrzeżenie w konsoli
   const osadaWlaczonaGra = osadaWlaczona(saved ?? null, params);
   if (osadaOdrzuconaPrzezSiec(saved ?? null, params))
-    console.warn('Osada AI: ?osada=1 nie działa razem z ?siec=1 (gra z sąsiadami), gra idzie dalej bez osady');
+    console.warn(
+      'Osada AI: ?osada=1 nie działa razem z siecią (?siec=1 albo VITE_SIEC=1, gra z sąsiadami), gra idzie dalej bez osady',
+    );
   const t0 = performance.now();
   // klucze „poi:X:Y” punktów (zapis i demo sprzed kluczy ich nie mają); przed mapaMieszkancow, żeby trafiły do mapy
   // i zapisu. Osiedle zapasowe (proc) nie ma prawdziwego położenia, więc bez kluczy
@@ -994,6 +1026,7 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
   // z niedokończoną grą)
   if (osadaGry?.odkryta) await pokazOsade(osadaGry);
   sim = new Sim(world, st);
+  dzienGry = dayOf(st.tick);
   osada = osadaGry;
   napisSeen = st.sasiedzi?.n ?? 0;
   meetChosen = null;
@@ -1123,6 +1156,8 @@ async function enter(data: Loaded, saved?: Save, dane: DaneMieszkancow | null = 
           ),
       9000,
     );
+  // liczniki: start tylko nowej gry (także demo i zapis z innej wersji świata, który zaczął się od nowa), nie wczytanego zapisu
+  if (!saved) licznik(zdarzenieStartu(modeOf(st), jezyk(), touchUI));
   renderSpeed();
   if (window.zm) {
     window.zm.sim = sim;
@@ -1435,14 +1470,20 @@ function showPrompt(p: Prompt) {
   pauseGame();
   ctx.close();
   if (p.k === 'raport')
-    modal.show(reportSheet(p.report), (act) => {
+    modal.show(reportSheet(p.report), (act, _arg, el) => {
       if (act !== 'report-ok') return;
       ackReport(g, input());
       if (dayPace !== null) {
         hold = dayPace;
         dayPace = null;
       }
-      decided();
+      // pierwszy poranek drużyny anonimowej w sieci: kod powrotu raz, zanim gra pójdzie dalej (tylko jedno takie okno,
+      // także gdy serwer nie da kodu; wtedy kod zostaje w Menu)
+      if (siec.pokazacKod()) {
+        siec.kodPokazany();
+        save();
+        void pokazKod(decided, decided, el as HTMLButtonElement);
+      } else decided();
     });
   else if (p.k === 'uchwala')
     modal.show(zCelem(lawSheet(p, words, wordsE), 'uchwala'), (act, arg) => {
@@ -2098,6 +2139,12 @@ function krokSymulacji(s: Sim): void {
   view.beforeStep(s.st);
   s.step();
   osada?.krok(s.st.tick);
+  // liczniki: dzień 2, 3 i 7 (przewinięcie kilku dni naraz daje wszystkie progi po drodze); stan gry tylko czytany
+  const dzien = dayOf(s.st.tick);
+  if (dzien !== dzienGry) {
+    for (const z of progiDni(dzienGry, dzien)) licznik(z);
+    dzienGry = dzien;
+  }
 }
 
 function frame(now: number, dtMs: number) {
@@ -2407,7 +2454,10 @@ function odczytCelow(snap: SimSnapshot): OdczytCelow {
     zapisu, więc przeładowanie strony niczego nie cofa. Woła go okienko celów, linia celu w oknach i `window.zm.cele()`. */
 function widokCelow(snap: SimSnapshot): WidokSciezki {
   const o = odczytCelow(snap);
+  const przed = sciezka.zrobione;
   sciezka = krokSciezki(sciezka, o);
+  // liczniki: tylko cele zaliczone w tym kroku; zapis wczytany z zaliczonymi celami ich nie powtarza
+  for (const z of noweCele(przed, sciezka.zrobione)) licznik(z);
   return widokSciezki(sciezka, o);
 }
 /** Zdarzenie samego interfejsu, które nie zostawia śladu w stanie gry (lista ludzi, karta mieszkańca, karta budynku, ekran
@@ -2705,6 +2755,89 @@ $('zHome').onclick = () => {
   flyTo(((hq.x0 + hq.x1 + 1) / 2) * TILE, ((hq.y0 + hq.y1 + 1) / 2) * TILE + 120, Math.max(1, view.cam.zoom), 700);
 };
 
+/* ---------- kod powrotu i usunięcie drużyny (gra sieciowa, src/ui/siec.ts) ---------- */
+/** Okno z nowym kodem powrotu drużyny. Kod bierze z serwera, więc krótko czeka na odpowiedź (przycisk, którym je wywołano,
+    jest wtedy wyłączony i zmienia napis, a zmiana języka nie rysuje poprzedniego okna od nowa). `ok`: dokąd po „Zapisane”;
+    `zamkniecie`: dokąd po Esc albo kliknięciu obok, które zamykają tylko okno bez kodu (z kodem zamyka je sam przycisk).
+    Gdy serwer nie da kodu, to samo okno mówi czemu, bez ponawiania; kod można wziąć z Menu jeszcze raz. Okno pokazuje się
+    zawsze, bo nowy kod unieważnił poprzedni. */
+async function pokazKod(ok: () => void, zamkniecie: () => void, przycisk: HTMLButtonElement) {
+  sheetAgain = null;
+  przycisk.disabled = true;
+  przycisk.textContent = L('Pobieram kod…', 'Fetching the code…');
+  const kod = await siec.kod();
+  const blad = siec.blad() ?? undefined;
+  const pokaz = () => {
+    sheetAgain = pokaz;
+    modal.show(
+      kodSheet(kod, blad),
+      (act, _arg, el) => {
+        if (act === 'kod-ok') ok();
+        else if (act === 'kod-kopiuj' && kod) void kopiujKodZOkna(kod, el);
+      },
+      zamkniecie,
+    );
+  };
+  pauseGame();
+  ctx.close();
+  pokaz();
+}
+
+/** „Kopiuj” w oknie kodu: do schowka, a gdy schowka brak albo odmawia, kod zostaje zaznaczony (bez błędu na ekranie) */
+async function kopiujKodZOkna(kod: string, przycisk: HTMLElement) {
+  const zaznacz = () => {
+    const pole = modal.find('#kodWartosc');
+    const zaznaczenie = window.getSelection();
+    if (!pole || !zaznaczenie) return;
+    const zakres = document.createRange();
+    zakres.selectNodeContents(pole);
+    zaznaczenie.removeAllRanges();
+    zaznaczenie.addRange(zakres);
+  };
+  const skopiowano = await kopiujKod(kod, navigator.clipboard as Clipboard | undefined, zaznacz);
+  if (!skopiowano) return;
+  przycisk.textContent = L('Skopiowano', 'Copied');
+  setTimeout(() => {
+    if (przycisk.isConnected) przycisk.textContent = L('Kopiuj', 'Copy');
+  }, 2000);
+}
+
+/** Pytanie o usunięcie drużyny anonimowej z serwera (z Menu). `blad`: czemu poprzednia próba się nie udała. „Nie” wraca
+    do Menu, zamknięcie okna do gry. Po usunięciu gra toczy się dalej bez sieci, z jednym komunikatem. */
+function askUsun(blad?: Tx) {
+  sheetAgain = () => askUsun(blad);
+  modal.show(
+    usunSheet(blad),
+    (act) => {
+      if (act === 'usun-nie') showMenu();
+      else if (act === 'usun-tak') void usunDruzyne();
+    },
+    nextPrompt,
+  );
+}
+
+async function usunDruzyne() {
+  sheetAgain = null;
+  for (const a of ['usun-tak', 'usun-nie']) {
+    const b = modal.find<HTMLButtonElement>(`[data-act="${a}"]`);
+    if (b) b.disabled = true;
+  }
+  if (!(await siec.usun())) {
+    askUsun(siec.blad() ?? tx('Nie udało się usunąć drużyny.', 'Could not delete the team.'));
+    return;
+  }
+  modal.close();
+  save();
+  nextPrompt();
+  say(
+    L(
+      'Drużyna usunięta z serwera. Gra toczy się dalej bez sieci.',
+      'The team is deleted from the server. The game carries on offline.',
+    ),
+    9000,
+  );
+}
+
 /* ---------- menu gry (zamiast natywnego confirm) ---------- */
 function showMenu() {
   sheetAgain = showMenu;
@@ -2715,17 +2848,19 @@ function showMenu() {
   const last = readSave();
   const note = last ? `${auto} ${L('Ostatni zapis', 'Last save')}: ${saveLabel(last)}.` : auto;
   // przełącznik języka nad przyciskami Menu
-  const sheet = menuSheet(note);
+  const sheet = menuSheet(note, siec.menuSieci());
   sheet.body = `<div class="menu-lang" data-lang-menu>${przelacznikHtml(jezyk())}</div>${sheet.body}`;
   modal.show(
     sheet,
-    (act) => {
+    (act, _arg, el) => {
       if (act === 'menu-back') {
         modal.close();
         nextPrompt();
       } else if (act === 'menu-help') showHelp();
       else if (act === 'menu-wiki') wiki.otworz(null, true);
       else if (act === 'menu-zwyciestwo') showDrogi();
+      else if (act === 'menu-kod') void pokazKod(showMenu, nextPrompt, el as HTMLButtonElement);
+      else if (act === 'menu-usun') askUsun();
       else if (act === 'menu-start') {
         save();
         location.href = startUrl();

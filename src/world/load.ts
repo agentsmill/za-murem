@@ -1,12 +1,16 @@
 /* Wczytanie osiedla: demo offline z public/demo albo adres (Nominatim → kafelki OpenFreeMap,
    a gdy nie odpowiadają, Overpass). Komunikaty dla gracza (status i błędy) są w bieżącym języku; dane osiedla nie
-   zależą od języka (Nominatim zawsze po polsku, bo z adresu liczy się ziarno i klucz imion). Dema mają też
+   zależą od języka: etykieta adresu zawsze po polsku (Nominatim wprost z accept-language=pl, a przez serwer gry z j=pl,
+   bo z adresu liczy się ziarno i klucz imion). `loadAddress(q, status, api?)` bez `api` pyta tylko Nominatim, z `api`
+   (klient serwera gry, podawany przy włączonej grze sieciowej) najpierw serwer gry, a w razie jego porażki Nominatim
+   (szczegóły w nagłówku src/world/osm.ts). Dema mają też
    sąsiednie kwadraty miasta (loadDemoKwadraty, przy ?kwadraty= i przy ?osada=1).
    Sąsiedni kwadrat prawdziwego adresu (`geoKwadratu`, osada AI, ?osada=1) pobiera się tymi samymi kafelkami z=14 co dom
    (`kafelkiKwadratu`), ale dopiero po starcie gry, w tle i po jednym kwadracie: kafelki wspólne dla kilku kandydatów pobierają się
    i dekodują raz (pamięć jednego ładowania, `PamiecKafelkow`), a błąd pobrania kafelka odrzuca kwadrat i nie jest ponawiany. */
 
 import { L } from '../core/jezyk.ts';
+import type { ApiGry } from '../net/api.ts';
 import type { Geo } from './geo.ts';
 import { geoKwadratu as geoKwadratuZKafelkow } from './geoKwadratu.ts';
 import { kafelkiKwadratu, type Uklad } from './kwadraty.ts';
@@ -91,9 +95,13 @@ export async function demoList(): Promise<DemoInfo[]> {
   return r.ok ? r.json() : [];
 }
 
-export async function loadAddress(q: string, status: (s: string) => void): Promise<Loaded> {
+export async function loadAddress(
+  q: string,
+  status: (s: string) => void,
+  api?: Pick<ApiGry, 'adres'>,
+): Promise<Loaded> {
   status(L('Szukam adresu…', 'Looking up the address…'));
-  const g = await geocode(q);
+  const g = await geocode(q, api);
   const where = g.label.split(',').slice(0, 3).join(',');
   status(L(`Jest: ${where}. Pobieram mapę…`, `Found: ${where}. Downloading the map…`));
   let geo: Geo;

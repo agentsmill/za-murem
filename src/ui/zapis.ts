@@ -13,6 +13,7 @@
 import { L } from '../core/jezyk.ts';
 import { hashString } from '../core/rng.ts';
 import type { GovState } from '../gov/typy.ts';
+import { siecWlaczona } from '../net/flaga.ts';
 import { clockOf, dayOf } from '../sim/clock.ts';
 import type { SimState } from '../sim/sim.ts';
 import { modeOf } from '../sim/tryb.ts';
@@ -38,8 +39,17 @@ export interface Save {
   /** odcisk świata (worldKey): po zmianie generatora stary stan nie pasuje do nowego wnętrza */
   world?: string;
   /** gra sieciowa (src/net/siec.ts, StanSieci): budynki, które nie mogą być siedzibą (świat buduje się z nimi tak
-      samo), czy drużyna ma już dom, konto gry i wersja zapisu w chmurze; brak: gra bez sieci */
-  siec?: { zajete: string[]; dom: boolean; utracony?: string; konto?: string; wersja?: number };
+      samo), czy drużyna ma już dom, konto gry, wersja zapisu w chmurze, czy kod powrotu już się pokazał i czy drużyna
+      została usunięta z serwera (gra bez sieci); brak: gra bez sieci */
+  siec?: {
+    zajete: string[];
+    dom: boolean;
+    utracony?: string;
+    konto?: string;
+    wersja?: number;
+    kodPokazany?: boolean;
+    usunieta?: boolean;
+  };
   /** widok pięter (?pietra=1): świat buduje się z awansowanymi domami; nieobecne przy wyłączonej fladze, więc zapis
       sprzed zmiany i zapis bez flagi są bajt w bajt takie same. O fladze wczytanej gry decyduje to pole, nie adres */
   pietra?: true;
@@ -59,15 +69,16 @@ export const pietraWlaczone = (saved: Pick<Save, 'pietra'> | null, params: URLSe
   saved ? saved.pietra === true : params.get('pietra') === '1';
 
 /** czy gra ma osadę na sąsiednim kwadracie: zapis wygrywa z adresem (wczytana gra zachowuje to, z czym ją zaczęto), nowa gra czyta
-    `?osada=1`. Nowa gra z `?siec=1` (gra z sąsiadami, src/net/gra.ts) osady nie dostaje: etap 2 nie łączy obu rzeczy (zapis do
-    chmury, drużyny na jednym osiedlu), więc flaga `osada` przy `siec` jest na razie wyłączona (`osadaOdrzuconaPrzezSiec`). */
+    `?osada=1`. Nowa gra z włączoną siecią (`siecWlaczona`: `?siec=1` albo VITE_SIEC=1; gra z sąsiadami, src/net/gra.ts) osady nie
+    dostaje: etap 2 nie łączy obu rzeczy (zapis do chmury, drużyny na jednym osiedlu), więc flaga `osada` przy sieci jest na razie
+    wyłączona (`osadaOdrzuconaPrzezSiec`); `?siec=0` przywraca osadę także w budowie z VITE_SIEC=1. */
 export const osadaWlaczona = (saved: Pick<Save, 'osada'> | null, params: URLSearchParams): boolean =>
-  saved ? saved.osada !== undefined : params.get('osada') === '1' && params.get('siec') !== '1';
+  saved ? saved.osada !== undefined : params.get('osada') === '1' && !siecWlaczona(params);
 
-/** czy nowa gra prosi o osadę (`?osada=1`) razem z grą z sąsiadami (`?siec=1`), więc osady nie będzie: o tym gra ostrzega raz
+/** czy nowa gra prosi o osadę (`?osada=1`) razem z włączoną siecią (gra z sąsiadami), więc osady nie będzie: o tym gra ostrzega raz
     w konsoli. Wczytana gra niczego nie odrzuca (ma osadę z zapisu albo nigdy jej nie miała). */
 export const osadaOdrzuconaPrzezSiec = (saved: Pick<Save, 'osada'> | null, params: URLSearchParams): boolean =>
-  !saved && params.get('osada') === '1' && params.get('siec') === '1';
+  !saved && params.get('osada') === '1' && siecWlaczona(params);
 
 /** osady, o których `poleOsady` już ostrzegło: ostrzeżenie jest jedno na grę, bo zapis idzie co godzinę gry, a ten sam błąd wraca z
     każdym */
@@ -99,13 +110,15 @@ export function poleOsady(
 }
 
 /** adres ekranu startowego po „od nowa”: ta sama strona, a z adresu przechodzą tylko parametry, które zmieniają samą grę albo
-    jej język, dopóki są w adresie: `siec=1`, `pietra=1`, `osada=1`, `lancuchy=0` (łańcuchy są domyślnie włączone, więc przenosi się tylko
-    wyłączenie) i `lang=` (jak jest). Reszta (`demo`, `seed`, `godzina`, `cam`, `speed`...) służy zrzutom i próbom jednej gry
-    i nie wraca na ekran startowy. */
+    jej język, dopóki są w adresie: `siec` (tylko gdy odróżnia grę od domyślnej budowy strony: `siec=1` bez VITE_SIEC, `siec=0` z
+    VITE_SIEC=1), `pietra=1`, `osada=1`, `lancuchy=0` (łańcuchy są domyślnie włączone, więc przenosi się tylko wyłączenie) i `lang=`
+    (jak jest). Reszta (`demo`, `seed`, `godzina`, `cam`, `speed`...) służy zrzutom i próbom jednej gry i nie wraca na ekran
+    startowy. */
 export function adresStartowy(pathname: string, search: string): string {
   const params = new URLSearchParams(search);
   const q = new URLSearchParams();
-  if (params.get('siec') === '1') q.set('siec', '1');
+  const siec = siecWlaczona(params);
+  if (siec !== siecWlaczona(new URLSearchParams())) q.set('siec', siec ? '1' : '0');
   if (params.get('pietra') === '1') q.set('pietra', '1');
   if (params.get('osada') === '1') q.set('osada', '1');
   if (params.get('lancuchy') === '0') q.set('lancuchy', '0');

@@ -28,7 +28,13 @@ import { DEMO_ATRAPA, podstawAtrape } from './atrapa-trasa.ts';
 import { kafelkiMapy, openSession, waitIdle, webglRenderer } from './browser.ts';
 import { kotwicaArkusz, kotwicaStylu, kotwicaTlum, kotwicaWysokiBlok } from './kotwica.ts';
 import { decodePng } from './png.ts';
-import { celeShots } from './shots-cele.ts';
+import {
+  celeShots,
+  kliknij,
+  przewin as przewinDoOkna,
+  chopDryTree as sciecieSuchegoDrzewa,
+  zamknijOkna,
+} from './shots-cele.ts';
 import { listaShots } from './shots-lista.ts';
 import { osadaShots } from './shots-osada.ts';
 import { tekstyShots } from './shots-teksty.ts';
@@ -39,6 +45,34 @@ import { wikiShots } from './shots-wiki.ts';
 const KOD = process.argv.includes('--kod');
 const OUT = path.resolve(import.meta.dirname, KOD ? '../shots/kod' : '../shots');
 fs.mkdirSync(OUT, { recursive: true });
+
+/* stałe udawanego serwera gry (fakeApi) i karty startowej z siecią: na górze pliku, bo scenariusze startują już przy ładowaniu modułu */
+/** Kod powrotu, który udawany serwer (fakeApi) uznaje za dobry, i drużyna, do której prowadzi */
+const KOD_UDAWANY = 'ABCD-EFGH-JKLM';
+const JA_NICK = {
+  nick: 'Sasiedzi_z_Lanciego',
+  utworzone: 1,
+  klatki: 0,
+  zapis: false,
+  anonimowe: false,
+  znak: 'Sasiedzi_z_Lanciego',
+  kod: false,
+};
+const JA_DRUZYNA = { nick: null, utworzone: 1, klatki: 0, zapis: false, anonimowe: true, znak: '#7', kod: false };
+
+/** zapis w chmurze tylko do podpisu na karcie startowej („Ursynów, dzień 2”): bez świata, do wczytania się nie nadaje */
+const CHMURA_KARTY = {
+  dane: {
+    v: 1,
+    at: 1,
+    seed: 1,
+    sim: { v: 3, tick: 20000 },
+    gov: { v: 1 },
+    data: { geo: {}, name: 'Ursynów', addr: '', street: '', src: 'mvt' },
+    siec: { zajete: [], dom: true, konto: '#7' },
+  },
+  wersja: 3,
+};
 
 interface Shot {
   name: string;
@@ -11586,19 +11620,30 @@ function kartaShots(): Shot[] {
 }
 
 /** Udawany serwer gry pod /api (page.route): zdrowie, konto, klatki w pamięci, zapis w chmurze. zalogowani: GET
-    /api/konto daje nick; zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był
-    szybszy, start bez domu). */
+    /api/konto daje konto z nickiem; anonimowa: daje drużynę anonimową („#7”); bez obu gracz nie ma sesji, a drużynę
+    zakłada POST /api/druzyna (201, albo 503 z druzyna503), kod KOD_UDAWANY w POST /api/druzyna/powrot wraca do niej;
+    POST /api/druzyna/kod daje KOD_UDAWANY (pierwszy raz 503 z kod503), DELETE /api/konto usuwa drużynę i sesję;
+    zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był szybszy, start bez domu);
+    adres: GET /api/adres odpowiada Lanciego 10G zamiast nie_ma (wtedy gra nie pyta Nominatim). */
 async function fakeApi(
   page: Page,
   o: {
     zalogowani?: boolean;
+    anonimowa?: boolean;
     zajete?: ZajetaKlatka[];
     pierwsze?: 201 | 409;
     chmura?: { dane: unknown; wersja: number };
+    adres?: boolean;
+    /** POST /api/druzyna odpowiada 503 (serwer przeciążony) */
+    druzyna503?: boolean;
+    /** pierwszy POST /api/druzyna/kod odpowiada 503 (kolejne dają KOD_UDAWANY) */
+    kod503?: boolean;
   } = {},
 ) {
   const klatki = [...(o.zajete ?? [])];
   let zajec = 0;
+  let kodow = 0;
+  let sesja: 'nick' | 'druzyna' | null = o.zalogowani ? 'nick' : o.anonimowa ? 'druzyna' : null;
   await page.route('**/api/**', async (r) => {
     const req = r.request();
     const path0 = new URL(req.url()).pathname.replace(/^.*\/api/, '');
@@ -11607,9 +11652,46 @@ async function fakeApi(
       r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (path0 === '/zdrowie') return json(200, { ok: true, gra: 'za-murem', wersja: 1 });
     if (path0 === '/konto' && m === 'GET')
-      return o.zalogowani
-        ? json(200, { nick: 'Sasiedzi_z_Lanciego', utworzone: 1, klatki: 0, zapis: false })
+      return sesja
+        ? json(200, sesja === 'nick' ? JA_NICK : JA_DRUZYNA)
         : json(401, { blad: 'brak_sesji', komunikat: 'Zalogujcie się.' });
+    if (path0 === '/druzyna' && m === 'POST') {
+      if (o.druzyna503)
+        return json(503, { blad: 'serwer_zajety', komunikat: 'Serwer jest przeciążony. Spróbujcie za chwilę.' });
+      sesja = 'druzyna';
+      return json(201, JA_DRUZYNA);
+    }
+    if (path0 === '/druzyna/powrot' && m === 'POST') {
+      const { kod } = req.postDataJSON() as { kod: string };
+      if (kod.replace(/[\s-]/g, '').toUpperCase() !== KOD_UDAWANY.replace(/-/g, ''))
+        return json(401, { blad: 'zly_kod', komunikat: 'Ten kod nie pasuje do żadnej drużyny.' });
+      sesja = 'druzyna';
+      return json(200, JA_DRUZYNA);
+    }
+    if (path0 === '/druzyna/kod' && m === 'POST') {
+      kodow++;
+      if (o.kod503 && kodow === 1)
+        return json(503, { blad: 'serwer_zajety', komunikat: 'Serwer jest przeciążony. Spróbujcie za chwilę.' });
+      return json(200, { kod: KOD_UDAWANY });
+    }
+    if (path0 === '/konto' && m === 'DELETE') {
+      // drużyna anonimowa znika razem z klatkami; sesja kończy się jak po skasowanym ciasteczku
+      sesja = null;
+      for (let i = klatki.length - 1; i >= 0; i--) if (klatki[i].moja) klatki.splice(i, 1);
+      return r.fulfill({ status: 204, body: '' });
+    }
+    if (path0 === '/druzyna/start' && m === 'PUT') return r.fulfill({ status: 204, body: '' });
+    if (path0.startsWith('/adres') && m === 'GET' && o.adres) {
+      const a = ADDRESSES.find((x) => x.key === 'lanciego')!;
+      return json(200, {
+        lat: a.lat,
+        lon: a.lon,
+        label: 'Lanciego 10G, Ursynów Północny, Ursynów, Warszawa',
+        area: 'Ursynów Północny',
+        street: 'Lanciego',
+        city: 'Warszawa',
+      });
+    }
     if (path0 === '/zapis' && m === 'GET')
       return o.chmura
         ? json(200, { dane: o.chmura.dane, wersja: o.chmura.wersja, zmieniony: 1, rozmiar: 1 })
@@ -11627,7 +11709,11 @@ async function fakeApi(
       o.chmura = undefined;
       return r.fulfill({ status: 204, body: '' });
     }
-    if (path0 === '/klatki/moje' && m === 'DELETE') return r.fulfill({ status: 204, body: '' });
+    if (path0 === '/klatki/moje' && m === 'DELETE') {
+      // nowa gra zwalnia klatki tej drużyny (cudze zostają)
+      for (let i = klatki.length - 1; i >= 0; i--) if (klatki[i].moja) klatki.splice(i, 1);
+      return r.fulfill({ status: 204, body: '' });
+    }
     if (path0 === '/klatki' && m === 'GET') return json(200, { klatki });
     if (path0 === '/klatki' && m === 'POST') {
       const k = req.postDataJSON() as Omit<ZajetaKlatka, 'moja'>;
@@ -11684,26 +11770,408 @@ function cudzeKlatkiLanciego(): ZajetaKlatka[] {
 async function startSieci(page: Page, base: string) {
   await offlineNetwork(page);
   await page.goto(`${base}?siec=1&speed=0`);
-  await page.waitForSelector('#siec:not([hidden]) .sc-who');
+  await page.waitForSelector('#siec:not([hidden])');
   await page.fill('#addr', 'Lanciego 10G, Warszawa');
   await page.click('#startForm button[type=submit]');
   await waitIdle(page);
 }
 
-/** zakłada konto w bloku „Gra z sąsiadami” (prawdziwy serwer za proxy Vite) i czeka na zalogowanie */
+/** zakłada konto z nickiem w bloku „Gra z sąsiadami” (odnośnik „logowanie”, prawdziwy serwer za proxy Vite) i czeka na
+    zalogowanie */
 async function zalozKonto(page: Page, nick: string) {
-  await page.waitForSelector('#siec:not([hidden]) #scNick');
+  await page.waitForSelector('#siec:not([hidden]) [data-siec=logowanie]');
+  await page.click('[data-siec=logowanie]');
+  await page.waitForSelector('#scNick');
   await page.fill('#scNick', nick);
   await page.fill('#scHaslo', `${nick}-haslo-123`);
   await page.click('[data-siec=zaloz]');
   await page.waitForSelector('#siec .sc-who');
 }
 
+/** Strona prawna (public/prywatnosc.html albo regulamin.html) w języku z pamięci przeglądarki (jak wybór gracza w grze):
+    widać jedną sekcję językową, nic nie przewija się w bok, miejsca na dane firmy są wyróżnione, przełącznik języka u góry
+    zamienia sekcje w obie strony, a odnośniki do gry i do drugiej strony prowadzą we właściwe miejsce. Zrzut całej strony
+    <nazwa>-pelna (komputer albo telefon); zrzut końcowy scenariusza to pierwszy ekran. */
+async function stronaPrawna(
+  page: Page,
+  base: string,
+  strona: 'prywatnosc' | 'regulamin',
+  j: 'pl' | 'en',
+  telefon: boolean,
+): Promise<void> {
+  const nazwa = `${strona}${telefon ? '-telefon' : ''}-${j}`;
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  const drugi = j === 'pl' ? 'en' : 'pl';
+  await page.goto(`${base}${strona}.html`);
+  await page.waitForSelector(`#${j} h1`, { state: 'visible' });
+  await page.evaluate(() => document.fonts.ready);
+  const widoczna = (id: string) =>
+    page.evaluate((x) => getComputedStyle(document.getElementById(x)!).display !== 'none', id);
+  wymagaj((await widoczna(j)) && !(await widoczna(drugi)), 'widać więcej niż jedną sekcję językową');
+  const bokiem = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+  wymagaj(!(await bokiem()), 'strona przewija się w bok');
+  const luki = await page.$$eval(`#${j} mark`, (e) => e.map((m) => m.textContent ?? ''));
+  for (const m of ['[NAZWA FIRMY]', '[ADRES]', '[NIP]', '[E-MAIL DO SPRAW DANYCH]'])
+    wymagaj(luki.includes(m), `brak wyróżnionego miejsca ${m}`);
+  const wysokosc = await page.evaluate(() => document.documentElement.scrollHeight);
+  console.log(`  ${nazwa}: ${luki.length} miejsc do uzupełnienia, strona ${wysokosc} px wysokości`);
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-pelna.png`), fullPage: true });
+  // przełącznik języka u góry sekcji: druga sekcja i z powrotem
+  await page.click(`#${j} .jezyk a`);
+  await page.waitForSelector(`#${drugi} h1`, { state: 'visible' });
+  wymagaj(!(await widoczna(j)) && (await widoczna(drugi)), 'przełącznik nie zamienił sekcji');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-drugi-jezyk.png`) });
+  await page.click(`#${drugi} .jezyk a`);
+  await page.waitForSelector(`#${j} h1`, { state: 'visible' });
+  wymagaj((await widoczna(j)) && !(await widoczna(drugi)), 'przełącznik nie wrócił');
+  // odnośnik do drugiej strony prawnej w tym samym języku i do gry
+  const inna = strona === 'prywatnosc' ? 'regulamin' : 'prywatnosc';
+  wymagaj(!!(await page.$(`#${j} a[href="${inna}.html#${j}"]`)), `brak odnośnika do ${inna}.html#${j}`);
+  wymagaj(!!(await page.$(`#${j} a[href="./"]`)), 'brak odnośnika do gry');
+}
+
+/** Stopka karty startowej mówi, dokąd idzie adres: z siecią i odpowiadającym serwerem (udawane API) przez serwer gry do
+    Nominatim i Photona, z odnośnikiem do prywatności; bez sieci i z siecią, ale bez odpowiedzi serwera, wprost do Nominatim.
+    Atrybucja map zostaje w obu wersjach, a przełączenie języka nie cofa wersji z serwerem. Zrzut karty <nazwa>. */
+async function stopkaKarty(
+  page: Page,
+  base: string,
+  tryb: 'siec' | 'bez-sieci' | 'brak-serwera',
+  j: 'pl' | 'en',
+  nazwa: string,
+): Promise<void> {
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  if (tryb === 'siec') await fakeApi(page, {});
+  if (tryb === 'brak-serwera') await page.route('**/api/**', (r) => r.abort());
+  await page.goto(tryb === 'bez-sieci' ? base : `${base}?siec=1`);
+  const stopka = () => page.$eval('.start-card > p.fine', (e) => e.textContent ?? '');
+  const przezSerwer = { pl: /Adres trafia do serwera gry/, en: /Your address goes to the game server/ };
+  const wprost = {
+    pl: /Adres trafia do wyszukiwarki OpenStreetMap \(Nominatim\), mapę/,
+    en: /search \(Nominatim\), and the map/,
+  };
+  if (tryb === 'siec') {
+    await page.waitForSelector('#siec:not([hidden])');
+    await page.waitForFunction(
+      (re) => new RegExp(re).test(document.querySelector('.start-card > p.fine')?.textContent ?? ''),
+      przezSerwer[j].source,
+    );
+    wymagaj(/Photon/.test(await stopka()), 'stopka z serwerem bez Photona');
+    wymagaj(
+      !!(await page.$('.start-card > p.fine a[href^="prywatnosc.html"]')),
+      'stopka z serwerem bez odnośnika do prywatności',
+    );
+    // zmiana języka zostawia wersję z serwerem
+    const drugi = j === 'pl' ? 'en' : 'pl';
+    await page.click(`#langStart [data-lang="${drugi}"]`);
+    wymagaj(przezSerwer[drugi].test(await stopka()), 'po zmianie języka stopka wróciła do wersji bez serwera');
+    await page.click(`#langStart [data-lang="${j}"]`);
+    wymagaj(przezSerwer[j].test(await stopka()), 'po powrocie języka stopka bez serwera');
+  } else {
+    await page.waitForTimeout(1000);
+    wymagaj(wprost[j].test(await stopka()), `stopka nie mówi o wprost do Nominatim: ${await stopka()}`);
+    wymagaj(!/Photon/.test(await stopka()), 'stopka bez serwera wspomina Photona');
+    wymagaj((await page.$('#siec:not([hidden])')) === null, 'blok sieci widać bez serwera');
+  }
+  const t = await page.$eval('.start-card > p.fine', (e) => e.innerHTML);
+  for (const a of ['openstreetmap.org/copyright', 'openfreemap.org', 'openmaptiles.org', 'LICENCJE.md'])
+    wymagaj(t.includes(a), `stopka bez atrybucji ${a}`);
+  console.log(`  ${nazwa}: ${await stopka()}`);
+  await page.locator('.start-card').screenshot({ path: path.join(OUT, `${nazwa}-karta.png`) });
+}
+
+/** Odnośniki do prywatności i regulaminu w bloku „Gra z sąsiadami” (`.sc-links`): oba są, otwierają się w nowej karcie, a
+    kotwica to język gry (#pl albo #en, bo strony prawne mają dwie sekcje językowe); wiersz mieści się w karcie. */
+async function odnosnikiPrawneBloku(page: Page, korzen: string, j: 'pl' | 'en', gdzie: string): Promise<void> {
+  for (const strona of ['prywatnosc', 'regulamin']) {
+    const a = await page.$(`${korzen} .sc-links a[href^="${strona}.html"][target="_blank"]`);
+    if (!a) throw new Error(`${gdzie}: brak odnośnika do ${strona} w .sc-links`);
+    const href = await a.getAttribute('href');
+    if (href !== `${strona}.html#${j}`)
+      throw new Error(`${gdzie}: odnośnik ${strona} ma ${href} zamiast ${strona}.html#${j}`);
+  }
+  const wiersz = await page.$eval(`${korzen} .sc-links`, (e) => {
+    const r = e.getBoundingClientRect();
+    const k = e.closest('.start-card')?.getBoundingClientRect();
+    return {
+      l: r.left,
+      r: r.right,
+      kl: k?.left ?? 0,
+      kr: k?.right ?? innerWidth,
+      przewija: e.scrollWidth > e.clientWidth + 1,
+    };
+  });
+  if (wiersz.l < wiersz.kl - 1 || wiersz.r > wiersz.kr + 1 || wiersz.przewija)
+    throw new Error(`${gdzie}: wiersz .sc-links wystaje z karty (${JSON.stringify(wiersz)})`);
+}
+
+/** Karta startowa z blokiem drużyny bez sesji: czysta (bez pól nicku i hasła, z kodem powrotu, odnośnikiem do dawnego
+    logowania i do prywatności), „logowanie” pokazuje dawny formularz, „wróć” go chowa, zły kod daje komunikat z
+    serwera, dobry loguje do drużyny z zapisem w chmurze. Zrzuty pośrednie <nazwa>-czysta i <nazwa>-logowanie, końcowy
+    <nazwa> (po kodzie powrotu). Telefon: formularz adresu mieści się na pierwszym ekranie, nic nie przewija się w bok. */
+async function kartaDruzyny(page: Page, base: string, nazwa: string, telefon: boolean, j: 'pl' | 'en') {
+  await fakeApi(page, { chmura: CHMURA_KARTY });
+  await page.goto(`${base}?siec=1`);
+  await page.waitForSelector('#siec:not([hidden]) #scKod');
+  const tekst = () => page.$eval('#siec', (e) => e.textContent ?? '');
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(co);
+  };
+  wymagaj(!(await page.$('#scNick, #scHaslo, input[type=password]')), 'blok drużyny ma pola nicku albo hasła');
+  await odnosnikiPrawneBloku(page, '#siec', j, 'blok drużyny');
+  wymagaj(!(await tekst()).match(/próba|beta/i), 'nagłówek bloku z dopiskiem „próba”');
+  if (telefon) {
+    const dol = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
+    wymagaj(dol <= 844, `formularz adresu poza pierwszym ekranem telefonu (${Math.round(dol)} px)`);
+  }
+  const bokiem = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+  wymagaj(!(await bokiem()), 'karta startowa przewija się w bok');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-czysta.png`), fullPage: true });
+  // dawne logowanie nickiem za odnośnikiem
+  await page.click('[data-siec=logowanie]');
+  await page.waitForSelector('#scNick');
+  wymagaj(!(await page.$('#scKod')), 'kod powrotu został w formularzu logowania');
+  wymagaj(!(await bokiem()), 'formularz logowania przewija kartę w bok');
+  await odnosnikiPrawneBloku(page, '#siec', j, 'formularz logowania');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-logowanie.png`), fullPage: true });
+  await page.click('[data-siec=wroc]');
+  await page.waitForSelector('#scKod');
+  wymagaj(!(await page.$('#scNick')), 'formularz logowania po „wróć”');
+  // zły kod: komunikat, kod zostaje w polu
+  await page.fill('#scKod', 'ZZZZ-ZZZZ-ZZZZ');
+  await page.click('[data-siec=powrot]');
+  await page.waitForSelector('#siec .sc-msg');
+  wymagaj((await page.inputValue('#scKod')) === 'ZZZZ-ZZZZ-ZZZZ', 'zły kod zniknął z pola');
+  // dobry kod: drużyna i zapis z chmury
+  await page.fill('#scKod', KOD_UDAWANY.toLowerCase());
+  await page.click('[data-siec=powrot]');
+  await page.waitForSelector('#siec .sc-who');
+  const po = await tekst();
+  console.log(`  po kodzie: ${po.replace(/\s+/g, ' ').slice(0, 200)}`);
+  wymagaj(po.includes('#7'), 'blok po kodzie nie pokazuje drużyny');
+  wymagaj(!!(await page.$('[data-siec=chmura]')), 'brak przycisku „Kontynuuj z chmury”');
+  wymagaj(!!(await page.$('#scKod')), 'brak pola kodu po powrocie');
+  wymagaj(!(await page.$('[data-siec=wyloguj]')), 'wylogowanie przy drużynie anonimowej');
+  wymagaj(!(await bokiem()), 'karta po powrocie do drużyny przewija się w bok');
+}
+
+/** Okno nad grą mieści się w widoku (bez przewijania strony w bok), a atrybucja map jest widoczna, w widoku i poza oknem. */
+async function oknoWidoku(page: Page, opis: string): Promise<void> {
+  const g = await page.evaluate(() => {
+    const s = document.getElementById('sheet')!.getBoundingClientRect();
+    const a = document.querySelector<HTMLElement>('#app .attrib');
+    const r = a?.getBoundingClientRect();
+    return {
+      okno: [s.left, s.top, s.right, s.bottom].map(Math.round),
+      widok: [innerWidth, innerHeight],
+      atr: r ? [r.left, r.top, r.right, r.bottom].map(Math.round) : null,
+      atrTekst: a?.textContent ?? '',
+      bok: document.documentElement.scrollWidth > innerWidth + 1,
+    };
+  });
+  const bledy: string[] = [];
+  const [l, t, r, b] = g.okno;
+  if (l < 0 || t < 0 || r > g.widok[0] + 1 || b > g.widok[1] + 1) bledy.push('okno wystaje poza ekran');
+  if (g.bok) bledy.push('strona przewija się w bok');
+  if (!g.atr) bledy.push('brak atrybucji map');
+  else {
+    const [al, at, ar, ab] = g.atr;
+    if (ar <= al || ab <= at || ab > g.widok[1] + 1 || ar > g.widok[0] + 1) bledy.push('atrybucja poza widokiem');
+    if (!(ar <= l || al >= r || ab <= t || at >= b)) bledy.push('atrybucja pod oknem');
+    if (!/OpenStreetMap/.test(g.atrTekst) || !/OpenFreeMap/.test(g.atrTekst) || !/OpenMapTiles/.test(g.atrTekst))
+      bledy.push('atrybucja bez trzech źródeł');
+  }
+  console.log(
+    `  ${opis}: okno ${g.okno.join(',')} w widoku ${g.widok.join('×')}, atrybucja ${g.atr?.join(',') ?? '-'}`,
+  );
+  if (bledy.length) throw new Error(`${opis}: ${bledy.join('; ')} ${JSON.stringify(g)}`);
+}
+
+/** Menu gry sieciowej drużyny anonimowej: przyciski kodu powrotu i usunięcia, okno kodu (kopiowanie), pytanie o
+    usunięcie („Nie” wraca do Menu), usunięcie (gra toczy się dalej bez sieci, jeden komunikat, zapis nie idzie do chmury,
+    Menu bez przycisków sieci). Zrzuty pośrednie <nazwa>-menu, -kod, -usun; końcowy <nazwa> to Menu po usunięciu. */
+async function kodWMenu(page: Page, base: string, nazwa: string, j: 'pl' | 'en'): Promise<void> {
+  await fakeApi(page, { adres: true });
+  const zapytania: string[] = [];
+  page.on('request', (q) => {
+    const u = new URL(q.url());
+    if (u.pathname.startsWith('/api/') && q.method() !== 'GET') zapytania.push(`${q.method()} ${u.pathname}`);
+  });
+  await startSieci(page, base);
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  const ile = (z: string) => zapytania.filter((x) => x === z).length;
+  await page.click('#btnMenu');
+  await page.waitForSelector('#modal:not([hidden]) [data-act="menu-kod"]');
+  wymagaj(!!(await page.$('[data-act="menu-usun"]')), 'Menu drużyny anonimowej bez usunięcia');
+  wymagaj(
+    !!(await page.$('#modal a[href^="prywatnosc.html"][target="_blank"]')) &&
+      !!(await page.$('#modal a[href^="regulamin.html"][target="_blank"]')),
+    'Menu gry sieciowej bez odnośników do prywatności i regulaminu',
+  );
+  // kotwica odnośników to język gry (strony prawne mają dwie sekcje językowe)
+  for (const strona of ['prywatnosc', 'regulamin']) {
+    const href = await page.$eval(`#modal a[href^="${strona}.html"]`, (e) => e.getAttribute('href'));
+    wymagaj(href === `${strona}.html#${j}`, `odnośnik ${strona} w Menu ma kotwicę ${href} zamiast #${j}`);
+  }
+  await oknoWidoku(page, 'Menu');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-menu.png`) });
+  // okno z kodem: nowy kod z serwera, kopiowanie (schowek albo zaznaczenie), „Zapisane” wraca do Menu
+  await page.click('[data-act="menu-kod"]');
+  await page.waitForSelector('#kodWartosc');
+  wymagaj((await page.$eval('#kodWartosc', (e) => e.textContent)) === KOD_UDAWANY, 'kod z serwera nie widać w oknie');
+  wymagaj(ile('POST /api/druzyna/kod') === 1, 'kod nie raz z serwera');
+  await oknoWidoku(page, 'Kod');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-kod.png`) });
+  await page.click('[data-act="kod-kopiuj"]');
+  await page.waitForFunction((kod) => {
+    const przycisk = document.querySelector('[data-act="kod-kopiuj"]')?.textContent ?? '';
+    return /Skopiowano|Copied/.test(przycisk) || window.getSelection()?.toString().trim() === kod;
+  }, KOD_UDAWANY);
+  const sposob = await page.$eval('[data-act="kod-kopiuj"]', (e) =>
+    /Skopiowano|Copied/.test(e.textContent ?? '') ? 'schowek' : 'zaznaczenie',
+  );
+  console.log(`  kopiowanie: ${sposob}`);
+  await page.click('[data-act="kod-ok"]');
+  await page.waitForSelector('[data-act="menu-usun"]');
+  // pytanie o usunięcie: „Nie” wraca do Menu, nic nie poszło do serwera
+  await page.click('[data-act="menu-usun"]');
+  await page.waitForSelector('[data-act="usun-tak"]');
+  await oknoWidoku(page, 'Usunięcie');
+  await page.screenshot({ path: path.join(OUT, `${nazwa}-usun.png`) });
+  await page.click('[data-act="usun-nie"]');
+  await page.waitForSelector('[data-act="menu-usun"]');
+  wymagaj(ile('DELETE /api/konto') === 0, 'drużyna usunięta mimo „Nie”');
+  await page.click('[data-act="menu-usun"]');
+  await page.click('[data-act="usun-tak"]');
+  await page.waitForFunction(() => document.getElementById('modal')!.hidden);
+  wymagaj(ile('DELETE /api/konto') === 1, 'usunięcie nie raz');
+  const s = await page.evaluate(() => window.zm!.siec());
+  console.log(`  po usunięciu: ${JSON.stringify(s.stan)}, zalogowani ${s.zalogowani}, bez sieci ${s.bezSieci}`);
+  wymagaj(s.bezSieci && !s.zalogowani && s.stan?.usunieta === true, 'gra nie przeszła na tryb bez sieci');
+  await page.waitForFunction(() =>
+    /Drużyna usunięta z serwera|The team is deleted from the server/.test(
+      document.getElementById('hint')?.textContent ?? '',
+    ),
+  );
+  // zapis gry idzie już tylko do przeglądarki; zapytań do serwera nie przybywa
+  const przed = zapytania.length;
+  await page.evaluate(() => window.zm!.save());
+  await page.waitForTimeout(300);
+  wymagaj(zapytania.length === przed, `po usunięciu poszły zapytania: ${zapytania.slice(przed).join(', ')}`);
+  const zapis = await page.evaluate(() => {
+    const klucz = Object.keys(localStorage).find((k) => /za-murem.*(zapis|save)/i.test(k));
+    const s = klucz ? JSON.parse(localStorage.getItem(klucz) ?? 'null') : null;
+    return { klucz, siec: s?.siec ?? null };
+  });
+  console.log(`  zapis w przeglądarce (${zapis.klucz}): ${JSON.stringify(zapis.siec)}`);
+  wymagaj(zapis.siec?.usunieta === true, 'zapis w przeglądarce bez znacznika usuniętej drużyny');
+  // Menu po usunięciu: bez przycisków sieci
+  await page.click('#btnMenu');
+  await page.waitForSelector('#modal:not([hidden]) [data-act="menu-start"]');
+  wymagaj(!(await page.$('[data-act="menu-kod"], [data-act="menu-usun"]')), 'Menu po usunięciu ma przyciski sieci');
+  wymagaj(
+    !(await page.$('#modal a[href^="prywatnosc.html"], #modal a[href^="regulamin.html"]')),
+    'Menu po usunięciu ma odnośniki sieci',
+  );
+  await oknoWidoku(page, 'Menu po usunięciu');
+}
+
+/** Pierwszy poranny raport drużyny anonimowej w sieci: po „OK” raportu okno z kodem raz (stan sieci w zapisie), po drugiej
+    nocy już nie. Z kod503 pierwszy kod nie przychodzi: okno z powodem raz, bez ponawiania, a kod bierze się z Menu. */
+async function kodPoRaporcie(page: Page, base: string, nazwa: string, kod503: boolean): Promise<void> {
+  await fakeApi(page, { adres: true, kod503 });
+  const kody: string[] = [];
+  page.on('request', (q) => {
+    if (q.method() === 'POST' && q.url().endsWith('/api/druzyna/kod')) kody.push(q.url());
+  });
+  await startSieci(page, base);
+  const wymagaj = (ok: boolean, co: string) => {
+    if (!ok) throw new Error(`${nazwa}: ${co}`);
+  };
+  const raport = async (pierwszy: boolean) => {
+    if (pierwszy) await sciecieSuchegoDrzewa(page);
+    const o = await przewinDoOkna(page, () => false, { dotyk: false, stop: ['raport'] });
+    wymagaj(o === 'raport', `bez porannego raportu (${o})`);
+    await kliknij(page, '#sheet [data-act="report-ok"]', false);
+  };
+  await raport(true);
+  if (kod503) {
+    await page.waitForSelector('#sheet .kod-blad');
+    wymagaj(!(await page.$('#kodWartosc')), 'kod mimo błędu serwera');
+    wymagaj(!(await page.$('[data-act="kod-kopiuj"]')), 'kopiowanie bez kodu');
+    await oknoWidoku(page, 'Błąd kodu');
+    await page.screenshot({ path: path.join(OUT, `${nazwa}-blad.png`) });
+  } else {
+    await page.waitForSelector('#kodWartosc');
+    wymagaj((await page.$eval('#kodWartosc', (e) => e.textContent)) === KOD_UDAWANY, 'kod z serwera nie widać w oknie');
+    await oknoWidoku(page, 'Kod po raporcie');
+    await page.screenshot({ path: path.join(OUT, `${nazwa}-kod.png`) });
+  }
+  wymagaj(kody.length === 1, `kod z serwera ${kody.length} razy po raporcie`);
+  wymagaj((await page.evaluate(() => window.zm!.siec())).stan?.kodPokazany === true, 'kodPokazany nie w stanie sieci');
+  await page.click('[data-act="kod-ok"]');
+  await page.waitForFunction(() => !document.querySelector('#kodWartosc, .kod-blad'));
+  await zamknijOkna(page, false);
+  // kod w Menu: po błędzie serwera ten sam przycisk daje już kod
+  if (kod503) {
+    await page.click('#btnMenu');
+    await page.waitForSelector('[data-act="menu-kod"]');
+    await page.click('[data-act="menu-kod"]');
+    await page.waitForSelector('#kodWartosc');
+    wymagaj(kody.length === 2, `drugi kod z Menu (${kody.length})`);
+    await page.click('[data-act="kod-ok"]');
+    await page.waitForSelector('[data-act="menu-back"]');
+    await page.click('[data-act="menu-back"]');
+    await zamknijOkna(page, false);
+  }
+  // druga noc i drugi raport: okna z kodem nie ma
+  const ileKodow = kody.length;
+  await raport(false);
+  await page.waitForTimeout(600);
+  wymagaj(!(await page.$('#kodWartosc, .kod-blad')), 'kod po drugim raporcie');
+  wymagaj(kody.length === ileKodow, 'drugi poranek pytał serwer o kod');
+}
+
 function siecShots(): Shot[] {
   return [
+    ...[
+      { nazwa: 'siec-kod', lang: 'pl', telefon: false },
+      { nazwa: 'siec-kod-telefon', lang: 'pl', telefon: true },
+      { nazwa: 'siec-kod-en', lang: 'en', telefon: false },
+      { nazwa: 'siec-kod-telefon-en', lang: 'en', telefon: true },
+    ].map(
+      ({ nazwa, lang, telefon }): Shot => ({
+        // Menu gry sieciowej, okno kodu powrotu i usunięcie drużyny (komputer i telefon 390×844, po polsku i po angielsku)
+        name: nazwa,
+        query: '',
+        lang: lang as 'pl' | 'en',
+        ...(telefon ? { w: 390, h: 844 } : {}),
+        run: (page, base) => kodWMenu(page, base, nazwa, lang as 'pl' | 'en'),
+      }),
+    ),
     {
-      // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza zajmuje
-      // klatkę pod adresem, druga z tym samym adresem zaczyna bez domu, a w bazie są obie drużyny bez adresu
+      // kod powrotu raz po pierwszym porannym raporcie; po drugiej nocy już nie
+      name: 'siec-kod-raport',
+      query: '',
+      run: (page, base) => kodPoRaporcie(page, base, 'siec-kod-raport', false),
+    },
+    {
+      // serwer nie daje kodu po raporcie: okno z powodem raz, kod dalej w Menu
+      name: 'siec-kod-raport-503',
+      query: '',
+      run: (page, base) => kodPoRaporcie(page, base, 'siec-kod-raport-503', true),
+    },
+    {
+      // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza (konto
+      // z nickiem, dawną drogą przez odnośnik „logowanie”) zajmuje klatkę pod adresem, druga (drużyna anonimowa założona
+      // przy pierwszej grze, w przeglądarce bez ciasteczka, bez żadnego formularza) z tym samym adresem zaczyna bez domu,
+      // a w bazie są obie bez adresu
       name: 'siec-dwie-druzyny',
       query: '',
       run: async (page, base) => {
@@ -11728,11 +12196,11 @@ function siecShots(): Shot[] {
           const a = await page.evaluate(() => window.zm!.siec());
           console.log(`  pierwsza drużyna: ${JSON.stringify(a.stan)}`);
           if (!a.stan?.dom) throw new Error('pierwsza drużyna nie dostała klatki pod adresem');
-          // druga drużyna w tej samej przeglądarce: wylogowanie, nowe konto, ten sam adres
+          // druga drużyna: inna przeglądarka (bez ciasteczka sesji), zwykła karta startowa bez pól nicku i hasła, ten sam adres
+          await page.context().clearCookies();
           await page.goto(`${base}?siec=1&speed=0`);
-          await page.waitForSelector('#siec:not([hidden]) .sc-who');
-          await page.click('[data-siec=wyloguj]');
-          await zalozKonto(page, 'Drudzy');
+          await page.waitForSelector('#siec:not([hidden]) #scKod');
+          if (await page.$('#scNick, #scHaslo')) throw new Error('karta startowa ma pola nicku albo hasła');
           await page.fill('#addr', 'Lanciego 10G, Warszawa');
           await page.click('#startForm button[type=submit]');
           await waitIdle(page);
@@ -11740,11 +12208,14 @@ function siecShots(): Shot[] {
           console.log(`  druga drużyna: ${JSON.stringify(b.stan)}, znaczniki ${b.znaczniki.join(' ')}`);
           if (b.stan?.dom !== false || !b.znaczniki.includes('obca') || !b.znaczniki.includes('cel'))
             throw new Error('druga drużyna nie zaczęła bez domu przy zajętej klatce');
+          if (!/^#\d+$/.test(b.stan?.konto ?? '')) throw new Error(`druga drużyna bez znaku „#<id>”: ${b.stan?.konto}`);
           const wiersze = gra.baza.db.prepare('SELECT konto, siedziba FROM klatki').all();
           const konta = gra.baza.db.prepare('SELECT * FROM konta').all() as Record<string, unknown>[];
           console.log(
-            `  w bazie: ${konta.length} konta, ${wiersze.length} klatka; kolumny konta: ${Object.keys(konta[0]).join(', ')}`,
+            `  w bazie: ${konta.length} konta (anonimowe: ${konta.filter((k) => k.anonimowe === 1).length}), ${wiersze.length} klatka; kolumny konta: ${Object.keys(konta[0]).join(', ')}`,
           );
+          if (konta.length !== 2 || konta.filter((k) => k.anonimowe === 1).length !== 1)
+            throw new Error('w bazie powinno być konto z nickiem i jedna drużyna anonimowa');
           if (wiersze.length !== 1) throw new Error('w bazie powinna być jedna zajęta klatka');
           await page.evaluate(() => {
             const zm = window.zm!;
@@ -11765,7 +12236,8 @@ function siecShots(): Shot[] {
       },
     },
     {
-      // blok „Gra z sąsiadami” tylko z ?siec=1 i przy działającym serwerze; niezalogowani widzą formularz i notkę
+      // blok „Gra z sąsiadami” tylko przy włączonej sieci i działającym serwerze; bez sesji widać blok drużyny (kod powrotu,
+      // notka o koncie bez e-maila i hasła), bez pól nicku i hasła
       name: 'siec-start',
       query: '',
       run: async (page, base) => {
@@ -11775,9 +12247,10 @@ function siecShots(): Shot[] {
         await page.waitForSelector('#demos button');
         if (!(await page.$eval('#siec', (e) => (e as HTMLElement).hidden))) throw new Error('blok sieci bez ?siec=1');
         await page.goto(`${base}?siec=1`);
-        await page.waitForSelector('#siec:not([hidden]) #scNick');
+        await page.waitForSelector('#siec:not([hidden]) #scKod');
         const note = await page.$eval('#siec', (e) => e.textContent ?? '');
-        if (!note.includes('bez e-maila')) throw new Error('brak notki o koncie bez e-maila');
+        if (!note.includes('nie ma e-maila ani hasła')) throw new Error('brak notki o koncie bez e-maila i hasła');
+        if (await page.$('#scNick, #scHaslo')) throw new Error('blok drużyny ma pola nicku albo hasła');
         // blok sieci spycha atrybucję mapy i link do danych mieszkańców niżej, ale oba zostają na karcie
         await atrybucjaStartu(page);
       },
@@ -11794,6 +12267,120 @@ function siecShots(): Shot[] {
         const bottom = await page.$eval('#startForm', (f) => f.getBoundingClientRect().bottom);
         console.log(`  formularz kończy się na ${Math.round(bottom)} px z 844`);
         if (bottom > 844) throw new Error('formularz adresu poza pierwszym ekranem telefonu');
+      },
+    },
+    // karta startowa z blokiem drużyny, cztery razy: komputer i telefon, po polsku i po angielsku (zrzuty
+    // <nazwa>-czysta, <nazwa>-logowanie i <nazwa> z drużyną po kodzie powrotu)
+    {
+      name: 'siec-druzyna',
+      query: '',
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna', false, 'pl'),
+    },
+    {
+      name: 'siec-druzyna-telefon',
+      query: '',
+      w: 390,
+      h: 844,
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon', true, 'pl'),
+    },
+    {
+      name: 'siec-druzyna-en',
+      query: '',
+      lang: 'en',
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-en', false, 'en'),
+    },
+    {
+      name: 'siec-druzyna-telefon-en',
+      query: '',
+      lang: 'en',
+      w: 390,
+      h: 844,
+      run: (page, base) => kartaDruzyny(page, base, 'siec-druzyna-telefon-en', true, 'en'),
+    },
+    // strony prawne (zadanie 12): informacja o danych osobowych i regulamin, komputer i telefon, po polsku i po angielsku
+    ...(['prywatnosc', 'regulamin'] as const).flatMap((strona) =>
+      (['pl', 'en'] as const).flatMap((j) =>
+        [false, true].map(
+          (telefon): Shot => ({
+            name: `${strona}${telefon ? '-telefon' : ''}-${j}`,
+            query: '',
+            lang: j,
+            ...(telefon ? { w: 390, h: 844 } : {}),
+            run: (page, base) => stronaPrawna(page, base, strona, j, telefon),
+          }),
+        ),
+      ),
+    ),
+    // stopka karty startowej: adres przez serwer gry (sieć włączona, serwer odpowiada) albo wprost do Nominatim
+    ...(
+      [
+        ['siec', 'pl'],
+        ['siec', 'en'],
+        ['bez-sieci', 'pl'],
+        ['bez-sieci', 'en'],
+        ['brak-serwera', 'pl'],
+      ] as const
+    ).map(
+      ([tryb, j]): Shot => ({
+        name: `stopka-${tryb}${j === 'en' ? '-en' : ''}`,
+        query: '',
+        lang: j,
+        run: (page, base) => stopkaKarty(page, base, tryb, j, `stopka-${tryb}${j === 'en' ? '-en' : ''}`),
+      }),
+    ),
+    {
+      // nowa gra bez sesji: drużyna powstaje raz, przy pierwszej grze, adres idzie przez serwer gry (nie do Nominatim),
+      // start w sieci z punktem startu; druga gra w tej samej przeglądarce nie zakłada drugiej drużyny
+      name: 'siec-druzyna-start',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { adres: true });
+        const zapytania: string[] = [];
+        page.on('request', (q) => {
+          const u = new URL(q.url());
+          if (u.hostname === 'nominatim.openstreetmap.org') zapytania.push(`${q.method()} nominatim${u.pathname}`);
+          else if (/\/api\/(druzyna|adres)/.test(u.pathname)) zapytania.push(`${q.method()} ${u.pathname}`);
+        });
+        await startSieci(page, base);
+        const s = await page.evaluate(() => window.zm!.siec());
+        console.log(`  stan ${JSON.stringify(s.stan)}, zapytania ${zapytania.join(', ')}`);
+        if (s.stan?.konto !== '#7' || !s.stan.dom) throw new Error('nowa gra bez sesji nie dostała drużyny i klatki');
+        if (zapytania.filter((z) => z === 'POST /api/druzyna').length !== 1) throw new Error('drużyna nie raz');
+        if (!zapytania.some((z) => z.startsWith('GET') && z.includes('/adres')))
+          throw new Error('adres nie przez serwer');
+        if (zapytania.some((z) => z.includes('nominatim'))) throw new Error('adres poszedł do Nominatim mimo serwera');
+        // druga gra: karta pokazuje drużynę z sesji, a start nie zakłada nowej
+        await page.goto(`${base}?siec=1&speed=0`);
+        await page.waitForSelector('#siec:not([hidden]) .sc-who');
+        const kto = await page.$eval('#siec .sc-who', (e) => e.textContent ?? '');
+        if (!kto.includes('drużyna #7')) throw new Error(`blok nie pokazuje drużyny: ${kto}`);
+        await page.fill('#addr', 'Lanciego 10G, Warszawa');
+        await page.click('#startForm button[type=submit]');
+        await waitIdle(page);
+        if (zapytania.filter((z) => z === 'POST /api/druzyna').length !== 1)
+          throw new Error('druga gra założyła drugą drużynę');
+      },
+    },
+    {
+      // serwer odpowiada na zakładanie drużyny 503: gra bez sieci z jednym komunikatem i jednym zapytaniem
+      name: 'siec-druzyna-503',
+      query: '',
+      run: async (page, base) => {
+        await fakeApi(page, { adres: true, druzyna503: true });
+        const posty: string[] = [];
+        page.on('request', (q) => {
+          if (q.method() === 'POST' && q.url().endsWith('/api/druzyna')) posty.push(q.url());
+        });
+        await startSieci(page, base);
+        const s = await page.evaluate(() => window.zm!.siec());
+        if (s.stan !== null || s.zalogowani) throw new Error('gra ruszyła w sieci mimo 503');
+        await page.waitForFunction(() => /Gramy bez sieci/.test(document.getElementById('hint')?.textContent ?? ''));
+        const kom = await page.$eval('#hint', (e) => e.textContent ?? '');
+        console.log(`  komunikat: ${kom}; zapytań o drużynę: ${posty.length}`);
+        if (posty.length !== 1) throw new Error('drużyna zakładana więcej niż raz');
+        const bledy = await page.$$eval('#startStatus', (l) => l.map((e) => e.textContent ?? ''));
+        if (bledy.some((t) => /Coś poszło nie tak|Something went wrong/.test(t)))
+          throw new Error('błąd na ekranie startu');
       },
     },
     {

@@ -1,0 +1,167 @@
+<!doctype html>
+<!-- SZKIC regulaminu: do sprawdzenia i zatwierdzenia przez administratora (Mateusza) przed publikacją, wypełnić miejsca w [nawiasach kwadratowych]. -->
+<!-- Do potwierdzenia przed publikacją:
+     1. Zakres wyłączenia gwarancji i odpowiedzialności oraz zdanie "Grając, zgadzasz się na nie" (sposób zawarcia umowy): tekst jest prosty i nieprawniczy, do przejrzenia przez prawnika.
+     2. Prawo do usunięcia drużyny bez uprzedzenia (punkt "Czego nie robić") i do wyłączenia gry z sąsiadami w każdej chwili.
+     3. Okresy (14 i 180 dni) pilnuje test tests/unit/prywatnosc.test.ts względem serwera: zmiana na serwerze wymaga zmiany tutaj i w informacji o danych.
+     4. Wykaz źródeł danych mieszkańców jest w public/data/mieszkancy/LICENCJE.md (to samo, co w Menu gry).
+     5. <meta name="robots" content="noindex"> chroni szkic przed wyszukiwarkami, bo plik z public/ trafia do każdego wdrożenia: usunąć po zatwierdzeniu. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Regulamin | Terms | Za Murem</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457a8'/%3E%3Crect x='3' y='5' width='10' height='9' fill='%23f4f3ee'/%3E%3Crect x='5' y='7' width='2' height='2' fill='%232457a8'/%3E%3Crect x='9' y='7' width='2' height='2' fill='%232457a8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="prawo.css">
+<script>
+/* Jedna sekcja językowa naraz: z adresu (#pl, #en), potem język zapisany w grze, potem język przeglądarki. Bez skryptu widać obie. */
+(function () {
+  var d = document.documentElement;
+  function ok(x) { return x === 'pl' || x === 'en'; }
+  function wybierz() {
+    var h = (location.hash || '').slice(1);
+    if (ok(h)) return h;
+    var z = null;
+    try { z = localStorage.getItem('za-murem-0.4-jezyk'); } catch (e) { z = null; }
+    if (ok(z)) return z;
+    return /^pl\b/i.test(navigator.language || '') ? 'pl' : 'en';
+  }
+  function ustaw() { d.setAttribute('data-j', wybierz()); }
+  ustaw();
+  addEventListener('hashchange', ustaw);
+})();
+</script>
+</head>
+<body>
+<div class="strona">
+<div class="karta">
+<a class="sign" href="./"><b>Za Murem</b></a>
+
+<section id="pl" lang="pl">
+  <p class="jezyk"><a href="#en" hreflang="en">English</a></p>
+  <h1>Regulamin</h1>
+  <p class="wstep">Krótkie zasady gry Za Murem, pisane zwykłymi zdaniami. Grając, zgadzasz się na nie.</p>
+
+  <div class="blok">
+    <h2>Kto prowadzi grę</h2>
+    <p><mark>[NAZWA FIRMY]</mark>, <mark>[ADRES]</mark>, NIP <mark>[NIP]</mark>. Kontakt: <mark>[E-MAIL DO SPRAW DANYCH]</mark>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Czym jest gra</h2>
+    <p>Za Murem to darmowa gra przeglądarkowa. Akcja dzieje się w roku 2051, po upadku cywilizacji, i jest zmyślona. Mieszkańcy osiedla są wymyśleni na podstawie statystyk zbiorczych i nie przedstawiają żadnych prawdziwych osób. Z prawdziwego świata gra bierze tylko miejsca z OpenStreetMap.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Zasady korzystania</h2>
+    <ul>
+      <li>Gra jest darmowa i prowadzona hobbystycznie. Działa bez gwarancji: nie obiecujemy, że będzie dostępna bez przerw ani że zapis gry nie zostanie utracony.</li>
+      <li>Możemy zmienić, ograniczyć albo wyłączyć grę z sąsiadami w każdej chwili.</li>
+      <li>Zapis w pamięci przeglądarki znika, gdy wyczyścisz jej dane. Zapis w chmurze trzymamy na serwerze w grze z sąsiadami.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Drużyna i kod powrotu</h2>
+    <ul>
+      <li>Drużyna powstaje sama przy pierwszej grze z sąsiadami. Kod powrotu pozwala wejść do niej z innej przeglądarki. Kto zna kod, wejdzie do drużyny, więc nie pokazuj go nikomu. Nowy kod unieważnia poprzedni.</li>
+      <li>Drużynę, która powstała sama (bez nicku), możesz usunąć w każdej chwili: otwórz Menu i wybierz „Usuń drużynę z serwera”. Znikną jej klatki, zapis w chmurze i kod powrotu. Tego nie da się cofnąć.</li>
+      <li>Konto założone dawną drogą, z nickiem i hasłem, nie ma w grze przycisku usunięcia: napisz na <mark>[E-MAIL DO SPRAW DANYCH]</mark>, podając nick, a usuniemy je po sprawdzeniu, że konto jest twoje.</li>
+      <li>Klatki drużyny, która nie grała 14 dni, wracają do wolnych. Drużyna, która nie grała 180 dni, znika z serwera. Szczegóły są w <a href="prywatnosc.html#pl">informacji o danych osobowych</a>.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Czego nie robić</h2>
+    <p>Nie psuj gry innym. Zakazane jest w szczególności:</p>
+    <ul>
+      <li>masowe zakładanie drużyn, żeby zająć klatki w wielu miejscach,</li>
+      <li>obchodzenie limitów serwera, na przykład liczby nowych drużyn z jednego łącza, zmian okolicy w ciągu doby albo zapytań o adres,</li>
+      <li>zajmowanie klatek w miejscach, w których nie grasz, tylko po to, żeby blokowały innych,</li>
+      <li>automaty i skrypty, które obciążają serwer albo przeczesują okolice,</li>
+      <li>próby dostępu do cudzych drużyn, zapisów i kodów.</li>
+    </ul>
+    <p>Drużynę, która łamie te zasady, możemy usunąć z serwera razem z klatkami, zapisem i kodem, bez uprzedzenia.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Źródła i atrybucja</h2>
+    <p>Dane mapy: © współtwórcy <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, kafelki z <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>, schemat <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>. Mieszkańców wymyślamy z danych zbiorczych GUS i Eurostatu oraz z wykazów imion i nazwisk (PESEL, Ministerstwo Cyfryzacji, dane.gov.pl). Pełny wykaz źródeł i licencji: <a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">źródła i licencje</a>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Dane osobowe i zmiany</h2>
+    <p>Jakie dane zbiera gra, opisuje <a href="prywatnosc.html#pl">informacja o danych osobowych</a>. Regulamin możemy zmienić: nowa wersja obowiązuje od chwili opublikowania na tej stronie. Pytania: <mark>[E-MAIL DO SPRAW DANYCH]</mark>.</p>
+  </div>
+
+  <p class="inne"><a href="prywatnosc.html#pl">Prywatność</a><a href="./">Wróć do gry</a></p>
+</section>
+
+<section id="en" lang="en">
+  <p class="jezyk"><a href="#pl" hreflang="pl">Polski</a></p>
+  <h1>Terms</h1>
+  <p class="wstep">Short rules for playing Za Murem, in plain sentences. By playing you agree to them.</p>
+
+  <div class="blok">
+    <h2>Who runs the game</h2>
+    <p><mark>[NAZWA FIRMY]</mark>, <mark>[ADRES]</mark>, tax ID (NIP) <mark>[NIP]</mark>. Contact: <mark>[E-MAIL DO SPRAW DANYCH]</mark>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>What the game is</h2>
+    <p>Za Murem is a free browser game. It is set in the year 2051, after the fall of civilisation, and it is fiction. The residents of the estate are made up from aggregate statistics and do not depict any real people. From the real world the game takes only places from OpenStreetMap.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Rules of use</h2>
+    <ul>
+      <li>The game is free and run as a hobby. It is provided with no warranty: we do not promise that it will be available without interruption or that a save will not be lost.</li>
+      <li>We may change, limit or switch off playing with the neighbours at any time.</li>
+      <li>A save in the browser’s storage disappears when you clear the browser’s data. In playing with the neighbours we also keep a cloud save on the server.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>Team and return code</h2>
+    <ul>
+      <li>A team is created on its own the first time you play with the neighbours. The return code lets you get back into it from another browser. Whoever knows the code can enter the team, so show it to nobody. A new code invalidates the previous one.</li>
+      <li>You can delete a team that was created on its own (with no username) at any time: open the Menu and choose “Delete the team from the server”. Its stairwells, cloud save and return code disappear. This cannot be undone.</li>
+      <li>An account created the older way, with a username and password, has no delete button in the game: write to <mark>[E-MAIL DO SPRAW DANYCH]</mark>, giving the username, and we will delete it once we have checked that the account is yours.</li>
+      <li>The stairwells of a team that has not played for 14 days go back to free. A team that has not played for 180 days is removed from the server. Details are in the <a href="prywatnosc.html#en">personal data notice</a>.</li>
+    </ul>
+  </div>
+
+  <div class="blok">
+    <h2>What not to do</h2>
+    <p>Do not spoil the game for others. In particular, the following is forbidden:</p>
+    <ul>
+      <li>mass creation of teams to take stairwells in many places,</li>
+      <li>getting around server limits, for example the number of new teams from one connection, area changes within a day or address lookups,</li>
+      <li>taking stairwells in places where you do not play, only to block others,</li>
+      <li>bots and scripts that load the server or sweep through areas,</li>
+      <li>attempts to reach other teams, saves or codes.</li>
+    </ul>
+    <p>We may remove a team that breaks these rules from the server, with its stairwells, save and code, without notice.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Sources and attribution</h2>
+    <p>Map data: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors, tiles from <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>, schema by <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a>. The residents are made up from aggregate data from GUS and Eurostat and from lists of first names and surnames (PESEL, Ministry of Digital Affairs, dane.gov.pl). The full list of sources and licences: <a href="data/mieszkancy/LICENCJE.md" target="_blank" rel="noopener">sources and licences</a>.</p>
+  </div>
+
+  <div class="blok">
+    <h2>Personal data and changes</h2>
+    <p>What data the game collects is described in the <a href="prywatnosc.html#en">personal data notice</a>. We may change these terms: a new version applies from the moment it is published on this page. Questions: <mark>[E-MAIL DO SPRAW DANYCH]</mark>.</p>
+  </div>
+
+  <p class="inne"><a href="prywatnosc.html#en">Privacy</a><a href="./">Back to the game</a></p>
+</section>
+
+</div>
+</div>
+</body>
+</html>

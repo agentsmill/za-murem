@@ -4,9 +4,18 @@
 
    Kontrakt w skrócie:
    - konto to nick i hasło, bez e-maila; sesja w ciasteczku HttpOnly (klient go nie widzi ani nie wysyła sam),
+   - drużyna anonimowa to konto bez nicku i hasła, zakładane jednym POST-em przy pierwszym wejściu; wrócić do niej z
+     innej przeglądarki można kodem powrotu (KOD_ALFABET, normalizujKod), a usunąć ją bez hasła,
    - inni gracze widzą tylko, że klatka jest zajęta („moja: false”), nigdy czyj to nick ani numer konta,
    - klucze klatek i budynków liczy klient (src/world/klucze.ts); serwer sprawdza ich postać i to, czy pozycja
      klatki leży przy budynku z klucza (kotwicaKlucza), więc nie da się zająć klatki w innym mieście,
+   - klatki drużyny, która nie grała KLATKI_DNI dni, wracają do wolnych (konto, zapis i kod powrotu zostają); konto bez
+     wizyty przez KONTA_DNI dni znika z klatkami, sesjami i zapisem (liczy się wizyta z dokładnością do doby),
+   - liczniki: POST /api/zdarzenie dolicza zdarzenie ze wzoru ZDARZENIE_WZOR do sumy na dobę (bez sesji, bez śladu
+     gracza), powroty kont liczy sam serwer, a odczyt (Liczniki) jest tylko z tokenem właściciela,
+   - wyszukiwanie adresu: GET /api/adres?q=&j=pl|en (bez sesji) oddaje WynikAdresu, ten sam kształt co wynik geokodera
+     w src/world/osm.ts; serwer pyta Nominatim przez kolejkę (jedno zapytanie na sekundę), pamięta wyniki i w razie
+     potrzeby pyta Photon, a tekstu zapytań nie zapisuje nigdzie poza pamięcią procesu (skrót SHA-256),
    - zapis gry w chmurze to obiekt JSON bez tekstu adresu: bez data.addr i data.street, bez tagów addr:* przy
      budynkach w data.geo i bez cyfr w data.name (zapisBezAdresu czyści, maAdres sprawdza),
    - serwer mówi po polsku (komunikat w odpowiedzi z błędem); angielska wersja gry tłumaczy go u klienta po kodzie
@@ -21,6 +30,11 @@ export const NICK_MAX = 24;
 export const NICK_WZOR = /^[\p{L}\p{N}_.-]+$/u;
 export const HASLO_MIN = 8;
 export const HASLO_MAX = 200;
+/** po ilu dniach bez gry (bez żadnego żądania z sesją drużyny) jej klatki wracają do puli; konto, zapis i kod powrotu
+    zostają. Serwer: `klatkiDni` w opcjach, ZM_KLATKI_DNI. Czyta to też informacja o danych w grze. */
+export const KLATKI_DNI = 14;
+/** po ilu dniach bez gry konto znika razem z sesjami, klatkami i zapisem (`kontaDni`, ZM_KONTA_DNI) */
+export const KONTA_DNI = 180;
 /** klucz budynku „px:X:Y:DX:DY:S” z src/world/klucze.ts: liczby całkowite bez zer na początku (jedna postać na
     budynek), S to 1, 2 albo 3 */
 const PX = 'px:(0|[1-9]\\d{0,8}):(0|[1-9]\\d{0,8}):(0|-?[1-9]\\d{0,8}):(0|[1-9]\\d{0,8}):[123]';
@@ -129,12 +143,15 @@ export type KodBledu =
   | 'nick_zajety'
   | 'brak_sesji'
   | 'zle_logowanie'
+  | 'zly_kod'
   | 'za_duzo_prob'
   | 'zajeta'
   | 'nie_ma'
   | 'limit_klatek'
   | 'za_daleko'
   | 'zla_pozycja'
+  | 'poza_okolica'
+  | 'brak_startu'
   | 'serwer_zajety'
   | 'konflikt_wersji'
   | 'za_duze'
@@ -161,6 +178,9 @@ export interface Zdrowie {
   ok: true;
   gra: 'za-murem';
   wersja: number;
+  /** skąd serwer bierze adres klienta do limitów (bez samego adresu): z nagłówka proxy Vercela z poprawnym
+      sekretem, z X-Forwarded-For własnego proxy albo z adresu połączenia; starszy serwer pola nie wysyła */
+  ip?: 'proxy' | 'xff' | 'polaczenie';
 }
 
 /** POST /api/konto (załóż) i POST /api/sesja (zaloguj) */
@@ -174,15 +194,48 @@ export interface UsunKonto {
   haslo: string;
 }
 
-/** odpowiedź POST /api/konto, POST /api/sesja i GET /api/konto */
+/** odpowiedź POST /api/konto, POST /api/druzyna, POST /api/sesja, POST /api/druzyna/powrot i GET /api/konto */
 export interface Ja {
-  nick: string;
+  /** nick konta; null u drużyny anonimowej (bez nicku i hasła) */
+  nick: string | null;
   /** chwila założenia konta (ms od 1970) */
   utworzone: number;
   /** liczba zajętych klatek */
   klatki: number;
   /** czy jest zapis w chmurze */
   zapis: boolean;
+  /** drużyna założona bez nicku i hasła (POST /api/druzyna) */
+  anonimowe: boolean;
+  /** jak drużynę nazwać na ekranie: nick konta z nickiem, „#” i numer u drużyny anonimowej */
+  znak: string;
+  /** czy drużyna ma kod powrotu (sam kod serwer pokazuje tylko raz, w odpowiedzi POST /api/druzyna/kod) */
+  kod: boolean;
+}
+
+/** Kod powrotu: 12 znaków z tego alfabetu (bez 0, O, 1 i I, które łatwo pomylić przy przepisywaniu), pokazywany jako
+    XXXX-XXXX-XXXX. 32 znaki to dokładnie 5 bitów na znak, razem 60 bitów. */
+export const KOD_ALFABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const KOD_DLUGOSC = 12;
+const KOD_WZOR = new RegExp(`^[${KOD_ALFABET}]{${KOD_DLUGOSC}}$`);
+
+/** Kod w postaci do porównań: bez spacji i myślników, wielkimi literami. Null, gdy to nie jest kod (zła długość albo
+    znak spoza alfabetu, także spoza ASCII). Serwer trzyma tylko skrót tej postaci. */
+export function normalizujKod(s: string): string | null {
+  if (typeof s !== 'string') return null;
+  const bez = s.replace(/[\s-]+/g, '');
+  if (!/^[A-Za-z0-9]+$/.test(bez)) return null;
+  const kod = bez.toUpperCase();
+  return KOD_WZOR.test(kod) ? kod : null;
+}
+
+/** POST /api/druzyna/kod: nowy kod powrotu drużyny (stary przestaje działać) */
+export interface KodPowrotu {
+  kod: string;
+}
+
+/** POST /api/druzyna/powrot: kod w dowolnej wielkości liter, z myślnikami albo spacjami */
+export interface PowrotDruzyny {
+  kod: string;
 }
 
 /** prostokąt w stopniach: południe, zachód, północ, wschód (GET /api/klatki?s=&w=&n=&e=) */
@@ -196,6 +249,16 @@ export interface Prostokat {
 export const PROSTOKAT_MAX_SZER = 0.05;
 export const PROSTOKAT_MAX_DLUG = 0.08;
 export const KLATKI_W_ODPOWIEDZI_MAX = 2000;
+/** Zasięg zapytań o zajęte klatki w metrach: każdy róg prostokąta GET /api/klatki musi leżeć najwyżej tyle od siedziby
+    drużyny, a bez siedziby od jej punktu startu (PUT /api/druzyna/start); dalej to 403 poza_okolica. Prostokąt
+    mapy gry (384 m plus 150 m zapasu wokół adresu, prostokatMapy) ma rogi najwyżej około 700 m od środka. */
+export const ZASIEG_ZAPYTAN_M = 1500;
+
+/** PUT /api/druzyna/start: punkt startu drużyny w stopniach (okolica zapytań, gdy drużyna nie ma jeszcze siedziby) */
+export interface PunktStartu {
+  lat: number;
+  lon: number;
+}
 
 /** POST /api/klatki: klatka do zajęcia; pozycja to środek klatki z klatkiBudynku (src/world/klucze.ts) */
 export interface ZajmijKlatke {
@@ -245,6 +308,37 @@ export interface ZapisanoOdpowiedz {
 /** GET /api/zapis */
 export interface ZapisChmura extends ZapisanoOdpowiedz {
   dane: Record<string, unknown>;
+}
+
+/** Zdarzenie do liczników (POST /api/zdarzenie { z }): start gry (tryb, język, telefon albo komputer), krok ścieżki
+    celów (klucz celu z src/ui/sciezka.ts, np. `R0.zaznacz`) i dzień 2, 3 albo 7. Serwer liczy sumy na dobę, bez
+    sesji i bez śladu gracza; wzór pilnuje, że do bazy nie wejdzie nic poza tym (żadnego tekstu od gracza). */
+export const ZDARZENIE_WZOR = /^(start:(zwykly|zombie):(pl|en):(tel|komp)|cel:[A-Za-z0-9_.:-]{1,40}|dzien:(2|3|7))$/;
+
+/** GET /api/liczniki (nagłówek Authorization: Bearer <token>, ?od=<ms>): sumy zdarzeń na dobę (`dzien` to początek
+    doby UTC w ms) i powroty kont (`zalozone` to początek doby założenia, `poDniach` ile dób później konto wróciło) */
+export interface Liczniki {
+  liczniki: { dzien: number; zdarzenie: string; n: number }[];
+  powroty: { zalozone: number; poDniach: number; n: number }[];
+}
+
+/** Najdłuższe zapytanie o adres w znakach (GET /api/adres?q=): dłuższe to 400 zle_dane. */
+export const ADRES_MAX_ZNAKOW = 200;
+
+/** Zdanie, którym serwer odpowiada 404 nie_ma, gdy GET /api/adres nie znalazł takiego adresu. Ten sam kod i status ma
+    odpowiedź na nieznaną trasę („Nie ma takiego adresu API.”), więc klient poznaje „adresu nie ma” po tym zdaniu, a
+    nie po samym kodzie: serwer bez trasy /api/adres (starszy) nie może uchodzić za wyszukiwarkę, która nic nie znalazła. */
+export const KOMUNIKAT_BRAK_ADRESU = 'Nie znalazłem takiego adresu. Spróbujcie z miastem, np. „Wołoska 12, Warszawa”.';
+
+/** GET /api/adres?q=&j=pl|en: współrzędne i opis miejsca; ten sam kształt co `GeocodeResult` w src/world/osm.ts
+    (`label` to pełna etykieta, `area` osiedle albo okolica, `street` ulica, `city` miejscowość; puste, gdy nie ma) */
+export interface WynikAdresu {
+  lat: number;
+  lon: number;
+  label: string;
+  area: string;
+  street: string;
+  city: string;
 }
 
 type Obiekt = Record<string, unknown>;
