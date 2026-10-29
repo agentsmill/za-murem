@@ -177,11 +177,15 @@ Z `ZM_KOPIE=/dane/kopie` serwer robi kopię raz na dobę o `ZM_KOPIA_GODZINA` (d
 
 Czego kopie nie dają: leżą na tym samym wolumenie co baza, więc chronią przed pomyłką (usunięte konto, zły zapis, zepsuty schemat po wdrożeniu), a nie przed utratą dysku albo maszyny. Kopia poza maszyną (miejsce, dostęp, koszt) to osobna decyzja. Kopie mają te same dane osobowe co baza (nicki, pozycje zajętych klatek, zapisy gier), więc trzymamy je tak samo ostrożnie. Konto usunięte w grze znika z kopii dopiero po `ZM_KOPIE_DNI` dniach; ten czas trzeba wpisać do informacji o danych osobowych.
 
-Dodatkowa kopia ręczna bez zatrzymywania serwera (pod inną nazwą, żeby nie wpadła w czyszczenie; w compose kontener to `za-murem-api`):
+Dodatkowa kopia ręczna bez zatrzymywania serwera, pod inną nazwą niż `za-murem-RRRR-MM-DD.db`, żeby nie wpadła w czyszczenie. Na serwerze z compose kontener to `za-murem-api` (produkcja: `za-murem-api-prod`), przy `docker run` to `za-murem-serwer`. Po kopii prawa 0600 jak przy kopiach automatycznych i sprawdzenie, że kopia ma wersję schematu sprzed wdrożenia i przechodzi `quick_check`:
 
 ```bash
-docker exec za-murem-serwer node -e "new (require('node:sqlite').DatabaseSync)('/dane/za-murem.db').exec(\"VACUUM INTO '/dane/reczna.db'\")"
+docker exec za-murem-api node -e "new (require('node:sqlite').DatabaseSync)('/dane/za-murem.db').exec(\"VACUUM INTO '/dane/reczna.db'\")"
+docker exec za-murem-api chmod 600 /dane/reczna.db
+docker exec za-murem-api node -e "const d = new (require('node:sqlite').DatabaseSync)('/dane/reczna.db'); console.log(d.prepare('PRAGMA user_version').get(), d.prepare('PRAGMA quick_check').get())"
 ```
+
+Tak powstała kopia przed pierwszym wdrożeniem z `wyjscie-na-swiat` na serwer testowy (29.10.2026, `/dane/reczna-przed-wyjscie-na-swiat-2026-10-29.db`, schemat w wersji 1, `quick_check` ok).
 
 ### Przywracanie z kopii
 
