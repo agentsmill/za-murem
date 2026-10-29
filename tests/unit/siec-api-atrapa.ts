@@ -66,6 +66,8 @@ export function udawaneApiGry(
     maKod?: boolean;
     /** odpowiedź na usunięcie drużyny (bez niej: 204) */
     usunDruzyne?: () => Wynik<undefined>;
+    /** GET /api/konto bez sesji jak serwer sprzed premiery: 401 brak_sesji zamiast 200 z null */
+    stare401?: boolean;
   } = {},
 ) {
   const log: string[] = [];
@@ -78,7 +80,8 @@ export function udawaneApiGry(
   let kodow = 0;
   const api = {
     serwerDostepny: async () => !o.bezSerwera,
-    ja: async () => (sesja ? ok(sesja) : zle(401, 'brak_sesji', 'Nie jesteście zalogowani.')),
+    ja: async (): Promise<Wynik<Ja | null>> =>
+      sesja ? ok(sesja) : o.stare401 ? zle(401, 'brak_sesji', 'Nie jesteście zalogowani.') : ok(null),
     druzyna: async () => {
       log.push('druzyna');
       const r = o.druzyna ? o.druzyna() : ok(jaSerwera('#7'), 201);

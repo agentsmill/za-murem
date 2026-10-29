@@ -195,8 +195,8 @@ describe('serwer gry: wygasanie kont (180 dni bez wizyty)', () => {
     expect(ile(s, 'zapisy')).toBe(1);
     expect(ile(s, 'klatki')).toBe(0);
     // stare ciasteczka i kody nie działają, nick jest wolny
-    expect((await a.p.zadanie('GET', '/api/konto')).status).toBe(401);
-    expect((await nazwane.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect((await a.p.zadanie('GET', '/api/konto')).body).toBeNull();
+    expect((await nazwane.zadanie('GET', '/api/konto')).body).toBeNull();
     expect((await przegladarka(s.adres).zadanie('POST', '/api/druzyna/powrot', { kod: a.kod })).body.blad).toBe(
       'zly_kod',
     );
@@ -279,7 +279,7 @@ describe('serwer gry: sesja drużyny anonimowej żyje tyle co jej konto', () => 
     s.gra.sprzataj();
     expect(ile(s, 'konta')).toBe(0);
     expect(ile(s, 'sesje')).toBe(0);
-    expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect((await p.zadanie('GET', '/api/konto')).body).toBeNull();
   });
 
   it('konto z nickiem zostaje przy 30 dniach: pierwsza wizyta doby przedłuża je do 30, nie do 180', async () => {
@@ -293,7 +293,7 @@ describe('serwer gry: sesja drużyny anonimowej żyje tyle co jej konto', () => 
     s.czekaj(dzien(15.2)); // dzień 30,1: sesja przedłużona w dniu 14,9 żyje
     expect((await p.zadanie('GET', '/api/konto')).status).toBe(200);
     s.czekaj(dzien(31)); // bez użycia przez 31 dni sesja z nickiem wygasa, konto zostaje
-    expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect((await p.zadanie('GET', '/api/konto')).body).toBeNull();
     expect(ile(s, 'konta')).toBe(1);
   });
 

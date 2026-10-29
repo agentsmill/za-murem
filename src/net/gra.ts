@@ -205,7 +205,7 @@ export class GraSieciowa {
     if (!(await this.api.serwerDostepny())) return;
     this.dostepny = true;
     const ja = await this.api.ja();
-    if (ja.ok) {
+    if (ja.ok && ja.dane) {
       this.zaloguj(ja.dane);
       await this.wczytajChmure();
     }

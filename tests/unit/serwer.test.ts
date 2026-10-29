@@ -169,13 +169,25 @@ describe('serwer gry: konta i sesje', () => {
     expect(p.ciasteczko).toBe('');
     p.ciasteczko = stare;
     const ja = await p.zadanie('GET', '/api/konto');
-    expect(ja.status).toBe(401);
-    expect(ja.body.blad).toBe('brak_sesji');
+    expect(ja.status).toBe(200);
+    expect(ja.body).toBeNull();
     expect(wiersze(s, 'SELECT * FROM sesje')).toHaveLength(0);
     // podrobione ciasteczko też nie działa i zostaje skasowane
     p.ciasteczko = 'zm_sesja=podrobione';
-    expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect((await p.zadanie('GET', '/api/konto')).body).toBeNull();
     expect(p.ciasteczko).toBe('');
+  });
+
+  it('kim jestem bez sesji to 200 z null, a nie 401: pierwsza wizyta bez czerwonego błędu w konsoli przeglądarki', async () => {
+    const s = await start();
+    const p = przegladarka(s.adres);
+    const ja = await p.zadanie('GET', '/api/konto');
+    expect(ja.status).toBe(200);
+    expect(ja.body).toBeNull();
+    expect(ja.headers.getSetCookie()).toEqual([]);
+    // trasy, które czegoś wymagają od konta, dalej odpowiadają 401
+    expect((await p.zadanie('GET', '/api/zapis')).status).toBe(401);
+    expect((await p.zadanie('DELETE', '/api/konto', {})).status).toBe(401);
   });
 
   it('sesja ważna 30 dni, przedłużana przy używaniu, potem wygasa; najwyżej 10 sesji na konto', async () => {
@@ -193,7 +205,7 @@ describe('serwer gry: konta i sesje', () => {
     expect(r.status).toBe(200);
     expect(r.headers.getSetCookie()).toEqual([]);
     s.czekaj(31 * DOBA);
-    expect((await p.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect((await p.zadanie('GET', '/api/konto')).body).toBeNull();
     expect(wiersze(s, 'SELECT * FROM sesje')).toHaveLength(0);
     for (let i = 0; i < 12; i++)
       await przegladarka(s.adres).zadanie('POST', '/api/sesja', { nick: 'Sesyjny', haslo: 'Sesyjny-haslo-123' });

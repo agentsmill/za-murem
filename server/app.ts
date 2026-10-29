@@ -6,7 +6,7 @@
    API pod /api (typy i kody błędów w src/net/protokol.ts):
      GET    /api/zdrowie            czy serwer żyje
      POST   /api/konto              załóż konto {nick, haslo} i zaloguj      → 201 Ja + ciasteczko
-     GET    /api/konto              kim jestem                               → Ja
+     GET    /api/konto              kim jestem                               → Ja (bez sesji 200 i null)
      DELETE /api/konto              usuń konto {haslo} z klatkami i zapisem  → 204 (drużyna anonimowa: bez hasła)
      POST   /api/sesja              zaloguj {nick, haslo}                    → Ja + ciasteczko
      DELETE /api/sesja              wyloguj                                  → 204
@@ -610,8 +610,9 @@ export function stworzSerwer(op: OpcjeSerwera): SerwerGry {
   };
 
   const kimJestem: Obsluga = async (k) => {
-    const s = wymagajSesji(k);
-    wyslij(k.res, 200, ja(s.konto), k.naglowki);
+    // bez sesji 200 z null zamiast 401: gra pyta o to przy każdym starcie, a przeglądarka wpisuje każde 4xx do konsoli
+    const s = sesjaZ(k);
+    wyslij(k.res, 200, s ? ja(s.konto) : null, k.naglowki);
   };
 
   const usunKonto: Obsluga = async (k) => {

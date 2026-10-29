@@ -26,6 +26,7 @@ Kod powrotu pozwala wejść do tej samej drużyny z innej przeglądarki (aplikac
 | `POST /api/druzyna/kod` (sesja) | nowy kod `XXXX-XXXX-XXXX`, 12 znaków z alfabetu `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (bez 0, O, 1, I); poprzedni kod przestaje działać; najwyżej 10 razy na godzinę na drużynę. Dostaje go także konto z nickiem. |
 | `POST /api/druzyna/powrot` `{ "kod": "…" }` | nowa sesja w tej drużynie (200 i ciasteczko, `Ja`); wielkość liter, spacje i myślniki bez znaczenia; zły kod to 401 `zly_kod`. Sesje na innych urządzeniach dalej działają. |
 | `DELETE /api/konto` | drużyna anonimowa usuwa się bez hasła (razem z klatkami, zapisem i kodem); konto z nickiem dalej prosi o hasło. |
+| `GET /api/konto` | `Ja` zalogowanej drużyny albo konta; bez sesji 200 i `null` (nie 401), bo gra pyta o to przy każdym starcie, a przeglądarka wpisuje każde 4xx do konsoli. Wygasłe albo podrobione ciasteczko dostaje przy tym `Set-Cookie` kasujące. |
 
 Kod widać tylko w odpowiedzi na `POST /api/druzyna/kod`; w bazie leży jego SHA-256 (kolumna `konta.kod`, unikalna), więc wyciek bazy nie daje kodów wprost, a serwer nie umie go pokazać drugi raz. Zły kod w `powrot` liczy się do tego samego limitu co złe hasło (10 nieudanych prób na IP w 15 minut, potem 429), dobry nie. Wszystkie `POST` niosą `Content-Type: application/json`, także te bez danych (`{}`). Drużyny anonimowej nie ma w logowaniu nickiem. Schemat: migracja 2 w `server/baza.ts` (kolumny `anonimowe` i `kod`), stare konta zostają zwykłymi kontami. Testy: `npm test -- serwer-druzyna`.
 

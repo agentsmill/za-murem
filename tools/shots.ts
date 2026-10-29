@@ -11620,7 +11620,7 @@ function kartaShots(): Shot[] {
 }
 
 /** Udawany serwer gry pod /api (page.route): zdrowie, konto, klatki w pamięci, zapis w chmurze. zalogowani: GET
-    /api/konto daje konto z nickiem; anonimowa: daje drużynę anonimową („#7”); bez obu gracz nie ma sesji, a drużynę
+    /api/konto daje konto z nickiem; anonimowa: daje drużynę anonimową („#7”); bez obu gracz nie ma sesji (200 z null), a drużynę
     zakłada POST /api/druzyna (201, albo 503 z druzyna503), kod KOD_UDAWANY w POST /api/druzyna/powrot wraca do niej;
     POST /api/druzyna/kod daje KOD_UDAWANY (pierwszy raz 503 z kod503), DELETE /api/konto usuwa drużynę i sesję;
     zajete: cudze klatki na starcie; pierwsze: odpowiedź na pierwsze zajęcie (409: ktoś był szybszy, start bez domu);
@@ -11651,10 +11651,7 @@ async function fakeApi(
     const json = (status: number, body: unknown) =>
       r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (path0 === '/zdrowie') return json(200, { ok: true, gra: 'za-murem', wersja: 1 });
-    if (path0 === '/konto' && m === 'GET')
-      return sesja
-        ? json(200, sesja === 'nick' ? JA_NICK : JA_DRUZYNA)
-        : json(401, { blad: 'brak_sesji', komunikat: 'Zalogujcie się.' });
+    if (path0 === '/konto' && m === 'GET') return json(200, sesja ? (sesja === 'nick' ? JA_NICK : JA_DRUZYNA) : null);
     if (path0 === '/druzyna' && m === 'POST') {
       if (o.druzyna503)
         return json(503, { blad: 'serwer_zajety', komunikat: 'Serwer jest przeciążony. Spróbujcie za chwilę.' });
@@ -12171,7 +12168,7 @@ function siecShots(): Shot[] {
       // dwie drużyny na prawdziwym serwerze gry (w procesie, :memory:, za proxy /api z vite.config.ts): pierwsza (konto
       // z nickiem, dawną drogą przez odnośnik „logowanie”) zajmuje klatkę pod adresem, druga (drużyna anonimowa założona
       // przy pierwszej grze, w przeglądarce bez ciasteczka, bez żadnego formularza) z tym samym adresem zaczyna bez domu,
-      // a w bazie są obie bez adresu
+      // a w bazie są obie bez adresu; wizyta bez sesji nie dostaje 4xx z GET /api/konto (czerwony błąd w konsoli)
       name: 'siec-dwie-druzyny',
       query: '',
       run: async (page, base) => {
@@ -12186,6 +12183,11 @@ function siecShots(): Shot[] {
           gra.zamknij();
           return;
         }
+        const bledyKonta: number[] = [];
+        page.on('response', (r) => {
+          if (r.request().method() === 'GET' && new URL(r.url()).pathname.endsWith('/api/konto') && r.status() >= 400)
+            bledyKonta.push(r.status());
+        });
         try {
           await offlineNetwork(page);
           await page.goto(`${base}?siec=1&speed=0`);
@@ -12209,6 +12211,7 @@ function siecShots(): Shot[] {
           if (b.stan?.dom !== false || !b.znaczniki.includes('obca') || !b.znaczniki.includes('cel'))
             throw new Error('druga drużyna nie zaczęła bez domu przy zajętej klatce');
           if (!/^#\d+$/.test(b.stan?.konto ?? '')) throw new Error(`druga drużyna bez znaku „#<id>”: ${b.stan?.konto}`);
+          if (bledyKonta.length) throw new Error(`GET /api/konto bez sesji odpowiada ${bledyKonta.join(', ')}`);
           const wiersze = gra.baza.db.prepare('SELECT konto, siedziba FROM klatki').all();
           const konta = gra.baza.db.prepare('SELECT * FROM konta').all() as Record<string, unknown>[];
           console.log(

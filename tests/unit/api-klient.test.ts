@@ -155,7 +155,7 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
     expect((await a.zwolnij(klatka.klucz)).ok).toBe(true);
     expect(await a.moje()).toMatchObject({ ok: true, dane: { klatki: [] } });
     expect((await a.wyloguj()).ok).toBe(true);
-    expect(await a.ja()).toMatchObject({ ok: false, status: 401, blad: 'brak_sesji' });
+    expect(await a.ja()).toEqual({ ok: true, status: 200, dane: null });
     expect((await a.zaloguj('przymorzanie', 'falowiec-1971')).ok).toBe(true);
     expect((await a.usunKonto('falowiec-1971')).ok).toBe(true);
     expect((await a.zaloguj('Przymorzanie', 'falowiec-1971')).ok).toBe(false);
@@ -199,7 +199,7 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
 
     // druga przeglądarka (bez ciasteczka) wraca kodem: ten sam znak, a pierwsza sesja działa dalej
     const b = gracz(s);
-    expect(await b.ja()).toMatchObject({ ok: false, status: 401, blad: 'brak_sesji' });
+    expect(await b.ja()).toEqual({ ok: true, status: 200, dane: null });
     const powrot = await b.powrot(nowy.dane.kod.toLowerCase().replaceAll('-', ' '));
     expect(powrot).toMatchObject({ ok: true, status: 200, dane: { znak, anonimowe: true, kod: true } });
     expect(await b.ja()).toMatchObject({ ok: true, dane: { znak } });
@@ -218,7 +218,7 @@ describe('klient API gry sieciowej (src/net/api.ts)', () => {
 
     // drużyna anonimowa usuwa się bez hasła, razem z kodem
     expect(await a.usunDruzyne()).toMatchObject({ ok: true, status: 204 });
-    expect(await a.ja()).toMatchObject({ ok: false, status: 401, blad: 'brak_sesji' });
+    expect(await a.ja()).toEqual({ ok: true, status: 200, dane: null });
     expect(await gracz(s).powrot(drugi.dane.kod)).toMatchObject({ ok: false, blad: 'zly_kod' });
   });
 

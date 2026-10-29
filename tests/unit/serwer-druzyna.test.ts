@@ -304,7 +304,7 @@ describe('serwer gry: drużyna anonimowa', () => {
     for (const t of ['konta', 'sesje', 'zapisy']) expect(wiersze(s, `SELECT * FROM ${t}`), t).toEqual([]);
     expect(wiersze(s, 'SELECT * FROM klatki')).toEqual([]);
     // druga sesja i kod przepadły razem z drużyną, a numer drużyny nie wraca
-    expect((await druga.zadanie('GET', '/api/konto')).status).toBe(401);
+    expect((await druga.zadanie('GET', '/api/konto')).body).toBeNull();
     expect((await przegladarka(s.adres).zadanie('POST', '/api/druzyna/powrot', { kod })).body.blad).toBe('zly_kod');
     expect((await nowaDruzyna(s)).ja.znak).not.toBe(ja.znak);
 

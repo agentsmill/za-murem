@@ -194,7 +194,8 @@ export interface UsunKonto {
   haslo: string;
 }
 
-/** odpowiedź POST /api/konto, POST /api/druzyna, POST /api/sesja, POST /api/druzyna/powrot i GET /api/konto */
+/** odpowiedź POST /api/konto, POST /api/druzyna, POST /api/sesja, POST /api/druzyna/powrot i GET /api/konto (bez sesji
+    GET /api/konto daje 200 z null, nie 401, bo gra pyta przy każdym starcie, a każde 4xx ląduje w konsoli przeglądarki) */
 export interface Ja {
   /** nick konta; null u drużyny anonimowej (bez nicku i hasła) */
   nick: string | null;

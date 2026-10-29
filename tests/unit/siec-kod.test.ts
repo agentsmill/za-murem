@@ -97,6 +97,21 @@ describe('kod powrotu i usunięcie drużyny w Menu (src/ui/okna.ts, src/ui/siec.
     expect(lezy.menuSieci()).toBeUndefined();
   });
 
+  it('bez sesji serwer daje 200 z null (starszy 401): w obu razach gra startuje bez konta i zakłada drużynę', async () => {
+    for (const stare401 of [false, true]) {
+      const { g, log, w } = await graAnonimowa({ stare401 });
+      expect(w).not.toBeNull();
+      expect(log.filter((l) => l === 'druzyna')).toHaveLength(1);
+      expect(g.podglad()).toMatchObject({ zalogowani: true, bezSieci: false, stan: { konto: '#7' } });
+      // sam init, bez gry: nikt nie jest zalogowany i nic nie powstaje
+      const sam = udawaneApiGry({ nick: null, stare401 });
+      const tylkoInit = new GraSieciowa(opcje(sam.api));
+      await tylkoInit.init();
+      expect(tylkoInit.podglad()).toMatchObject({ zalogowani: false, stan: null });
+      expect(sam.log).not.toContain('druzyna');
+    }
+  });
+
   it('kodSheet po polsku i po angielsku pokazuje kod i ostrzeżenie o unieważnieniu', () => {
     const pl = kodSheet('ABCD-EFGH-JKLM');
     expect(pl.title).toBe('Kod powrotu drużyny');

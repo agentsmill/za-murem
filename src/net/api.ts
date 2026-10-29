@@ -274,8 +274,8 @@ export function utworzApi(opcje: OpcjeApi = {}) {
     zaloz: (nick: string, haslo: string) => zadanie<Ja>('POST', '/konto', { nick, haslo } satisfies DaneLogowania),
     zaloguj: (nick: string, haslo: string) => zadanie<Ja>('POST', '/sesja', { nick, haslo } satisfies DaneLogowania),
     wyloguj: () => zadanie<undefined>('DELETE', '/sesja'),
-    /** zalogowane konto albo blad 'brak_sesji' */
-    ja: () => zadanie<Ja>('GET', '/konto'),
+    /** zalogowane konto; bez sesji null (serwer sprzed premiery: blad 'brak_sesji' z 401) */
+    ja: () => zadanie<Ja | null>('GET', '/konto'),
     /** usuwa konto razem z klatkami i zapisem w chmurze (hasło jeszcze raz) */
     usunKonto: (haslo: string) => zadanie<undefined>('DELETE', '/konto', { haslo }),
     /** drużyna anonimowa bez nicku i hasła, od razu zalogowana (201); z ważną sesją serwer oddaje jej konto (200) i
